@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Connexion - Leyzen Honeypot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/honeypot/static/login.css" />
+  </head>
+  <body>
+    <div class="login-container">
+      <h1>Connexion - Honeypot</h1>
+
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/honeypot/login">
+        <label for="username">Utilisateur</label>
+        <input
+          type="text"
+          id="username"
+          name="username"
+          placeholder="admin"
+          required
+        />
+
+        <label for="password">Mot de passe</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="••••••"
+          required
+        />
+
+        <button type="submit">Se connecter</button>
+      </form>
+    </div>
+  </body>
+</html>

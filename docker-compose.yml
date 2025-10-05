@@ -20,10 +20,13 @@ services:
   honeypot:
     build: ./honeypot
     container_name: lyz_honeypot
-    ports:
-      - "5000:5000"
     networks:
       - lyz_net
+    environment:
+      - HONEYPOT_USER=admin
+      - HONEYPOT_PASSWORD=ChangeMeNow! # Remplace par un mot de passe fort
+      - HONEYPOT_TOKEN=ReplaceWithStrongToken
+      - HONEYPOT_SECRET=ReplaceWithSessionSecret
 
   haproxy:
     image: haproxy:2.8-alpine
@@ -31,11 +34,10 @@ services:
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports:
-      - "8080:80"   # public entrypoint -> haproxy:80
+      - "80:80" # public entrypoint -> haproxy:80
     networks:
       - lyz_net
 
 networks:
   lyz_net:
     driver: bridge
-
