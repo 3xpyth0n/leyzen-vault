@@ -1,0 +1,17 @@
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Leyzen Vault - Chargement</title>
+<style>
+  body { margin:0; background:#1a1a1a; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; font-family:Arial,sans-serif; }
+  h1 { font-size:2em; }
+</style>
+</head>
+<body>
+<h1>Chargement en cours…</h1>
+</body>
+</html>

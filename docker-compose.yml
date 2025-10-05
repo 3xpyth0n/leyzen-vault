@@ -1,0 +1,41 @@
+services:
+  nginx:
+    build: ./nginx
+    container_name: lyz_nginx
+    networks:
+      - lyz_net
+
+  apache:
+    build: ./apache
+    container_name: lyz_apache
+    networks:
+      - lyz_net
+
+  lighttpd:
+    build: ./lighttpd
+    container_name: lyz_lighttpd
+    networks:
+      - lyz_net
+
+  honeypot:
+    build: ./honeypot
+    container_name: lyz_honeypot
+    ports:
+      - "5000:5000"
+    networks:
+      - lyz_net
+
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: lyz_haproxy
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8080:80"   # public entrypoint -> haproxy:80
+    networks:
+      - lyz_net
+
+networks:
+  lyz_net:
+    driver: bridge
+

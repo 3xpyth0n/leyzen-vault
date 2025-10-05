@@ -1,0 +1,12 @@
+[2025-10-05 15:31:33] === Orchestrator démarré ===
+[2025-10-05 15:31:33] Rotation initiale: lyz_apache activé
+[2025-10-05 15:31:33] Arrêt de lyz_apache
+[2025-10-05 15:31:34] Démarrage de lyz_lighttpd
+[2025-10-05 15:31:34] Rotation: lyz_lighttpd activé. Statuts: {'lyz_nginx': 'exited', 'lyz_apache': 'exited', 'lyz_lighttpd': 'running'}
+[2025-10-05 15:32:04] Arrêt de lyz_lighttpd
+[2025-10-05 15:32:04] Démarrage de lyz_apache
+[2025-10-05 15:32:05] Rotation: lyz_apache activé. Statuts: {'lyz_nginx': 'exited', 'lyz_apache': 'running', 'lyz_lighttpd': 'exited'}
+[2025-10-05 15:32:35] Arrêt de lyz_apache
+[2025-10-05 15:32:36] Démarrage de lyz_lighttpd
+[2025-10-05 15:32:36] Rotation: lyz_lighttpd activé. Statuts: {'lyz_nginx': 'exited', 'lyz_apache': 'exited', 'lyz_lighttpd': 'running'}
+[2025-10-05 15:32:38] Orchestrator arrêté par l'utilisateur (CTRL+C)
