@@ -1,43 +1,165 @@
 services:
-  nginx:
-    build: ./nginx
-    container_name: lyz_nginx
+  redis:
+    image: redis:8
+    container_name: redis
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - lyz_net
 
-  apache:
-    build: ./apache
-    container_name: lyz_apache
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    expose:
+      - "5432"
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: paperless
+      POSTGRES_DB: paperless
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperless -d paperless"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - lyz_net
 
-  lighttpd:
-    build: ./lighttpd
-    container_name: lyz_lighttpd
+  paperless_web1:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless_web1
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_APP_TITLE: Leyzen Docs
+      PAPERLESS_DBHOST: postgres
+      PAPERLESS_REDIS: redis://redis:6379
+      PAPERLESS_MEDIA_ROOT: /usr/src/paperless/media
+      PAPERLESS_URL: "https://leyzen.share.zrok.io"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lyz_net
+
+  paperless_web2:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless_web2
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_APP_TITLE: Leyzen Docs
+      PAPERLESS_DBHOST: postgres
+      PAPERLESS_REDIS: redis://redis:6379
+      PAPERLESS_MEDIA_ROOT: /usr/src/paperless/media
+      PAPERLESS_URL: "https://leyzen.share.zrok.io"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lyz_net
+
+  paperless_web3:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless_web3
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_APP_TITLE: Leyzen Docs
+      PAPERLESS_DBHOST: postgres
+      PAPERLESS_REDIS: redis://redis:6379
+      PAPERLESS_MEDIA_ROOT: /usr/src/paperless/media
+      PAPERLESS_URL: "https://leyzen.share.zrok.io"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lyz_net
+
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: haproxy
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8080:80"
+    restart: on-failure
+    depends_on:
+      paperless_web1:
+        condition: service_started
+      paperless_web2:
+        condition: service_started
+      paperless_web3:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - lyz_net
 
   honeypot:
     build: ./honeypot
-    container_name: lyz_honeypot
+    container_name: honeypot
     networks:
       - lyz_net
     environment:
       - HONEYPOT_USER=admin
-      - HONEYPOT_PASSWORD=ChangeMeNow! # Remplace par un mot de passe fort
+      - HONEYPOT_PASSWORD=s&&déàà&
       - HONEYPOT_TOKEN=ReplaceWithStrongToken
       - HONEYPOT_SECRET=ReplaceWithSessionSecret
-
-  haproxy:
-    image: haproxy:2.8-alpine
-    container_name: lyz_haproxy
-    volumes:
-      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    ports:
-      - "80:80" # public entrypoint -> haproxy:80
-    networks:
-      - lyz_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/honeypot/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
 networks:
   lyz_net:
     driver: bridge
+
+volumes:
+  data:
+  media:
+  database-data:
+

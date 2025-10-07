@@ -5,6 +5,7 @@
     <title>Connexion - Leyzen Honeypot</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/honeypot/static/login.css" />
+    <link rel="icon" type="image/png" href="/honeypot/static/favicon.png" />
   </head>
   <body>
     <div class="login-container">
@@ -15,23 +16,27 @@
       {% endif %}
 
       <form method="post" action="/honeypot/login">
-        <label for="username">Utilisateur</label>
-        <input
-          type="text"
-          id="username"
-          name="username"
-          placeholder="admin"
-          required
-        />
+        <div class="form-group">
+          <label for="username">Utilisateur</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="admin"
+            required
+          />
+        </div>
 
-        <label for="password">Mot de passe</label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          placeholder="••••••"
-          required
-        />
+        <div class="form-group">
+          <label for="password">Mot de passe</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••"
+            required
+          />
+        </div>
 
         <button type="submit">Se connecter</button>
       </form>

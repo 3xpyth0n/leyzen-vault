@@ -8,8 +8,8 @@ import traceback
 LOG_FILE = "./vault_orchestrator.log"
 
 client = docker.from_env()
-web_containers = ["lyz_nginx", "lyz_apache", "lyz_lighttpd"]
-interval = 30  # secondes entre chaque rotation
+web_containers = ["paperless_web1", "paperless_web2", "paperless_web3"]
+interval = 120  # secondes entre chaque rotation
 
 def log(msg):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -28,6 +28,14 @@ def require_token_or_session(func):
     wrapper.__name__ = func.__name__
     return wrapper
 
+@bp.route("/")
+def index():
+    return redirect(url_for("honeypot.dashboard"))
+
+@bp.route("/favicon.ico")
+def favicon():
+    return redirect(url_for("honeypot.static", filename="favicon.png"))
+
 @bp.route("/health")
 def health():
     return "OK", 200
@@ -72,7 +80,7 @@ def decoy_login_submit():
 @bp.route("/robots.txt")
 def robots():
     utils.maybe_delay()
-    txt = "User-agent: *\\nDisallow: /admin/\\nDisallow: /wp-admin/\\n"
+    txt = "User-agent: *\nDisallow: /admin/\nDisallow: /wp-admin/\n"
     utils.record_request(request, note="robots")
     return make_response(txt, 200, {"Content-Type":"text/plain","Server":"nginx/1.19.6"})
 
@@ -80,7 +88,7 @@ def robots():
 def server_status():
     utils.maybe_delay()
     utils.record_request(request, note="server_status")
-    html = "<html><body><h1>Apache Server Status</h1><pre>Server uptime: 12345</pre></body></html>"
+    html = "<html><body><h1>Apache Server Status</h1><pre>Server uptime: 231635</pre></body></html>"
     resp = make_response(render_template_string(html), 200)
     resp.headers["Server"] = "Apache/2.4.29 (Ubuntu)"
     return resp
@@ -89,7 +97,7 @@ def server_status():
 def api_status():
     utils.maybe_delay()
     utils.record_request(request, note="api_status")
-    data = {"status":"ok","version":"1.2.3","uptime":123456}
+    data = {"status":"ok","version":"2.6.12","uptime":87654652932}
     resp = jsonify(data)
     resp.headers["Server"] = "gunicorn/20.1.0"
     return resp
@@ -183,7 +191,7 @@ def download_csv():
             '"' + str(log.get("note","")).replace('"','""') + '"'
         ]
         output.append(",".join(row))
-    resp = make_response("\\n".join(output))
+    resp = make_response("\n".join(output))
     resp.headers["Content-Disposition"] = "attachment; filename=honeypot_logs.csv"
     resp.headers["Content-Type"] = "text/csv; charset=utf-8"
     return resp

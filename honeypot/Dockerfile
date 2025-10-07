@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install runtime deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy app
