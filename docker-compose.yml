@@ -131,7 +131,11 @@ services:
       paperless_web3:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -149,7 +153,8 @@ services:
       - HONEYPOT_TOKEN=ReplaceWithStrongToken
       - HONEYPOT_SECRET=ReplaceWithSessionSecret
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/honeypot/health || exit 1"]
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:5000/honeypot/health || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -162,4 +167,3 @@ volumes:
   data:
   media:
   database-data:
-
