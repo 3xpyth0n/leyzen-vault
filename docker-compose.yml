@@ -142,23 +142,6 @@ services:
     networks:
       - lyz_net
 
-  honeypot:
-    build: ./honeypot
-    container_name: honeypot
-    networks:
-      - lyz_net
-    environment:
-      - HONEYPOT_USER=admin
-      - HONEYPOT_PASSWORD=s&&déàà&
-      - HONEYPOT_TOKEN=ReplaceWithStrongToken
-      - HONEYPOT_SECRET=ReplaceWithSessionSecret
-    healthcheck:
-      test:
-        ["CMD-SHELL", "curl -f http://localhost:5000/honeypot/health || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
 networks:
   lyz_net:
     driver: bridge
