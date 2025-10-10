@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Vault Orchestrator — Dashboard</title>
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -106,7 +106,7 @@
       <header class="flex items-center justify-between p-6">
         <div class="flex items-center gap-4">
           <img
-            src="/favicon.png"
+            src="/orchestrator/favicon.png"
             alt="logo"
             class="w-12 h-12 rounded-md shadow-lg"
           />
@@ -212,7 +212,27 @@
       </main>
 
       <footer class="flex items-center justify-center border-t border-white/5">
-        <div class="p-3 text-xs text-slate-400">Leyzen™</div>
+        <div class="p-3 text-xs text-slate-400 flex items-center gap-3">
+          <a
+            href="/orchestrator/logout"
+            class="text-xs text-slate-400 underline hover:text-slate-200"
+            title="Logout"
+          >
+            Logout
+          </a>
+
+          <span class="text-slate-600">•</span>
+          <span class="font-bold">Leyzen™</span>
+          <span class="text-slate-600">•</span>
+          <a
+            target="_blank"
+            href="/orchestrator/logs"
+            class="text-xs text-slate-400 underline hover:text-slate-200"
+            title="Logs"
+          >
+            View Logs
+          </a>
+        </div>
       </footer>
     </div>
 
@@ -298,7 +318,9 @@
       /* RENDER */
       async function updateDashboard() {
         try {
-          const res = await fetch("/api/status", { cache: "no-store" });
+          const res = await fetch("/orchestrator/api/status", {
+            cache: "no-store",
+          });
           if (!res.ok) throw new Error("HTTP " + res.status);
           const json = await res.json();
 

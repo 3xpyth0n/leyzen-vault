@@ -6,8 +6,17 @@ from datetime import datetime
 import traceback
 from threading import Thread
 import logging
-from flask import Flask, render_template, send_from_directory, jsonify
+from flask import Flask, render_template, send_from_directory, jsonify, request, redirect, url_for, session
+from functools import wraps
 import os
+import signal
+import sys
+
+# ------------------------------
+# Authentification
+# ------------------------------
+USERNAME = "admin"
+PASSWORD = "admin"
 
 LOG_FILE = "./orchestrator/vault_orchestrator.log"
 HTML_DIR = os.path.join(os.path.dirname(__file__))
@@ -17,13 +26,9 @@ web_containers = ["paperless_web1", "paperless_web2", "paperless_web3"]
 interval = 120  # seconds between rotations
 health_timeout = 60  # seconds to wait for healthy
 
-# rotation bookkeeping
 rotation_count = 0
 last_rotation_time = None
-
-# uptime tracking: total seconds accumulated while container was the active one
 container_total_active_seconds = {name: 0 for name in web_containers}
-# when a container became active (datetime) or None
 container_active_since = {name: None for name in web_containers}
 
 # ------------------------------
@@ -32,9 +37,17 @@ container_active_since = {name: None for name in web_containers}
 def log(msg):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
-    print(line)
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
+
+# ------------------------------
+# Signal handler for Ctrl+C
+# ------------------------------
+def handle_sigint(sig, frame):
+    log("=== Orchestrator stopped via Ctrl+C ===")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_sigint)
 
 # ------------------------------
 # Safe container retrieval
@@ -63,7 +76,6 @@ def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
             if status == "healthy":
                 return True
         except Exception:
-            # container might disappear; bail out
             log(f"[WARNING] Couldn't read health for {getattr(container, 'name', 'unknown')}")
             return False
         if time.time() - start > timeout:
@@ -75,13 +87,11 @@ def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
 # Helpers for uptime accumulation
 # ------------------------------
 def mark_active(container_name):
-    """Mark container as active starting now (if not already)."""
     if container_active_since.get(container_name) is None:
         container_active_since[container_name] = datetime.now()
         log(f"{container_name} marked ACTIVE at {container_active_since[container_name].strftime('%H:%M:%S')}")
 
 def accumulate_and_clear_active(container_name):
-    """If container had an active start time, add duration to total and clear the start."""
     start_ts = container_active_since.get(container_name)
     if start_ts:
         delta = (datetime.now() - start_ts).total_seconds()
@@ -94,27 +104,23 @@ def accumulate_and_clear_active(container_name):
 # ------------------------------
 def orchestrator_loop():
     global rotation_count, last_rotation_time
-
-    # Initial setup: pick one active and ensure it's running; stop others
     initial = random.choice(web_containers)
     log(f"Initial selection: {initial}")
+
     for name in web_containers:
         cont = get_container_safe(name)
         if not cont:
             continue
         if name == initial:
             if cont.status != "running":
-                log(f"Starting initial container {name}")
                 try:
                     cont.start()
                 except Exception as e:
                     log(f"[ERROR] Failed to start {name}: {e}")
-                # wait healthy (best-effort)
                 wait_until_healthy(cont)
             mark_active(name)
         else:
             if cont.status == "running":
-                log(f"Stopping initial container {name}")
                 try:
                     cont.stop()
                 except Exception as e:
@@ -134,9 +140,7 @@ def orchestrator_loop():
                 time.sleep(5)
                 continue
 
-            # Start next container if needed
             if next_cont.status != "running":
-                log(f"Starting next container {next_name}")
                 try:
                     next_cont.start()
                 except Exception as e:
@@ -144,37 +148,26 @@ def orchestrator_loop():
                     time.sleep(5)
                     continue
 
-            # Wait until next is healthy before switching
             ok = wait_until_healthy(next_cont)
             if not ok:
-                log(f"[WARNING] {next_name} did not become healthy, skipping this candidate")
-                # optionally stop the container we just started if you don't want orphan running instances
-                # next_cont.stop()
+                log(f"[WARNING] {next_name} did not become healthy, skipping")
                 time.sleep(5)
                 continue
 
-            # Next is ready -> perform relay:
-            # 1) mark next as active (start time)
             mark_active(next_name)
-
-            # 2) stop old after marking next active, and accumulate its active time
             old_cont = get_container_safe(active_name)
-            # accumulate active time for old (it was active since container_active_since[active_name])
             accumulate_and_clear_active(active_name)
 
             if old_cont and old_cont.status == "running":
-                log(f"Stopping old container {active_name}")
                 try:
                     old_cont.stop()
                 except Exception as e:
                     log(f"[ERROR] Failed to stop {active_name}: {e}")
 
-            # update rotation metadata
             active_name = next_name
             rotation_count += 1
             last_rotation_time = datetime.now()
             log(f"Rotation #{rotation_count}: {active_name} is now active")
-
             time.sleep(interval)
 
         except Exception:
@@ -185,92 +178,80 @@ def orchestrator_loop():
 # Flask dashboard & API
 # ------------------------------
 app = Flask(__name__, template_folder=HTML_DIR, static_folder=HTML_DIR)
-
-# quiet werkzeug logs
+app.secret_key = "47eb11cfe103067c"
 werkzeug_log = logging.getLogger('werkzeug')
 werkzeug_log.setLevel(logging.ERROR)
 
-@app.route("/")
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route("/orchestrator/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if username == USERNAME and password == PASSWORD:
+            session["logged_in"] = True
+            next_page = request.args.get("next") or url_for("dashboard")
+            return redirect(next_page)
+        else:
+            error = "Utilisateur ou mot de passe incorrect"
+    return render_template("login.html", error=error)
+
+@app.route("/orchestrator/logout")
+def logout():
+    session["logged_in"] = False
+    return redirect(url_for("login"))
+
+@app.route("/orchestrator", strict_slashes=False)
+@login_required
 def dashboard():
     return render_template("index.html")
 
-@app.route("/logs")
+@app.route("/orchestrator/logs", strict_slashes=False)
+@login_required
 def logs():
     try:
         with open(LOG_FILE, "r") as f:
             content = f.read()
-        return f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <link rel="icon" type="image/png" href="/favicon.png" />
-            <title>Vault Orchestrator Logs</title>
-            <style>
-                html, body {{
-                    margin: 0;
-                    padding: 0;
-                    background-color: #071024;
-                    color: #f1f5f9;
-                    font-family: monospace;
-                    height: 100%;
-                    overflow: hidden; /* bloque le scroll global */
-                }}
-                h1 {{
-                    color: #fde047;
-                    font-size: 1.5rem;
-                    margin: 1rem;
-                }}
-                pre {{
-                    background: #1e293b;
-                    padding: 1rem;
-                    border-radius: 8px;
-                    height: calc(100vh - 80px); /* occupe la place sous le titre */
-                    margin: 0 1rem 1rem 1rem;
-                    overflow-y: auto; /* scroll uniquement dans le bloc */
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                }}
-            </style>
-        </head>
-        <body>
-            <h1>Vault Orchestrator Logs</h1>
-            <pre>{content}</pre>
-        </body>
-        </html>
-        """
+        return render_template("logs.html", log_content=content)
     except Exception as e:
         return f"Error reading logs: {e}", 500
 
-@app.route("/favicon.png")
-def favicon():
-    return send_from_directory(HTML_DIR, "favicon.png")
+@app.route("/orchestrator/logs/raw", strict_slashes=False)
+@login_required
+def logs_raw():
+    try:
+        with open(LOG_FILE, "r") as f:
+            return f.read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
+    except Exception as e:
+        return f"Error reading logs: {e}", 500
 
-@app.route("/api/status")
+
+@app.route("/orchestrator/favicon.png", strict_slashes=False)
+def favicon():
+    return send_from_directory(os.path.join(os.path.dirname(__file__)), "favicon.png")
+
+@app.route("/orchestrator/api/status", strict_slashes=False)
+@login_required
 def api_status():
     now = datetime.now()
     containers = {}
     for name in web_containers:
         cont = get_container_safe(name)
-        # state = docker container lifecycle state (running/exited/etc)
         state = cont.status if cont else "not found"
-        # health can be None if no healthcheck is defined or if attrs missing
-        health = None
-        if cont:
-            health = cont.attrs.get("State", {}).get("Health", {}).get("Status")
-
-        # compute uptime as accumulated total + current active interval (if marked active)
+        health = cont.attrs.get("State", {}).get("Health", {}).get("Status") if cont else None
         total = container_total_active_seconds.get(name, 0)
         start_ts = container_active_since.get(name)
         if start_ts:
             total += int((now - start_ts).total_seconds())
-
-        containers[name] = {
-            "state": state,
-            "health": health,
-            "uptime": total
-        }
-
+        containers[name] = {"state": state, "health": health, "uptime": total}
     return jsonify({
         "containers": containers,
         "rotation_count": rotation_count,
@@ -283,7 +264,7 @@ def api_status():
 if __name__ == "__main__":
     log("=== Orchestrator started ===")
     Thread(target=orchestrator_loop, daemon=True).start()
-    # run flask without debug and suppress startup banner if desired
-    # app.run prints some lines; keeping default but werkzeug access logs are silenced
+    print("Dashboard available at http://localhost:8080/orchestrator")
+    print("Logs are available at http://localhost:8080/orchestrator/logs")
     app.run(host="0.0.0.0", port=8081, debug=False)
 
