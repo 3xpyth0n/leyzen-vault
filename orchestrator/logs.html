@@ -7,6 +7,12 @@
     <style>
       :root {
         --muted: #94a3b8;
+        --bg: #0a0f1c;
+        --panel: rgba(255, 255, 255, 0.04);
+        --accent1: #2dd4bf;
+        --accent2: #60a5fa;
+        --text: #e6eef8;
+        --muted-2: #9aa6b2;
       }
 
       /* Global */
@@ -14,27 +20,28 @@
       body {
         margin: 0;
         padding: 0;
-        background: #0a0f1c;
+        background: var(--bg);
         font-family:
           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        color: #f1f5f9;
+        color: var(--text);
         height: 100%;
         display: flex;
         justify-content: center;
         align-items: center;
       }
 
+      /* Container: almost full screen */
       .container {
         width: 90vw;
         height: 90vh;
         display: flex;
         flex-direction: column;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 16px; /* arrondi restauré */
+        background: var(--panel);
+        border-radius: 16px;
         backdrop-filter: blur(12px);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
-        overflow: hidden; /* arrondi appliqué aussi au contenu */
-        padding: 1rem; /* garde un peu d’air à gauche/droite */
+        box-shadow: 0 6px 40px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+        padding: 1rem;
         box-sizing: border-box;
       }
 
@@ -43,29 +50,32 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       }
-
-      .header h1 {
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin: 0;
-        color: #e2e8f0;
-      }
-
-      /* Controls */
-      .controls {
+      .header-left {
         display: flex;
         align-items: center;
         gap: 1rem;
       }
+      .header h1 {
+        font-size: 1.1rem;
+        margin: 0;
+        font-weight: 600;
+      }
 
-      /* Button style */
+      /* Controls group */
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      /* Buttons */
       .btn {
         background: transparent;
         border: 1px solid rgba(255, 255, 255, 0.04);
-        color: #e6eef8;
+        color: var(--text);
         padding: 8px 12px;
         border-radius: 10px;
         font-weight: 600;
@@ -89,7 +99,52 @@
         transform: none;
       }
 
-      /* Switch style */
+      /* Period filter buttons */
+      .periods {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .period-btn {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        background: transparent;
+        color: var(--text);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .period-btn:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.06);
+      }
+      .period-btn.active {
+        background: linear-gradient(90deg, var(--accent1), var(--accent2));
+        color: #04121a;
+        box-shadow: 0 8px 30px rgba(45, 212, 191, 0.08);
+        border: none;
+      }
+
+      /* Custom range inputs */
+      .custom-range {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .custom-range input[type="date"] {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        padding: 6px 8px;
+        border-radius: 8px;
+      }
+      .help {
+        font-size: 0.85rem;
+        color: var(--muted-2);
+        margin-left: 0.5rem;
+      }
+
+      /* Auto refresh switch (simple) */
       .switch {
         display: flex;
         align-items: center;
@@ -99,17 +154,16 @@
         user-select: none;
         cursor: pointer;
       }
-      .switch .track {
+      .track {
         width: 44px;
         height: 26px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.03);
         padding: 3px;
         display: inline-flex;
         align-items: center;
-        transition: all 0.18s;
+        background: rgba(255, 255, 255, 0.03);
       }
-      .switch .track .thumb {
+      .thumb {
         width: 20px;
         height: 20px;
         border-radius: 999px;
@@ -119,13 +173,20 @@
         box-shadow: 0 4px 12px rgba(2, 6, 23, 0.45);
       }
       .switch.on .track {
-        background: linear-gradient(90deg, #2dd4bf, #60a5fa);
+        background: linear-gradient(90deg, var(--accent1), var(--accent2));
       }
-      .switch.on .track .thumb {
+      .switch.on .thumb {
         transform: translateX(23px);
-        background: white;
       }
 
+      /* Info: number of lines */
+      .meta {
+        font-size: 0.85rem;
+        color: var(--muted-2);
+        margin-left: 0.75rem;
+      }
+
+      /* Log area */
       pre {
         flex: 1;
         margin: 0;
@@ -136,75 +197,299 @@
         background: transparent;
         white-space: pre-wrap;
         word-wrap: break-word;
+        color: #dfeff6;
       }
 
-      /* Scrollbar customisée */
+      /* Scrollbar */
       pre::-webkit-scrollbar {
         width: 10px;
       }
       pre::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(255, 255, 255, 0.02);
         border-radius: 10px;
       }
       pre::-webkit-scrollbar-thumb {
-        background: linear-gradient(45deg, #2dd4bf, #60a5fa);
+        background: linear-gradient(45deg, var(--accent1), var(--accent2));
         border-radius: 10px;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
       }
       pre::-webkit-scrollbar-thumb:hover {
         background: linear-gradient(45deg, #3ae9d2, #7eb4ff);
       }
+
+      /* Small responsive */
+      @media (max-width: 720px) {
+        .header {
+          flex-direction: column;
+          gap: 0.5rem;
+          align-items: flex-start;
+        }
+        .controls {
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        .custom-range {
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+      }
+
+      /* empty message */
+      .empty {
+        color: var(--muted-2);
+        text-align: center;
+        padding: 1rem;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="header">
-        <h1>Vault Orchestrator Logs</h1>
-        <div class="controls">
-          <button id="refreshBtn" class="btn">Refresh</button>
-          <div id="autoSwitch" class="switch">
+        <div class="header-left">
+          <h1>Vault Orchestrator Logs</h1>
+          <div class="meta" id="linesMeta">Lines: —</div>
+        </div>
+
+        <div class="controls" aria-label="log controls">
+          <button
+            id="refreshBtn"
+            class="btn"
+            title="Reload logs (scroll to bottom)"
+          >
+            Refresh
+          </button>
+
+          <div class="periods" role="tablist" aria-label="Period filters">
+            <button
+              class="period-btn active"
+              data-period="day"
+              aria-pressed="true"
+            >
+              Day
+            </button>
+            <button class="period-btn" data-period="month" aria-pressed="false">
+              Month
+            </button>
+            <button class="period-btn" data-period="year" aria-pressed="false">
+              Year
+            </button>
+            <button
+              class="period-btn"
+              data-period="custom"
+              aria-pressed="false"
+            >
+              Custom
+            </button>
+          </div>
+
+          <div
+            id="customRange"
+            class="custom-range"
+            style="display: none; margin-left: 8px"
+          >
+            <input type="date" id="startDate" />
+            <input type="date" id="endDate" />
+            <button id="applyCustom" class="btn">Apply</button>
+          </div>
+
+          <div id="autoSwitch" class="switch" title="Auto refresh (1s)">
             <div class="track"><div class="thumb"></div></div>
-            <span>Auto Refresh</span>
+            <span
+              style="color: var(--muted); font-weight: 600; margin-left: 6px"
+              >Auto Refresh</span
+            >
           </div>
         </div>
       </div>
+
       <pre id="log">{{ log_content }}</pre>
     </div>
 
     <script>
+      // Elements
       const pre = document.getElementById("log");
-      const btn = document.getElementById("refreshBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const periodButtons = document.querySelectorAll(".period-btn");
+      const customRange = document.getElementById("customRange");
+      const startDateEl = document.getElementById("startDate");
+      const endDateEl = document.getElementById("endDate");
+      const applyCustomBtn = document.getElementById("applyCustom");
       const autoSwitch = document.getElementById("autoSwitch");
-      let autoRefresh = null;
+      const linesMeta = document.getElementById("linesMeta");
 
-      // Scroll en bas à la première ouverture
-      pre.scrollTop = pre.scrollHeight;
+      // State
+      let allLogs = pre && pre.textContent ? pre.textContent : "";
+      let selectedPeriod = "day"; // default
+      let autoRefreshHandle = null;
+      let isFetching = false;
+      let firstLoad = true;
 
-      async function fetchLogs(scrollBottom = false) {
-        try {
-          const resp = await fetch("/orchestrator/logs/raw");
-          if (!resp.ok) throw new Error("Erreur HTTP");
-          const text = await resp.text();
-          pre.textContent = text;
-          if (scrollBottom) pre.scrollTop = pre.scrollHeight;
-        } catch (err) {
-          console.error("Erreur lors du fetch logs:", err);
+      // Helpers: parse date from a log line like: [2025-10-10 19:16:13]
+      function parseLogDate(line) {
+        const m = line.match(/^\[(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+        if (!m) return null;
+        // create local date
+        const s = m[1] + "T" + m[2];
+        const d = new Date(s);
+        if (isNaN(d)) return null;
+        return d;
+      }
+
+      // Update metadata (lines count)
+      function updateMeta(count) {
+        linesMeta.textContent = `Lines: ${count}`;
+      }
+
+      // Display filtered logs (client-side)
+      function displayLogs(scrollBottom = false) {
+        if (!allLogs) {
+          pre.textContent = "";
+          updateMeta(0);
+          return;
+        }
+        const lines = allLogs.split(/\r?\n/).filter(Boolean);
+        const now = new Date();
+        let filtered = [];
+
+        if (selectedPeriod === "custom") {
+          const startVal = startDateEl.value;
+          const endVal = endDateEl.value;
+          if (!startVal || !endVal) {
+            // if custom but no dates set, show none and prompt user
+            filtered = [];
+          } else {
+            const start = new Date(startVal + "T00:00:00");
+            const end = new Date(endVal + "T23:59:59");
+            filtered = lines.filter((line) => {
+              const d = parseLogDate(line);
+              return d && d >= start && d <= end;
+            });
+          }
+        } else {
+          filtered = lines.filter((line) => {
+            const d = parseLogDate(line);
+            if (!d) return false;
+            if (selectedPeriod === "day") {
+              return (
+                d.getFullYear() === now.getFullYear() &&
+                d.getMonth() === now.getMonth() &&
+                d.getDate() === now.getDate()
+              );
+            } else if (selectedPeriod === "month") {
+              return (
+                d.getFullYear() === now.getFullYear() &&
+                d.getMonth() === now.getMonth()
+              );
+            } else if (selectedPeriod === "year") {
+              return d.getFullYear() === now.getFullYear();
+            }
+            return false;
+          });
+        }
+
+        if (filtered.length === 0) {
+          pre.innerHTML =
+            '<div class="empty">No logs for the selected period.</div>';
+          updateMeta(0);
+        } else {
+          pre.textContent = filtered.join("\n");
+          updateMeta(filtered.length);
+        }
+
+        if (scrollBottom) {
+          pre.scrollTop = pre.scrollHeight;
         }
       }
 
-      // Refresh manuel
-      btn.addEventListener("click", () => fetchLogs(true));
+      // Fetch logs from backend (raw endpoint)
+      async function fetchLogs(scrollBottom = false) {
+        if (isFetching) return;
+        isFetching = true;
+        try {
+          const resp = await fetch("/orchestrator/logs/raw", {
+            cache: "no-store",
+          });
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          const text = await resp.text();
+          allLogs = text;
+          // first load: scroll bottom
+          if (firstLoad) {
+            displayLogs(true);
+            firstLoad = false;
+          } else {
+            displayLogs(scrollBottom);
+          }
+        } catch (err) {
+          console.error("Failed to fetch logs:", err);
+        } finally {
+          isFetching = false;
+        }
+      }
 
-      // Toggle auto-refresh
+      // UI wiring
+      refreshBtn.addEventListener("click", () => {
+        fetchLogs(true);
+      });
+
+      periodButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          periodButtons.forEach((b) => {
+            b.classList.remove("active");
+            b.setAttribute("aria-pressed", "false");
+          });
+          btn.classList.add("active");
+          btn.setAttribute("aria-pressed", "true");
+
+          selectedPeriod = btn.dataset.period;
+          customRange.style.display =
+            selectedPeriod === "custom" ? "flex" : "none";
+
+          // if switching to custom, prefill start/end with sensible defaults
+          if (selectedPeriod === "custom") {
+            const now = new Date();
+            const iso = (d) => d.toISOString().slice(0, 10);
+            // default last 7 days
+            startDateEl.value = iso(
+              new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
+            );
+            endDateEl.value = iso(now);
+          }
+
+          // apply filter (does not refetch automatically except when you want latest data)
+          displayLogs(true);
+        });
+      });
+
+      applyCustomBtn.addEventListener("click", () => {
+        displayLogs(true);
+      });
+
+      // Auto refresh toggle
       autoSwitch.addEventListener("click", () => {
         autoSwitch.classList.toggle("on");
         if (autoSwitch.classList.contains("on")) {
-          autoRefresh = setInterval(() => fetchLogs(false), 1000);
+          // start 1s polling without changing scroll position
+          autoRefreshHandle = setInterval(() => fetchLogs(false), 1000);
         } else {
-          clearInterval(autoRefresh);
-          autoRefresh = null;
+          clearInterval(autoRefreshHandle);
+          autoRefreshHandle = null;
         }
       });
+
+      // initial boot: ensure Day is active and fetch logs
+      (function init() {
+        // mark default active
+        periodButtons.forEach((b) => {
+          if (b.dataset.period === "day") {
+            b.classList.add("active");
+            b.setAttribute("aria-pressed", "true");
+          } else {
+            b.setAttribute("aria-pressed", "false");
+          }
+        });
+        // initial fetch (will scroll to bottom)
+        fetchLogs(true);
+      })();
     </script>
   </body>
 </html>
