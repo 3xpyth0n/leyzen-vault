@@ -9,8 +9,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - lyz_net
 
   postgres:
     image: postgres:17
@@ -28,8 +26,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - lyz_net
 
   paperless_web1:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -56,8 +52,6 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-    networks:
-      - lyz_net
 
   paperless_web2:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -84,8 +78,6 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-    networks:
-      - lyz_net
 
   paperless_web3:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -112,14 +104,13 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-    networks:
-      - lyz_net
 
   haproxy:
     image: haproxy:2.8-alpine
     container_name: haproxy
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/503.http:/usr/local/etc/haproxy/503.http:ro
     ports:
       - "8080:80"
     restart: on-failure
@@ -139,12 +130,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - lyz_net
-
-networks:
-  lyz_net:
-    driver: bridge
 
 volumes:
   data:

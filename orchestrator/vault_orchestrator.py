@@ -13,7 +13,7 @@ import signal
 import sys
 
 # ------------------------------
-# Authentification
+# Dashboard Authentification
 # ------------------------------
 USERNAME = "admin"
 PASSWORD = "admin"
@@ -264,7 +264,6 @@ def api_status():
 if __name__ == "__main__":
     log("=== Orchestrator started ===")
     Thread(target=orchestrator_loop, daemon=True).start()
-    print("Dashboard available at http://localhost:8080/orchestrator")
-    print("Logs are available at http://localhost:8080/orchestrator/logs")
-    app.run(host="0.0.0.0", port=8081, debug=False)
+    print("Dashboard available at http://localhost:8080/orchestrator\n")
+    app.run(host="172.17.0.1", port=8081, debug=False)
 
