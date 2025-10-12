@@ -1,27 +1,42 @@
 #!/bin/bash
 set -e
 
-# Chemin vers le projet
 PROJECT_DIR=$(dirname "$(realpath "$0")")
 cd "$PROJECT_DIR"
 
-# Fonction pour arrêter proprement Docker et le script
-cleanup() {
-    echo "🛑 Arrêt du service Leyzen…"
-    docker compose down
-    exit 0
+start() {
+    echo "🚀 Starting Docker stack..."
+    docker compose up -d
+
+    echo "⚙️ Starting Vault Orchestrator..."
+    # Lance l'orchestrateur Python en arrière-plan et garde le PID
+    python3 ./orchestrator/vault_orchestrator.py &
+    ORCH_PID=$!
+    echo $ORCH_PID > "$PROJECT_DIR/orchestrator.pid"
+    wait $ORCH_PID
 }
 
-# Capture SIGTERM et SIGINT (arrêt par systemd ou Ctrl+C)
-trap cleanup SIGTERM SIGINT
+stop() {
+    echo "🛑 Stopping Leyzen..."
+    docker compose down
 
-echo "🚀 Starting Docker stack..."
-docker compose up -d
+    if [ -f "$PROJECT_DIR/orchestrator.pid" ]; then
+        ORCH_PID=$(cat "$PROJECT_DIR/orchestrator.pid")
+        if kill -0 $ORCH_PID 2>/dev/null; then
+            kill $ORCH_PID
+            echo "💀 Vault Orchestrator stopped (PID $ORCH_PID)"
+        fi
+        rm -f "$PROJECT_DIR/orchestrator.pid"
+    else
+        # Au cas où le fichier PID n'existe pas
+        pkill -f vault_orchestrator.py || true
+    fi
+}
 
-echo "⚙️ Starting Vault Orchestrator..."
-# Lance l'orchestrateur Python
-python3 ./orchestrator/vault_orchestrator.py
-
-# Si jamais Python se termine, on fait un cleanup
-cleanup
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
 

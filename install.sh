@@ -93,21 +93,7 @@ pip install --upgrade Flask docker --break-system-packages >/dev/null 2>&1 || {
 
 success "Dépendances Python installées"
 
-if [ ! -f service.sh ]; then
-    cat <<'EOF' > service.sh
-#!/bin/bash
-set -e
-PROJECT_DIR=$(dirname "$(realpath "$0")")
-cd "$PROJECT_DIR"
-echo "🚀 Starting Docker stack..."
-docker compose up -d
-echo "⚙️ Starting Vault Orchestrator..."
-exec python3 ./orchestrator/vault_orchestrator.py
-EOF
-    chmod +x service.sh
-    success "service.sh créé et rendu exécutable"
-fi
-
+chmod +x service.sh
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_FILE="/etc/systemd/system/leyzen.service"
 
@@ -122,8 +108,8 @@ Type=simple
 WorkingDirectory=$PROJECT_DIR
 ExecStart=$PROJECT_DIR/service.sh start
 ExecStop=$PROJECT_DIR/service.sh stop
-Restart=always
-RestartSec=5
+Restart=on-failure
+KillMode=control-group
 User=root
 StandardOutput=journal
 StandardError=journal

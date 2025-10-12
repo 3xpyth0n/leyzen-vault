@@ -24,8 +24,8 @@ HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 client = docker.from_env()
 web_containers = ["paperless_web1", "paperless_web2", "paperless_web3"]
-interval = 120  # seconds between rotations
-health_timeout = 35  # seconds to wait for healthy
+interval = 90  # seconds between rotations
+health_timeout = 30  # seconds to wait for healthy
 
 rotation_count = 0
 last_rotation_time = None
