@@ -114,13 +114,6 @@ services:
     ports:
       - "8080:80"
     restart: on-failure
-    depends_on:
-      paperless_web1:
-        condition: service_started
-      paperless_web2:
-        condition: service_started
-      paperless_web3:
-        condition: service_started
     healthcheck:
       test:
         [

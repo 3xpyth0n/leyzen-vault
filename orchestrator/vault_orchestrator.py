@@ -18,13 +18,14 @@ import sys
 USERNAME = "admin"
 PASSWORD = "admin"
 
-LOG_FILE = "./orchestrator/vault_orchestrator.log"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(BASE_DIR, "vault_orchestrator.log")
 HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 client = docker.from_env()
 web_containers = ["paperless_web1", "paperless_web2", "paperless_web3"]
 interval = 120  # seconds between rotations
-health_timeout = 60  # seconds to wait for healthy
+health_timeout = 35  # seconds to wait for healthy
 
 rotation_count = 0
 last_rotation_time = None
@@ -41,13 +42,19 @@ def log(msg):
         f.write(line + "\n")
 
 # ------------------------------
-# Signal handler for Ctrl+C
+# Signal handler
 # ------------------------------
-def handle_sigint(sig, frame):
-    log("=== Orchestrator stopped via Ctrl+C ===")
+def handle_shutdown(sig, frame):
+    if sig == signal.SIGINT:
+        log("=== Orchestrator stopped via Ctrl+C ===")
+    elif sig == signal.SIGTERM:
+        log("=== Orchestrator stopped by systemd (SIGTERM) ===")
+    else:
+        log(f"=== Orchestrator stopped (signal {sig}) ===")
     sys.exit(0)
 
-signal.signal(signal.SIGINT, handle_sigint)
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
 
 # ------------------------------
 # Safe container retrieval
@@ -178,7 +185,7 @@ def orchestrator_loop():
 # Flask dashboard & API
 # ------------------------------
 app = Flask(__name__, template_folder=HTML_DIR, static_folder=HTML_DIR)
-app.secret_key = "47eb11cfe103067c"
+app.secret_key = "47eb11cfe103067c" # PLEASE CHANGE IT !
 werkzeug_log = logging.getLogger('werkzeug')
 werkzeug_log.setLevel(logging.ERROR)
 
