@@ -8,8 +8,7 @@ start() {
     echo "🚀 Starting Docker stack..."
     docker compose up -d
 
-    echo "⚙️ Starting Vault Orchestrator..."
-    # Lance l'orchestrateur Python en arrière-plan et garde le PID
+    echo "Starting Vault Orchestrator..."
     python3 ./orchestrator/vault_orchestrator.py &
     ORCH_PID=$!
     echo $ORCH_PID > "$PROJECT_DIR/orchestrator.pid"

@@ -449,7 +449,6 @@
               "api-status",
               `<span class="api-offline">API offline (last: ${lastSuccessfulFetch ? new Date(lastSuccessfulFetch).toLocaleTimeString() : "never"})</span>`,
             );
-            // do not change page style; keep last known data visible
           } else {
             safeSetText(
               "api-status",

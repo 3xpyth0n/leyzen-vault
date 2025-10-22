@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# Color definitions
 if [ -t 1 ]; then
   RED="\033[0;31m"
   GREEN="\033[0;32m"
@@ -17,81 +18,79 @@ else
   RESET=""
 fi
 
-# Fonctions d'affichage
+# Logging helpers
 info(){ printf "%b\n" "${BLUE}ℹ️  $1${RESET}"; }
 success(){ printf "%b\n" "${GREEN}✅ $1${RESET}"; }
 warn(){ printf "%b\n" "${YELLOW}⚠️  $1${RESET}"; }
 error(){ printf "%b\n" "${RED}❌ $1${RESET}"; }
 
-# Trap pour afficher l'erreur si le script échoue
-trap 'error "Une erreur est survenue. Voir la commande précédemment exécutée."; exit 1' ERR
+trap 'error "An error occurred. See the last executed command."; exit 1' ERR
 
-# Bannière
+# Banner
 cat <<'BANNER'
 ╔════════════════════════════════════════════════════════════════════════╗
 ║                                                                        ║
-║          ██╗     ███████╗██╗   ██╗███████╗███████╗███╗   ██╗           ║   
+║          ██╗     ███████╗██╗   ██╗███████╗███████╗███╗   ██╗           ║
 ║          ██║     ██╔════╝╚██╗ ██╔╝╚══███╔╝██╔════╝████╗  ██║           ║
 ║          ██║     █████╗   ╚████╔╝   ███╔╝ █████╗  ██╔██╗ ██║           ║
 ║          ██║     ██╔══╝    ╚██╔╝   ███╔╝  ██╔══╝  ██║╚██╗██║           ║
 ║          ███████╗███████╗   ██║   ███████╗███████╗██║ ╚████║           ║
 ║          ╚══════╝╚══════╝   ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═══╝           ║
 ║                                                                        ║
-║                 Leyzen Vault PoC — Script d'installation               ║
+║                Leyzen Vault PoC — Installation Script                  ║
 ║                                                                        ║
 ╚════════════════════════════════════════════════════════════════════════╝
 BANNER
 
-# Pré-requis root
+# Root privileges check
 if [ "$EUID" -ne 0 ]; then
-    error "Ce script doit être exécuté avec les privilèges root."
-    info "👉 Lancez : sudo ./install.sh"
+    error "This script must be run with root privileges."
+    info "👉 Run: sudo ./install.sh"
     exit 1
 fi
 
-info "🔹 Vérification des prérequis…"
+info "🔹 Checking prerequisites…"
 
-# Vérifie Python
+# Check Python
 if ! command -v python3 &>/dev/null; then
-    error "Python3 n'est pas installé. Merci de l'installer."
+    error "Python3 is not installed. Please install it first."
     exit 1
 else
-    info "Python3 détecté : $(python3 --version 2>/dev/null)"
+    info "Python3 detected: $(python3 --version 2>/dev/null)"
 fi
 
-# Vérifie pip
+# Check pip
 if ! command -v pip &>/dev/null; then
-    info "🔹 pip non trouvé — installation via ensurepip..."
+    info "🔹 pip not found — installing via ensurepip..."
     python3 -m ensurepip --upgrade
-    success "pip installé via ensurepip"
+    success "pip installed via ensurepip"
 else
-    info "pip détecté : $(pip --version 2>/dev/null)"
+    info "pip detected: $(pip --version 2>/dev/null)"
 fi
 
-# Vérifie Docker
+# Check Docker
 if ! command -v docker &>/dev/null; then
-    error "Docker n'est pas installé. Merci de l'installer."
+    error "Docker is not installed. Please install it first."
     exit 1
 else
-    info "Docker détecté : $(docker --version 2>/dev/null)"
+    info "Docker detected: $(docker --version 2>/dev/null)"
 fi
 
-# Vérifie Docker Compose (commande 'docker compose version')
+# Check Docker Compose (command 'docker compose version')
 if ! docker compose version &>/dev/null; then
-    error "Docker Compose n'est pas installé ou accessible via 'docker compose'."
+    error "Docker Compose is not installed or not accessible via 'docker compose'."
     exit 1
 else
-    info "Docker Compose détecté"
+    info "Docker Compose detected"
 fi
 
-info "🔹 Installation des packages Python requis…"
-# garde la même commande que l'original
+info "🔹 Installing required Python packages…"
 pip install --upgrade Flask docker --break-system-packages >/dev/null 2>&1 || {
-    error "Échec de l’installation des dépendances Python."
+    error "Failed to install Python dependencies."
     exit 1
 }
 
-success "Dépendances Python installées"
+success "Python dependencies installed"
 
 chmod +x service.sh
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -99,7 +98,7 @@ SERVICE_FILE="/etc/systemd/system/leyzen.service"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=Leyzen Vault PoC - Orchestrateur et infrastructure Docker
+Description=Leyzen Vault PoC - Orchestrator and Docker infrastructure
 After=network.target docker.service
 Requires=docker.service
 
@@ -118,14 +117,14 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-info "🔹 Activation du service Leyzen…"
+info "🔹 Enabling Leyzen service…"
 systemctl daemon-reload
 systemctl enable leyzen
 
-success "Installation terminée avec succès !"
+success "Installation completed successfully!"
 echo ""
-echo -e "\033[1mProchaine étape :\033[0m"
-echo -e "  Pour démarrer le service : \033[0;33msudo systemctl start leyzen.service\033[0m"
-echo -e "  Pour vérifier l'état :     \033[0;33msudo systemctl status leyzen.service\033[0m"
+echo -e "\033[1mNext steps:\033[0m"
+echo -e "  To start the service: \033[0;33msudo systemctl start leyzen.service\033[0m"
+echo -e "  To check status:      \033[0;33msudo systemctl status leyzen.service\033[0m"
 echo ""
 

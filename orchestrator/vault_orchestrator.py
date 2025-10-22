@@ -14,7 +14,6 @@ import os
 import signal
 import sys
 
-# Charge le fichier .env depuis le dossier du script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, "../.env"))
 
