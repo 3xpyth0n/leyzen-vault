@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
+
 import docker
 import time
 import random
@@ -8,24 +9,37 @@ from threading import Thread
 import logging
 from flask import Flask, render_template, send_from_directory, jsonify, request, redirect, url_for, session
 from functools import wraps
+from dotenv import load_dotenv
 import os
 import signal
 import sys
 
+# Charge le fichier .env depuis le dossier du script
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, "../.env"))
+
+# Environment
+WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
+USERNAME = os.environ.get("VAULT_USER")
+PASSWORD = os.environ.get("VAULT_PASS")
+
+# Check for all variables
+required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
+for var in required_vars:
+    if not os.environ.get(var):
+        raise EnvironmentError(f"Variable {var} manquante dans .env")
+
 # ------------------------------
 # Dashboard Authentification
 # ------------------------------
-USERNAME = "admin"
-PASSWORD = "admin"
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, "vault_orchestrator.log")
 HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 client = docker.from_env()
-web_containers = ["paperless_web1", "paperless_web2", "paperless_web3"]
-interval = 90  # seconds between rotations
-health_timeout = 30  # seconds to wait for healthy
+web_containers = WEB_CONTAINERS
+interval = os.environ.get("VAULT_ROTATION_INTERVAL")  # seconds between rotations
+health_timeout = os.environ.get("VAULT_HEALTH_TIMEOUT")  # seconds to wait for healthy
 
 rotation_count = 0
 last_rotation_time = None
@@ -185,7 +199,7 @@ def orchestrator_loop():
 # Flask dashboard & API
 # ------------------------------
 app = Flask(__name__, template_folder=HTML_DIR, static_folder=HTML_DIR)
-app.secret_key = "47eb11cfe103067c" # PLEASE CHANGE IT !
+app.secret_key = os.environ.get("VAULT_SECRET_KEY")
 werkzeug_log = logging.getLogger('werkzeug')
 werkzeug_log.setLevel(logging.ERROR)
 
