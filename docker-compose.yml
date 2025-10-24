@@ -21,10 +21,6 @@ services:
       - database-data:/var/lib/postgresql/data
     env_file:
       - .env
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paperless -d paperless"]
       interval: 10s
@@ -45,12 +41,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      PAPERLESS_APP_TITLE: ${PAPERLESS_APP_TITLE}
-      PAPERLESS_DBHOST: ${PAPERLESS_DBHOST}
-      PAPERLESS_REDIS: ${PAPERLESS_REDIS}
-      PAPERLESS_MEDIA_ROOT: ${PAPERLESS_MEDIA_ROOT}
-      PAPERLESS_URL: ${PAPERLESS_URL}
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
@@ -75,12 +65,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      PAPERLESS_APP_TITLE: ${PAPERLESS_APP_TITLE}
-      PAPERLESS_DBHOST: ${PAPERLESS_DBHOST}
-      PAPERLESS_REDIS: ${PAPERLESS_REDIS}
-      PAPERLESS_MEDIA_ROOT: ${PAPERLESS_MEDIA_ROOT}
-      PAPERLESS_URL: ${PAPERLESS_URL}
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
@@ -105,12 +89,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      PAPERLESS_APP_TITLE: ${PAPERLESS_APP_TITLE}
-      PAPERLESS_DBHOST: ${PAPERLESS_DBHOST}
-      PAPERLESS_REDIS: ${PAPERLESS_REDIS}
-      PAPERLESS_MEDIA_ROOT: ${PAPERLESS_MEDIA_ROOT}
-      PAPERLESS_URL: ${PAPERLESS_URL}
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
@@ -155,13 +133,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-    environment:
-      VAULT_USER: ${VAULT_USER}
-      VAULT_PASS: ${VAULT_PASS}
-      VAULT_SECRET_KEY: ${VAULT_SECRET_KEY}
-      VAULT_ROTATION_INTERVAL: ${VAULT_ROTATION_INTERVAL}
-      VAULT_HEALTH_TIMEOUT: ${VAULT_HEALTH_TIMEOUT}
-      VAULT_WEB_CONTAINERS: ${VAULT_WEB_CONTAINERS}
+    env_file:
+      - .env
     expose:
       - "8081"
     volumes:

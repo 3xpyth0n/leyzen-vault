@@ -4,6 +4,7 @@ import docker
 import time
 import random
 from datetime import datetime
+import pytz
 import traceback
 from threading import Thread
 import logging
@@ -13,10 +14,12 @@ import os
 import signal
 import sys
 
+LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
+
 # Environment
 WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
-USERNAME = os.environ.get("VAULT_USER")
-PASSWORD = os.environ.get("VAULT_PASS")
+USERNAME = os.environ.get("VAULT_USER", "admin")
+PASSWORD = os.environ.get("VAULT_PASS", "admin")
 
 # Check for all variables
 required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
@@ -45,7 +48,7 @@ container_active_since = {name: None for name in web_containers}
 # Logging helper
 # ------------------------------
 def log(msg):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
@@ -104,13 +107,13 @@ def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
 # ------------------------------
 def mark_active(container_name):
     if container_active_since.get(container_name) is None:
-        container_active_since[container_name] = datetime.now()
+        container_active_since[container_name] = datetime.now(LOCAL_TZ)
         log(f"{container_name} marked ACTIVE at {container_active_since[container_name].strftime('%H:%M:%S')}")
 
 def accumulate_and_clear_active(container_name):
     start_ts = container_active_since.get(container_name)
     if start_ts:
-        delta = (datetime.now() - start_ts).total_seconds()
+        delta = (datetime.now(LOCAL_TZ) - start_ts).total_seconds()
         container_total_active_seconds[container_name] += int(delta)
         container_active_since[container_name] = None
         log(f"Accumulated {int(delta)}s for {container_name} (total={container_total_active_seconds[container_name]}s)")
@@ -143,7 +146,7 @@ def orchestrator_loop():
                     log(f"[ERROR] Failed to stop {name}: {e}")
 
     rotation_count = 0
-    last_rotation_time = datetime.now()
+    last_rotation_time = datetime.now(LOCAL_TZ)
     log(f"Initial rotation: {initial} active")
     active_name = initial
 
@@ -182,7 +185,7 @@ def orchestrator_loop():
 
             active_name = next_name
             rotation_count += 1
-            last_rotation_time = datetime.now()
+            last_rotation_time = datetime.now(LOCAL_TZ)
             log(f"Rotation #{rotation_count}: {active_name} is now active")
             time.sleep(interval)
 
@@ -217,7 +220,7 @@ def login():
             next_page = request.args.get("next") or url_for("dashboard")
             return redirect(next_page)
         else:
-            error = "Utilisateur ou mot de passe incorrect"
+            error = "Invalid username or password"
     return render_template("login.html", error=error)
 
 @app.route("/orchestrator/logout")
@@ -228,7 +231,13 @@ def logout():
 @app.route("/orchestrator", strict_slashes=False)
 @login_required
 def dashboard():
-    return render_template("index.html")
+    vault_rotation_interval = int(os.getenv("VAULT_ROTATION_INTERVAL", "90"))
+    vault_health_timeout = int(os.getenv("VAULT_HEALTH_TIMEOUT", "30"))
+    return render_template(
+            "index.html",
+            vault_rotation_interval=vault_rotation_interval,
+            vault_health_timeout=vault_health_timeout
+    )
 
 @app.route("/orchestrator/logs", strict_slashes=False)
 @login_required
@@ -257,7 +266,7 @@ def favicon():
 @app.route("/orchestrator/api/status", strict_slashes=False)
 @login_required
 def api_status():
-    now = datetime.now()
+    now = datetime.now(LOCAL_TZ)
     containers = {}
     for name in web_containers:
         cont = get_container_safe(name)
@@ -271,7 +280,7 @@ def api_status():
     return jsonify({
         "containers": containers,
         "rotation_count": rotation_count,
-        "last_rotation": last_rotation_time.strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None
+        "last_rotation": last_rotation_time.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None
     })
 
 # ------------------------------
@@ -280,6 +289,5 @@ def api_status():
 if __name__ == "__main__":
     log("=== Orchestrator started ===")
     Thread(target=orchestrator_loop, daemon=True).start()
-    print("Dashboard available at http://localhost:8080/orchestrator\n")
     app.run(host="0.0.0.0", port=8081, debug=False)
 
