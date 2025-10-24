@@ -31,7 +31,7 @@ LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 # ------------------------------
 WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS", "paperless_web1").split(",")
 USERNAME = os.environ.get("VAULT_USER", "admin")
-PASSWORD = os.environ.get("VAULT_PASS", None)  # plain, required at boot to create in-memory hash
+PASSWORD = os.environ.get("VAULT_PASS", None)
 
 # Ensure required vars
 required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
@@ -118,11 +118,10 @@ def accumulate_and_clear_active(name):
 # ------------------------------
 # In-memory password hash
 # ------------------------------
-# Generate hash once at boot and only keep hash in memory.
 if not PASSWORD:
-    raise EnvironmentError("VAULT_PASS must be set to initialize in-memory password hash.")
+    raise EnvironmentError("VAULT_PASS must be set to initialize password hash.")
 PASSWORD_HASH = generate_password_hash(PASSWORD)
-# Effacer la ref en clair pour éviter toute mauvaise manip ultérieure
+# Effacer la ref en clair pour éviter toute mauvaise manip
 del PASSWORD
 
 def verify_credentials(username, password):
@@ -268,7 +267,7 @@ def login():
         # Check if IP is temporarily blocked
         if is_blocked(client_ip):
             log(f"[AUTH BLOCKED] Too many attempts from {client_ip}")
-            error = "Trop de tentatives, réessayez plus tard."
+            error = "Too many attempts, try again later."
             return render_template("login.html", error=error), 429
 
         username = request.form.get("username", "")
@@ -282,7 +281,7 @@ def login():
         else:
             register_failed_attempt(client_ip)
             log(f"[AUTH FAIL] login attempt for user={username} from {client_ip}")
-            error = "Identifiant ou mot de passe incorrect."
+            error = "Invalid username or password."
 
     return render_template("login.html", error=error)
 
@@ -325,25 +324,59 @@ def logs_raw():
 def favicon():
     return send_from_directory(os.path.join(os.path.dirname(__file__)), "favicon.png")
 
-@app.route("/orchestrator/api/status", strict_slashes=False)
+# ------------------------------
+# Server-Sent Events (SSE) Stream
+# ------------------------------
+from flask import Response
+import json
+
+@app.route("/orchestrator/api/stream", strict_slashes=False)
 @login_required
-def api_status():
-    now = datetime.now(LOCAL_TZ)
-    containers = {}
-    for name in web_containers:
-        cont = get_container_safe(name)
-        state = cont.status if cont else "not found"
-        health = cont.attrs.get("State", {}).get("Health", {}).get("Status") if cont else None
-        total = container_total_active_seconds.get(name, 0)
-        start_ts = container_active_since.get(name)
-        if start_ts:
-            total += int((now - start_ts).total_seconds())
-        containers[name] = {"state": state, "health": health, "uptime": total}
-    return jsonify({
-        "containers": containers,
-        "rotation_count": rotation_count,
-        "last_rotation": last_rotation_time.strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None
-    })
+def api_stream():
+    import json
+    import sys
+
+    def event_stream():
+        """Send container status as SSE """
+        while True:
+            try:
+                now = datetime.now(LOCAL_TZ)
+                containers = {}
+                for name in web_containers:
+                    cont = get_container_safe(name)
+                    state = cont.status if cont else "not found"
+                    health = cont.attrs.get("State", {}).get("Health", {}).get("Status") if cont else None
+                    total = container_total_active_seconds.get(name, 0)
+                    start_ts = container_active_since.get(name)
+                    if start_ts:
+                        total += (now - start_ts).total_seconds()
+                    containers[name] = {
+                        "state": state,
+                        "health": health,
+                        "uptime": round(total, 1),
+                    }
+
+                data = {
+                    "containers": containers,
+                    "rotation_count": rotation_count,
+                    "last_rotation": last_rotation_time.strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None,
+                }
+
+                chunk = f"data: {json.dumps(data)}\n\n"
+                yield chunk
+                sys.stdout.flush()
+                time.sleep(0.9)
+            except GeneratorExit:
+                break
+            except Exception as e:
+                log(f"[SSE ERROR] {e}")
+                time.sleep(0.9)
+
+    response = Response(event_stream(), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"  # disable proxy buffering (nginx/haproxy)
+    response.headers["Connection"] = "keep-alive"
+    return response
 
 # ------------------------------
 # Main

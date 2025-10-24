@@ -251,9 +251,10 @@
 
     <script>
       /* CONFIG */
-      const POLL_INTERVAL = 500; // ms
       const MAX_FAILS = 5; // after N fails consider API offline
-      const ROTATION_INTERVAL_SECONDS = Number({{ vault_rotation_interval|tojson }}) + Number({{ vault_health_timeout|tojson }});
+      const ROTATION_INTERVAL_SECONDS =
+        Number({{ vault_rotation_interval|tojson }}) +
+        Number({{ vault_health_timeout|tojson }});
 
       /* UTIL */
       function fmtHMS(s) {
@@ -266,11 +267,19 @@
         if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
         return `${sec}s`;
       }
-      function humanTime(ts) { return ts || "N/A"; }
+      function humanTime(ts) {
+        return ts || "N/A";
+      }
 
       /* SAFE DOM HELPERS */
-      function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
-      function safeSetHTML(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+      function safeSetText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+      }
+      function safeSetHTML(id, html) {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      }
 
       /* CHART (single init + update) */
       let uptimeChart = null;
@@ -278,19 +287,31 @@
         const ctx = document.getElementById("uptimeChart").getContext("2d");
         uptimeChart = new Chart(ctx, {
           type: "doughnut",
-          data: { labels, datasets: [{ data, backgroundColor: ["#34d399","#60a5fa","#f472b6","#f97316"], borderWidth: 0 }] },
+          data: {
+            labels,
+            datasets: [
+              {
+                data,
+                backgroundColor: ["#34d399", "#60a5fa", "#f472b6", "#f97316"],
+                borderWidth: 0,
+              },
+            ],
+          },
           options: {
             plugins: { legend: { position: "bottom", labels: { color: "#cbd5e1" } } },
             maintainAspectRatio: false,
             cutout: "60%",
             animation: { duration: 250, animateRotate: false, animateScale: false },
             responsive: true,
-            hover: { mode: null }
-          }
+            hover: { mode: null },
+          },
         });
       }
       function updateChartData(labels, data) {
-        if (!uptimeChart) { createChart(labels, data); return; }
+        if (!uptimeChart) {
+          createChart(labels, data);
+          return;
+        }
         uptimeChart.data.labels = labels;
         uptimeChart.data.datasets[0].data = data;
         uptimeChart.update({ duration: 150, easing: "linear" });
@@ -309,7 +330,6 @@
         const nextEl = document.getElementById("next-rotation");
         if (!nextEl) return;
         if (countdownTimer) clearInterval(countdownTimer);
-        // update immediately
         nextEl.textContent = `Next in: ${fmtHMS(nextRotationDiff)}`;
         countdownTimer = setInterval(() => {
           nextRotationDiff = Math.max(0, nextRotationDiff - 1);
@@ -322,59 +342,49 @@
       }
 
       /* UPDATE DASHBOARD */
-      async function updateDashboard() {
+      function updateDashboardFromData(json) {
         try {
-          const res = await fetch("/orchestrator/api/status", { cache: "no-store" });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const json = await res.json();
-
-          // success bookkeeping
           failCount = 0;
           lastSuccessfulFetch = Date.now();
           lastKnownData = json;
 
-          // API last update time
-          safeSetHTML("api-status", `Last API update: <span class="api-online">${new Date(lastSuccessfulFetch).toLocaleTimeString()}</span>`);
+          safeSetHTML(
+            "api-status",
+            `Last API update: <span class="api-online">${new Date(
+              lastSuccessfulFetch
+            ).toLocaleTimeString()}</span>`
+          );
 
           const containers = json.containers || {};
           let total = Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0);
-
           const rowsEl = document.getElementById("rows");
-          if (!rowsEl) return; // defensive
+          if (!rowsEl) return;
 
-          const labels = [], data = [];
+          const labels = [],
+            data = [];
 
-          // iterate containers and update/create rows in-place
           for (const [name, info] of Object.entries(containers)) {
             const uptime = info.uptime || 0;
             const percent = total > 0 ? Math.round((uptime / total) * 100) : 0;
 
-            // find existing row by data-row attribute
             let rowEl = rowsEl.querySelector(`[data-row="${CSS.escape(name)}"]`);
 
             if (!rowEl) {
-              // create new row from template
               const tpl = document.getElementById("row-template");
-              if (!tpl) continue; // defensive
+              if (!tpl) continue;
               const clone = tpl.content.cloneNode(true);
-              // the template top-level element is the first element of the fragment
-              // append clone, then get the appended node reference
               rowsEl.appendChild(clone);
-              // after append, find the newly added row (last child)
               rowEl = rowsEl.lastElementChild;
               if (!rowEl) continue;
-              // tag root for future lookups
               rowEl.setAttribute("data-row", name);
             }
 
-            // now get the internal elements safely
             const dot = rowEl.querySelector("[data-dot]");
             const nm = rowEl.querySelector("[data-name]");
             const sub = rowEl.querySelector("[data-sub]");
             const upEl = rowEl.querySelector("[data-uptime]");
             const percentEl = rowEl.querySelector("[data-percent]");
 
-            // populate name
             if (nm) nm.textContent = name;
 
             const state = (info.state || "").toString();
@@ -402,13 +412,14 @@
             }
 
             if (sub) {
-              sub.innerHTML = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${health ? " • health: " + health : ""}</span>`;
+              sub.innerHTML = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
+                health ? " • health: " + health : ""
+              }</span>`;
             }
 
             if (upEl) upEl.textContent = fmtHMS(uptime);
             if (percentEl) percentEl.textContent = percent + "%";
 
-            // percent badge styling
             if (percentEl) {
               if (badgeClass === "status-running") {
                 percentEl.style.background = "#052e14";
@@ -425,10 +436,8 @@
               }
             }
 
-            // dot update — keep animation intact by updating inline styles / classes only
             if (dot) {
               dot.classList.remove("pulse");
-              // reset visuals
               dot.style.backgroundColor = "";
               dot.style.boxShadow = "";
 
@@ -442,7 +451,6 @@
                 dot.style.boxShadow = "0 0 8px rgba(245,158,11,0.12)";
               } else if (badgeClass === "status-unhealthy") {
                 dot.style.backgroundColor = "#ef4444";
-                // no pulse
               } else {
                 dot.style.backgroundColor = "#94a3b8";
               }
@@ -452,8 +460,6 @@
             data.push(uptime);
           }
 
-          // remove rows that are no longer present in api (cleanup)
-          // build set of current container names
           const existingRows = Array.from(rowsEl.querySelectorAll("[data-row]"));
           const namesSet = new Set(Object.keys(containers));
           for (const r of existingRows) {
@@ -465,9 +471,11 @@
 
           safeSetText("rotation-count", json.rotation_count ?? 0);
           safeSetText("rot-count-small", json.rotation_count ?? 0);
-          safeSetText("total-uptime", fmtHMS(Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0)));
+          safeSetText(
+            "total-uptime",
+            fmtHMS(Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0))
+          );
 
-          // next rotation countdown (recalibrate only on change)
           const nextEl = document.getElementById("next-rotation");
           if (nextEl) {
             if (json.last_rotation) {
@@ -475,21 +483,28 @@
               const now = new Date();
               if (!lastRotationTs || newLastTs.getTime() !== lastRotationTs.getTime()) {
                 lastRotationTs = newLastTs;
-                const nextTs = new Date(lastRotationTs.getTime() + ROTATION_INTERVAL_SECONDS * 1000);
+                const nextTs = new Date(
+                  lastRotationTs.getTime() + ROTATION_INTERVAL_SECONDS * 1000
+                );
                 let diff = Math.max(0, Math.floor((nextTs - now) / 1000));
-                if (diff <= 0) diff = ROTATION_INTERVAL_SECONDS; // fallback on clock skew
+                if (diff <= 0) diff = ROTATION_INTERVAL_SECONDS;
                 startCountdown(diff);
               }
             } else {
               safeSetText("next-rotation", "Next in: —");
             }
           }
-
         } catch (err) {
-          // network or rendering error path
           failCount++;
           if (failCount >= MAX_FAILS) {
-            safeSetHTML("api-status", `<span class="api-offline">API offline (last: ${lastSuccessfulFetch ? new Date(lastSuccessfulFetch).toLocaleTimeString() : "never"})</span>`);
+            safeSetHTML(
+              "api-status",
+              `<span class="api-offline">API offline (last: ${
+                lastSuccessfulFetch
+                  ? new Date(lastSuccessfulFetch).toLocaleTimeString()
+                  : "never"
+              })</span>`
+            );
           } else {
             safeSetText("api-status", `Last API attempt failed (${failCount}/${MAX_FAILS})`);
           }
@@ -497,9 +512,26 @@
         }
       }
 
-      /* start polling */
-      updateDashboard();
-      setInterval(updateDashboard, POLL_INTERVAL);
+      /* ==== SSE CONNECTION ==== */
+      const evtSource = new EventSource("/orchestrator/api/stream");
+
+      evtSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          updateDashboardFromData(payload);
+        } catch (e) {
+          console.error("Invalid SSE data:", e);
+        }
+      };
+
+      evtSource.onerror = (err) => {
+        console.warn("SSE connection lost, retrying in 5s…", err);
+        safeSetHTML("api-status", `<span class="api-offline">Stream disconnected</span>`);
+        evtSource.close();
+        setTimeout(() => {
+          window.location.reload(); // simple auto-reconnect
+        }, 5000);
+      };
     </script>
   </body>
 </html>
