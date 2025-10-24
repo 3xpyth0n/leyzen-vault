@@ -1,15 +1,15 @@
-# Leyzen Vault PoC
+# Leyzen Vault
 
 ## Description
 
-**Leyzen Vault PoC** est une preuve de concept démontrant un environnement de service dynamique.
+**Leyzen Vault** est une preuve de concept démontrant un environnement de service dynamique.
 Le projet repose sur un orchestrateur écrit en Python, chargé de gérer la rotation automatique et aléatoires de plusieurs instances Paperless, utilisées ici comme exemple de service applicatif dont le back-end change continuellement.
 Cette rotation illustre le principe d’une infrastructure mouvante, où les composants ne restent jamais statiques afin de renforcer la sécurité.
 
 Il inclut :
 
 - **Paperless-ngx** : gestion documentaire sur trois conteneurs avec rotation polymorphe.
-- **Vault Orchestrator** : script Python orchestrant la rotation des conteneurs et fournissant un tableau de bord en temps réel (statuts, uptimes, logs).
+- **Vault Orchestrator** : conteneur Python orchestrant la rotation des conteneurs et fournissant un tableau de bord en temps réel (statuts, uptimes, logs).
 - **HAProxy** : routage HTTP vers Paperless ou l'orchestrateur.
 - **Redis et Postgres** : backends nécessaires à Paperless.
 - **Volumes partagés** : volumes docker communs aux conteneurs Paperless.
@@ -39,8 +39,6 @@ Il inclut :
 
 - Docker
 - Git
-- Python 3.x
-- Python3-pip
 
 ## Installation et lancement
 
@@ -96,11 +94,11 @@ journalctl -u leyzen.service -f
 
 ## Points importants
 
-- **Volumes partagés** assurant la persistance des données Paperless.
+- **Confinement** : Tout est confiné à l’intérieur de Docker, dans un réseau bridge isolé, seul le HAProxy est exposé.
 - **Healthchecks** garantissant stabilité et supervision.
 - **Orchestrateur Python** : arrête et démarre les conteneurs aléatoirement pour une rotation polymorphe.
 - **Polymorphisme** : empêche la persistance d’attaques sur un conteneur spécifique.
-- **Dashboard** : visibilité centralisée sur rotations, uptimes et logs.
+- **Volumes partagés** assurant la persistance des données Paperless.
 
 ## Notes
 

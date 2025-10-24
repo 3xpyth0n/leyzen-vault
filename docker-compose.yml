@@ -9,6 +9,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      networks:
+        - vault-net
 
   postgres:
     image: postgres:17-alpine
@@ -21,13 +23,15 @@ services:
       - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_USER}
-      POSTGRES_DB: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paperless -d paperless"]
       interval: 10s
       timeout: 5s
       retries: 5
+      networks:
+        - vault-net
 
   paperless_web1:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -56,6 +60,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+      networks:
+        - vault-net
 
   paperless_web2:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -84,6 +90,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+      networks:
+        - vault-net
 
   paperless_web3:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -112,6 +120,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+      networks:
+        - vault-net
 
   haproxy:
     image: haproxy:2.8-alpine
@@ -131,8 +141,44 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      networks:
+        - vault-net
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+    container_name: orchestrator
+    restart: on-failure
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:8081/orchestrator || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    environment:
+      VAULT_USER: ${VAULT_USER}
+      VAULT_PASS: ${VAULT_PASS}
+      VAULT_SECRET_KEY: ${VAULT_SECRET_KEY}
+      VAULT_ROTATION_INTERVAL: ${VAULT_ROTATION_INTERVAL}
+      VAULT_HEALTH_TIMEOUT: ${VAULT_HEALTH_TIMEOUT}
+      VAULT_WEB_CONTAINERS: ${VAULT_WEB_CONTAINERS}
+    expose:
+      - "8081"
+    volumes:
+      - ./orchestrator:/app
+      # Mount Docker socket to control other containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - vault-net
 
 volumes:
   data:
   media:
   database-data:
+
+networks:
+  vault-net:
+    driver: bridge

@@ -9,13 +9,9 @@ from threading import Thread
 import logging
 from flask import Flask, render_template, send_from_directory, jsonify, request, redirect, url_for, session
 from functools import wraps
-from dotenv import load_dotenv
 import os
 import signal
 import sys
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, "../.env"))
 
 # Environment
 WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
@@ -37,8 +33,8 @@ HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 client = docker.from_env()
 web_containers = WEB_CONTAINERS
-interval = os.environ.get("VAULT_ROTATION_INTERVAL")  # seconds between rotations
-health_timeout = os.environ.get("VAULT_HEALTH_TIMEOUT")  # seconds to wait for healthy
+interval = int(os.environ.get("VAULT_ROTATION_INTERVAL").strip('"'))  # seconds between rotations
+health_timeout = int(os.environ.get("VAULT_HEALTH_TIMEOUT").strip('"'))  # seconds to wait for healthy
 
 rotation_count = 0
 last_rotation_time = None
@@ -285,5 +281,5 @@ if __name__ == "__main__":
     log("=== Orchestrator started ===")
     Thread(target=orchestrator_loop, daemon=True).start()
     print("Dashboard available at http://localhost:8080/orchestrator\n")
-    app.run(host="172.17.0.1", port=8081, debug=False)
+    app.run(host="0.0.0.0", port=8081, debug=False)
 

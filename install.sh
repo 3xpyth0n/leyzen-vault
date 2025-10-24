@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # Color definitions
 if [ -t 1 ]; then
@@ -37,7 +38,7 @@ cat <<'BANNER'
 ║          ███████╗███████╗   ██║   ███████╗███████╗██║ ╚████║           ║
 ║          ╚══════╝╚══════╝   ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═══╝           ║
 ║                                                                        ║
-║                Leyzen Vault PoC — Installation Script                  ║
+║                  Leyzen Vault — Installation Script                    ║
 ║                                                                        ║
 ╚════════════════════════════════════════════════════════════════════════╝
 BANNER
@@ -51,24 +52,7 @@ fi
 
 info "🔹 Checking prerequisites…"
 
-# Check Python
-if ! command -v python3 &>/dev/null; then
-    error "Python3 is not installed. Please install it first."
-    exit 1
-else
-    info "Python3 detected: $(python3 --version 2>/dev/null)"
-fi
-
-# Check pip
-if ! command -v pip &>/dev/null; then
-    info "🔹 pip not found — installing via ensurepip..."
-    python3 -m ensurepip --upgrade
-    success "pip installed via ensurepip"
-else
-    info "pip detected: $(pip --version 2>/dev/null)"
-fi
-
-# Check Docker
+# Check for Docker
 if ! command -v docker &>/dev/null; then
     error "Docker is not installed. Please install it first."
     exit 1
@@ -76,7 +60,7 @@ else
     info "Docker detected: $(docker --version 2>/dev/null)"
 fi
 
-# Check Docker Compose (command 'docker compose version')
+# Check for Docker Compose
 if ! docker compose version &>/dev/null; then
     error "Docker Compose is not installed or not accessible via 'docker compose'."
     exit 1
@@ -84,13 +68,12 @@ else
     info "Docker Compose detected"
 fi
 
-info "🔹 Installing required Python packages…"
-pip install --upgrade Flask docker --break-system-packages >/dev/null 2>&1 || {
-    error "Failed to install Python dependencies."
-    exit 1
-}
 
-success "Python dependencies installed"
+# Check for systemd
+if ! pidof systemd &>/dev/null; then
+    error "Systemd not detected. This installation method requires a Linux host with systemd."
+    exit 1
+fi
 
 chmod +x service.sh
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -119,12 +102,13 @@ EOF
 
 info "🔹 Enabling Leyzen service…"
 systemctl daemon-reload
-systemctl enable leyzen
+systemctl enable leyzen.service
 
-success "Installation completed successfully!"
+success "Leyzen Vault successfully installed!"
 echo ""
-echo -e "\033[1mNext steps:\033[0m"
-echo -e "  To start the service: \033[0;33msudo systemctl start leyzen.service\033[0m"
-echo -e "  To check status:      \033[0;33msudo systemctl status leyzen.service\033[0m"
+echo -e "${BOLD}Usage:${RESET}"
+echo -e "  • Start service : ${YELLOW}sudo systemctl start leyzen${RESET}"
+echo -e "  • Stop service  : ${YELLOW}sudo systemctl stop leyzen${RESET}"
+echo -e "  • Logs          : ${YELLOW}journalctl -u leyzen -f${RESET}"
 echo ""
-
+info "Access the dashboard via: http://localhost:8080/orchestrator"
