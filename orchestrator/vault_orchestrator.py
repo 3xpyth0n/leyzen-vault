@@ -3,41 +3,56 @@
 import docker
 import time
 import random
-from datetime import datetime
-import pytz
 import traceback
+from datetime import datetime, timedelta
 from threading import Thread
 import logging
-from flask import Flask, render_template, send_from_directory, jsonify, request, redirect, url_for, session
+from flask import (
+    Flask, render_template, send_from_directory, jsonify,
+    request, redirect, url_for, session, abort
+)
 from functools import wraps
 import os
 import signal
 import sys
+import pytz
+from collections import defaultdict, deque
 
+from werkzeug.security import check_password_hash, generate_password_hash
+from flask_wtf import CSRFProtect
+
+# ------------------------------
+# Timezone
+# ------------------------------
 LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 
+# ------------------------------
 # Environment
-WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
+# ------------------------------
+WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS", "paperless_web1").split(",")
 USERNAME = os.environ.get("VAULT_USER", "admin")
-PASSWORD = os.environ.get("VAULT_PASS", "admin")
+PASSWORD = os.environ.get("VAULT_PASS", None)  # plain, required at boot to create in-memory hash
 
-# Check for all variables
+# Ensure required vars
 required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
 for var in required_vars:
     if not os.environ.get(var):
         raise EnvironmentError(f"Variable {var} manquante dans .env")
 
 # ------------------------------
-# Dashboard Authentification
+# Paths
 # ------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, "vault_orchestrator.log")
 HTML_DIR = os.path.join(os.path.dirname(__file__))
 
+# ------------------------------
+# Docker / rotation config
+# ------------------------------
 client = docker.from_env()
-web_containers = WEB_CONTAINERS
-interval = int(os.environ.get("VAULT_ROTATION_INTERVAL").strip('"'))  # seconds between rotations
-health_timeout = int(os.environ.get("VAULT_HEALTH_TIMEOUT").strip('"'))  # seconds to wait for healthy
+web_containers = [c.strip() for c in WEB_CONTAINERS if c.strip()]
+interval = int(str(os.environ.get("VAULT_ROTATION_INTERVAL", "90")).strip('"'))
+health_timeout = int(str(os.environ.get("VAULT_HEALTH_TIMEOUT", "30")).strip('"'))
 
 rotation_count = 0
 last_rotation_time = None
@@ -45,7 +60,7 @@ container_total_active_seconds = {name: 0 for name in web_containers}
 container_active_since = {name: None for name in web_containers}
 
 # ------------------------------
-# Logging helper
+# Logging
 # ------------------------------
 def log(msg):
     timestamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -53,23 +68,15 @@ def log(msg):
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
 
-# ------------------------------
-# Signal handler
-# ------------------------------
 def handle_shutdown(sig, frame):
-    if sig == signal.SIGINT:
-        log("=== Orchestrator stopped via Ctrl+C ===")
-    elif sig == signal.SIGTERM:
-        log("=== Orchestrator stopped by systemd (SIGTERM) ===")
-    else:
-        log(f"=== Orchestrator stopped (signal {sig}) ===")
+    log(f"=== Orchestrator stopped (signal {sig}) ===")
     sys.exit(0)
 
 signal.signal(signal.SIGINT, handle_shutdown)
 signal.signal(signal.SIGTERM, handle_shutdown)
 
 # ------------------------------
-# Safe container retrieval
+# Docker helpers
 # ------------------------------
 def get_container_safe(name):
     try:
@@ -83,67 +90,99 @@ def get_container_safe(name):
         log(f"[ERROR] Error getting container {name}: {e}")
         return None
 
-# ------------------------------
-# Wait until container is healthy
-# ------------------------------
 def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
     start = time.time()
     while True:
         try:
             container.reload()
-            status = container.attrs.get("State", {}).get("Health", {}).get("Status")
-            if status == "healthy":
+            health = container.attrs.get("State", {}).get("Health", {}).get("Status")
+            status = container.status
+            if status == "running" and (health is None or health == "healthy"):
                 return True
-        except Exception:
-            log(f"[WARNING] Couldn't read health for {getattr(container, 'name', 'unknown')}")
-            return False
+        except Exception as e:
+            log(f"[ERROR] while checking health: {e}")
         if time.time() - start > timeout:
-            log(f"[WARNING] Timeout waiting for {container.name} to become healthy.")
             return False
         time.sleep(check_interval)
 
-# ------------------------------
-# Helpers for uptime accumulation
-# ------------------------------
-def mark_active(container_name):
-    if container_active_since.get(container_name) is None:
-        container_active_since[container_name] = datetime.now(LOCAL_TZ)
-        log(f"{container_name} marked ACTIVE at {container_active_since[container_name].strftime('%H:%M:%S')}")
+def mark_active(name):
+    container_active_since[name] = datetime.now(LOCAL_TZ)
 
-def accumulate_and_clear_active(container_name):
-    start_ts = container_active_since.get(container_name)
+def accumulate_and_clear_active(name):
+    start_ts = container_active_since.get(name)
     if start_ts:
-        delta = (datetime.now(LOCAL_TZ) - start_ts).total_seconds()
-        container_total_active_seconds[container_name] += int(delta)
-        container_active_since[container_name] = None
-        log(f"Accumulated {int(delta)}s for {container_name} (total={container_total_active_seconds[container_name]}s)")
+        elapsed = int((datetime.now(LOCAL_TZ) - start_ts).total_seconds())
+        container_total_active_seconds[name] = container_total_active_seconds.get(name, 0) + elapsed
+        container_active_since[name] = None
 
 # ------------------------------
-# Orchestrator rotation loop
+# In-memory password hash
+# ------------------------------
+# Generate hash once at boot and only keep hash in memory.
+if not PASSWORD:
+    raise EnvironmentError("VAULT_PASS must be set to initialize in-memory password hash.")
+PASSWORD_HASH = generate_password_hash(PASSWORD)
+# Effacer la ref en clair pour éviter toute mauvaise manip ultérieure
+del PASSWORD
+
+def verify_credentials(username, password):
+    if username != USERNAME:
+        return False
+    try:
+        return check_password_hash(PASSWORD_HASH, password)
+    except Exception:
+        log("[ERROR] check_password_hash failure")
+        return False
+
+# ------------------------------
+# Anti-bruteforce system (5 tries / 5 min per IP)
+# ------------------------------
+login_attempts = defaultdict(lambda: deque(maxlen=10))  # store timestamps per IP
+MAX_ATTEMPTS = 5
+BLOCK_WINDOW = timedelta(minutes=5)
+
+def is_blocked(ip):
+    attempts = login_attempts[ip]
+    now = datetime.now()
+    # remove old attempts
+    while attempts and now - attempts[0] > BLOCK_WINDOW:
+        attempts.popleft()
+    return len(attempts) >= MAX_ATTEMPTS
+
+def register_failed_attempt(ip):
+    login_attempts[ip].append(datetime.now())
+
+# ------------------------------
+# Orchestrator loop (rotation)
 # ------------------------------
 def orchestrator_loop():
     global rotation_count, last_rotation_time
-    initial = random.choice(web_containers)
-    log(f"Initial selection: {initial}")
+    if not web_containers:
+        log("[WARN] No web containers configured for rotation.")
+        return
 
-    for name in web_containers:
-        cont = get_container_safe(name)
-        if not cont:
-            continue
-        if name == initial:
-            if cont.status != "running":
-                try:
-                    cont.start()
-                except Exception as e:
-                    log(f"[ERROR] Failed to start {name}: {e}")
-                wait_until_healthy(cont)
-            mark_active(name)
-        else:
-            if cont.status == "running":
-                try:
-                    cont.stop()
-                except Exception as e:
-                    log(f"[ERROR] Failed to stop {name}: {e}")
+    # choose an initial active container that exists
+    initial = None
+    for c in web_containers:
+        cont = get_container_safe(c)
+        if cont:
+            initial = c
+            break
+    if not initial:
+        log("[ERROR] No valid container found to start as initial active.")
+        return
+
+    # ensure initial is running and marked active
+    try:
+        cont = get_container_safe(initial)
+        if cont and cont.status != "running":
+            try:
+                cont.start()
+            except Exception as e:
+                log(f"[ERROR] Failed to start initial {initial}: {e}")
+        mark_active(initial)
+    except Exception:
+        pass
 
     rotation_count = 0
     last_rotation_time = datetime.now(LOCAL_TZ)
@@ -153,6 +192,10 @@ def orchestrator_loop():
     while True:
         try:
             choices = [c for c in web_containers if c != active_name]
+            if not choices:
+                time.sleep(5)
+                continue
+
             next_name = random.choice(choices)
             next_cont = get_container_safe(next_name)
             if not next_cont:
@@ -176,7 +219,6 @@ def orchestrator_loop():
             mark_active(next_name)
             old_cont = get_container_safe(active_name)
             accumulate_and_clear_active(active_name)
-
             if old_cont and old_cont.status == "running":
                 try:
                     old_cont.stop()
@@ -188,18 +230,26 @@ def orchestrator_loop():
             last_rotation_time = datetime.now(LOCAL_TZ)
             log(f"Rotation #{rotation_count}: {active_name} is now active")
             time.sleep(interval)
-
         except Exception:
             log(f"Exception in orchestrator loop:\n{traceback.format_exc()}")
             time.sleep(5)
 
 # ------------------------------
-# Flask dashboard & API
+# Flask app + CSRF + session cookies
 # ------------------------------
 app = Flask(__name__, template_folder=HTML_DIR, static_folder=HTML_DIR)
 app.secret_key = os.environ.get("VAULT_SECRET_KEY")
-werkzeug_log = logging.getLogger('werkzeug')
-werkzeug_log.setLevel(logging.ERROR)
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=False  # ↩️ pass to True when HTTPS
+)
+
+# CSRF
+csrf = CSRFProtect(app)
+
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 def login_required(f):
     @wraps(f)
@@ -212,18 +262,31 @@ def login_required(f):
 @app.route("/orchestrator/login", methods=["GET", "POST"])
 def login():
     error = None
+    client_ip = request.remote_addr or "unknown"
+
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        if username == USERNAME and password == PASSWORD:
+        # Check if IP is temporarily blocked
+        if is_blocked(client_ip):
+            log(f"[AUTH BLOCKED] Too many attempts from {client_ip}")
+            error = "Trop de tentatives, réessayez plus tard."
+            return render_template("login.html", error=error), 429
+
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+
+        if verify_credentials(username, password):
             session["logged_in"] = True
-            next_page = request.args.get("next") or url_for("dashboard")
-            return redirect(next_page)
+            session.permanent = False
+            log(f"[AUTH SUCCESS] {username} from {client_ip}")
+            return redirect(request.args.get("next") or url_for("dashboard"))
         else:
-            error = "Invalid username or password"
+            register_failed_attempt(client_ip)
+            log(f"[AUTH FAIL] login attempt for user={username} from {client_ip}")
+            error = "Identifiant ou mot de passe incorrect."
+
     return render_template("login.html", error=error)
 
-@app.route("/orchestrator/logout")
+@app.route("/orchestrator/logout", methods=["GET"])
 def logout():
     session["logged_in"] = False
     return redirect(url_for("login"))
@@ -234,9 +297,9 @@ def dashboard():
     vault_rotation_interval = int(os.getenv("VAULT_ROTATION_INTERVAL", "90"))
     vault_health_timeout = int(os.getenv("VAULT_HEALTH_TIMEOUT", "30"))
     return render_template(
-            "index.html",
-            vault_rotation_interval=vault_rotation_interval,
-            vault_health_timeout=vault_health_timeout
+        "index.html",
+        vault_rotation_interval=vault_rotation_interval,
+        vault_health_timeout=vault_health_timeout
     )
 
 @app.route("/orchestrator/logs", strict_slashes=False)
@@ -257,7 +320,6 @@ def logs_raw():
             return f.read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
     except Exception as e:
         return f"Error reading logs: {e}", 500
-
 
 @app.route("/orchestrator/favicon.png", strict_slashes=False)
 def favicon():
@@ -280,7 +342,7 @@ def api_status():
     return jsonify({
         "containers": containers,
         "rotation_count": rotation_count,
-        "last_rotation": last_rotation_time.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None
+        "last_rotation": last_rotation_time.strftime("%Y-%m-%d %H:%M:%S") if last_rotation_time else None
     })
 
 # ------------------------------
