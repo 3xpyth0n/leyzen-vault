@@ -9,8 +9,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   postgres:
     image: postgres:17-alpine
@@ -30,8 +30,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   paperless_web1:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -60,8 +60,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   paperless_web2:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -90,8 +90,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   paperless_web3:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
@@ -120,8 +120,8 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   haproxy:
     image: haproxy:2.8-alpine
@@ -141,8 +141,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      networks:
-        - vault-net
+    networks:
+      - vault-net
 
   orchestrator:
     build:
