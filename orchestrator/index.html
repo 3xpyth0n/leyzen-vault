@@ -112,6 +112,68 @@
         color: #9aa6b2;
         font-size: 0.85rem;
       }
+
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .control-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.05);
+        color: #e2e8f0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.2s ease;
+        backdrop-filter: blur(4px);
+      }
+
+      .control-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+
+      .control-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .control-btn.start:hover {
+        color: #34d399;
+        box-shadow: 0 0 8px rgba(52, 211, 153, 0.2);
+      }
+      .control-btn.stop:hover {
+        color: #fbbf24;
+        box-shadow: 0 0 8px rgba(251, 191, 36, 0.15);
+      }
+      .control-btn.kill:hover {
+        color: #ef4444;
+        box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
+      }
+
+      .status-msg {
+        margin-left: 6px;
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+
+      .btn {
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+      }
+      .btn:hover {
+        opacity: 0.9;
+      }
     </style>
   </head>
   <body>
@@ -133,14 +195,68 @@
           </div>
         </div>
 
-        <div class="text-right">
-          <div class="text-sm text-slate-300">Rotations</div>
-          <div id="rotation-count" class="text-2xl font-semibold">0</div>
-          <div id="next-rotation" class="text-xs text-slate-400 mt-1">
-            Next in: --
+        <div class="text-right flex flex-col items-end gap-2">
+          <div>
+            <div class="text-sm text-slate-300">Rotations</div>
+            <div id="rotation-count" class="text-2xl font-semibold">0</div>
+            <div id="next-rotation" class="text-xs text-slate-400 mt-1">
+              Next in: --
+            </div>
+            <div id="api-status" class="text-xs text-slate-400 mt-1">
+              Last API update: —
+            </div>
           </div>
-          <div id="api-status" class="text-xs text-slate-400 mt-1">
-            Last API update: —
+
+          <div id="controls" class="controls mt-2">
+            <button
+              id="btn-start"
+              class="control-btn start"
+              title="Start rotation"
+            >
+              <svg
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              Start
+            </button>
+
+            <button
+              id="btn-stop"
+              class="control-btn stop"
+              title="Pause rotation"
+            >
+              <svg
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M10 9v6m4-6v6" />
+              </svg>
+              Stop
+            </button>
+
+            <button
+              id="btn-kill"
+              class="control-btn kill"
+              title="Kill all containers"
+            >
+              <svg
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Kill
+            </button>
+
+            <span id="control-status" class="status-msg"></span>
           </div>
         </div>
       </header>
@@ -250,332 +366,410 @@
     </div>
 
     <script>
-                  /* CONFIG */
-                  const MAX_FAILS = 5; // after N fails consider API offline
-                  const ROTATION_INTERVAL_SECONDS =
+                    /* CONFIG */
+
+                    let orchestratorRunning = true;
+                    const MAX_FAILS = 5; // after N fails consider API offline
+                    const ROTATION_INTERVAL_SECONDS =
                     Number({{ vault_rotation_interval|tojson }}) +
                     Number({{ vault_health_timeout|tojson }});
 
-                  /* UTIL */
-                  function fmtHMS(s) {
-                    if (s === null || s === undefined) return "-";
-                    s = Math.max(0, Math.floor(s));
-                    const h = Math.floor(s / 3600),
-                      m = Math.floor((s % 3600) / 60),
-                      sec = s % 60;
-                    if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
-                    if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
-                    return `${sec}s`;
-                  }
-                  function humanTime(ts) {
-                    return ts || "N/A";
-                  }
-
-                  /* SAFE DOM HELPERS */
-                  function safeSetText(id, text) {
-                    const el = document.getElementById(id);
-                    if (el) el.textContent = text;
-                  }
-                  function safeSetHTML(id, html) {
-                    const el = document.getElementById(id);
-                    if (el) el.innerHTML = html;
-                  }
-
-                  /* CHART (single init + update) */
-                  let uptimeChart = null;
-                  function createChart(labels = [], data = []) {
-                    const ctx = document.getElementById("uptimeChart").getContext("2d");
-                    uptimeChart = new Chart(ctx, {
-                      type: "doughnut",
-                      data: {
-                        labels,
-                        datasets: [
-                          {
-                            data,
-                            backgroundColor: ["#34d399", "#60a5fa", "#f472b6", "#f97316"],
-                            borderWidth: 0,
-                          },
-                        ],
-                      },
-                      options: {
-                        plugins: { legend: { position: "bottom", labels: { color: "#cbd5e1" } } },
-                        maintainAspectRatio: false,
-                        cutout: "60%",
-                        animation: { duration: 250, animateRotate: false, animateScale: false },
-                        responsive: true,
-                        hover: { mode: null },
-                      },
-                    });
-                  }
-                  function updateChartData(labels, data) {
-                    if (!uptimeChart) {
-                      createChart(labels, data);
-                      return;
+                    /* ==== CONTROL BUTTONS ==== */
+                    function getCookie(name) {
+                    const value = `; ${document.cookie}`;
+                    const parts = value.split(`; ${name}=`);
+                    if (parts.length === 2) return parts.pop().split(";").shift();
                     }
-                    uptimeChart.data.labels = labels;
-                    uptimeChart.data.datasets[0].data = data;
-                    uptimeChart.update({ duration: 150, easing: "linear" });
-                  }
 
-                  /* STATE */
-                  let lastSuccessfulFetch = null;
-                  let failCount = 0;
-                  let lastKnownData = null;
-                  let nextRotationDiff = 0;
-                  let countdownTimer = null;
-                  let lastRotationTs = null;
+      async function sendControl(action) {
+        const statusEl = document.getElementById("control-status");
 
-                  function startCountdown(seconds) {
-                    nextRotationDiff = Math.max(0, Math.floor(Number(seconds) || 0));
-                    const nextEl = document.getElementById("next-rotation");
-                    if (!nextEl) return;
-                    if (countdownTimer) clearInterval(countdownTimer);
-                    nextEl.textContent = `Next in: ${fmtHMS(nextRotationDiff)}`;
-                    countdownTimer = setInterval(() => {
-                      nextRotationDiff = Math.max(0, nextRotationDiff - 1);
-                      nextEl.textContent = `Next in: ${fmtHMS(nextRotationDiff)}`;
-                      if (nextRotationDiff <= 0) {
-                        clearInterval(countdownTimer);
-                        countdownTimer = null;
-                      }
-                    }, 1000);
-                  }
-
-                  /* UPDATE DASHBOARD */
-                  function updateDashboardFromData(json) {
-                    try {
-                      failCount = 0;
-                      lastSuccessfulFetch = Date.now();
-                      lastKnownData = json;
-
-                      safeSetHTML(
-                        "api-status",
-                        `Last API update: <span class="api-online">${new Date(
-                          lastSuccessfulFetch
-                        ).toLocaleTimeString()}</span>`
-                      );
-
-                      const containers = json.containers || {};
-                      let total = Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0);
-                      const rowsEl = document.getElementById("rows");
-                      if (!rowsEl) return;
-
-                      const labels = [],
-                        data = [];
-
-                      for (const [name, info] of Object.entries(containers)) {
-                        const uptime = info.uptime || 0;
-                        const percent = total > 0 ? Math.round((uptime / total) * 100) : 0;
-
-                        let rowEl = rowsEl.querySelector(`[data-row="${CSS.escape(name)}"]`);
-
-                        if (!rowEl) {
-                          const tpl = document.getElementById("row-template");
-                          if (!tpl) continue;
-                          const clone = tpl.content.cloneNode(true);
-                          rowsEl.appendChild(clone);
-                          rowEl = rowsEl.lastElementChild;
-                          if (!rowEl) continue;
-                          rowEl.setAttribute("data-row", name);
-                        }
-
-                        const dot = rowEl.querySelector("[data-dot]");
-                        const nm = rowEl.querySelector("[data-name]");
-                        const sub = rowEl.querySelector("[data-sub]");
-                        const upEl = rowEl.querySelector("[data-uptime]");
-                        const percentEl = rowEl.querySelector("[data-percent]");
-
-                        if (nm) nm.textContent = name;
-
-                        const state = (info.state || "").toString();
-                        const health = (info.health || "").toString();
-
-                        let badgeLabel = "";
-                        let badgeClass = "status-not-found";
-                        if (state !== "running") {
-                          badgeLabel = "stopped";
-                          badgeClass = "status-not-found";
-                        } else {
-                          if (health.toLowerCase().includes("healthy")) {
-                            badgeLabel = "running";
-                            badgeClass = "status-running";
-                          } else if (health.toLowerCase().includes("starting")) {
-                            badgeLabel = "starting";
-                            badgeClass = "status-starting";
-                          } else if (health.toLowerCase().includes("unhealthy")) {
-                            badgeLabel = "unhealthy";
-                            badgeClass = "status-unhealthy";
-                          } else {
-                            badgeLabel = "running";
-                            badgeClass = "status-running";
-                          }
-                        }
-
-                        if (sub) {
-                          sub.innerHTML = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
-                            health ? " • health: " + health : ""
-                          }</span>`;
-                        }
-
-                        if (upEl) upEl.textContent = fmtHMS(uptime);
-                        if (percentEl) percentEl.textContent = percent + "%";
-
-                        if (percentEl) {
-                          if (badgeClass === "status-running") {
-                            percentEl.style.background = "#052e14";
-                            percentEl.style.color = "#34d399";
-                          } else if (badgeClass === "status-starting") {
-                            percentEl.style.background = "#2b1b05";
-                            percentEl.style.color = "#f59e0b";
-                          } else if (badgeClass === "status-unhealthy") {
-                            percentEl.style.background = "#2b0f0f";
-                            percentEl.style.color = "#ef4444";
-                          } else {
-                            percentEl.style.background = "#1f2937";
-                            percentEl.style.color = "#94a3b8";
-                          }
-                        }
-
-                        if (dot) {
-                          dot.classList.remove("pulse");
-                          dot.style.backgroundColor = "";
-                          dot.style.boxShadow = "";
-
-                          if (badgeClass === "status-running") {
-                            dot.style.backgroundColor = "#34d399";
-                            dot.classList.add("pulse");
-                            dot.style.boxShadow = "0 0 8px rgba(52,211,153,0.12)";
-                          } else if (badgeClass === "status-starting") {
-                            dot.style.backgroundColor = "#f59e0b";
-                            dot.classList.add("pulse");
-                            dot.style.boxShadow = "0 0 8px rgba(245,158,11,0.12)";
-                          } else if (badgeClass === "status-unhealthy") {
-                            dot.style.backgroundColor = "#ef4444";
-                          } else {
-                            dot.style.backgroundColor = "#94a3b8";
-                          }
-                        }
-
-                        labels.push(name);
-                        data.push(uptime);
-                      }
-
-                      const existingRows = Array.from(rowsEl.querySelectorAll("[data-row]"));
-                      const namesSet = new Set(Object.keys(containers));
-                      for (const r of existingRows) {
-                        const rn = r.getAttribute("data-row");
-                        if (!namesSet.has(rn)) r.remove();
-                      }
-
-                      updateChartData(labels, data);
-
-                      safeSetText("rotation-count", json.rotation_count ?? 0);
-                      safeSetText("rot-count-small", json.rotation_count ?? 0);
-                      safeSetText(
-                        "total-uptime",
-                        fmtHMS(Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0))
-                      );
-
-                      const nextEl = document.getElementById("next-rotation");
-                      if (nextEl) {
-                        if (json.last_rotation) {
-                          const newLastTs = new Date(json.last_rotation.replace(" ", "T"));
-                          const now = new Date();
-                          if (!lastRotationTs || newLastTs.getTime() !== lastRotationTs.getTime()) {
-                            lastRotationTs = newLastTs;
-                            const nextTs = new Date(
-                              lastRotationTs.getTime() + ROTATION_INTERVAL_SECONDS * 1000
-                            );
-                            let diff = Math.max(0, Math.floor((nextTs - now) / 1000));
-                            if (diff <= 0) diff = ROTATION_INTERVAL_SECONDS;
-                            startCountdown(diff);
-                          }
-                        } else {
-                          safeSetText("next-rotation", "Next in: —");
-                        }
-                      }
-                    } catch (err) {
-                      failCount++;
-                      if (failCount >= MAX_FAILS) {
-                        safeSetHTML(
-                          "api-status",
-                          `<span class="api-offline">API offline (last: ${
-                            lastSuccessfulFetch
-                              ? new Date(lastSuccessfulFetch).toLocaleTimeString()
-                              : "never"
-                          })</span>`
-                        );
-                      } else {
-                        safeSetText("api-status", `Last API attempt failed (${failCount}/${MAX_FAILS})`);
-                      }
-                      console.warn("updateDashboard() failed:", err);
-                    }
-                  }
-
-      /* ==== SSE CONNECTION ==== */
-      let evtSource = null;
-      let reconnectTimer = null;
-      let hasReceivedData = false;
-
-      function connectSSE() {
-        if (evtSource) {
-          try { evtSource.close(); } catch {}
-          evtSource = null;
+        // 🔒 Validation côté client
+        if (action === "start" && orchestratorRunning) {
+          safeSetText("control-status", "Already running.");
+          return;
         }
-
-        hasReceivedData = false;
-        safeSetHTML("api-status", `<span class="api-offline">Reconnecting to stream…</span>`);
-
-        try {
-          evtSource = new EventSource("/orchestrator/api/stream");
-        } catch (e) {
-          console.error("SSE init error:", e);
-          scheduleReconnect();
+        if (action === "stop" && !orchestratorRunning) {
+          safeSetText("control-status", "Already stopped.");
+          return;
+        }
+        if (action === "kill" && orchestratorRunning) {
+          safeSetText("control-status", "Stop orchestrator before kill.");
           return;
         }
 
-        // Called only when HTTP handshake (200 OK) succeeds
-        evtSource.onopen = () => {
-          console.log("SSE connection established (HTTP 200)");
-          safeSetHTML("api-status", `<span class="api-online">Connected to live stream</span>`);
-        };
+        try {
+          const res = await fetch("/orchestrator/api/control", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action }),
+          });
 
-        evtSource.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            hasReceivedData = true;
-            updateDashboardFromData(payload);
-          } catch (e) {
-            console.error("Invalid SSE data:", e);
+          const json = await res.json();
+          safeSetText("control-status", json.message || "Action sent.");
+
+          if (res.ok) {
+            orchestratorRunning = json.rotation_active;
+            updateControlButtons();
           }
-        };
-
-        evtSource.onerror = (err) => {
-          console.warn("SSE connection lost:", err);
-
-          // Only show reconnecting if connection was previously open
-          if (hasReceivedData || evtSource.readyState === EventSource.CLOSED) {
-            safeSetHTML("api-status", `<span class="api-offline">Reconnecting to stream…</span>`);
-          }
-
-          try { evtSource.close(); } catch {}
-          evtSource = null;
-          scheduleReconnect();
-        };
-      }
-
-      function scheduleReconnect() {
-        if (!reconnectTimer) {
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            console.log("Attempting to reconnect SSE…");
-            connectSSE();
-          }, 5000);
+        } catch (err) {
+          console.error("Control action failed:", err);
+          safeSetText("control-status", "Request failed.");
         }
       }
 
-      // start initial connection
-      connectSSE();
+                        document.getElementById("btn-start").onclick = () => sendControl("start");
+                        document.getElementById("btn-stop").onclick = () => sendControl("stop");
+                        document.getElementById("btn-kill").onclick = () => {
+                          if (confirm("⚠️ Are you sure you want to stop all Paperless containers?")) {
+                            sendControl("kill");
+                          }
+                        };
+
+                    function updateControlButtons() {
+              const btnStart = document.getElementById("btn-start");
+              const btnStop = document.getElementById("btn-stop");
+              const btnKill = document.getElementById("btn-kill");
+
+              if (orchestratorRunning) {
+                btnStart.disabled = true;
+                btnStart.style.opacity = "0.5";
+                btnStop.disabled = false;
+                btnStop.style.opacity = "1";
+                btnKill.disabled = true;
+                btnKill.style.opacity = "0.5";
+              } else {
+                btnStart.disabled = false;
+                btnStart.style.opacity = "1";
+                btnStop.disabled = true;
+                btnStop.style.opacity = "0.5";
+                btnKill.disabled = false;
+                btnKill.style.opacity = "1";
+              }
+            }
+            updateControlButtons();
+
+
+                                          /* UTIL */
+                                          function fmtHMS(s) {
+                                            if (s === null || s === undefined) return "-";
+                                            s = Math.max(0, Math.floor(s));
+                                            const h = Math.floor(s / 3600),
+                                              m = Math.floor((s % 3600) / 60),
+                                              sec = s % 60;
+                                            if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
+                                            if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
+                                            return `${sec}s`;
+                                          }
+                                          function humanTime(ts) {
+                                            return ts || "N/A";
+                                          }
+
+                                          /* SAFE DOM HELPERS */
+                                          function safeSetText(id, text) {
+                                            const el = document.getElementById(id);
+                                            if (el) el.textContent = text;
+                                          }
+                                          function safeSetHTML(id, html) {
+                                            const el = document.getElementById(id);
+                                            if (el) el.innerHTML = html;
+                                          }
+
+                                          /* CHART (single init + update) */
+                                          let uptimeChart = null;
+                                          function createChart(labels = [], data = []) {
+                                            const ctx = document.getElementById("uptimeChart").getContext("2d");
+                                            uptimeChart = new Chart(ctx, {
+                                              type: "doughnut",
+                                              data: {
+                                                labels,
+                                                datasets: [
+                                                  {
+                                                    data,
+                                                    backgroundColor: ["#34d399", "#60a5fa", "#f472b6", "#f97316"],
+                                                    borderWidth: 0,
+                                                  },
+                                                ],
+                                              },
+                                              options: {
+                                                plugins: { legend: { position: "bottom", labels: { color: "#cbd5e1" } } },
+                                                maintainAspectRatio: false,
+                                                cutout: "60%",
+                                                animation: { duration: 250, animateRotate: false, animateScale: false },
+                                                responsive: true,
+                                                hover: { mode: null },
+                                              },
+                                            });
+                                          }
+                                          function updateChartData(labels, data) {
+                                            if (!uptimeChart) {
+                                              createChart(labels, data);
+                                              return;
+                                            }
+                                            uptimeChart.data.labels = labels;
+                                            uptimeChart.data.datasets[0].data = data;
+                                            uptimeChart.update({ duration: 150, easing: "linear" });
+                                          }
+
+                                          /* STATE */
+                                          let lastSuccessfulFetch = null;
+                                          let failCount = 0;
+                                          let lastKnownData = null;
+                                          let nextRotationDiff = 0;
+                                          let countdownTimer = null;
+                                          let lastRotationTs = null;
+
+                                          function startCountdown(seconds) {
+                                            nextRotationDiff = Math.max(0, Math.floor(Number(seconds) || 0));
+                                            const nextEl = document.getElementById("next-rotation");
+                                            if (!nextEl) return;
+                                            if (countdownTimer) clearInterval(countdownTimer);
+                                            nextEl.textContent = `Next in: ${fmtHMS(nextRotationDiff)}`;
+                                            countdownTimer = setInterval(() => {
+                                              nextRotationDiff = Math.max(0, nextRotationDiff - 1);
+                                              nextEl.textContent = `Next in: ${fmtHMS(nextRotationDiff)}`;
+                                              if (nextRotationDiff <= 0) {
+                                                clearInterval(countdownTimer);
+                                                countdownTimer = null;
+                                              }
+                                            }, 1000);
+                                          }
+
+                                          /* UPDATE DASHBOARD */
+                                          function updateDashboardFromData(json) {
+                                            try {
+                                              failCount = 0;
+                                              lastSuccessfulFetch = Date.now();
+                                              lastKnownData = json;
+
+                                              safeSetHTML(
+                                                "api-status",
+                                                `Last API update: <span class="api-online">${new Date(
+                                                  lastSuccessfulFetch
+                                                ).toLocaleTimeString()}</span>`
+                                              );
+
+                                              const containers = json.containers || {};
+                                              let total = Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0);
+                                              const rowsEl = document.getElementById("rows");
+                                              if (!rowsEl) return;
+
+                                              const labels = [],
+                                                data = [];
+
+                                              for (const [name, info] of Object.entries(containers)) {
+                                                const uptime = info.uptime || 0;
+                                                const percent = total > 0 ? Math.round((uptime / total) * 100) : 0;
+
+                                                let rowEl = rowsEl.querySelector(`[data-row="${CSS.escape(name)}"]`);
+
+                                                if (!rowEl) {
+                                                  const tpl = document.getElementById("row-template");
+                                                  if (!tpl) continue;
+                                                  const clone = tpl.content.cloneNode(true);
+                                                  rowsEl.appendChild(clone);
+                                                  rowEl = rowsEl.lastElementChild;
+                                                  if (!rowEl) continue;
+                                                  rowEl.setAttribute("data-row", name);
+                                                }
+
+                                                const dot = rowEl.querySelector("[data-dot]");
+                                                const nm = rowEl.querySelector("[data-name]");
+                                                const sub = rowEl.querySelector("[data-sub]");
+                                                const upEl = rowEl.querySelector("[data-uptime]");
+                                                const percentEl = rowEl.querySelector("[data-percent]");
+
+                                                if (nm) nm.textContent = name;
+
+                                                const state = (info.state || "").toString();
+                                                const health = (info.health || "").toString();
+
+                                                let badgeLabel = "";
+                                                let badgeClass = "status-not-found";
+                                                if (state !== "running") {
+                                                  badgeLabel = "stopped";
+                                                  badgeClass = "status-not-found";
+                                                } else {
+                                                  if (health.toLowerCase().includes("healthy")) {
+                                                    badgeLabel = "running";
+                                                    badgeClass = "status-running";
+                                                  } else if (health.toLowerCase().includes("starting")) {
+                                                    badgeLabel = "starting";
+                                                    badgeClass = "status-starting";
+                                                  } else if (health.toLowerCase().includes("unhealthy")) {
+                                                    badgeLabel = "unhealthy";
+                                                    badgeClass = "status-unhealthy";
+                                                  } else {
+                                                    badgeLabel = "running";
+                                                    badgeClass = "status-running";
+                                                  }
+                                                }
+
+                                                if (sub) {
+                                                  sub.innerHTML = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
+                                                    health ? " • health: " + health : ""
+                                                  }</span>`;
+                                                }
+
+                                                if (upEl) upEl.textContent = fmtHMS(uptime);
+                                                if (percentEl) percentEl.textContent = percent + "%";
+
+                                                if (percentEl) {
+                                                  if (badgeClass === "status-running") {
+                                                    percentEl.style.background = "#052e14";
+                                                    percentEl.style.color = "#34d399";
+                                                  } else if (badgeClass === "status-starting") {
+                                                    percentEl.style.background = "#2b1b05";
+                                                    percentEl.style.color = "#f59e0b";
+                                                  } else if (badgeClass === "status-unhealthy") {
+                                                    percentEl.style.background = "#2b0f0f";
+                                                    percentEl.style.color = "#ef4444";
+                                                  } else {
+                                                    percentEl.style.background = "#1f2937";
+                                                    percentEl.style.color = "#94a3b8";
+                                                  }
+                                                }
+
+                                                if (dot) {
+                                                  dot.classList.remove("pulse");
+                                                  dot.style.backgroundColor = "";
+                                                  dot.style.boxShadow = "";
+
+                                                  if (badgeClass === "status-running") {
+                                                    dot.style.backgroundColor = "#34d399";
+                                                    dot.classList.add("pulse");
+                                                    dot.style.boxShadow = "0 0 8px rgba(52,211,153,0.12)";
+                                                  } else if (badgeClass === "status-starting") {
+                                                    dot.style.backgroundColor = "#f59e0b";
+                                                    dot.classList.add("pulse");
+                                                    dot.style.boxShadow = "0 0 8px rgba(245,158,11,0.12)";
+                                                  } else if (badgeClass === "status-unhealthy") {
+                                                    dot.style.backgroundColor = "#ef4444";
+                                                  } else {
+                                                    dot.style.backgroundColor = "#94a3b8";
+                                                  }
+                                                }
+
+                                                labels.push(name);
+                                                data.push(uptime);
+                                              }
+
+                                              const existingRows = Array.from(rowsEl.querySelectorAll("[data-row]"));
+                                              const namesSet = new Set(Object.keys(containers));
+                                              for (const r of existingRows) {
+                                                const rn = r.getAttribute("data-row");
+                                                if (!namesSet.has(rn)) r.remove();
+                                              }
+
+                                              updateChartData(labels, data);
+
+                                              safeSetText("rotation-count", json.rotation_count ?? 0);
+                                              safeSetText("rot-count-small", json.rotation_count ?? 0);
+                                              safeSetText(
+                                                "total-uptime",
+                                                fmtHMS(Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0))
+                                              );
+
+                                              const nextEl = document.getElementById("next-rotation");
+                                              if (nextEl) {
+                                                if (json.last_rotation) {
+                                                  const newLastTs = new Date(json.last_rotation.replace(" ", "T"));
+                                                  const now = new Date();
+                                                  if (!lastRotationTs || newLastTs.getTime() !== lastRotationTs.getTime()) {
+                                                    lastRotationTs = newLastTs;
+                                                    const nextTs = new Date(
+                                                      lastRotationTs.getTime() + ROTATION_INTERVAL_SECONDS * 1000
+                                                    );
+                                                    let diff = Math.max(0, Math.floor((nextTs - now) / 1000));
+                                                    if (diff <= 0) diff = ROTATION_INTERVAL_SECONDS;
+                                                    startCountdown(diff);
+                                                  }
+                                                } else {
+                                                  safeSetText("next-rotation", "Next in: —");
+                                                }
+                                              }
+                                            } catch (err) {
+                                              failCount++;
+                                              if (failCount >= MAX_FAILS) {
+                                                safeSetHTML(
+                                                  "api-status",
+                                                  `<span class="api-offline">API offline (last: ${
+                                                    lastSuccessfulFetch
+                                                      ? new Date(lastSuccessfulFetch).toLocaleTimeString()
+                                                      : "never"
+                                                  })</span>`
+                                                );
+                                              } else {
+                                                safeSetText("api-status", `Last API attempt failed (${failCount}/${MAX_FAILS})`);
+                                              }
+                                              console.warn("updateDashboard() failed:", err);
+                                            }
+                                          }
+
+                              /* ==== SSE CONNECTION ==== */
+                              let evtSource = null;
+                              let reconnectTimer = null;
+                              let hasReceivedData = false;
+
+                              function connectSSE() {
+                                if (evtSource) {
+                                  try { evtSource.close(); } catch {}
+                                  evtSource = null;
+                                }
+
+                                hasReceivedData = false;
+                                safeSetHTML("api-status", `<span class="api-offline">Reconnecting to stream…</span>`);
+
+                                try {
+                                  evtSource = new EventSource("/orchestrator/api/stream");
+                                } catch (e) {
+                                  console.error("SSE init error:", e);
+                                  scheduleReconnect();
+                                  return;
+                                }
+
+                                // Called only when HTTP handshake (200 OK) succeeds
+                                evtSource.onopen = () => {
+                                  console.log("SSE connection established (HTTP 200)");
+                                  safeSetHTML("api-status", `<span class="api-online">Connected to live stream</span>`);
+                                };
+
+                                evtSource.onmessage = (event) => {
+                                  try {
+                                    const payload = JSON.parse(event.data);
+                                    hasReceivedData = true;
+                                    updateDashboardFromData(payload);
+                                  } catch (e) {
+                                    console.error("Invalid SSE data:", e);
+                                  }
+                                };
+
+                                evtSource.onerror = (err) => {
+                                  console.warn("SSE connection lost:", err);
+
+                                  // Only show reconnecting if connection was previously open
+                                  if (hasReceivedData || evtSource.readyState === EventSource.CLOSED) {
+                                    safeSetHTML("api-status", `<span class="api-offline">Reconnecting to stream…</span>`);
+                                  }
+
+                                  try { evtSource.close(); } catch {}
+                                  evtSource = null;
+                                  scheduleReconnect();
+                                };
+                              }
+
+                              function scheduleReconnect() {
+                                if (!reconnectTimer) {
+                                  reconnectTimer = setTimeout(() => {
+                                    reconnectTimer = null;
+                                    console.log("Attempting to reconnect SSE…");
+                                    connectSSE();
+                                  }, 5000);
+                                }
+                              }
+
+                              // start initial connection
+                              connectSSE();
     </script>
   </body>
 </html>
