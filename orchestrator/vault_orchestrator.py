@@ -605,9 +605,41 @@ def logs_raw():
         return f"Error reading logs: {e}", 500
 
 
+@app.route("/orchestrator/dashboard.js", strict_slashes=False)
+@login_required
+def dashboard_js():
+    return send_from_directory(os.path.join(os.path.dirname(__file__)), "dashboard.js")
+
+
 @app.route("/orchestrator/favicon.png", strict_slashes=False)
 def favicon():
     return send_from_directory(os.path.join(os.path.dirname(__file__)), "favicon.png")
+
+
+# Content Security Policy
+@app.after_request
+def add_csp_headers(response):
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "connect-src 'self' https://cdn.jsdelivr.net;"
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "object-src 'none'; "
+        "report-uri /csp-violation-report-endpoint; "
+    )
+    return response
+
+
+@app.route("/csp-violation-report-endpoint", methods=["POST"])
+@login_required
+def csp_violation_report():
+    print("[CSP VIOLATION]", request.json)
+    return "", 204
 
 
 # ------------------------------
