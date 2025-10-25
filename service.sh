@@ -15,9 +15,9 @@ stop() {
 }
 
 case "$1" in
-    start) start ;;
-    stop) stop ;;
-    restart) stop; start ;;
+    start) clear; start ;;
+    stop) clear; stop ;;
+    restart) clear; stop; start ;;
     *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
 esac
 

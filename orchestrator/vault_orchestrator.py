@@ -110,10 +110,13 @@ def mark_active(name):
 
 def accumulate_and_clear_active(name):
     start_ts = container_active_since.get(name)
+    if not start_ts:
+        return 0
     if start_ts:
         elapsed = int((datetime.now(LOCAL_TZ) - start_ts).total_seconds())
         container_total_active_seconds[name] = container_total_active_seconds.get(name, 0) + elapsed
         container_active_since[name] = None
+        return elapsed
 
 # ------------------------------
 # In-memory password hash
@@ -215,9 +218,15 @@ def orchestrator_loop():
                 time.sleep(5)
                 continue
 
+            log(f"{next_name} marked ACTIVE at {datetime.now(LOCAL_TZ).strftime('%H:%M:%S')}")
             mark_active(next_name)
             old_cont = get_container_safe(active_name)
             accumulate_and_clear_active(active_name)
+            elapsed = accumulate_and_clear_active(active_name)
+            if elapsed > 0:
+                total_s = container_total_active_seconds.get(active_name, 0)
+                log(f"Accumulated {elapsed}s for {active_name} (total={total_s}s)")
+
             if old_cont and old_cont.status == "running":
                 try:
                     old_cont.stop()
@@ -261,7 +270,11 @@ def login_required(f):
 @app.route("/orchestrator/login", methods=["GET", "POST"])
 def login():
     error = None
-    client_ip = request.remote_addr or "unknown"
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        # take the first IP in the list (the original client)
+        client_ip = client_ip.split(",")[0].strip()
+
 
     if request.method == "POST":
         # Check if IP is temporarily blocked
