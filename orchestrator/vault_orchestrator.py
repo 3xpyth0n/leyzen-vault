@@ -63,8 +63,11 @@ health_timeout = int(str(os.environ.get("VAULT_HEALTH_TIMEOUT", "30")).strip('"'
 
 rotation_count = 0
 rotation_active = True  # default: running
+rotation_resuming = False
+last_active_container = None
 stop_requested = False
 last_rotation_time = None
+
 container_total_active_seconds = {name: 0 for name in web_containers}
 container_active_since = {name: None for name in web_containers}
 
@@ -187,6 +190,17 @@ def orchestrator_loop():
         log("[WARN] No web containers configured for rotation.")
         return
 
+    # --- Clean startup: stop all containers to ensure single active ---
+    log("[INIT] Stopping all containers before rotation startup...")
+    for name in web_containers:
+        cont = get_container_safe(name)
+        if cont and cont.status == "running":
+            try:
+                cont.stop()
+                log(f"[INIT] Stopped {name}")
+            except Exception as e:
+                log(f"[INIT ERROR] Failed to stop {name}: {e}")
+
     # choose an initial active container that exists
     initial = None
     for c in web_containers:
@@ -217,6 +231,10 @@ def orchestrator_loop():
 
     while True:
         try:
+            if rotation_resuming:
+                time.sleep(1)
+                continue
+
             if not rotation_active:
                 time.sleep(1)
                 continue
@@ -242,7 +260,14 @@ def orchestrator_loop():
 
             ok = wait_until_healthy(next_cont)
             if not ok:
-                log(f"[WARNING] {next_name} did not become healthy, skipping")
+                log(
+                    f"[WARNING] {next_name} did not become healthy in time — stopping container."
+                )
+                try:
+                    next_cont.stop()
+                    log(f"[ACTION] {next_name} stopped after failed health check")
+                except Exception as e:
+                    log(f"[ERROR] Failed to stop {next_name}: {e}")
                 time.sleep(5)
                 continue
 
@@ -265,6 +290,9 @@ def orchestrator_loop():
             active_name = next_name
             rotation_count += 1
             last_rotation_time = datetime.now(LOCAL_TZ)
+            global last_active_container
+            last_active_container = active_name
+
             log(f"Rotation #{rotation_count}: {active_name} is now active")
             if not rotation_active:
                 log("[ORCH] Rotation paused by user")
@@ -471,12 +499,61 @@ def api_control():
         )
 
     elif action == "start":
+        global rotation_resuming, last_active_container
+        rotation_resuming = True
         rotation_active = True
-        log("[ORCH] Rotation resumed by user")
+
+        # on restart choose randomly one healthy container to continue
+        try:
+            if last_active_container and last_active_container in web_containers:
+                active_name = last_active_container
+            else:
+                active_name = random.choice(web_containers)
+                log(
+                    f"[RESUME WARN] No previous active container found, selecting {active_name}"
+                )
+
+            log(
+                f"[RESUME] Cleaning state before rotation — keeping {active_name} active"
+            )
+
+            for name in web_containers:
+                cont = get_container_safe(name)
+                if not cont:
+                    continue
+
+                if name == active_name:
+                    # S'assurer qu’il tourne
+                    if cont.status != "running":
+                        try:
+                            cont.start()
+                            log(f"[RESUME] Started {name} as active container")
+                        except Exception as e:
+                            log(f"[RESUME ERROR] Failed to start {name}: {e}")
+                    continue
+
+            # Stop all the others
+            if cont.status == "running":
+                try:
+                    cont.stop()
+                    log(f"[RESUME] Stopped {name} to enforce single-active policy")
+                except Exception as e:
+                    log(f"[RESUME ERROR] Failed to stop {name}: {e}")
+
+            log(
+                f"[ORCH] Rotation resumed with {active_name} as initial active container"
+            )
+
+        except Exception as e:
+            log(f"[RESUME ERROR] Failed during resume: {e}")
+
+        finally:
+            rotation_resuming = False
+
         return jsonify(
             {
                 "status": "ok",
-                "message": "Rotation resumed.",
+                "message": "Rotation resumed with clean state.",
                 "rotation_active": rotation_active,
             }
         )
