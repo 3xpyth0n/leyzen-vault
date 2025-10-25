@@ -15,20 +15,22 @@ function getCookie(name) {
 
 async function sendControl(action) {
   const statusEl = document.getElementById("control-status");
+  if (!statusEl) return;
 
-  // 🔒 Validation côté client
   if (action === "start" && orchestratorRunning) {
-    safeSetText("control-status", "Already running.");
+    showStatus("Already running.");
     return;
   }
   if (action === "stop" && !orchestratorRunning) {
-    safeSetText("control-status", "Already stopped.");
+    showStatus("Already stopped.");
     return;
   }
   if (action === "kill" && orchestratorRunning) {
-    safeSetText("control-status", "Stop orchestrator before kill.");
+    showStatus("Stop orchestrator before kill.");
     return;
   }
+
+  showStatus(`<span class="loader"></span> Processing ${action}...`);
 
   try {
     const res = await fetch("/orchestrator/api/control", {
@@ -38,7 +40,7 @@ async function sendControl(action) {
     });
 
     const json = await res.json();
-    safeSetText("control-status", json.message || "Action sent.");
+    showStatus(json.message || "Action sent.");
 
     if (res.ok) {
       orchestratorRunning = json.rotation_active;
@@ -46,8 +48,26 @@ async function sendControl(action) {
     }
   } catch (err) {
     console.error("Control action failed:", err);
-    safeSetText("control-status", "Request failed.");
+    showStatus("Request failed.");
   }
+}
+
+function showStatus(message) {
+  const el = document.getElementById("control-status");
+  if (!el) return;
+  el.innerHTML = message;
+  el.classList.add("active");
+  autoFadeStatus();
+}
+
+function autoFadeStatus() {
+  const el = document.getElementById("control-status");
+  if (!el) return;
+  clearTimeout(el._fadeTimer);
+  el._fadeTimer = setTimeout(() => {
+    el.classList.remove("active");
+    setTimeout(() => (el.innerHTML = ""), 500);
+  }, 5000);
 }
 
 document.getElementById("btn-start").onclick = () => sendControl("start");

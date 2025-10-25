@@ -303,7 +303,7 @@
         </div>
       </div>
 
-      <pre id="log">{{ log_content }}</pre>
+      <pre id="log">{{ log_content | e }}</pre>
     </div>
 
     <script>
@@ -389,8 +389,7 @@
         }
 
         if (filtered.length === 0) {
-          pre.innerHTML =
-            '<div class="empty">No logs for the selected period.</div>';
+          pre.innerHTML = "No logs for the selected period.";
           updateMeta(0);
         } else {
           pre.textContent = filtered.join("\n");
