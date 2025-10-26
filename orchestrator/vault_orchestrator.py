@@ -68,6 +68,7 @@ rotation_resuming = False
 last_active_container = None
 stop_requested = False
 last_rotation_time = None
+next_rotation_eta = None
 
 container_total_active_seconds = {name: 0 for name in web_containers}
 container_active_since = {name: None for name in web_containers}
@@ -288,7 +289,7 @@ def register_failed_attempt(ip):
 # Orchestrator loop (rotation)
 # ------------------------------
 def orchestrator_loop():
-    global rotation_count, last_rotation_time, last_active_container
+    global rotation_count, last_rotation_time, last_active_container, next_rotation_eta
     if not web_containers:
         log("[WARN] No web containers configured for rotation.")
         return
@@ -339,25 +340,32 @@ def orchestrator_loop():
     log(f"Initial rotation: {active_name} active")
 
     next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
+    next_rotation_eta = interval
     while True:
         try:
+            now = datetime.now(LOCAL_TZ)
+
             if rotation_resuming:
-                next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
+                next_switch_time = now + timedelta(seconds=interval)
+                next_rotation_eta = None
                 time.sleep(1)
                 continue
 
             if not rotation_active:
-                next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
+                next_switch_time = now + timedelta(seconds=interval)
+                next_rotation_eta = None
                 time.sleep(1)
                 continue
 
-            now = datetime.now(LOCAL_TZ)
+            remaining = (next_switch_time - now).total_seconds()
+            next_rotation_eta = max(0, int(remaining))
             if now < next_switch_time:
                 time.sleep(1)
                 continue
 
             if len(managed_containers) == 1:
                 next_switch_time = now + timedelta(seconds=interval)
+                next_rotation_eta = interval
                 continue
 
             rotated = False
@@ -402,6 +410,7 @@ def orchestrator_loop():
 
                 rotation_count += 1
                 last_rotation_time = datetime.now(LOCAL_TZ)
+                next_rotation_eta = interval
                 last_active_container = active_name
 
                 log(f"Rotation #{rotation_count}: {active_name} is now active")
@@ -414,6 +423,7 @@ def orchestrator_loop():
                 )
 
             next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
+            next_rotation_eta = interval
         except Exception:
             log(f"Exception in orchestrator loop:\n{traceback.format_exc()}")
             time.sleep(5)
@@ -830,6 +840,7 @@ def api_stream():
                         "uptime": round(total, 1),
                     }
 
+                eta = next_rotation_eta
                 data = {
                     "containers": containers,
                     "rotation_count": rotation_count,
@@ -839,6 +850,9 @@ def api_stream():
                         else None
                     ),
                     "rotation_active": rotation_active,
+                    "next_rotation_eta": (
+                        int(eta) if isinstance(eta, (int, float)) and eta >= 0 else None
+                    ),
                 }
 
                 chunk = f"data: {json.dumps(data)}\n\n"

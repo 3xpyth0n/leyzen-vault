@@ -212,7 +212,17 @@ let countdownTimer = null;
 let lastRotationTs = null;
 
 function startCountdown(seconds) {
-  nextRotationDiff = Math.max(0, Math.floor(Number(seconds) || 0));
+  const desired = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (
+    countdownTimer &&
+    Math.abs(desired - nextRotationDiff) <= 1 &&
+    desired !== 0 &&
+    nextRotationDiff !== 0
+  ) {
+    return;
+  }
+
+  nextRotationDiff = desired;
   const nextEl = document.getElementById("next-rotation");
   if (!nextEl) return;
   if (countdownTimer) clearInterval(countdownTimer);
@@ -392,8 +402,13 @@ function updateDashboardFromData(json) {
 
     const nextEl = document.getElementById("next-rotation");
     if (nextEl) {
+      const eta = Number(json.next_rotation_eta);
+      const hasEta = Number.isFinite(eta) && eta >= 0;
+
       if (!orchestratorRunning) {
         stopCountdown("Next in: paused");
+      } else if (hasEta) {
+        startCountdown(Math.floor(eta));
       } else if (json.last_rotation) {
         const newLastTs = new Date(json.last_rotation.replace(" ", "T"));
         const now = new Date();
