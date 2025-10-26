@@ -7,6 +7,7 @@ import traceback
 from datetime import datetime, timedelta
 from threading import Thread
 import logging
+import json
 from flask import (
     Flask,
     render_template,
@@ -748,15 +749,25 @@ def add_csp_headers(response):
         "base-uri 'self'; "
         "form-action 'self'; "
         "object-src 'none'; "
-        "report-uri /csp-violation-report-endpoint; "
+        "report-uri /orchestrator/csp-violation-report-endpoint; "
     )
     return response
 
 
 @app.route("/orchestrator/csp-violation-report-endpoint", methods=["POST"])
-@login_required
 def csp_violation_report():
-    print("[CSP VIOLATION]", request.json)
+    report = request.get_json(silent=True)
+
+    if report is None and request.data:
+        try:
+            report = json.loads(request.data.decode("utf-8"))
+        except ValueError:
+            report = {"raw": request.data.decode("utf-8", errors="replace")}
+
+    if report is None:
+        report = {"message": "No report payload received"}
+
+    log(f"[CSP VIOLATION] {json.dumps(report, ensure_ascii=False)}")
     return "", 204
 
 
@@ -764,13 +775,11 @@ def csp_violation_report():
 # Server-Sent Events (SSE) Stream
 # ------------------------------
 from flask import Response
-import json
 
 
 @app.route("/orchestrator/api/stream", strict_slashes=False)
 @login_required
 def api_stream():
-    import json
     import sys
 
     def event_stream():
