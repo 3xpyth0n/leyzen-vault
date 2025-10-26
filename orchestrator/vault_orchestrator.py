@@ -254,6 +254,13 @@ PASSWORD_HASH = generate_password_hash(PASSWORD)
 del PASSWORD
 
 
+TRUSTED_PROXY_IPS = {
+    ip.strip()
+    for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",")
+    if ip.strip()
+}
+
+
 def verify_credentials(username, password):
     if username != USERNAME:
         return False
@@ -272,17 +279,30 @@ MAX_ATTEMPTS = 5
 BLOCK_WINDOW = timedelta(minutes=5)
 
 
-def is_blocked(ip):
+def is_blocked(ip, current_time=None):
     attempts = login_attempts[ip]
-    now = datetime.now()
+    now = current_time or datetime.now()
     # remove old attempts
     while attempts and now - attempts[0] > BLOCK_WINDOW:
         attempts.popleft()
     return len(attempts) >= MAX_ATTEMPTS
 
 
-def register_failed_attempt(ip):
-    login_attempts[ip].append(datetime.now())
+def register_failed_attempt(ip, attempt_time=None):
+    login_attempts[ip].append(attempt_time or datetime.now())
+
+
+def get_client_ip():
+    remote_addr = request.remote_addr
+
+    if remote_addr in TRUSTED_PROXY_IPS:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[0].strip()
+            if client_ip:
+                return client_ip
+
+    return remote_addr
 
 
 # ------------------------------
@@ -504,10 +524,8 @@ def login_required(f):
 @app.route("/orchestrator/login", methods=["GET", "POST"])
 def login():
     error = None
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        # take the first IP in the list (the original client)
-        client_ip = client_ip.split(",")[0].strip()
+
+    client_ip = get_client_ip()
 
     if request.method == "POST":
         # Check if IP is temporarily blocked
@@ -600,9 +618,7 @@ def api_control():
             400,
         )
 
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()
+    client_ip = get_client_ip()
 
     log(f"[CONTROL] Received action '{action}' from {client_ip}")
 
