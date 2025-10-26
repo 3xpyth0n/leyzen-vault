@@ -141,6 +141,86 @@ def accumulate_and_clear_active(name):
         return elapsed
 
 
+def stop_container(name, reason=None, timeout=30):
+    cont = get_container_safe(name)
+    if not cont:
+        return False
+
+    try:
+        cont.reload()
+    except Exception as e:
+        log(f"[STOP ERROR] Failed to reload {name} before stop: {e}")
+
+    status = getattr(cont, "status", None)
+    if status == "paused":
+        try:
+            cont.unpause()
+            cont.reload()
+            status = cont.status
+        except Exception as e:
+            log(f"[STOP ERROR] Failed to unpause {name}: {e}")
+
+    if status not in ("running", "restarting"):
+        return False
+
+    try:
+        cont.stop(timeout=timeout)
+        try:
+            cont.wait(timeout=timeout)
+        except Exception:
+            # `wait` may fail for some drivers once the container is stopped – best effort only.
+            pass
+        log_reason = f" ({reason})" if reason else ""
+        log(f"[ACTION] Stopped {name}{log_reason}")
+        return True
+    except Exception as e:
+        log(f"[STOP ERROR] Failed to stop {name}: {e}")
+        return False
+
+
+def start_container(name, reason=None):
+    cont = get_container_safe(name)
+    if not cont:
+        return None
+
+    try:
+        cont.reload()
+    except Exception as e:
+        log(f"[START ERROR] Failed to reload {name} before start: {e}")
+
+    status = getattr(cont, "status", None)
+    if status == "paused":
+        try:
+            cont.unpause()
+            cont.reload()
+            status = cont.status
+        except Exception as e:
+            log(f"[START ERROR] Failed to unpause {name}: {e}")
+
+    if status == "running":
+        return cont
+
+    try:
+        cont.start()
+        log_reason = f" ({reason})" if reason else ""
+        log(f"[ACTION] Started {name}{log_reason}")
+    except Exception as e:
+        log(f"[START ERROR] Failed to start {name}: {e}")
+        return None
+
+    # Reload to provide an up-to-date handle
+    return get_container_safe(name)
+
+
+def ensure_single_active(active_name, managed_names):
+    for name in managed_names:
+        if name == active_name:
+            continue
+        cont = get_container_safe(name)
+        if cont and cont.status == "running":
+            stop_container(name, reason="enforcing single active container")
+
+
 # ------------------------------
 # In-memory password hash
 # ------------------------------
@@ -186,122 +266,132 @@ def register_failed_attempt(ip):
 # Orchestrator loop (rotation)
 # ------------------------------
 def orchestrator_loop():
-    global rotation_count, last_rotation_time
+    global rotation_count, last_rotation_time, last_active_container
     if not web_containers:
         log("[WARN] No web containers configured for rotation.")
         return
 
-    # --- Clean startup: stop all containers to ensure single active ---
-    log("[INIT] Stopping all containers before rotation startup...")
+    managed_containers = []
     for name in web_containers:
-        cont = get_container_safe(name)
-        if cont and cont.status == "running":
-            try:
-                cont.stop()
-                log(f"[INIT] Stopped {name}")
-            except Exception as e:
-                log(f"[INIT ERROR] Failed to stop {name}: {e}")
+        if get_container_safe(name):
+            managed_containers.append(name)
+        else:
+            log(f"[ERROR] Container {name} declared but not found. It will be skipped.")
 
-    # choose an initial active container that exists
-    initial = None
-    for c in web_containers:
-        cont = get_container_safe(c)
-        if cont:
-            initial = c
-            break
-    if not initial:
-        log("[ERROR] No valid container found to start as initial active.")
+    if not managed_containers:
+        log("[ERROR] No valid container found to manage.")
         return
 
-    # ensure initial is running and marked active
-    try:
-        cont = get_container_safe(initial)
-        if cont and cont.status != "running":
-            try:
-                cont.start()
-            except Exception as e:
-                log(f"[ERROR] Failed to start initial {initial}: {e}")
-        mark_active(initial)
-    except Exception:
-        pass
+    # --- Clean startup: stop all containers to ensure single active ---
+    log("[INIT] Stopping all containers before rotation startup...")
+    for name in managed_containers:
+        stop_container(name, reason="initial cleanup")
+
+    # choose an initial active container that can become healthy
+    active_index = None
+    active_name = None
+    for idx, name in enumerate(managed_containers):
+        candidate = start_container(name, reason="initial activation")
+        if not candidate:
+            continue
+        if wait_until_healthy(candidate):
+            active_index = idx
+            active_name = name
+            break
+        else:
+            log(
+                f"[WARNING] {name} did not become healthy during startup — stopping container."
+            )
+            stop_container(name, reason="failed startup health check")
+
+    if active_name is None:
+        log("[ERROR] Unable to find a healthy container to start rotation.")
+        return
+
+    ensure_single_active(active_name, managed_containers)
+    mark_active(active_name)
+    last_active_container = active_name
 
     rotation_count = 0
     last_rotation_time = datetime.now(LOCAL_TZ)
-    log(f"Initial rotation: {initial} active")
-    active_name = initial
+    log(f"Initial rotation: {active_name} active")
 
+    next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
     while True:
         try:
             if rotation_resuming:
+                next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
                 time.sleep(1)
                 continue
 
             if not rotation_active:
+                next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
                 time.sleep(1)
                 continue
 
-            choices = [c for c in web_containers if c != active_name]
-            if not choices:
-                time.sleep(5)
+            now = datetime.now(LOCAL_TZ)
+            if now < next_switch_time:
+                time.sleep(1)
                 continue
 
-            next_name = random.choice(choices)
-            next_cont = get_container_safe(next_name)
-            if not next_cont:
-                time.sleep(5)
+            if len(managed_containers) == 1:
+                next_switch_time = now + timedelta(seconds=interval)
                 continue
 
-            if next_cont.status != "running":
-                try:
-                    next_cont.start()
-                except Exception as e:
-                    log(f"[ERROR] Failed to start {next_name}: {e}")
-                    time.sleep(5)
+            rotated = False
+            attempts = 0
+            total_containers = len(managed_containers)
+
+            while (
+                attempts < total_containers - 1
+            ):  # exclude current active from attempts
+                next_index = (active_index + 1 + attempts) % total_containers
+                next_name = managed_containers[next_index]
+                if next_name == active_name:
+                    attempts += 1
                     continue
 
-            ok = wait_until_healthy(next_cont)
-            if not ok:
+                next_cont = start_container(next_name, reason="preparing for rotation")
+                if not next_cont:
+                    attempts += 1
+                    continue
+
+                if not wait_until_healthy(next_cont):
+                    log(
+                        f"[WARNING] {next_name} did not become healthy in time — stopping container."
+                    )
+                    stop_container(next_name, reason="failed rotation health check")
+                    attempts += 1
+                    continue
+
                 log(
-                    f"[WARNING] {next_name} did not become healthy in time — stopping container."
+                    f"{next_name} marked ACTIVE at {datetime.now(LOCAL_TZ).strftime('%H:%M:%S')}"
                 )
-                try:
-                    next_cont.stop()
-                    log(f"[ACTION] {next_name} stopped after failed health check")
-                except Exception as e:
-                    log(f"[ERROR] Failed to stop {next_name}: {e}")
-                time.sleep(5)
-                continue
+                mark_active(next_name)
+                elapsed = accumulate_and_clear_active(active_name)
+                if elapsed > 0:
+                    total_s = container_total_active_seconds.get(active_name, 0)
+                    log(f"Accumulated {elapsed}s for {active_name} (total={total_s}s)")
 
-            log(
-                f"{next_name} marked ACTIVE at {datetime.now(LOCAL_TZ).strftime('%H:%M:%S')}"
-            )
-            mark_active(next_name)
-            old_cont = get_container_safe(active_name)
-            elapsed = accumulate_and_clear_active(active_name)
-            if elapsed > 0:
-                total_s = container_total_active_seconds.get(active_name, 0)
-                log(f"Accumulated {elapsed}s for {active_name} (total={total_s}s)")
+                stop_container(active_name, reason="rotation completed")
+                active_name = next_name
+                active_index = next_index
+                ensure_single_active(active_name, managed_containers)
 
-            if old_cont and old_cont.status == "running":
-                try:
-                    old_cont.stop()
-                except Exception as e:
-                    log(f"[ERROR] Failed to stop {active_name}: {e}")
+                rotation_count += 1
+                last_rotation_time = datetime.now(LOCAL_TZ)
+                last_active_container = active_name
 
-            active_name = next_name
-            rotation_count += 1
-            last_rotation_time = datetime.now(LOCAL_TZ)
-            global last_active_container
-            last_active_container = active_name
+                log(f"Rotation #{rotation_count}: {active_name} is now active")
+                rotated = True
+                break
 
-            log(f"Rotation #{rotation_count}: {active_name} is now active")
-            if not rotation_active:
-                log("[ORCH] Rotation paused by user")
-                while not rotation_active:
-                    time.sleep(1)
-                log("[ORCH] Rotation resumed by user")
+            if not rotated:
+                log(
+                    f"[WARNING] Rotation skipped — no healthy candidates available. {active_name} remains active."
+                )
 
-            time.sleep(interval)
+            next_switch_time = datetime.now(LOCAL_TZ) + timedelta(seconds=interval)
         except Exception:
             log(f"Exception in orchestrator loop:\n{traceback.format_exc()}")
             time.sleep(5)
