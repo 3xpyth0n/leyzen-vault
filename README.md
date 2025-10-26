@@ -8,19 +8,18 @@
 
 ## Overview 🧩
 
-Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Paperless-ngx_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
+Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Filebrowser_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
 
 ---
 
 ## Core Components ⚙️
 
-| Component                 | Description                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Vault Orchestrator**    | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.          |
-| **Paperless-ngx Cluster** | Trio of document management containers rotated polymorphically.                                   |
-| **HAProxy**               | Reverse proxy exposed on port **8080**, routing users to Paperless or the Orchestrator dashboard. |
-| **Redis & PostgreSQL**    | Persistent backends for Paperless-ngx.                                                            |
-| **Shared Volumes**        | Docker volumes ensuring persistent user data and media across rotations.                          |
+| Component               | Description                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| **Vault Orchestrator**  | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.            |
+| **Filebrowser Cluster** | Trio of lightweight file-manager containers rotated polymorphically.                                |
+| **HAProxy**             | Reverse proxy exposed on port **8080**, routing users to Filebrowser or the Orchestrator dashboard. |
+| **Shared Volume**       | Single Docker volume (`filebrowser-data`) ensuring persistent user files across rotations.          |
 
 ---
 
@@ -39,7 +38,7 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
            │                               │
            ▼                               ▼
   ┌─────────────────┐            ┌────────────────────┐
-  │  Orchestrator   │            │   Paperless-ngx    │
+  │  Orchestrator   │            │    Filebrowser     │
   │   (dashboard)   │            │ (dynamic rotation) │
   └─────────────────┘            └────────────────────┘
 ```
@@ -80,14 +79,12 @@ journalctl -u leyzen.service -f
 
 ## Service Endpoints 🌐
 
-| Service                          | URL / Port                                                               | Description                          |
-| -------------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
-| **HAProxy**                      | `:8080`                                                                  | Routes to Paperless and Orchestrator |
-| **Docker Proxy**                 | internal (`docker-proxy:2375`)                                           | Mediates container lifecycle calls   |
-| **Paperless-ngx**                | [http://localhost:8080/](http://localhost:8080/)                         | Document management UI               |
-| **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control     |
-| **Redis**                        | `6379`                                                                   | Used internally by Paperless         |
-| **PostgreSQL**                   | `5432`                                                                   | Used internally by Paperless         |
+| Service                          | URL / Port                                                               | Description                            |
+| -------------------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| **HAProxy**                      | `:8080`                                                                  | Routes to Filebrowser and Orchestrator |
+| **Docker Proxy**                 | internal (`docker-proxy:2375`)                                           | Mediates container lifecycle calls     |
+| **Filebrowser**                  | [http://localhost:8080/](http://localhost:8080/)                         | File management UI                     |
+| **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control       |
 
 ---
 
@@ -96,7 +93,8 @@ journalctl -u leyzen.service -f
 - Entirely sandboxed within a **Docker bridge network** — only HAProxy is exposed.
 - Health checks ensure uptime and auto-recovery.
 - The **Python Orchestrator** performs randomized rotation cycles.
-- **Shared volumes** preserve Paperless data between container lifespans.
+- **Shared volume** (`filebrowser-data:/srv`) preserves Filebrowser uploads between container lifespans.
+- Filebrowser runs without external databases or caches, simplifying the demo stack.
 - Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`), replacing direct socket mounts.
 
 ---

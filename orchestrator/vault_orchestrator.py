@@ -39,7 +39,7 @@ LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 # ------------------------------
 # Environment
 # ------------------------------
-WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS", "paperless_web1").split(",")
+WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
 USERNAME = os.environ.get("VAULT_USER", "admin")
 PASSWORD = os.environ.get("VAULT_PASS", None)
 
