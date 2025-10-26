@@ -450,6 +450,10 @@ def orchestrator_loop():
         else:
             log(f"[ERROR] Container {name} declared but not found. It will be skipped.")
 
+    # randomize the baseline order so we don't bias toward the first declared entry
+    if len(managed_containers) > 1:
+        random.shuffle(managed_containers)
+
     if not managed_containers:
         log("[ERROR] No valid container found to manage.")
         return
@@ -518,17 +522,14 @@ def orchestrator_loop():
                 continue
 
             rotated = False
-            attempts = 0
             total_containers = len(managed_containers)
+            candidate_indices = [
+                idx for idx in range(total_containers) if idx != active_index
+            ]
+            random.shuffle(candidate_indices)
 
-            while (
-                attempts < total_containers - 1
-            ):  # exclude current active from attempts
-                next_index = (active_index + 1 + attempts) % total_containers
+            for next_index in candidate_indices:
                 next_name = managed_containers[next_index]
-                if next_name == active_name:
-                    attempts += 1
-                    continue
 
                 released = stop_container(
                     active_name, reason="releasing shared database for rotation"
@@ -545,7 +546,6 @@ def orchestrator_loop():
                         f"[WARNING] Failed to stop {active_name} prior to rotation; will retry later."
                     )
                     mark_active(active_name)
-                    attempts += 1
                     time.sleep(2)
                     continue
 
@@ -561,7 +561,6 @@ def orchestrator_loop():
                         log(
                             f"[ERROR] Unable to restart {active_name} after {next_name} failed to launch."
                         )
-                    attempts += 1
                     continue
 
                 if not wait_until_healthy(next_cont):
@@ -579,7 +578,6 @@ def orchestrator_loop():
                         log(
                             f"[ERROR] Unable to restore {active_name} after unhealthy rotation candidate {next_name}."
                         )
-                    attempts += 1
                     continue
 
                 log(
