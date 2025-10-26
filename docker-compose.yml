@@ -6,6 +6,8 @@ services:
       - "80"
     volumes:
       - filebrowser-data:/srv
+      - filebrowser-database:/database
+      - filebrowser-config:/config
     restart: on-failure
     networks:
       - vault-net
@@ -17,6 +19,8 @@ services:
       - "80"
     volumes:
       - filebrowser-data:/srv
+      - filebrowser-database:/database
+      - filebrowser-config:/config
     restart: on-failure
     networks:
       - vault-net
@@ -28,6 +32,8 @@ services:
       - "80"
     volumes:
       - filebrowser-data:/srv
+      - filebrowser-database:/database
+      - filebrowser-config:/config
     restart: on-failure
     networks:
       - vault-net
@@ -91,6 +97,8 @@ services:
 
 volumes:
   filebrowser-data:
+  filebrowser-database:
+  filebrowser-config:
 
 networks:
   vault-net:

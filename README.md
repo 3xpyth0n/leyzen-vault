@@ -14,12 +14,12 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ## Core Components ⚙️
 
-| Component               | Description                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
-| **Vault Orchestrator**  | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.            |
-| **Filebrowser Cluster** | Trio of lightweight file-manager containers rotated polymorphically.                                |
-| **HAProxy**             | Reverse proxy exposed on port **8080**, routing users to Filebrowser or the Orchestrator dashboard. |
-| **Shared Volume**       | Single Docker volume (`filebrowser-data`) ensuring persistent user files across rotations.          |
+| Component               | Description                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vault Orchestrator**  | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.                                                    |
+| **Filebrowser Cluster** | Trio of lightweight file-manager containers rotated polymorphically.                                                                        |
+| **HAProxy**             | Reverse proxy exposed on port **8080**, routing users to Filebrowser or the Orchestrator dashboard.                                         |
+| **Shared Volumes**      | Docker volumes (`filebrowser-data`, `filebrowser-database`, `filebrowser-config`) persisting uploads, users, and settings across rotations. |
 
 ---
 
@@ -93,7 +93,7 @@ journalctl -u leyzen.service -f
 - Entirely sandboxed within a **Docker bridge network** — only HAProxy is exposed.
 - Health checks ensure uptime and auto-recovery.
 - The **Python Orchestrator** performs randomized rotation cycles.
-- **Shared volume** (`filebrowser-data:/srv`) preserves Filebrowser uploads between container lifespans.
+- **Shared volumes** (`filebrowser-data:/srv`, `filebrowser-database:/database`, `filebrowser-config:/config`) preserve Filebrowser uploads, user accounts, and configuration between container lifespans.
 - Filebrowser runs without external databases or caches, simplifying the demo stack.
 - Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`), replacing direct socket mounts.
 

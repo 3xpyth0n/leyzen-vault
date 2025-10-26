@@ -530,8 +530,37 @@ def orchestrator_loop():
                     attempts += 1
                     continue
 
+                released = stop_container(
+                    active_name, reason="releasing shared database for rotation"
+                )
+                elapsed = accumulate_and_clear_active(active_name)
+                if elapsed > 0:
+                    total_s = container_total_active_seconds.get(active_name, 0)
+                    log(
+                        f"Accumulated {elapsed}s for {active_name} (total={total_s}s) before rotation"
+                    )
+
+                if not released:
+                    log(
+                        f"[WARNING] Failed to stop {active_name} prior to rotation; will retry later."
+                    )
+                    mark_active(active_name)
+                    attempts += 1
+                    time.sleep(2)
+                    continue
+
                 next_cont = start_container(next_name, reason="preparing for rotation")
                 if not next_cont:
+                    restore = start_container(
+                        active_name, reason="restoring active after failed candidate"
+                    )
+                    if restore and wait_until_healthy(restore):
+                        mark_active(active_name)
+                        ensure_single_active(active_name, managed_containers)
+                    else:
+                        log(
+                            f"[ERROR] Unable to restart {active_name} after {next_name} failed to launch."
+                        )
                     attempts += 1
                     continue
 
@@ -540,6 +569,16 @@ def orchestrator_loop():
                         f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
                     )
                     stop_container(next_name, reason="failed rotation health check")
+                    restore = start_container(
+                        active_name, reason="restoring active after failed candidate"
+                    )
+                    if restore and wait_until_healthy(restore):
+                        mark_active(active_name)
+                        ensure_single_active(active_name, managed_containers)
+                    else:
+                        log(
+                            f"[ERROR] Unable to restore {active_name} after unhealthy rotation candidate {next_name}."
+                        )
                     attempts += 1
                     continue
 
@@ -547,12 +586,6 @@ def orchestrator_loop():
                     f"{next_name} marked ACTIVE at {datetime.now(LOCAL_TZ).strftime('%H:%M:%S')}"
                 )
                 mark_active(next_name)
-                elapsed = accumulate_and_clear_active(active_name)
-                if elapsed > 0:
-                    total_s = container_total_active_seconds.get(active_name, 0)
-                    log(f"Accumulated {elapsed}s for {active_name} (total={total_s}s)")
-
-                stop_container(active_name, reason="rotation completed")
                 active_name = next_name
                 active_index = next_index
                 ensure_single_active(active_name, managed_containers)
