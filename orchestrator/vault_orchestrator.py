@@ -614,6 +614,12 @@ def serve_js(filename):
     return response
 
 
+# Tailwind compiled CSS
+@app.route("/orchestrator/static/<path:filename>")
+def orchestrator_static(filename):
+    return send_from_directory("static", filename)
+
+
 @app.route("/orchestrator/favicon.png", strict_slashes=False)
 def favicon():
     return send_from_directory(os.path.join(os.path.dirname(__file__)), "favicon.png")
@@ -624,7 +630,7 @@ def favicon():
 def add_csp_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self' https://fonts.gstatic.com; "

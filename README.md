@@ -6,21 +6,6 @@
 
 ---
 
-## 📖 Table of Contents
-
-1. [Overview](#overview)
-2. [Core Components](#core-components)
-3. [Reference Architecture](#reference-architecture)
-4. [Prerequisites](#prerequisites)
-5. [Quick Start](#quick-start)
-6. [Service Endpoints](#service-endpoints)
-7. [Operations](#operations)
-8. [Design Highlights](#design-highlights)
-9. [Project Status](#project-status)
-10. [Credits](#credits)
-
----
-
 ## Overview 🧩
 
 Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Paperless-ngx_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
