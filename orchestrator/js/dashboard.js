@@ -296,7 +296,11 @@ function updateDashboardFromData(json) {
       if (nm) nm.textContent = name;
 
       const state = (info.state || "").toString();
-      const health = (info.health || "").toString();
+      let health = (info.health || "").toString();
+
+      if (state.toLowerCase() === "exited") {
+        health = "stopped";
+      }
 
       let badgeLabel = "";
       let badgeClass = "status-not-found";
