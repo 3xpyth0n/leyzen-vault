@@ -755,6 +755,7 @@ def add_csp_headers(response):
 
 
 @app.route("/orchestrator/csp-violation-report-endpoint", methods=["POST"])
+@csrf.exempt
 def csp_violation_report():
     report = request.get_json(silent=True)
 
@@ -767,7 +768,30 @@ def csp_violation_report():
     if report is None:
         report = {"message": "No report payload received"}
 
-    log(f"[CSP VIOLATION] {json.dumps(report, ensure_ascii=False)}")
+    csp_payload = report
+    if isinstance(report, dict) and "csp-report" in report:
+        csp_payload = report["csp-report"]
+
+    if not isinstance(csp_payload, dict):
+        csp_payload = {}
+
+    document_uri = csp_payload.get("document-uri") or csp_payload.get("source-file")
+    directive = csp_payload.get("effective-directive") or csp_payload.get(
+        "violated-directive"
+    )
+    blocked_uri = csp_payload.get("blocked-uri")
+
+    violation_type = "unknown"
+    if isinstance(directive, str) and directive:
+        violation_type = directive.split("-")[0]
+
+    filtered_report = {
+        "document_uri": document_uri or "unknown",
+        "violation_type": violation_type or "unknown",
+        "blocked_uri": blocked_uri or "unknown",
+    }
+
+    log(f"[CSP VIOLATION] {json.dumps(filtered_report, ensure_ascii=False)}")
     return "", 204
 
 
