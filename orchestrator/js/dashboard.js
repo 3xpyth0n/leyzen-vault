@@ -208,6 +208,11 @@ function updateDashboardFromData(json) {
     lastSuccessfulFetch = Date.now();
     lastKnownData = json;
 
+    if (typeof json.rotation_active === "boolean") {
+      orchestratorRunning = json.rotation_active;
+      updateControlButtons();
+    }
+
     safeSetHTML(
       "api-status",
       `Last API update: <span class="api-online">${new Date(

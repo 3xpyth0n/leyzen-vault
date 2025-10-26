@@ -600,10 +600,13 @@ def logs_raw():
     except Exception as e:
         return f"Error reading logs: {e}", 500
 
+
 @app.route("/orchestrator/js/<path:filename>", strict_slashes=False)
 @login_required
 def serve_js(filename):
-    response = send_from_directory(os.path.join(os.path.dirname(__file__), "js"), filename)
+    response = send_from_directory(
+        os.path.join(os.path.dirname(__file__), "js"), filename
+    )
     response.headers["Cache-Control"] = "public, max-age=3600, immutable"
     response.headers["Content-Type"] = "application/javascript; charset=utf-8"
     return response
@@ -685,6 +688,7 @@ def api_stream():
                         if last_rotation_time
                         else None
                     ),
+                    "rotation_active": rotation_active,
                 }
 
                 chunk = f"data: {json.dumps(data)}\n\n"
