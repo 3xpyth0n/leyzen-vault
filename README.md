@@ -83,6 +83,7 @@ journalctl -u leyzen.service -f
 | Service                          | URL / Port                                                               | Description                          |
 | -------------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
 | **HAProxy**                      | `:8080`                                                                  | Routes to Paperless and Orchestrator |
+| **Docker Proxy**                 | internal (`docker-proxy:2375`)                                           | Mediates container lifecycle calls   |
 | **Paperless-ngx**                | [http://localhost:8080/](http://localhost:8080/)                         | Document management UI               |
 | **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control     |
 | **Redis**                        | `6379`                                                                   | Used internally by Paperless         |
@@ -96,6 +97,7 @@ journalctl -u leyzen.service -f
 - Health checks ensure uptime and auto-recovery.
 - The **Python Orchestrator** performs randomized rotation cycles.
 - **Shared volumes** preserve Paperless data between container lifespans.
+- Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`), replacing direct socket mounts.
 
 ---
 

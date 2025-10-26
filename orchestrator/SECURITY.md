@@ -10,7 +10,7 @@ avoid silently picking up vulnerabilities.
    ```bash
    cd orchestrator
    pip-compile requirements.in --output-file requirements.txt
-   pip freeze | grep -E '^(Flask|Flask-WTF|docker|pytz)=='
+   pip freeze | grep -E '^(Flask|Flask-WTF|requests|pytz)=='
    ```
    The `pip freeze` command double-checks that the installed versions match what
    is written to the lock file.

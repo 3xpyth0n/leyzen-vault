@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import docker
 import time
 import random
 import traceback
@@ -8,6 +7,7 @@ from datetime import datetime, timedelta
 from threading import Thread
 import logging
 import json
+from typing import Any, Dict, Optional
 from flask import (
     Flask,
     render_template,
@@ -25,6 +25,7 @@ import signal
 import sys
 import pytz
 from collections import defaultdict, deque
+import requests
 
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf import CSRFProtect
@@ -56,9 +57,138 @@ LOG_FILE = os.path.join(BASE_DIR, "vault_orchestrator.log")
 HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 # ------------------------------
-# Docker / rotation config
+# Docker proxy / rotation config
 # ------------------------------
-client = docker.from_env()
+
+
+class DockerProxyError(RuntimeError):
+    """Base error for controlled Docker proxy failures."""
+
+
+class DockerProxyNotFound(DockerProxyError):
+    """Raised when a container is not present on the proxy side."""
+
+
+class DockerProxyClient:
+    """Minimal wrapper around the docker-proxy API with ACL enforcement."""
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+        timeout: float = 10.0,
+    ) -> None:
+        self.base_url = (base_url or "http://docker-proxy:2375").rstrip("/")
+        self.token = token
+        self.timeout = timeout
+        self._session = requests.Session()
+
+    def _request(self, method: str, path: str, **kwargs) -> Any:
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        headers = kwargs.pop("headers", {})
+        if self.token:
+            headers.setdefault("Authorization", f"Bearer {self.token}")
+        request_timeout = kwargs.pop("timeout", self.timeout)
+        try:
+            response = self._session.request(
+                method,
+                url,
+                timeout=request_timeout,
+                headers=headers,
+                **kwargs,
+            )
+        except requests.RequestException as exc:  # pragma: no cover - network failure
+            raise DockerProxyError(
+                f"Failed to reach docker proxy at {self.base_url}: {exc}"
+            ) from exc
+
+        if response.status_code == 404:
+            raise DockerProxyNotFound(f"Container not found for path {path}")
+
+        if not response.ok:
+            raise DockerProxyError(
+                f"Proxy error {response.status_code}: {response.text.strip()}"
+            )
+
+        if not response.content:
+            return None
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise DockerProxyError("Invalid JSON received from proxy") from exc
+
+    def inspect(self, name: str) -> Dict[str, Any]:
+        data = self._request("GET", f"containers/{name}/json")
+        if not isinstance(data, dict):
+            data = {}
+
+        state = data.get("State", {}).get("Status")
+        return {"status": state, "attrs": data}
+
+    def start(self, name: str) -> None:
+        self._request("POST", f"containers/{name}/start")
+
+    def stop(self, name: str, timeout: Optional[int] = None) -> None:
+        params = {"t": timeout} if timeout is not None else None
+        self._request("POST", f"containers/{name}/stop", params=params)
+
+    def wait(self, name: str, timeout: Optional[int] = None) -> None:
+        request_timeout = timeout if timeout is not None else self.timeout
+        self._request("POST", f"containers/{name}/wait", timeout=request_timeout)
+
+    def unpause(self, name: str) -> None:
+        self._request("POST", f"containers/{name}/unpause")
+
+
+class ProxyContainer:
+    """Container facade backed by DockerProxyClient responses."""
+
+    def __init__(self, client: DockerProxyClient, name: str, payload: Dict[str, Any]):
+        self._client = client
+        self.name = name
+        self._payload = payload
+
+    def reload(self) -> None:
+        self._payload = self._client.inspect(self.name)
+
+    @property
+    def status(self) -> Optional[str]:
+        status = self._payload.get("status")
+        if status:
+            return status
+        attrs = self.attrs
+        if isinstance(attrs, dict):
+            return attrs.get("State", {}).get("Status")
+        return None
+
+    @property
+    def attrs(self) -> Dict[str, Any]:
+        attrs = self._payload.get("attrs")
+        if isinstance(attrs, dict):
+            return attrs
+        return {}
+
+    def start(self) -> None:
+        self._client.start(self.name)
+        self.reload()
+
+    def stop(self, timeout: Optional[int] = None) -> None:
+        self._client.stop(self.name, timeout=timeout)
+        self.reload()
+
+    def wait(self, timeout: Optional[int] = None) -> None:
+        self._client.wait(self.name, timeout=timeout)
+
+    def unpause(self) -> None:
+        self._client.unpause(self.name)
+        self.reload()
+
+
+client = DockerProxyClient(
+    base_url=os.environ.get("DOCKER_PROXY_URL"),
+    token=os.environ.get("DOCKER_PROXY_TOKEN"),
+)
 web_containers = [c.strip() for c in WEB_CONTAINERS if c.strip()]
 interval = int(str(os.environ.get("VAULT_ROTATION_INTERVAL", "90")).strip('"'))
 
@@ -98,13 +228,12 @@ signal.signal(signal.SIGTERM, handle_shutdown)
 # ------------------------------
 def get_container_safe(name):
     try:
-        cont = client.containers.get(name)
-        cont.reload()
-        return cont
-    except docker.errors.NotFound:
+        payload = client.inspect(name)
+        return ProxyContainer(client, name, payload)
+    except DockerProxyNotFound:
         log(f"[ERROR] Container {name} not found")
         return None
-    except Exception as e:
+    except DockerProxyError as e:
         log(f"[ERROR] Error getting container {name}: {e}")
         return None
 
@@ -116,10 +245,10 @@ def wait_until_healthy(container, check_interval=2, log_interval=30):
     while True:
         try:
             container.reload()
-        except docker.errors.NotFound:
+        except DockerProxyNotFound:
             log(f"[WAIT ERROR] Container {name} disappeared during warmup")
             return False
-        except Exception as e:
+        except DockerProxyError as e:
             log(f"[WAIT ERROR] Failed to reload {name}: {e}")
             time.sleep(check_interval)
             continue
@@ -171,7 +300,7 @@ def stop_container(name, reason=None, timeout=30):
 
     try:
         cont.reload()
-    except Exception as e:
+    except DockerProxyError as e:
         log(f"[STOP ERROR] Failed to reload {name} before stop: {e}")
 
     status = getattr(cont, "status", None)
@@ -180,7 +309,7 @@ def stop_container(name, reason=None, timeout=30):
             cont.unpause()
             cont.reload()
             status = cont.status
-        except Exception as e:
+        except DockerProxyError as e:
             log(f"[STOP ERROR] Failed to unpause {name}: {e}")
 
     if status not in ("running", "restarting"):
@@ -190,7 +319,7 @@ def stop_container(name, reason=None, timeout=30):
         cont.stop(timeout=timeout)
         try:
             cont.wait(timeout=timeout)
-        except Exception:
+        except DockerProxyError:
             # `wait` may fail for some drivers once the container is stopped – best effort only.
             pass
         log_reason = f" ({reason})" if reason else ""
@@ -208,7 +337,7 @@ def start_container(name, reason=None):
 
     try:
         cont.reload()
-    except Exception as e:
+    except DockerProxyError as e:
         log(f"[START ERROR] Failed to reload {name} before start: {e}")
 
     status = getattr(cont, "status", None)
@@ -217,7 +346,7 @@ def start_container(name, reason=None):
             cont.unpause()
             cont.reload()
             status = cont.status
-        except Exception as e:
+        except DockerProxyError as e:
             log(f"[START ERROR] Failed to unpause {name}: {e}")
 
     if status == "running":
@@ -461,7 +590,7 @@ def uptime_tracker_loop():
 
                 try:
                     cont.reload()
-                except Exception as e:
+                except DockerProxyError as e:
                     log(f"[UPTIME ERROR] Failed to reload {name}: {e}")
                     continue
 
