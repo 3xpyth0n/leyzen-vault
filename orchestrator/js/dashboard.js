@@ -152,9 +152,7 @@ function createChart(labels = [], data = []) {
         tooltip: {
           callbacks: {
             label: function (context) {
-              // Récupère la valeur brute (secondes)
               const value = context.parsed || 0;
-              // Supprime les décimales et formate joliment
               const seconds = Math.round(value);
               return `${context.label}: ${seconds}s`;
             },

@@ -44,7 +44,7 @@ PASSWORD = os.environ.get("VAULT_PASS", None)
 required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
 for var in required_vars:
     if not os.environ.get(var):
-        raise EnvironmentError(f"Variable {var} manquante dans .env")
+        raise EnvironmentError(f"Missing {var} variable in .env")
 
 # ------------------------------
 # Paths
@@ -146,7 +146,7 @@ def accumulate_and_clear_active(name):
 if not PASSWORD:
     raise EnvironmentError("VAULT_PASS must be set to initialize password hash.")
 PASSWORD_HASH = generate_password_hash(PASSWORD)
-# Effacer la ref en clair pour éviter toute mauvaise manip
+# Remove plain text password and save the hash
 del PASSWORD
 
 
@@ -307,7 +307,6 @@ def orchestrator_loop():
 
 
 def uptime_tracker_loop():
-    """Surveille tous les conteneurs et accumule leur uptime réel basé sur l'état 'healthy'."""
     while True:
         try:
             now = datetime.now(LOCAL_TZ)
@@ -326,13 +325,12 @@ def uptime_tracker_loop():
                 status = cont.status
                 health = cont.attrs.get("State", {}).get("Health", {}).get("Status")
 
-                # Cas 1 — Le conteneur est healthy
+                # Case 1 — container is healthy
                 if status == "running" and (health is None or health == "healthy"):
-                    # Si on ne le chronomètre pas encore, on démarre le timer
                     if not container_active_since.get(name):
                         container_active_since[name] = now
 
-                # Cas 2 — Le conteneur n'est plus healthy
+                # Case 2 — container is not healthy
                 else:
                     if container_active_since.get(name):
                         elapsed = int(
@@ -503,7 +501,6 @@ def api_control():
         rotation_resuming = True
         rotation_active = True
 
-        # on restart choose randomly one healthy container to continue
         try:
             if last_active_container and last_active_container in web_containers:
                 active_name = last_active_container
@@ -523,7 +520,6 @@ def api_control():
                     continue
 
                 if name == active_name:
-                    # S'assurer qu’il tourne
                     if cont.status != "running":
                         try:
                             cont.start()
@@ -604,11 +600,13 @@ def logs_raw():
     except Exception as e:
         return f"Error reading logs: {e}", 500
 
-
-@app.route("/orchestrator/dashboard.js", strict_slashes=False)
+@app.route("/orchestrator/js/<path:filename>", strict_slashes=False)
 @login_required
-def dashboard_js():
-    return send_from_directory(os.path.join(os.path.dirname(__file__)), "dashboard.js")
+def serve_js(filename):
+    response = send_from_directory(os.path.join(os.path.dirname(__file__), "js"), filename)
+    response.headers["Cache-Control"] = "public, max-age=3600, immutable"
+    response.headers["Content-Type"] = "application/javascript; charset=utf-8"
+    return response
 
 
 @app.route("/orchestrator/favicon.png", strict_slashes=False)
@@ -621,7 +619,7 @@ def favicon():
 def add_csp_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+        "script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self' https://fonts.gstatic.com; "

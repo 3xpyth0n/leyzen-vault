@@ -8,6 +8,4 @@ RUN apk add --no-cache docker-cli curl
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Lancer le script principal
 CMD ["python3", "vault_orchestrator.py"]
-

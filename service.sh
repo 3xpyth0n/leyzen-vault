@@ -6,7 +6,7 @@ cd "$PROJECT_DIR"
 
 start() {
     echo "🚀 Starting Docker stack..."
-    docker compose up -d
+    docker compose up -d --remove-orphans
 }
 
 stop() {

@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
+    <script src="/orchestrator/js/logs.js" defer></script>
     <title>Vault Orchestrator Logs</title>
     <style>
       :root {
@@ -234,7 +235,6 @@
         }
       }
 
-      /* empty message */
       .empty {
         color: var(--muted-2);
         text-align: center;
@@ -305,191 +305,5 @@
 
       <pre id="log">{{ log_content | e }}</pre>
     </div>
-
-    <script>
-      // Elements
-      const pre = document.getElementById("log");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const periodButtons = document.querySelectorAll(".period-btn");
-      const customRange = document.getElementById("customRange");
-      const startDateEl = document.getElementById("startDate");
-      const endDateEl = document.getElementById("endDate");
-      const applyCustomBtn = document.getElementById("applyCustom");
-      const autoSwitch = document.getElementById("autoSwitch");
-      const linesMeta = document.getElementById("linesMeta");
-
-      // State
-      let allLogs = pre && pre.textContent ? pre.textContent : "";
-      let selectedPeriod = "day"; // default
-      let autoRefreshHandle = null;
-      let isFetching = false;
-      let firstLoad = true;
-
-      // Helpers: parse date from a log line like: [2025-10-10 19:16:13]
-      function parseLogDate(line) {
-        const m = line.match(/^\[(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
-        if (!m) return null;
-        // create local date
-        const s = m[1] + "T" + m[2];
-        const d = new Date(s);
-        if (isNaN(d)) return null;
-        return d;
-      }
-
-      // Update metadata (lines count)
-      function updateMeta(count) {
-        linesMeta.textContent = `Lines: ${count}`;
-      }
-
-      // Display filtered logs (client-side)
-      function displayLogs(scrollBottom = false) {
-        if (!allLogs) {
-          pre.textContent = "";
-          updateMeta(0);
-          return;
-        }
-        const lines = allLogs.split(/\r?\n/).filter(Boolean);
-        const now = new Date();
-        let filtered = [];
-
-        if (selectedPeriod === "custom") {
-          const startVal = startDateEl.value;
-          const endVal = endDateEl.value;
-          if (!startVal || !endVal) {
-            // if custom but no dates set, show none and prompt user
-            filtered = [];
-          } else {
-            const start = new Date(startVal + "T00:00:00");
-            const end = new Date(endVal + "T23:59:59");
-            filtered = lines.filter((line) => {
-              const d = parseLogDate(line);
-              return d && d >= start && d <= end;
-            });
-          }
-        } else {
-          filtered = lines.filter((line) => {
-            const d = parseLogDate(line);
-            if (!d) return false;
-            if (selectedPeriod === "day") {
-              return (
-                d.getFullYear() === now.getFullYear() &&
-                d.getMonth() === now.getMonth() &&
-                d.getDate() === now.getDate()
-              );
-            } else if (selectedPeriod === "month") {
-              return (
-                d.getFullYear() === now.getFullYear() &&
-                d.getMonth() === now.getMonth()
-              );
-            } else if (selectedPeriod === "year") {
-              return d.getFullYear() === now.getFullYear();
-            }
-            return false;
-          });
-        }
-
-        if (filtered.length === 0) {
-          pre.innerHTML = "No logs for the selected period.";
-          updateMeta(0);
-        } else {
-          pre.textContent = filtered.join("\n");
-          updateMeta(filtered.length);
-        }
-
-        if (scrollBottom) {
-          pre.scrollTop = pre.scrollHeight;
-        }
-      }
-
-      // Fetch logs from backend (raw endpoint)
-      async function fetchLogs(scrollBottom = false) {
-        if (isFetching) return;
-        isFetching = true;
-        try {
-          const resp = await fetch("/orchestrator/logs/raw", {
-            cache: "no-store",
-          });
-          if (!resp.ok) throw new Error("HTTP " + resp.status);
-          const text = await resp.text();
-          allLogs = text;
-          // first load: scroll bottom
-          if (firstLoad) {
-            displayLogs(true);
-            firstLoad = false;
-          } else {
-            displayLogs(scrollBottom);
-          }
-        } catch (err) {
-          console.error("Failed to fetch logs:", err);
-        } finally {
-          isFetching = false;
-        }
-      }
-
-      // UI wiring
-      refreshBtn.addEventListener("click", () => {
-        fetchLogs(true);
-      });
-
-      periodButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          periodButtons.forEach((b) => {
-            b.classList.remove("active");
-            b.setAttribute("aria-pressed", "false");
-          });
-          btn.classList.add("active");
-          btn.setAttribute("aria-pressed", "true");
-
-          selectedPeriod = btn.dataset.period;
-          customRange.style.display =
-            selectedPeriod === "custom" ? "flex" : "none";
-
-          // if switching to custom, prefill start/end with sensible defaults
-          if (selectedPeriod === "custom") {
-            const now = new Date();
-            const iso = (d) => d.toISOString().slice(0, 10);
-            // default last 7 days
-            startDateEl.value = iso(
-              new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
-            );
-            endDateEl.value = iso(now);
-          }
-
-          // apply filter (does not refetch automatically except when you want latest data)
-          displayLogs(true);
-        });
-      });
-
-      applyCustomBtn.addEventListener("click", () => {
-        displayLogs(true);
-      });
-
-      // Auto refresh toggle
-      autoSwitch.addEventListener("click", () => {
-        autoSwitch.classList.toggle("on");
-        if (autoSwitch.classList.contains("on")) {
-          // start 1s polling without changing scroll position
-          autoRefreshHandle = setInterval(() => fetchLogs(false), 1000);
-        } else {
-          clearInterval(autoRefreshHandle);
-          autoRefreshHandle = null;
-        }
-      });
-
-      // initial boot: ensure Day is active and fetch logs
-      (function init() {
-        // mark default active
-        periodButtons.forEach((b) => {
-          if (b.dataset.period === "day") {
-            b.classList.add("active");
-            b.setAttribute("aria-pressed", "true");
-          } else {
-            b.setAttribute("aria-pressed", "false");
-          }
-        });
-        // initial fetch (will scroll to bottom)
-        fetchLogs(true);
-      })();
-    </script>
   </body>
 </html>
