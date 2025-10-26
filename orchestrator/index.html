@@ -8,6 +8,13 @@
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
+    <script>
+      window.DASHBOARD_CONFIG = {
+        rotationIntervalSeconds:
+          Number({{ vault_rotation_interval|tojson }}) +
+          Number({{ vault_health_timeout|tojson }}),
+      };
+    </script>
     <script src="/orchestrator/js/dashboard.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   </head>

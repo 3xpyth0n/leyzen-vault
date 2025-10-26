@@ -2,9 +2,9 @@
 
 let orchestratorRunning = true;
 const MAX_FAILS = 5; // after N fails consider API offline
+const DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || {};
 const ROTATION_INTERVAL_SECONDS =
-  Number("${{ vault_rotation_interval|tojson }}".replace("$", "")) +
-  Number("${{ vault_health_timeout|tojson }}".replace("$", ""));
+  Number(DASHBOARD_CONFIG.rotationIntervalSeconds) || 0;
 
 /* ==== CONTROL BUTTONS ==== */
 function getCookie(name) {
