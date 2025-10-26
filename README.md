@@ -1,20 +1,45 @@
-# Leyzen Vault
+# Leyzen Vault ⚙️
 
-## Description
+> **Dynamic Moving-Target Infrastructure — Proof of Concept**
+>
+> A self-rotating, self-healing environment built to demonstrate _ephemeral compute security_ through automated container polymorphism.
 
-**Leyzen Vault** est une preuve de concept démontrant un environnement de service dynamique.
-Le projet repose sur un orchestrateur écrit en Python, chargé de gérer la rotation automatique et aléatoires de plusieurs instances Paperless, utilisées ici comme exemple de service applicatif dont le back-end change continuellement.
-Cette rotation illustre le principe d’une infrastructure mouvante, où les composants ne restent jamais statiques afin de renforcer la sécurité.
+---
 
-Il inclut :
+## 📖 Table of Contents
 
-- **Paperless-ngx** : gestion documentaire sur trois conteneurs avec rotation polymorphe.
-- **Vault Orchestrator** : conteneur Python orchestrant la rotation des conteneurs et fournissant un tableau de bord en temps réel (statuts, uptimes, logs).
-- **HAProxy** : routage HTTP vers Paperless ou l'orchestrateur.
-- **Redis et Postgres** : backends nécessaires à Paperless.
-- **Volumes partagés** : volumes docker communs aux conteneurs Paperless.
+1. [Overview](#overview)
+2. [Core Components](#core-components)
+3. [Reference Architecture](#reference-architecture)
+4. [Prerequisites](#prerequisites)
+5. [Quick Start](#quick-start)
+6. [Service Endpoints](#service-endpoints)
+7. [Operations](#operations)
+8. [Design Highlights](#design-highlights)
+9. [Project Status](#project-status)
+10. [Credits](#credits)
 
-## Architecture
+---
+
+## 🧩 Overview
+
+Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Paperless-ngx_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
+
+---
+
+## ⚙️ Core Components
+
+| Component                 | Description                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Vault Orchestrator**    | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.          |
+| **Paperless-ngx Cluster** | Trio of document management containers rotated polymorphically.                                   |
+| **HAProxy**               | Reverse proxy exposed on port **8080**, routing users to Paperless or the Orchestrator dashboard. |
+| **Redis & PostgreSQL**    | Persistent backends for Paperless-ngx.                                                            |
+| **Shared Volumes**        | Docker volumes ensuring persistent user data and media across rotations.                          |
+
+---
+
+## 🧱 Reference Architecture
 
 ```
                    ┌───────────────┐
@@ -28,21 +53,25 @@ Il inclut :
            ┌───────────────┴───────────────┐
            │                               │
            ▼                               ▼
-  ┌─────────────────┐             ┌───────────────────┐
-  │  Orchestrateur  │             │   Paperless-ngx   │
-  │  /orchestrator  │             │    cluster web    │
-  │   (dashboard)   │             │  (rotation dyn.)  │
-  └─────────────────┘             └───────────────────┘
+  ┌─────────────────┐            ┌────────────────────┐
+  │  Orchestrator   │            │   Paperless-ngx    │
+  │   (dashboard)   │            │ (dynamic rotation) │
+  └─────────────────┘            └────────────────────┘
 ```
 
-## Prérequis
+---
 
-- Docker
+## 🧰 Prerequisites
+
+- Docker Engine + Compose plugin
 - Git
+- `sudo` privileges for installation
 
-## Installation et lancement
+---
 
-L’installation et le lancement du projet se font en **3 commandes simples** :
+## 🚀 Quick Start
+
+Clone and install in **3 commands**:
 
 ```bash
 git clone git@github.com:3xpyth0n/leyzen-vault.git
@@ -50,61 +79,61 @@ cd leyzen-vault
 sudo ./install.sh
 ```
 
-Une fois le service actif, vérifier son état via :
+Check service status:
 
 ```bash
 sudo systemctl status leyzen.service
 ```
 
-Et consulter les logs :
+Follow live logs:
 
 ```bash
 journalctl -u leyzen.service -f
 ```
 
-## Services
+---
 
-### HAProxy
+## 🌐 Service Endpoints
 
-- **Port exposé** : 8080
-- **Routage** :
-  - `/` → Paperless cluster
-  - `/orchestrator` → Vault Orchestrator dashboard
+| Service                          | URL / Port                                                               | Description                          |
+| -------------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
+| **HAProxy**                      | `:8080`                                                                  | Routes to Paperless and Orchestrator |
+| **Paperless-ngx**                | [http://localhost:8080/](http://localhost:8080/)                         | Document management UI               |
+| **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control     |
+| **Redis**                        | `6379`                                                                   | Used internally by Paperless         |
+| **PostgreSQL**                   | `5432`                                                                   | Used internally by Paperless         |
 
-### Paperless
+---
 
-- **Accès via** : [http://localhost:8080/](http://localhost:8080/)
-- **Volumes partagés** : data et media → persistance des données utilisateurs
-- **Rotation** : orchestrée par Vault Orchestrator, un conteneur actif à la fois, service toujours disponible.
+## 🔄 Operations
 
-### Vault Orchestrator Dashboard
+- Entirely sandboxed within a **Docker bridge network** — only HAProxy is exposed.
+- Health checks ensure uptime and auto-recovery.
+- The **Python Orchestrator** performs randomized rotation cycles.
+- **Shared volumes** preserve Paperless data between container lifespans.
 
-- Accessible via HAProxy sur [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator)
-- **Fonctionnalités** :
-  - Statuts des conteneurs
-  - Rotation en temps réel
-  - Graphiques d'uptime
-  - Accès aux logs
+---
 
-### Redis & Postgres
+## 💡 Design Highlights
 
-- Redis : 6379
-- Postgres : 5432
-- Exclusivement utilisés par Paperless
+✅ **Moving Target Defense:** Containers are continuously replaced to prevent persistence attacks.  
+✅ **Resilience:** The service remains operational even during rotations.  
+✅ **Observability:** `/orchestrator` provides full visibility into states, logs, and uptime metrics.  
+✅ **Isolation:** Only HAProxy touches the host network, minimizing the exposed surface.
 
-## Points importants
+---
 
-- **Confinement** : Tout est confiné à l’intérieur de Docker, dans un réseau bridge isolé, seul le HAProxy est exposé.
-- **Healthchecks** garantissant stabilité et supervision.
-- **Orchestrateur Python** : arrête et démarre les conteneurs aléatoirement pour une rotation polymorphe.
-- **Polymorphisme** : empêche la persistance d’attaques sur un conteneur spécifique.
-- **Volumes partagés** assurant la persistance des données Paperless.
+## 📊 Project Status
 
-## Notes
+Leyzen Vault is an evolving demonstrator exploring automated ephemeral backends, dynamic routing, and autonomous cyber defense patterns.
 
-- L’environnement reste fonctionnel même si certains conteneurs sont arrêtés ou redémarrés.
-- Le tableau de bord `/orchestrator` fournit un suivi centralisé de toutes les rotations et journaux.
+---
 
-## Copyright
+## 👤 Credits
 
-**_Auteur_** _: Saad Idrissi_
+**Author:** Saad Idrissi  
+**Concept:** Disposable Compute — _Infrastructure as a Disposable Service_
+
+---
+
+> © 2025 Saad Idrissi — All rights reserved.
