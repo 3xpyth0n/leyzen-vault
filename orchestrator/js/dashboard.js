@@ -13,6 +13,12 @@ function getCookie(name) {
   if (parts.length === 2) return parts.pop().split(";").shift();
 }
 
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta && meta.content) return meta.content;
+  return getCookie("csrf_token");
+}
+
 async function sendControl(action) {
   const statusEl = document.getElementById("control-status");
   if (!statusEl) return;
@@ -33,9 +39,17 @@ async function sendControl(action) {
   showStatus(`<span class="loader"></span> Processing ${action}...`);
 
   try {
+    const csrfToken = getCsrfToken();
+    if (!csrfToken) {
+      console.warn("CSRF token not found; request may be rejected.");
+    }
     const res = await fetch("/orchestrator/api/control", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+      },
+      credentials: "same-origin",
       body: JSON.stringify({ action }),
     });
 

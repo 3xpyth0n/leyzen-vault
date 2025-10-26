@@ -27,6 +27,7 @@ from collections import defaultdict, deque
 
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf import CSRFProtect
+from flask_wtf.csrf import generate_csrf
 
 # ------------------------------
 # Timezone
@@ -424,12 +425,12 @@ def dashboard():
         "index.html",
         vault_rotation_interval=vault_rotation_interval,
         vault_health_timeout=vault_health_timeout,
+        csrf_token=generate_csrf(),
     )
 
 
 @app.route("/orchestrator/api/control", methods=["POST"])
 @login_required
-@csrf.exempt
 def api_control():
     global rotation_active
 
@@ -527,14 +528,15 @@ def api_control():
                         except Exception as e:
                             log(f"[RESUME ERROR] Failed to start {name}: {e}")
                     continue
-
-            # Stop all the others
-            if cont.status == "running":
-                try:
-                    cont.stop()
-                    log(f"[RESUME] Stopped {name} to enforce single-active policy")
-                except Exception as e:
-                    log(f"[RESUME ERROR] Failed to stop {name}: {e}")
+                else:
+                    if cont.status == "running":
+                        try:
+                            cont.stop()
+                            log(
+                                f"[RESUME] Stopped {name} to enforce single-active policy"
+                            )
+                        except Exception as e:
+                            log(f"[RESUME ERROR] Failed to stop {name}: {e}")
 
             log(
                 f"[ORCH] Rotation resumed with {active_name} as initial active container"

@@ -21,13 +21,13 @@
 
 ---
 
-## 🧩 Overview
+## Overview 🧩
 
 Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Paperless-ngx_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
 
 ---
 
-## ⚙️ Core Components
+## Core Components ⚙️
 
 | Component                 | Description                                                                                       |
 | ------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -39,7 +39,7 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ---
 
-## 🧱 Reference Architecture
+## Reference Architecture 🧱
 
 ```
                    ┌───────────────┐
@@ -61,7 +61,7 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ---
 
-## 🧰 Prerequisites
+## Prerequisites 🧰
 
 - Docker Engine + Compose plugin
 - Git
@@ -69,7 +69,7 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ---
 
-## 🚀 Quick Start
+## Quick Start 🚀
 
 Clone and install in **3 commands**:
 
@@ -93,7 +93,7 @@ journalctl -u leyzen.service -f
 
 ---
 
-## 🌐 Service Endpoints
+## Service Endpoints 🌐
 
 | Service                          | URL / Port                                                               | Description                          |
 | -------------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
@@ -105,7 +105,7 @@ journalctl -u leyzen.service -f
 
 ---
 
-## 🔄 Operations
+## Operations 🔄
 
 - Entirely sandboxed within a **Docker bridge network** — only HAProxy is exposed.
 - Health checks ensure uptime and auto-recovery.
@@ -114,7 +114,7 @@ journalctl -u leyzen.service -f
 
 ---
 
-## 💡 Design Highlights
+## Design Highlights 💡
 
 ✅ **Moving Target Defense:** Containers are continuously replaced to prevent persistence attacks.  
 ✅ **Resilience:** The service remains operational even during rotations.  
@@ -123,13 +123,13 @@ journalctl -u leyzen.service -f
 
 ---
 
-## 📊 Project Status
+## Project Status 📊
 
 Leyzen Vault is an evolving demonstrator exploring automated ephemeral backends, dynamic routing, and autonomous cyber defense patterns.
 
 ---
 
-## 👤 Credits
+## Credits 👤
 
 **Author:** Saad Idrissi  
 **Concept:** Disposable Compute — _Infrastructure as a Disposable Service_
