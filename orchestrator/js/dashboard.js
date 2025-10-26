@@ -11,11 +11,7 @@ function readNumberMeta(name) {
 }
 
 const rotationIntervalMeta = readNumberMeta("dashboard-rotation-interval") || 0;
-const healthTimeoutMeta = readNumberMeta("dashboard-health-timeout") || 0;
-const ROTATION_INTERVAL_SECONDS = Math.max(
-  0,
-  rotationIntervalMeta + healthTimeoutMeta,
-);
+const ROTATION_INTERVAL_SECONDS = Math.max(0, rotationIntervalMeta);
 
 /* ==== CONTROL BUTTONS ==== */
 function getCookie(name) {
