@@ -68,8 +68,13 @@ async function sendControl(action) {
     showStatus(json.message || "Action sent.");
 
     if (res.ok) {
-      orchestratorRunning = json.rotation_active;
+      if (typeof json.rotation_active === "boolean") {
+        orchestratorRunning = json.rotation_active;
+      }
       updateControlButtons();
+      if (!orchestratorRunning) {
+        stopCountdown("Next in: paused");
+      }
     }
   } catch (err) {
     console.error("Control action failed:", err);
@@ -226,9 +231,23 @@ function startCountdown(seconds) {
   }, 1000);
 }
 
+function stopCountdown(message = "Next in: paused") {
+  const nextEl = document.getElementById("next-rotation");
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  nextRotationDiff = 0;
+  lastRotationTs = null;
+  if (nextEl) {
+    nextEl.textContent = message;
+  }
+}
+
 /* UPDATE DASHBOARD */
 function updateDashboardFromData(json) {
   try {
+    const wasRunning = orchestratorRunning;
     failCount = 0;
     lastSuccessfulFetch = Date.now();
     lastKnownData = json;
@@ -373,12 +392,15 @@ function updateDashboardFromData(json) {
 
     const nextEl = document.getElementById("next-rotation");
     if (nextEl) {
-      if (json.last_rotation) {
+      if (!orchestratorRunning) {
+        stopCountdown("Next in: paused");
+      } else if (json.last_rotation) {
         const newLastTs = new Date(json.last_rotation.replace(" ", "T"));
         const now = new Date();
         if (
           !lastRotationTs ||
-          newLastTs.getTime() !== lastRotationTs.getTime()
+          newLastTs.getTime() !== lastRotationTs.getTime() ||
+          !wasRunning
         ) {
           lastRotationTs = newLastTs;
           const nextTs = new Date(
@@ -389,7 +411,7 @@ function updateDashboardFromData(json) {
           startCountdown(diff);
         }
       } else {
-        safeSetText("next-rotation", "Next in: —");
+        stopCountdown("Next in: —");
       }
     }
   } catch (err) {

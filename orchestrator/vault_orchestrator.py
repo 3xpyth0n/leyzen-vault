@@ -60,7 +60,14 @@ HTML_DIR = os.path.join(os.path.dirname(__file__))
 client = docker.from_env()
 web_containers = [c.strip() for c in WEB_CONTAINERS if c.strip()]
 interval = int(str(os.environ.get("VAULT_ROTATION_INTERVAL", "90")).strip('"'))
-health_timeout = int(str(os.environ.get("VAULT_HEALTH_TIMEOUT", "30")).strip('"'))
+raw_health_timeout = str(os.environ.get("VAULT_HEALTH_TIMEOUT", "60")).strip('"')
+try:
+    health_timeout = int(raw_health_timeout)
+except ValueError:
+    health_timeout = 60
+
+if health_timeout < 0:
+    health_timeout = 0
 
 rotation_count = 0
 rotation_active = True  # default: running
@@ -110,6 +117,7 @@ def get_container_safe(name):
 
 def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
     start = time.time()
+    no_deadline = timeout in (None, 0)
     while True:
         try:
             container.reload()
@@ -119,7 +127,7 @@ def wait_until_healthy(container, check_interval=2, timeout=health_timeout):
                 return True
         except Exception as e:
             log(f"[ERROR] while checking health: {e}")
-        if time.time() - start > timeout:
+        if not no_deadline and (time.time() - start) > timeout:
             return False
         time.sleep(check_interval)
 
@@ -299,6 +307,9 @@ def orchestrator_loop():
             active_name = name
             break
         else:
+            timeout_note = (
+                "" if health_timeout in (None, 0) else f" within {health_timeout}s"
+            )
             log(
                 f"[WARNING] {name} did not become healthy during startup — stopping container."
             )
@@ -357,6 +368,11 @@ def orchestrator_loop():
                     continue
 
                 if not wait_until_healthy(next_cont):
+                    timeout_note = (
+                        ""
+                        if health_timeout in (None, 0)
+                        else f" within {health_timeout}s"
+                    )
                     log(
                         f"[WARNING] {next_name} did not become healthy in time — stopping container."
                     )
