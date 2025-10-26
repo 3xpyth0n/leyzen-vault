@@ -8,8 +8,12 @@ RUN npm ci && npx tailwindcss -i ./tailwind.css -o ./tailwind.output.css --minif
 FROM python:3.11-alpine
 WORKDIR /app
 RUN apk add --no-cache docker-cli curl
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.in requirements.txt ./
+# Capture the dependency manifest hash so Docker invalidates this layer when
+# pinned versions change.
+RUN sha256sum requirements.txt > requirements.txt.sha \
+    && pip install --no-cache-dir -r requirements.txt \
+    && rm requirements.txt.sha
 COPY . .
 
 # Copy compiled CSS only
