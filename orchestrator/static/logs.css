@@ -1,0 +1,236 @@
+@import "./tailwind.css";
+
+:root {
+  --muted: #94a3b8;
+  --bg: #0a0f1c;
+  --panel: rgba(255, 255, 255, 0.04);
+  --accent1: #2dd4bf;
+  --accent2: #60a5fa;
+  --text: #e6eef8;
+  --muted-2: #9aa6b2;
+}
+
+/* Global */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Container: almost full screen */
+.container {
+  width: 90vw;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+/* Controls group */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Buttons */
+.btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.45);
+}
+.btn:active {
+  transform: scale(0.99);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+/* Period filter buttons */
+.periods {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.period-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.period-btn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.period-btn.active {
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  color: #04121a;
+  box-shadow: 0 8px 30px rgba(45, 212, 191, 0.08);
+  border: none;
+}
+
+/* Custom range inputs */
+.custom-range {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.custom-range input[type="date"] {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.help {
+  font-size: 0.85rem;
+  color: var(--muted-2);
+  margin-left: 0.5rem;
+}
+
+/* Auto refresh switch (simple) */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+  cursor: pointer;
+}
+.track {
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+.thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  transform: translateX(0);
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.45);
+}
+.switch.on .track {
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+}
+.switch.on .thumb {
+  transform: translateX(23px);
+}
+
+/* Info: number of lines */
+.meta {
+  font-size: 0.85rem;
+  color: var(--muted-2);
+  margin-left: 0.75rem;
+}
+
+/* Log area */
+pre {
+  flex: 1;
+  margin: 0;
+  padding: 1rem;
+  overflow-y: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  background: transparent;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #dfeff6;
+}
+
+/* Scrollbar */
+pre::-webkit-scrollbar {
+  width: 10px;
+}
+pre::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+}
+pre::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, var(--accent1), var(--accent2));
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+pre::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(45deg, #3ae9d2, #7eb4ff);
+}
+
+/* Small responsive */
+@media (max-width: 720px) {
+  .header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+  .controls {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .custom-range {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
+
+.empty {
+  color: var(--muted-2);
+  text-align: center;
+  padding: 1rem;
+}
