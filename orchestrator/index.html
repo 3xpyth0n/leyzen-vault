@@ -4,17 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="csrf-token" content="{{ csrf_token }}" />
+    <meta
+      name="dashboard-rotation-interval"
+      content="{{ vault_rotation_interval|tojson }}"
+    />
+    <meta
+      name="dashboard-health-timeout"
+      content="{{ vault_health_timeout|tojson }}"
+    />
     <title>Vault Orchestrator — Dashboard</title>
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
-    <script>
-      window.DASHBOARD_CONFIG = {
-        rotationIntervalSeconds:
-          Number({{ vault_rotation_interval|tojson }}) +
-          Number({{ vault_health_timeout|tojson }}),
-      };
-    </script>
     <script src="/orchestrator/js/dashboard.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   </head>

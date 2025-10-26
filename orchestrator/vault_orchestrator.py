@@ -644,7 +644,7 @@ def add_csp_headers(response):
     return response
 
 
-@app.route("/csp-violation-report-endpoint", methods=["POST"])
+@app.route("/orchestrator/csp-violation-report-endpoint", methods=["POST"])
 @login_required
 def csp_violation_report():
     print("[CSP VIOLATION]", request.json)

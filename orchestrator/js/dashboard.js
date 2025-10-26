@@ -2,9 +2,20 @@
 
 let orchestratorRunning = true;
 const MAX_FAILS = 5; // after N fails consider API offline
-const DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || {};
-const ROTATION_INTERVAL_SECONDS =
-  Number(DASHBOARD_CONFIG.rotationIntervalSeconds) || 0;
+
+function readNumberMeta(name) {
+  const meta = document.querySelector(`meta[name="${name}"]`);
+  if (!meta) return null;
+  const value = Number(meta.content);
+  return Number.isFinite(value) ? value : null;
+}
+
+const rotationIntervalMeta = readNumberMeta("dashboard-rotation-interval") || 0;
+const healthTimeoutMeta = readNumberMeta("dashboard-health-timeout") || 0;
+const ROTATION_INTERVAL_SECONDS = Math.max(
+  0,
+  rotationIntervalMeta + healthTimeoutMeta,
+);
 
 /* ==== CONTROL BUTTONS ==== */
 function getCookie(name) {
