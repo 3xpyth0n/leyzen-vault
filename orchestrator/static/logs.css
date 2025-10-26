@@ -125,6 +125,10 @@ body {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  margin-left: 8px;
+}
+.custom-range.is-hidden {
+  display: none;
 }
 .custom-range input[type="date"] {
   background: transparent;
@@ -149,6 +153,11 @@ body {
   user-select: none;
   cursor: pointer;
 }
+.switch-label {
+  color: var(--muted);
+  font-weight: 600;
+  margin-left: 6px;
+}
 .track {
   width: 44px;
   height: 26px;
@@ -171,7 +180,7 @@ body {
   background: linear-gradient(90deg, var(--accent1), var(--accent2));
 }
 .switch.on .thumb {
-  transform: translateX(23px);
+  transform: translateX(17px);
 }
 
 /* Info: number of lines */

@@ -132,10 +132,10 @@ periodButtons.forEach((btn) => {
     btn.setAttribute("aria-pressed", "true");
 
     selectedPeriod = btn.dataset.period;
-    customRange.style.display = selectedPeriod === "custom" ? "flex" : "none";
-
+    const shouldShowCustom = selectedPeriod === "custom";
+    customRange.classList.toggle("is-hidden", !shouldShowCustom);
     // if switching to custom, prefill start/end with sensible defaults
-    if (selectedPeriod === "custom") {
+    if (shouldShowCustom) {
       const now = new Date();
       const iso = (d) => d.toISOString().slice(0, 10);
       // default last 7 days
