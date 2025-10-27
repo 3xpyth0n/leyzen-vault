@@ -946,11 +946,11 @@ def favicon():
 def add_csp_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' https://cdn.jsdelivr.net; "
+        "script-src 'self'; "
         "style-src 'self' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "connect-src 'self' https://cdn.jsdelivr.net;"
+        "connect-src 'self'; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
