@@ -8,6 +8,7 @@ from threading import Thread
 import logging
 import json
 from typing import Any, Dict, Optional
+from urllib.parse import urljoin, urlsplit
 from flask import (
     Flask,
     render_template,
@@ -681,6 +682,22 @@ def login_required(f):
     return decorated_function
 
 
+def is_safe_redirect(target: Optional[str]) -> bool:
+    """Return True when *target* is a safe redirect destination."""
+
+    if not target:
+        return False
+
+    ref_url = urlsplit(request.host_url)
+    test_url = urlsplit(urljoin(request.host_url, target))
+
+    return (
+        test_url.scheme in {"http", "https"}
+        and ref_url.netloc == test_url.netloc
+        and test_url.path.startswith("/")
+    )
+
+
 @app.route("/orchestrator/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -701,7 +718,10 @@ def login():
             session["logged_in"] = True
             session.permanent = False
             log(f"[AUTH SUCCESS] {username} from {client_ip}")
-            return redirect(request.args.get("next") or url_for("dashboard"))
+            next_url = request.args.get("next")
+            if not is_safe_redirect(next_url):
+                next_url = url_for("dashboard")
+            return redirect(next_url)
         else:
             register_failed_attempt(client_ip)
             log(f"[AUTH FAIL] login attempt for user={username} from {client_ip}")

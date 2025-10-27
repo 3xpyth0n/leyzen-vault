@@ -65,8 +65,7 @@ $EDITOR .env  # Renseignez des identifiants forts et tournants (VAULT_*, FILEBRO
 sudo ./install.sh
 ```
 
-> ⚠️ **Sécurité :** définissez `FILEBROWSER_ADMIN_USER` et `FILEBROWSER_ADMIN_PASSWORD` avec des valeurs longues, aléatoires et
-> renouvelez-les régulièrement avant chaque (re)déploiement.
+> ⚠️ **Security**: Set `FILEBROWSER_ADMIN_PASSWORD` to long, random value and renew it regularly.
 
 Check service status:
 
