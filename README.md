@@ -61,7 +61,7 @@ Clone, configure your secrets, then install:
 git clone git@github.com:3xpyth0n/leyzen-vault.git
 cd leyzen-vault
 cp env.template .env
-$EDITOR .env  # Renseignez des identifiants forts et tournants (VAULT_*, FILEBROWSER_ADMIN_*)
+nano .env
 sudo ./install.sh
 ```
 
@@ -113,6 +113,11 @@ journalctl -u leyzen.service -f
   2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.
   3. Reload the stack (`docker compose up -d orchestrator docker-proxy`).
   4. Revoke the old token wherever it was stored.
+
+### CSP reporting endpoint protection
+
+- `CSP_REPORT_MAX_SIZE` (default `4096`) rejects oversized Content Security Policy violation reports with HTTP 413 **before** the orchestrator reads the payload.
+- `CSP_REPORT_RATE_LIMIT` (default `5`) caps accepted CSP reports per client IP over a rolling 60-second window; further requests receive HTTP 429.
 
 ---
 
