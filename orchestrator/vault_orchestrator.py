@@ -31,7 +31,6 @@ import requests
 
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf import CSRFProtect
-from flask_wtf.csrf import generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ------------------------------
@@ -774,9 +773,14 @@ def login():
     return render_template("login.html", error=error)
 
 
-@app.route("/orchestrator/logout", methods=["GET"])
+@app.route("/orchestrator/logout", methods=["GET"], endpoint="logout_get")
+def logout_get():
+    abort(405)
+
+
+@app.route("/orchestrator/logout", methods=["POST"])
 def logout():
-    session["logged_in"] = False
+    session.clear()
     return redirect(url_for("login"))
 
 
@@ -787,7 +791,6 @@ def dashboard():
     return render_template(
         "index.html",
         vault_rotation_interval=vault_rotation_interval,
-        csrf_token=generate_csrf(),
     )
 
 

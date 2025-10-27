@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="csrf-token" content="{{ csrf_token }}" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <meta
       name="dashboard-rotation-interval"
       content="{{ vault_rotation_interval|tojson }}"
@@ -178,13 +178,15 @@
 
       <footer class="flex items-center justify-center border-t border-white/5">
         <div class="p-3 text-xs text-slate-400 flex items-center gap-3">
-          <a
-            href="/orchestrator/logout"
-            class="text-xs text-slate-400 underline hover:text-slate-200"
+          <form
+            method="post"
+            action="/orchestrator/logout"
+            class="logout-form"
             title="Logout"
           >
-            Logout
-          </a>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button type="submit" class="logout-button">Logout</button>
+          </form>
 
           <span class="text-slate-600">•</span>
           <span class="font-bold">Leyzen™</span>
