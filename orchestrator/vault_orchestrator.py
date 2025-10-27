@@ -56,6 +56,26 @@ for var in required_vars:
     if not os.environ.get(var):
         raise EnvironmentError(f"Missing {var} variable in .env")
 
+CSP_REPORT_MAX_SIZE_DEFAULT = 4096
+_csp_max_size_raw = os.environ.get(
+    "CSP_REPORT_MAX_SIZE", str(CSP_REPORT_MAX_SIZE_DEFAULT)
+).strip()
+try:
+    CSP_REPORT_MAX_SIZE = max(0, int(str(_csp_max_size_raw).strip('"')))
+except ValueError:
+    CSP_REPORT_MAX_SIZE = CSP_REPORT_MAX_SIZE_DEFAULT
+
+CSP_REPORT_RATE_LIMIT_DEFAULT = 5
+_csp_rate_limit_raw = os.environ.get(
+    "CSP_REPORT_RATE_LIMIT", str(CSP_REPORT_RATE_LIMIT_DEFAULT)
+).strip()
+try:
+    CSP_REPORT_RATE_LIMIT = max(1, int(str(_csp_rate_limit_raw).strip('"')))
+except ValueError:
+    CSP_REPORT_RATE_LIMIT = CSP_REPORT_RATE_LIMIT_DEFAULT
+
+CSP_REPORT_RATE_WINDOW = timedelta(seconds=60)
+
 # ------------------------------
 # Paths
 # ------------------------------
@@ -406,6 +426,9 @@ def verify_credentials(username, password):
 login_attempts = defaultdict(lambda: deque(maxlen=10))  # store timestamps per IP
 MAX_ATTEMPTS = 5
 BLOCK_WINDOW = timedelta(minutes=5)
+
+
+csp_report_attempts = defaultdict(deque)
 
 
 def is_blocked(ip, current_time=None):
@@ -965,6 +988,33 @@ def add_csp_headers(response):
 @app.route("/orchestrator/csp-violation-report-endpoint", methods=["POST"])
 @csrf.exempt
 def csp_violation_report():
+    client_ip = get_client_ip() or "unknown"
+    now = datetime.now()
+    attempts = csp_report_attempts[client_ip]
+
+    while attempts and now - attempts[0] > CSP_REPORT_RATE_WINDOW:
+        attempts.popleft()
+
+    if len(attempts) >= CSP_REPORT_RATE_LIMIT:
+        log(
+            f"[CSP VIOLATION] rate limit exceeded for {client_ip} "
+            f"({CSP_REPORT_RATE_LIMIT} reports / {int(CSP_REPORT_RATE_WINDOW.total_seconds())}s)"
+        )
+        return "", 429
+
+    content_length = request.content_length
+    if (
+        CSP_REPORT_MAX_SIZE
+        and content_length is not None
+        and content_length > CSP_REPORT_MAX_SIZE
+    ):
+        log(
+            f"[CSP VIOLATION] payload rejected (too large: {content_length} bytes) from {client_ip}"
+        )
+        return "", 413
+
+    attempts.append(now)
+
     report = request.get_json(silent=True)
 
     if report is None and request.data:
