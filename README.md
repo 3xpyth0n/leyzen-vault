@@ -107,6 +107,7 @@ journalctl -u leyzen.service -f
 
 - `docker-proxy` is attached exclusively to the internal `control-net` bridge. Other services cannot reach the Docker socket unless they are explicitly joined to that network.
 - `orchestrator` is dual-homed (`vault-net` + `control-net`) so it can expose the dashboard while still reaching the proxy for lifecycle actions.
+- Client IP attribution is mediated by Werkzeug's `ProxyFix`. Keep `PROXY_TRUST_COUNT=1` (default) when HAProxy fronts the stack, and switch to `0` if clients hit the orchestrator directly without a proxy.
 - Every proxy call includes the `Authorization: Bearer <DOCKER_PROXY_TOKEN>` header. Rotate this token routinely:
   1. Generate a fresh random string (for example with `openssl rand -hex 32`).
   2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.

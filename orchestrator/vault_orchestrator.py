@@ -31,6 +31,7 @@ import requests
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ------------------------------
 # Timezone
@@ -43,6 +44,11 @@ LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
 USERNAME = os.environ.get("VAULT_USER", "admin")
 PASSWORD = os.environ.get("VAULT_PASS", None)
+_proxy_trust_raw = os.environ.get("PROXY_TRUST_COUNT", "1").strip()
+try:
+    PROXY_TRUST_COUNT = max(0, int(_proxy_trust_raw))
+except ValueError:
+    PROXY_TRUST_COUNT = 1
 
 # Ensure required vars
 required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"]
@@ -384,13 +390,6 @@ PASSWORD_HASH = generate_password_hash(PASSWORD)
 del PASSWORD
 
 
-TRUSTED_PROXY_IPS = {
-    ip.strip()
-    for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",")
-    if ip.strip()
-}
-
-
 def verify_credentials(username, password):
     if username != USERNAME:
         return False
@@ -423,16 +422,12 @@ def register_failed_attempt(ip, attempt_time=None):
 
 
 def get_client_ip():
-    remote_addr = request.remote_addr
+    if PROXY_TRUST_COUNT > 0:
+        access_route = list(request.access_route)
+        if access_route:
+            return access_route[0]
 
-    if remote_addr in TRUSTED_PROXY_IPS:
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for:
-            client_ip = forwarded_for.split(",")[0].strip()
-            if client_ip:
-                return client_ip
-
-    return remote_addr
+    return request.remote_addr
 
 
 # ------------------------------
@@ -658,6 +653,13 @@ def uptime_tracker_loop():
 # Flask app + CSRF + session cookies
 # ------------------------------
 app = Flask(__name__, template_folder=HTML_DIR, static_folder=HTML_DIR)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=PROXY_TRUST_COUNT,
+    x_proto=PROXY_TRUST_COUNT,
+    x_host=PROXY_TRUST_COUNT,
+    x_port=PROXY_TRUST_COUNT,
+)
 app.secret_key = os.environ.get("VAULT_SECRET_KEY")
 
 app.config.update(
