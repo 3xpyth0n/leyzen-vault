@@ -64,20 +64,16 @@ EOF
 
 case "${1:-}" in
     start)
-        clear
         start
         ;;
     stop)
-        clear
         stop
         ;;
     restart)
-        clear
         stop
         start
         ;;
     build)
-        clear
         build
         ;;
     status)

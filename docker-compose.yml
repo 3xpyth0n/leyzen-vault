@@ -1,63 +1,34 @@
+x-filebrowser-base: &filebrowser-base
+  build:
+    context: ./filebrowser
+  image: leyzen/filebrowser:latest
+  env_file:
+    - .env
+  environment:
+    FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
+    FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
+  expose:
+    - "80"
+  volumes:
+    - filebrowser-data:/srv
+    - filebrowser-database:/database
+    - filebrowser-config:/config
+  restart: on-failure
+  networks:
+    - vault-net
+
 services:
   filebrowser_web1:
-    image: filebrowser/filebrowser:latest
+    <<: *filebrowser-base
     container_name: filebrowser_web1
-    env_file:
-      - .env
-    environment:
-      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
-      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
-    expose:
-      - "80"
-    volumes:
-      - filebrowser-data:/srv
-      - filebrowser-database:/database
-      - filebrowser-config:/config
-      - ./filebrowser/entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/docker-entrypoint.sh"]
-    restart: on-failure
-    networks:
-      - vault-net
 
   filebrowser_web2:
-    image: filebrowser/filebrowser:latest
+    <<: *filebrowser-base
     container_name: filebrowser_web2
-    env_file:
-      - .env
-    environment:
-      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
-      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
-    expose:
-      - "80"
-    volumes:
-      - filebrowser-data:/srv
-      - filebrowser-database:/database
-      - filebrowser-config:/config
-      - ./filebrowser/entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/docker-entrypoint.sh"]
-    restart: on-failure
-    networks:
-      - vault-net
 
   filebrowser_web3:
-    image: filebrowser/filebrowser:latest
+    <<: *filebrowser-base
     container_name: filebrowser_web3
-    env_file:
-      - .env
-    environment:
-      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
-      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
-    expose:
-      - "80"
-    volumes:
-      - filebrowser-data:/srv
-      - filebrowser-database:/database
-      - filebrowser-config:/config
-      - ./filebrowser/entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/docker-entrypoint.sh"]
-    restart: on-failure
-    networks:
-      - vault-net
 
   haproxy:
     image: haproxy:2.8-alpine
