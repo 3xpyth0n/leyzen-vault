@@ -76,7 +76,7 @@ class DockerProxyClient:
         self,
         base_url: Optional[str] = None,
         token: Optional[str] = None,
-        timeout: float = 10.0,
+        timeout: float = 20.0,
     ) -> None:
         self.base_url = (base_url or "http://docker-proxy:2375").rstrip("/")
         self.token = token

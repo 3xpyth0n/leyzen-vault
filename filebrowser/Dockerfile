@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM alpine:3.19 AS filebrowser
 
-ARG FILEBROWSER_VERSION="2.44.2"
+ARG FILEBROWSER_VERSION=2.44.2
 ARG FILEBROWSER_DOWNLOAD_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
 
 RUN apk add --no-cache ca-certificates curl tar && \

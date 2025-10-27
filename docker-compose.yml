@@ -1,6 +1,8 @@
 x-filebrowser-base: &filebrowser-base
   build:
     context: ./filebrowser
+    args:
+      FILEBROWSER_VERSION: ${FILEBROWSER_VERSION:-2.44.2}
   image: leyzen/filebrowser:latest
   env_file:
     - .env
@@ -14,6 +16,8 @@ x-filebrowser-base: &filebrowser-base
     - filebrowser-database:/database
     - filebrowser-config:/config
   restart: on-failure
+  depends_on:
+    - orchestrator
   networks:
     - vault-net
 
