@@ -26,6 +26,7 @@ import signal
 import sys
 import pytz
 from collections import defaultdict, deque
+from ipaddress import ip_address
 import requests
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -446,9 +447,27 @@ def register_failed_attempt(ip, attempt_time=None):
 
 def get_client_ip():
     if PROXY_TRUST_COUNT > 0:
-        access_route = list(request.access_route)
-        if access_route:
-            return access_route[0]
+        header_value = request.headers.get("X-Forwarded-For", "")
+        if header_value:
+            forwarded_ips = [ip.strip() for ip in header_value.split(",") if ip.strip()]
+            for candidate in forwarded_ips:
+                try:
+                    parsed = ip_address(candidate)
+                except ValueError:
+                    continue
+
+                if not (
+                    parsed.is_private
+                    or parsed.is_loopback
+                    or parsed.is_reserved
+                    or parsed.is_link_local
+                ):
+                    return candidate
+
+            if forwarded_ips:
+                # All entries were private or unparsable; report the first
+                # value so at least the logging remains consistent.
+                return forwarded_ips[0]
 
     return request.remote_addr
 
