@@ -15,8 +15,7 @@ RUN apk add --no-cache ca-certificates curl tar && \
 COPY ./entrypoint.sh /usr/local/bin/filebrowser-entrypoint.sh
 RUN chmod +x /usr/local/bin/filebrowser-entrypoint.sh
 
-ENV FILEBROWSER_STARTUP_DELAY=10 \
-    FILEBROWSER_BIN=/usr/local/bin/filebrowser
+ENV FILEBROWSER_BIN=/usr/local/bin/filebrowser
 
 EXPOSE 80
 VOLUME ["/config", "/database", "/srv"]
