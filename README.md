@@ -90,12 +90,24 @@ journalctl -u leyzen.service -f
 
 ## Operations 🔄
 
-- Entirely sandboxed within a **Docker bridge network** — only HAProxy is exposed.
+- Network isolation uses two dedicated bridges: `vault-net` (user-facing services) and `control-net` (docker-proxy control plane). Only HAProxy is exposed publicly.
 - Health checks ensure uptime and auto-recovery.
 - The **Python Orchestrator** performs randomized rotation cycles.
 - **Shared volumes** (`filebrowser-data:/srv`, `filebrowser-database:/database`, `filebrowser-config:/config`) preserve Filebrowser uploads, user accounts, and configuration between container lifespans.
 - Filebrowser runs without external databases or caches, simplifying the demo stack.
-- Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`), replacing direct socket mounts.
+- Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`) with a rotating `DOCKER_PROXY_TOKEN`, replacing direct socket mounts.
+
+---
+
+## Control Plane Security 🔐
+
+- `docker-proxy` is attached exclusively to the internal `control-net` bridge. Other services cannot reach the Docker socket unless they are explicitly joined to that network.
+- `orchestrator` is dual-homed (`vault-net` + `control-net`) so it can expose the dashboard while still reaching the proxy for lifecycle actions.
+- Every proxy call includes the `Authorization: Bearer <DOCKER_PROXY_TOKEN>` header. Rotate this token routinely:
+  1. Generate a fresh random string (for example with `openssl rand -hex 32`).
+  2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.
+  3. Reload the stack (`docker compose up -d orchestrator docker-proxy`).
+  4. Revoke the old token wherever it was stored.
 
 ---
 

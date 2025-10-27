@@ -1,34 +1,26 @@
-# Vulnerability Management Process
+# Security Guidelines
 
-This service keeps its Python dependencies pinned and reviewed on a fixed cadence to
-avoid silently picking up vulnerabilities.
+## Network Segmentation
 
-## Dependency pinning workflow
+- `vault-net` carries client-facing traffic (HAProxy, Filebrowser, orchestrator dashboard).
+- `control-net` isolates the Docker control plane; only `docker-proxy` and `orchestrator` are attached.
+- Validate with `docker network inspect` after deployments to ensure no unexpected services join `control-net`.
 
-1. Edit `requirements.in` when you need to add or remove top-level dependencies.
-2. Regenerate `requirements.txt` with fully pinned versions:
-   ```bash
-   cd orchestrator
-   pip-compile requirements.in --output-file requirements.txt
-   pip freeze | grep -E '^(Flask|Flask-WTF|requests|pytz)=='
-   ```
-   The `pip freeze` command double-checks that the installed versions match what
-   is written to the lock file.
-3. Commit both files and rebuild the Docker image.
+## Docker Proxy Access Control
 
-## Regular CVE reviews
+- All lifecycle commands traverse the authenticated `docker-proxy` endpoint.
+- The orchestrator injects `Authorization: Bearer <DOCKER_PROXY_TOKEN>` on every request; omit the token and requests will fail fast.
+- Scope the proxy ACLs (e.g., `CONTAINERS=1`, `POST=1`) to only the verbs required for rotation.
 
-Perform a dependency vulnerability review at least once per month and before
-any release:
+## Token Rotation Procedure
 
-1. Update the lock files (`pip-compile`) to pick up patched versions.
-2. Run `pip-audit` against the current environment to identify known CVEs:
-   ```bash
-   pipx run pip-audit
-   ```
-3. Track findings in the issue tracker, documenting mitigation steps or
-   acceptance of risk for each CVE.
-4. For critical or high-severity issues, release patched containers within 24
-   hours.
+1. Generate a new secret token (`openssl rand -hex 32`).
+2. Update `DOCKER_PROXY_TOKEN` inside the local `.env` file.
+3. Redeploy the affected services: `docker compose up -d docker-proxy orchestrator`.
+4. Invalidate any previous tokens and redistribute securely (e.g., password manager, secret store).
 
-Record the review date and outcome in the project changelog to maintain an audit trail.
+## Secret Storage
+
+- Never commit `.env` with real secrets; only track `env.template`.
+- Restrict file permissions on `.env` (`chmod 600 .env`) when running on shared hosts.
+- Consider external secret managers for production deployments.

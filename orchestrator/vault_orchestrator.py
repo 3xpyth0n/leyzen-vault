@@ -44,7 +44,7 @@ USERNAME = os.environ.get("VAULT_USER", "admin")
 PASSWORD = os.environ.get("VAULT_PASS", None)
 
 # Ensure required vars
-required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY"]
+required_vars = ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"]
 for var in required_vars:
     if not os.environ.get(var):
         raise EnvironmentError(f"Missing {var} variable in .env")

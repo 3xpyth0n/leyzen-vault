@@ -69,7 +69,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - vault-net
+      - control-net
 
   orchestrator:
     build:
@@ -88,12 +88,11 @@ services:
       - "8081"
     volumes:
       - ./orchestrator:/app
-      # Mount Docker socket to control other containers
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - docker-proxy
     networks:
       - vault-net
+      - control-net
 
 volumes:
   filebrowser-data:
@@ -102,4 +101,6 @@ volumes:
 
 networks:
   vault-net:
+    driver: bridge
+  control-net:
     driver: bridge
