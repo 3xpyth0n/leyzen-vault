@@ -4,7 +4,7 @@ FROM alpine:3.19 AS filebrowser
 ARG FILEBROWSER_VERSION="2.44.2"
 ARG FILEBROWSER_DOWNLOAD_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
 
-RUN apk add --no-cache ca-certificates curl tar sqlite && \
+RUN apk add --no-cache ca-certificates curl tar && \
     mkdir -p /usr/local/bin && \
     curl -fsSL "$FILEBROWSER_DOWNLOAD_URL" -o /tmp/filebrowser.tar.gz && \
     tar -xzf /tmp/filebrowser.tar.gz -C /usr/local/bin filebrowser && \
@@ -16,8 +16,7 @@ COPY ./entrypoint.sh /usr/local/bin/filebrowser-entrypoint.sh
 RUN chmod +x /usr/local/bin/filebrowser-entrypoint.sh
 
 ENV FILEBROWSER_STARTUP_DELAY=10 \
-    FILEBROWSER_BIN=/usr/local/bin/filebrowser \
-    SQLITE3_BIN=/usr/bin/sqlite3
+    FILEBROWSER_BIN=/usr/local/bin/filebrowser
 
 EXPOSE 80
 VOLUME ["/config", "/database", "/srv"]
