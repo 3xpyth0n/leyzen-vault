@@ -2,12 +2,19 @@ services:
   filebrowser_web1:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser_web1
+    env_file:
+      - .env
+    environment:
+      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
+      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
     expose:
       - "80"
     volumes:
       - filebrowser-data:/srv
       - filebrowser-database:/database
       - filebrowser-config:/config
+      - ./filebrowser/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     restart: on-failure
     networks:
       - vault-net
@@ -15,12 +22,19 @@ services:
   filebrowser_web2:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser_web2
+    env_file:
+      - .env
+    environment:
+      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
+      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
     expose:
       - "80"
     volumes:
       - filebrowser-data:/srv
       - filebrowser-database:/database
       - filebrowser-config:/config
+      - ./filebrowser/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     restart: on-failure
     networks:
       - vault-net
@@ -28,12 +42,19 @@ services:
   filebrowser_web3:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser_web3
+    env_file:
+      - .env
+    environment:
+      FILEBROWSER_ADMIN_USER: ${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}
+      FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
     expose:
       - "80"
     volumes:
       - filebrowser-data:/srv
       - filebrowser-database:/database
       - filebrowser-config:/config
+      - ./filebrowser/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     restart: on-failure
     networks:
       - vault-net

@@ -55,13 +55,18 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ## Quick Start 🚀
 
-Clone and install in **3 commands**:
+Clone, configure your secrets, then install:
 
 ```bash
 git clone git@github.com:3xpyth0n/leyzen-vault.git
 cd leyzen-vault
+cp env.template .env
+$EDITOR .env  # Renseignez des identifiants forts et tournants (VAULT_*, FILEBROWSER_ADMIN_*)
 sudo ./install.sh
 ```
+
+> ⚠️ **Sécurité :** définissez `FILEBROWSER_ADMIN_USER` et `FILEBROWSER_ADMIN_PASSWORD` avec des valeurs longues, aléatoires et
+> renouvelez-les régulièrement avant chaque (re)déploiement.
 
 Check service status:
 

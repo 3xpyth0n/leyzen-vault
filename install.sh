@@ -75,6 +75,25 @@ if ! pidof systemd &>/dev/null; then
     exit 1
 fi
 
+if [ ! -f .env ]; then
+    error "Missing .env file. Copy env.template to .env and configure strong credentials before installation."
+    info "👉 Ensure FILEBROWSER_ADMIN_USER and FILEBROWSER_ADMIN_PASSWORD are long, random, and rotated regularly."
+    exit 1
+fi
+
+get_env_value() {
+    local key="$1"
+    sed -n "s/^${key}=//p" .env | tail -n 1
+}
+
+ADMIN_USER=$(get_env_value "FILEBROWSER_ADMIN_USER")
+ADMIN_PASS=$(get_env_value "FILEBROWSER_ADMIN_PASSWORD")
+
+if [ -z "$ADMIN_USER" ] || [ -z "$ADMIN_PASS" ]; then
+    error "FILEBROWSER_ADMIN_USER and FILEBROWSER_ADMIN_PASSWORD must be set in .env with strong, regularly rotated values."
+    exit 1
+fi
+
 chmod +x service.sh
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_FILE="/etc/systemd/system/leyzen.service"
