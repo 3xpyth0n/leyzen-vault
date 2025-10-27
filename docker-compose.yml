@@ -56,12 +56,14 @@ services:
       - vault-net
 
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    build:
+      context: ./docker-proxy
     container_name: docker-proxy
     restart: unless-stopped
     environment:
-      - CONTAINERS=1
-      - POST=1
+      DOCKER_PROXY_TOKEN: ${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}
+      DOCKER_PROXY_TIMEOUT: ${DOCKER_PROXY_TIMEOUT:-30}
+      LOG_LEVEL: ${DOCKER_PROXY_LOG_LEVEL:-INFO}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
