@@ -7,16 +7,21 @@ RUN npm ci && npx tailwindcss -i ./tailwind.css -o ./tailwind.output.css --minif
 # Stage 2: Final Python image
 FROM python:3.11-alpine
 WORKDIR /app
-RUN apk add --no-cache docker-cli curl
+RUN apk add --no-cache curl
 COPY requirements.in requirements.txt ./
 # Capture the dependency manifest hash so Docker invalidates this layer when
 # pinned versions change.
 RUN sha256sum requirements.txt > requirements.txt.sha \
     && pip install --no-cache-dir -r requirements.txt \
     && rm requirements.txt.sha
+RUN apk add --no-cache su-exec \
+    && adduser -D orchestrator \
+    && mkdir -p /app/logs \
+    && chown -R orchestrator:orchestrator /app
 COPY . .
 
 # Copy compiled CSS only
 COPY --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python3", "vault_orchestrator.py"]
 
