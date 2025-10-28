@@ -43,7 +43,9 @@ async function sendControl(action) {
     return;
   }
 
-  showStatus(`<span class="loader"></span> Processing ${action}...`);
+  showStatus(`<span class="loader"></span> Processing ${action}...`, {
+    allowHtml: true,
+  });
 
   try {
     const csrfToken = getCsrfToken();
@@ -78,10 +80,15 @@ async function sendControl(action) {
   }
 }
 
-function showStatus(message) {
+function showStatus(message, options = {}) {
+  const { allowHtml = false } = options;
   const el = document.getElementById("control-status");
   if (!el) return;
-  el.innerHTML = message;
+  if (allowHtml) {
+    el.innerHTML = message;
+  } else {
+    el.textContent = message;
+  }
   el.classList.add("active");
   autoFadeStatus();
 }
@@ -92,7 +99,7 @@ function autoFadeStatus() {
   clearTimeout(el._fadeTimer);
   el._fadeTimer = setTimeout(() => {
     el.classList.remove("active");
-    setTimeout(() => (el.innerHTML = ""), 500);
+    setTimeout(() => (el.textContent = ""), 500);
   }, 5000);
 }
 
