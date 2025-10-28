@@ -12,11 +12,46 @@
     }
   }
 
+  function syncCaptchaOverlayImage(overlay, overlayImage, sourceImage) {
+    if (
+      overlay &&
+      overlayImage &&
+      overlay.classList.contains("captcha-overlay--visible") &&
+      sourceImage &&
+      sourceImage.src
+    ) {
+      overlayImage.src = sourceImage.src;
+    }
+  }
+
+  function showCaptchaOverlay(overlay, overlayImage, sourceImage) {
+    if (!overlay || !overlayImage || !sourceImage) {
+      return;
+    }
+
+    overlayImage.src = sourceImage.src;
+    overlay.classList.add("captcha-overlay--visible");
+    overlay.removeAttribute("aria-hidden");
+    document.body.classList.add("captcha-overlay-open");
+  }
+
+  function hideCaptchaOverlay(overlay) {
+    if (!overlay) {
+      return;
+    }
+
+    overlay.classList.remove("captcha-overlay--visible");
+    overlay.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("captcha-overlay-open");
+  }
+
   function requestCaptchaRefresh(
     image,
     nonceInput,
     captchaInput,
     loginCsrfInput,
+    overlay,
+    overlayImage,
   ) {
     if (!image) {
       return;
@@ -49,6 +84,7 @@
           const fallback = image.dataset.baseUrl || image.src;
           image.src = withCacheBuster(fallback);
         }
+        syncCaptchaOverlayImage(overlay, overlayImage, image);
         if (captchaInput) {
           captchaInput.value = "";
           captchaInput.focus();
@@ -57,6 +93,7 @@
       .catch(() => {
         const fallback = image.dataset.baseUrl || image.src;
         image.src = withCacheBuster(fallback);
+        syncCaptchaOverlayImage(overlay, overlayImage, image);
       });
   }
 
@@ -66,6 +103,10 @@
     const captchaInput = document.querySelector("#captcha");
     const nonceInput = document.querySelector("input[data-captcha-nonce]");
     const loginCsrfInput = document.querySelector("input[data-login-csrf]");
+    const overlay = document.querySelector("[data-captcha-overlay]");
+    const overlayImage = overlay
+      ? overlay.querySelector("[data-captcha-overlay-image]")
+      : null;
 
     if (captchaImage) {
       captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
@@ -79,7 +120,35 @@
           nonceInput,
           captchaInput,
           loginCsrfInput,
+          overlay,
+          overlayImage,
         );
+      });
+    }
+
+    if (captchaImage && overlay && overlayImage) {
+      captchaImage.addEventListener("click", (event) => {
+        event.preventDefault();
+        showCaptchaOverlay(overlay, overlayImage, captchaImage);
+      });
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+          hideCaptchaOverlay(overlay);
+        }
+      });
+
+      overlayImage.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (
+          event.key === "Escape" &&
+          overlay.classList.contains("captcha-overlay--visible")
+        ) {
+          hideCaptchaOverlay(overlay);
+        }
       });
     }
   });
