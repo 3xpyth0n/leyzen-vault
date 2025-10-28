@@ -39,6 +39,18 @@
             required
           />
         </div>
+        <div class="form-group">
+          <label for="captcha">Captcha</label>
+          <div class="captcha-question">{{ captcha_question }}</div>
+          <input
+            type="text"
+            id="captcha"
+            name="captcha"
+            placeholder="Enter the answer"
+            autocomplete="off"
+            required
+          />
+        </div>
         <button type="submit">Log In</button>
       </form>
     </div>
