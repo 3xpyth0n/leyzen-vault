@@ -1,36 +1,85 @@
 (function () {
   "use strict";
 
-  function updateCaptchaImage(image) {
+  function withCacheBuster(urlString) {
+    try {
+      const url = new URL(urlString, window.location.origin);
+      url.searchParams.set("cb", Date.now().toString());
+      return url.toString();
+    } catch (error) {
+      const base = urlString.split("?")[0];
+      return `${base}?cb=${Date.now()}`;
+    }
+  }
+
+  function requestCaptchaRefresh(
+    image,
+    nonceInput,
+    captchaInput,
+    loginCsrfInput,
+  ) {
     if (!image) {
       return;
     }
-    try {
-      const url = new URL(image.src, window.location.origin);
-      url.searchParams.set("renew", "1");
-      url.searchParams.set(
-        "nonce",
-        `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      );
-      image.src = url.toString();
-    } catch (error) {
-      // Fallback for older browsers without URL support
-      image.src = `${image.src.split("?")[0]}?renew=1&nonce=${Date.now()}`;
+
+    const headers = { Accept: "application/json" };
+    if (loginCsrfInput && loginCsrfInput.value) {
+      headers["X-Login-CSRF"] = loginCsrfInput.value;
     }
+
+    fetch("/orchestrator/captcha-refresh", {
+      method: "POST",
+      credentials: "same-origin",
+      headers,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to refresh captcha");
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (data && data.nonce && nonceInput) {
+          nonceInput.value = data.nonce;
+        }
+        if (data && data.image_url) {
+          image.dataset.baseUrl = data.image_url;
+          image.src = withCacheBuster(data.image_url);
+        } else {
+          const fallback = image.dataset.baseUrl || image.src;
+          image.src = withCacheBuster(fallback);
+        }
+        if (captchaInput) {
+          captchaInput.value = "";
+          captchaInput.focus();
+        }
+      })
+      .catch(() => {
+        const fallback = image.dataset.baseUrl || image.src;
+        image.src = withCacheBuster(fallback);
+      });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     const refreshButton = document.querySelector(".captcha-refresh");
     const captchaImage = document.querySelector(".captcha-image");
     const captchaInput = document.querySelector("#captcha");
+    const nonceInput = document.querySelector("input[data-captcha-nonce]");
+    const loginCsrfInput = document.querySelector("input[data-login-csrf]");
+
+    if (captchaImage) {
+      captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
+    }
 
     if (refreshButton && captchaImage) {
-      refreshButton.addEventListener("click", () => {
-        updateCaptchaImage(captchaImage);
-        if (captchaInput) {
-          captchaInput.value = "";
-          captchaInput.focus();
-        }
+      refreshButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        requestCaptchaRefresh(
+          captchaImage,
+          nonceInput,
+          captchaInput,
+          loginCsrfInput,
+        );
       });
     }
   });

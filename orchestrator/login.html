@@ -15,7 +15,18 @@
       <div class="error">{{ error }}</div>
       {% endif %}
       <form method="post" action="/orchestrator/login">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input
+          type="hidden"
+          name="login_csrf_token"
+          value="{{ login_csrf_token }}"
+          data-login-csrf
+        />
+        <input
+          type="hidden"
+          name="captcha_nonce"
+          value="{{ captcha_nonce }}"
+          data-captcha-nonce
+        />
         <div class="form-group">
           <label for="username">Username</label>
           <input
@@ -47,6 +58,7 @@
               src="{{ url_for('captcha_image') }}?nonce={{ captcha_nonce }}"
               alt="Captcha image"
               class="captcha-image"
+              data-captcha-image
               width="220"
               height="70"
             />

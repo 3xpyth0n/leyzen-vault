@@ -66,7 +66,9 @@ def _parse_container_tokens(raw: str) -> FrozenSet[str]:
 def _load_allowed_containers() -> FrozenSet[str]:
     raw = os.environ.get("VAULT_WEB_CONTAINERS")
     if not raw:
-        logger.error("VAULT_WEB_CONTAINERS must include at least one container identifier")
+        logger.error(
+            "VAULT_WEB_CONTAINERS must include at least one container identifier"
+        )
         raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
 
     allowed = _parse_container_tokens(raw)
