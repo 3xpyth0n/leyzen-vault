@@ -7,11 +7,11 @@ import string
 import traceback
 from datetime import datetime, timedelta
 from io import BytesIO
-from threading import Thread
+from threading import Thread, Lock
 import logging
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin, urlsplit
 from flask import (
     Flask,
@@ -49,7 +49,9 @@ LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 # ------------------------------
 
 
-def _parse_container_names(raw_value: Optional[str], *, source: str, required: bool) -> list[str]:
+def _parse_container_names(
+    raw_value: Optional[str], *, source: str, required: bool
+) -> list[str]:
     if raw_value is None:
         if required:
             raise EnvironmentError(f"Missing {source} variable in .env")
@@ -145,6 +147,14 @@ CAPTCHA_IMAGE_WIDTH = 220
 CAPTCHA_IMAGE_HEIGHT = 70
 CAPTCHA_LENGTH = 6
 CAPTCHA_FONT_PATH = os.path.join(HTML_DIR, "static", "fonts", "DejaVuSans-Bold.ttf")
+CAPTCHA_STORE_TTL_SECONDS = int(os.getenv("CAPTCHA_STORE_TTL_SECONDS", "300"))
+
+captcha_store: Dict[str, Tuple[str, float]] = {}
+captcha_store_lock = Lock()
+
+LOGIN_CSRF_TTL_SECONDS = max(60, int(os.getenv("LOGIN_CSRF_TTL_SECONDS", "900")))
+login_csrf_store: Dict[str, float] = {}
+login_csrf_lock = Lock()
 
 # ------------------------------
 # Docker proxy / rotation config
@@ -891,11 +901,91 @@ def _build_captcha_image(text: str) -> bytes:
     return buffer.read()
 
 
+def _prune_captcha_store(now: Optional[float] = None) -> None:
+    cutoff = (now or time.time()) - CAPTCHA_STORE_TTL_SECONDS
+    with captcha_store_lock:
+        expired = [key for key, (_, ts) in captcha_store.items() if ts < cutoff]
+        for key in expired:
+            captcha_store.pop(key, None)
+
+
+def _store_captcha_entry(nonce: str, text: str) -> None:
+    if not nonce:
+        return
+    now = time.time()
+    with captcha_store_lock:
+        captcha_store[nonce] = (text, now)
+    _prune_captcha_store(now)
+
+
+def _get_captcha_from_store(nonce: Optional[str]) -> Optional[str]:
+    if not nonce:
+        return None
+    cutoff = time.time() - CAPTCHA_STORE_TTL_SECONDS
+    with captcha_store_lock:
+        entry = captcha_store.get(nonce)
+        if not entry:
+            return None
+        text, timestamp = entry
+        if timestamp < cutoff:
+            captcha_store.pop(nonce, None)
+            return None
+        return text
+
+
+def _drop_captcha_from_store(nonce: Optional[str]) -> None:
+    if not nonce:
+        return
+    with captcha_store_lock:
+        captcha_store.pop(nonce, None)
+
+
+def _prune_login_csrf_store(now: Optional[float] = None) -> None:
+    if now is None:
+        now = time.time()
+    cutoff = now - LOGIN_CSRF_TTL_SECONDS
+    with login_csrf_lock:
+        expired = [token for token, ts in login_csrf_store.items() if ts < cutoff]
+        for token in expired:
+            login_csrf_store.pop(token, None)
+
+
+def _issue_login_csrf_token() -> str:
+    token = secrets.token_urlsafe(32)
+    now = time.time()
+    with login_csrf_lock:
+        login_csrf_store[token] = now
+    _prune_login_csrf_store(now)
+    return token
+
+
+def _touch_login_csrf_token(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    now = time.time()
+    cutoff = now - LOGIN_CSRF_TTL_SECONDS
+    with login_csrf_lock:
+        timestamp = login_csrf_store.get(token)
+        if not timestamp or timestamp < cutoff:
+            login_csrf_store.pop(token, None)
+            return False
+        login_csrf_store[token] = now
+        return True
+
+
+def _consume_login_csrf_token(token: Optional[str]) -> None:
+    if not token:
+        return
+    with login_csrf_lock:
+        login_csrf_store.pop(token, None)
+
+
 def _refresh_captcha() -> str:
     text = _generate_captcha_text()
     nonce = secrets.token_urlsafe(8)
     session["captcha_text"] = text
     session["captcha_nonce"] = nonce
+    _store_captcha_entry(nonce, text)
     return nonce
 
 
@@ -904,6 +994,8 @@ def _get_captcha_nonce() -> str:
     nonce = session.get("captcha_nonce")
     if not text or not nonce:
         nonce = _refresh_captcha()
+    else:
+        _store_captcha_entry(str(nonce), str(text))
     return nonce
 
 
@@ -924,13 +1016,35 @@ def is_safe_redirect(target: Optional[str]) -> bool:
 
 
 @app.route("/orchestrator/login", methods=["GET", "POST"])
+@csrf.exempt
 def login():
     error = None
 
     client_ip = get_client_ip()
-    captcha_nonce = _get_captcha_nonce()
+    captcha_nonce: Optional[str] = None
+    login_csrf_token: Optional[str] = None
 
     if request.method == "POST":
+        submitted_login_csrf = request.form.get("login_csrf_token", "").strip()
+        if not _touch_login_csrf_token(submitted_login_csrf):
+            log(
+                "[AUTH FAIL] Missing or expired login CSRF token",
+                context={"client_ip": client_ip},
+            )
+            error = "Your session expired. Please try again."
+            captcha_nonce = _refresh_captcha()
+            login_csrf_token = _issue_login_csrf_token()
+            return (
+                render_template(
+                    "login.html",
+                    error=error,
+                    captcha_nonce=captcha_nonce,
+                    login_csrf_token=login_csrf_token,
+                ),
+                400,
+            )
+
+        _consume_login_csrf_token(submitted_login_csrf)
         # Check if IP is temporarily blocked
         if is_blocked(client_ip):
             log(
@@ -939,28 +1053,47 @@ def login():
             )
             error = "Too many attempts, try again later."
             captcha_nonce = _refresh_captcha()
+            login_csrf_token = _issue_login_csrf_token()
             return (
-                render_template("login.html", error=error, captcha_nonce=captcha_nonce),
+                render_template(
+                    "login.html",
+                    error=error,
+                    captcha_nonce=captcha_nonce,
+                    login_csrf_token=login_csrf_token,
+                ),
                 429,
             )
 
         username = request.form.get("username", "")
         password = request.form.get("password", "")
         captcha_response = request.form.get("captcha", "").strip().upper()
+        captcha_nonce_field = request.form.get("captcha_nonce", "").strip()
         expected_captcha = session.get("captcha_text")
+        if not expected_captcha:
+            expected_captcha = _get_captcha_from_store(captcha_nonce_field)
 
         if not expected_captcha or captcha_response != str(expected_captcha).upper():
             register_failed_attempt(client_ip)
             error = "Invalid captcha response."
+            _drop_captcha_from_store(captcha_nonce_field)
             captcha_nonce = _refresh_captcha()
+            login_csrf_token = _issue_login_csrf_token()
             return (
-                render_template("login.html", error=error, captcha_nonce=captcha_nonce),
+                render_template(
+                    "login.html",
+                    error=error,
+                    captcha_nonce=captcha_nonce,
+                    login_csrf_token=login_csrf_token,
+                ),
                 400,
             )
 
         if verify_credentials(username, password):
             session["logged_in"] = True
             session.permanent = False
+            _drop_captcha_from_store(
+                captcha_nonce_field or session.get("captcha_nonce")
+            )
             log(
                 "[AUTH SUCCESS] Login allowed",
                 context={"username": username, "client_ip": client_ip},
@@ -978,24 +1111,77 @@ def login():
                 context={"username": username, "client_ip": client_ip},
             )
             error = "Invalid username or password."
+            _drop_captcha_from_store(
+                captcha_nonce_field or session.get("captcha_nonce")
+            )
             captcha_nonce = _refresh_captcha()
+            login_csrf_token = _issue_login_csrf_token()
 
-    return render_template("login.html", error=error, captcha_nonce=captcha_nonce)
+    if captcha_nonce is None:
+        captcha_nonce = _get_captcha_nonce()
+
+    if login_csrf_token is None:
+        login_csrf_token = _issue_login_csrf_token()
+
+    return render_template(
+        "login.html",
+        error=error,
+        captcha_nonce=captcha_nonce,
+        login_csrf_token=login_csrf_token,
+    )
 
 
 @app.route("/orchestrator/captcha-image", methods=["GET"])
 def captcha_image():
     renew = request.args.get("renew") == "1"
-    text = session.get("captcha_text")
+    nonce_param = request.args.get("nonce", "").strip()
+    text: Optional[str] = None
 
-    if renew or not text:
-        _refresh_captcha()
+    if renew:
+        _drop_captcha_from_store(nonce_param)
+        nonce_param = _refresh_captcha()
         text = session.get("captcha_text", "")
+    else:
+        if nonce_param:
+            text = _get_captcha_from_store(nonce_param)
+
+        if not text:
+            session_text = session.get("captcha_text")
+            session_nonce = session.get("captcha_nonce")
+            if (
+                session_text
+                and session_nonce
+                and (not nonce_param or nonce_param == session_nonce)
+            ):
+                nonce_param = session_nonce
+                text = str(session_text)
+                _store_captcha_entry(nonce_param, str(session_text))
+
+        if not text:
+            nonce_param = _refresh_captcha()
+            text = session.get("captcha_text", "")
 
     image_bytes = _build_captcha_image(str(text))
 
     response = make_response(image_bytes)
     response.headers["Content-Type"] = "image/png"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.route("/orchestrator/captcha-refresh", methods=["POST"])
+@csrf.exempt
+def captcha_refresh():
+    submitted_login_csrf = (
+        request.headers.get("X-Login-CSRF", "").strip()
+        or request.form.get("login_csrf_token", "").strip()
+    )
+    if not _touch_login_csrf_token(submitted_login_csrf):
+        abort(400, description="Invalid or expired login session.")
+    nonce = _refresh_captcha()
+    image_url = url_for("captcha_image", nonce=nonce)
+    response = jsonify({"nonce": nonce, "image_url": image_url})
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
