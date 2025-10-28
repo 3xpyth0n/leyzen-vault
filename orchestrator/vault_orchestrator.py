@@ -146,7 +146,6 @@ HTML_DIR = os.path.join(os.path.dirname(__file__))
 CAPTCHA_IMAGE_WIDTH = 220
 CAPTCHA_IMAGE_HEIGHT = 70
 CAPTCHA_LENGTH = 6
-CAPTCHA_FONT_PATH = os.path.join(HTML_DIR, "static", "fonts", "DejaVuSans-Bold.ttf")
 CAPTCHA_STORE_TTL_SECONDS = int(os.getenv("CAPTCHA_STORE_TTL_SECONDS", "300"))
 
 captcha_store: Dict[str, Tuple[str, float]] = {}
@@ -851,13 +850,12 @@ def _random_color(min_value: int = 0, max_value: int = 255) -> tuple[int, int, i
     return tuple(random.randint(min_value, max_value) for _ in range(3))
 
 
-def _load_captcha_font(size: int = 40):
+def _load_captcha_font(size: int = 22):
+    base_font = ImageFont.load_default()
     try:
-        if os.path.exists(CAPTCHA_FONT_PATH):
-            return ImageFont.truetype(CAPTCHA_FONT_PATH, size=size)
-    except OSError:
-        pass
-    return ImageFont.load_default()
+        return base_font.font_variant(size=size)
+    except AttributeError:
+        return base_font
 
 
 def _build_captcha_image(text: str) -> bytes:
@@ -867,7 +865,7 @@ def _build_captcha_image(text: str) -> bytes:
     draw = ImageDraw.Draw(image)
 
     # Background noise lines
-    for _ in range(8):
+    for _ in range(6):
         start = (
             random.randint(0, CAPTCHA_IMAGE_WIDTH),
             random.randint(0, CAPTCHA_IMAGE_HEIGHT),
@@ -885,10 +883,17 @@ def _build_captcha_image(text: str) -> bytes:
             15 + index * char_spacing + random.randint(-5, 5),
             random.randint(5, CAPTCHA_IMAGE_HEIGHT - 45),
         )
-        draw.text(position, character, font=font, fill=_random_color(0, 120))
+        draw.text(
+            position,
+            character,
+            font=font,
+            fill=_random_color(10, 70),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0),
+        )
 
     # Foreground noise dots
-    for _ in range(500):
+    for _ in range(300):
         x = random.randint(0, CAPTCHA_IMAGE_WIDTH - 1)
         y = random.randint(0, CAPTCHA_IMAGE_HEIGHT - 1)
         image.putpixel((x, y), _random_color(0, 255))
