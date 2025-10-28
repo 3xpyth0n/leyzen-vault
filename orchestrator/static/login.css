@@ -66,7 +66,7 @@ body {
   outline: none;
 }
 
-.login-container button {
+.login-container button[type="submit"] {
   width: 100%;
   padding: 14px;
   background: #238636;
@@ -81,12 +81,49 @@ body {
     transform 0.1s;
 }
 
-.login-container button:hover {
+.login-container button[type="submit"]:hover {
   background: #2ea043;
   transform: translateY(-2px);
 }
 
-.login-container button:active {
+.login-container button[type="submit"]:active {
+  transform: translateY(0);
+}
+
+.captcha-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.captcha-image {
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  object-fit: cover;
+}
+
+.captcha-refresh {
+  width: auto;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #c9d1d9;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    transform 0.1s;
+}
+
+.captcha-refresh:hover {
+  background: #1f2933;
+  color: #58a6ff;
+  transform: translateY(-1px);
+}
+
+.captcha-refresh:active {
   transform: translateY(0);
 }
 

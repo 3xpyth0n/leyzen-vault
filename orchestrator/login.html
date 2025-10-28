@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/orchestrator/static/login.css" />
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
+    <script src="/orchestrator/static/login.js" defer></script>
   </head>
   <body>
     <div class="login-container">
@@ -41,13 +42,32 @@
         </div>
         <div class="form-group">
           <label for="captcha">Captcha</label>
-          <div class="captcha-question">{{ captcha_question }}</div>
+          <div class="captcha-display">
+            <img
+              src="{{ url_for('captcha_image') }}?nonce={{ captcha_nonce }}"
+              alt="Captcha image"
+              class="captcha-image"
+              width="220"
+              height="70"
+            />
+            <button
+              type="button"
+              class="captcha-refresh"
+              data-captcha-target="captcha"
+              aria-label="Reload captcha"
+            >
+              &#8635;
+            </button>
+          </div>
           <input
             type="text"
             id="captcha"
             name="captcha"
-            placeholder="Enter the answer"
+            placeholder="Enter the characters"
             autocomplete="off"
+            inputmode="latin-prose"
+            pattern="[A-Za-z0-9]{4,10}"
+            maxlength="10"
             required
           />
         </div>

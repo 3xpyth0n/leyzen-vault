@@ -2,8 +2,11 @@
 
 import time
 import random
+import secrets
+import string
 import traceback
 from datetime import datetime, timedelta
+from io import BytesIO
 from threading import Thread
 import logging
 import json
@@ -19,6 +22,7 @@ from flask import (
     url_for,
     session,
     abort,
+    make_response,
 )
 from functools import wraps
 import os
@@ -32,6 +36,7 @@ import requests
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # ------------------------------
 # Timezone
@@ -108,6 +113,11 @@ except OSError:
     # If we cannot create the file, later log attempts will surface the error.
     pass
 HTML_DIR = os.path.join(os.path.dirname(__file__))
+
+CAPTCHA_IMAGE_WIDTH = 220
+CAPTCHA_IMAGE_HEIGHT = 70
+CAPTCHA_LENGTH = 6
+CAPTCHA_FONT_PATH = os.path.join(HTML_DIR, "static", "fonts", "DejaVuSans-Bold.ttf")
 
 # ------------------------------
 # Docker proxy / rotation config
@@ -790,29 +800,79 @@ def login_required(f):
     return decorated_function
 
 
-def _generate_captcha() -> tuple[str, str]:
-    """Return a simple captcha question and its answer."""
+def _generate_captcha_text(length: int = CAPTCHA_LENGTH) -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
-    first = random.randint(1, 9)
-    second = random.randint(1, 9)
-    question = f"What is {first} + {second}?"
-    answer = str(first + second)
-    return question, answer
+
+def _random_color(min_value: int = 0, max_value: int = 255) -> tuple[int, int, int]:
+    return tuple(random.randint(min_value, max_value) for _ in range(3))
+
+
+def _load_captcha_font(size: int = 40):
+    try:
+        if os.path.exists(CAPTCHA_FONT_PATH):
+            return ImageFont.truetype(CAPTCHA_FONT_PATH, size=size)
+    except OSError:
+        pass
+    return ImageFont.load_default()
+
+
+def _build_captcha_image(text: str) -> bytes:
+    image = Image.new(
+        "RGB", (CAPTCHA_IMAGE_WIDTH, CAPTCHA_IMAGE_HEIGHT), _random_color(200, 255)
+    )
+    draw = ImageDraw.Draw(image)
+
+    # Background noise lines
+    for _ in range(8):
+        start = (
+            random.randint(0, CAPTCHA_IMAGE_WIDTH),
+            random.randint(0, CAPTCHA_IMAGE_HEIGHT),
+        )
+        end = (
+            random.randint(0, CAPTCHA_IMAGE_WIDTH),
+            random.randint(0, CAPTCHA_IMAGE_HEIGHT),
+        )
+        draw.line([start, end], fill=_random_color(80, 200), width=2)
+
+    font = _load_captcha_font()
+    char_spacing = CAPTCHA_IMAGE_WIDTH // (len(text) + 1)
+    for index, character in enumerate(text):
+        position = (
+            15 + index * char_spacing + random.randint(-5, 5),
+            random.randint(5, CAPTCHA_IMAGE_HEIGHT - 45),
+        )
+        draw.text(position, character, font=font, fill=_random_color(0, 120))
+
+    # Foreground noise dots
+    for _ in range(500):
+        x = random.randint(0, CAPTCHA_IMAGE_WIDTH - 1)
+        y = random.randint(0, CAPTCHA_IMAGE_HEIGHT - 1)
+        image.putpixel((x, y), _random_color(0, 255))
+
+    image = image.filter(ImageFilter.GaussianBlur(radius=0.5))
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.read()
 
 
 def _refresh_captcha() -> str:
-    question, answer = _generate_captcha()
-    session["captcha_question"] = question
-    session["captcha_answer"] = answer
-    return question
+    text = _generate_captcha_text()
+    nonce = secrets.token_urlsafe(8)
+    session["captcha_text"] = text
+    session["captcha_nonce"] = nonce
+    return nonce
 
 
-def _get_captcha_question() -> str:
-    question = session.get("captcha_question")
-    answer = session.get("captcha_answer")
-    if not question or answer is None:
-        question = _refresh_captcha()
-    return question
+def _get_captcha_nonce() -> str:
+    text = session.get("captcha_text")
+    nonce = session.get("captcha_nonce")
+    if not text or not nonce:
+        nonce = _refresh_captcha()
+    return nonce
 
 
 def is_safe_redirect(target: Optional[str]) -> bool:
@@ -836,7 +896,7 @@ def login():
     error = None
 
     client_ip = get_client_ip()
-    captcha_question = _get_captcha_question()
+    captcha_nonce = _get_captcha_nonce()
 
     if request.method == "POST":
         # Check if IP is temporarily blocked
@@ -846,27 +906,23 @@ def login():
                 context={"client_ip": client_ip},
             )
             error = "Too many attempts, try again later."
-            captcha_question = _refresh_captcha()
+            captcha_nonce = _refresh_captcha()
             return (
-                render_template(
-                    "login.html", error=error, captcha_question=captcha_question
-                ),
+                render_template("login.html", error=error, captcha_nonce=captcha_nonce),
                 429,
             )
 
         username = request.form.get("username", "")
         password = request.form.get("password", "")
-        captcha_response = request.form.get("captcha", "").strip()
-        expected_captcha = session.get("captcha_answer")
+        captcha_response = request.form.get("captcha", "").strip().upper()
+        expected_captcha = session.get("captcha_text")
 
-        if not expected_captcha or captcha_response != str(expected_captcha):
+        if not expected_captcha or captcha_response != str(expected_captcha).upper():
             register_failed_attempt(client_ip)
             error = "Invalid captcha response."
-            captcha_question = _refresh_captcha()
+            captcha_nonce = _refresh_captcha()
             return (
-                render_template(
-                    "login.html", error=error, captcha_question=captcha_question
-                ),
+                render_template("login.html", error=error, captcha_nonce=captcha_nonce),
                 400,
             )
 
@@ -880,8 +936,8 @@ def login():
             next_url = request.args.get("next")
             if not is_safe_redirect(next_url):
                 next_url = url_for("dashboard")
-            session.pop("captcha_question", None)
-            session.pop("captcha_answer", None)
+            session.pop("captcha_nonce", None)
+            session.pop("captcha_text", None)
             return redirect(next_url)
         else:
             register_failed_attempt(client_ip)
@@ -890,9 +946,27 @@ def login():
                 context={"username": username, "client_ip": client_ip},
             )
             error = "Invalid username or password."
-            captcha_question = _refresh_captcha()
+            captcha_nonce = _refresh_captcha()
 
-    return render_template("login.html", error=error, captcha_question=captcha_question)
+    return render_template("login.html", error=error, captcha_nonce=captcha_nonce)
+
+
+@app.route("/orchestrator/captcha-image", methods=["GET"])
+def captcha_image():
+    renew = request.args.get("renew") == "1"
+    text = session.get("captcha_text")
+
+    if renew or not text:
+        _refresh_captcha()
+        text = session.get("captcha_text", "")
+
+    image_bytes = _build_captcha_image(str(text))
+
+    response = make_response(image_bytes)
+    response.headers["Content-Type"] = "image/png"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.route("/orchestrator/logout", methods=["GET"], endpoint="logout_get")
