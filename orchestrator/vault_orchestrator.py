@@ -260,9 +260,48 @@ container_active_since = {name: None for name in web_containers}
 # ------------------------------
 # Logging
 # ------------------------------
-def log(msg):
+_CONTROL_CHAR_ESCAPES = {
+    ord("\r"): "\\r",
+    ord("\n"): "\\n",
+    ord("\t"): "\\t",
+}
+
+
+def _sanitize_log_value(value: Any) -> Any:
+    """Remove control characters and coerce values for logging."""
+
+    if isinstance(value, str):
+        return value.translate(_CONTROL_CHAR_ESCAPES)
+
+    if isinstance(value, dict):
+        return {str(k): _sanitize_log_value(v) for k, v in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_log_value(v) for v in value]
+
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+
+    return _sanitize_log_value(str(value))
+
+
+def log(msg: Any, *, context: Optional[Any] = None) -> None:
     timestamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {msg}"
+    sanitized_msg = _sanitize_log_value(str(msg))
+    line = f"[{timestamp}] {sanitized_msg}"
+
+    if context is not None:
+        sanitized_context = _sanitize_log_value(context)
+        try:
+            context_str = json.dumps(
+                sanitized_context, ensure_ascii=False, sort_keys=True
+            )
+        except (TypeError, ValueError):
+            context_str = json.dumps(
+                _sanitize_log_value(str(sanitized_context)), ensure_ascii=False
+            )
+        line = f"{line} {context_str}"
+
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
 
@@ -802,7 +841,10 @@ def login():
     if request.method == "POST":
         # Check if IP is temporarily blocked
         if is_blocked(client_ip):
-            log(f"[AUTH BLOCKED] Too many attempts from {client_ip}")
+            log(
+                "[AUTH BLOCKED] Too many attempts",
+                context={"client_ip": client_ip},
+            )
             error = "Too many attempts, try again later."
             captcha_question = _refresh_captcha()
             return (
@@ -831,7 +873,10 @@ def login():
         if verify_credentials(username, password):
             session["logged_in"] = True
             session.permanent = False
-            log(f"[AUTH SUCCESS] {username} from {client_ip}")
+            log(
+                "[AUTH SUCCESS] Login allowed",
+                context={"username": username, "client_ip": client_ip},
+            )
             next_url = request.args.get("next")
             if not is_safe_redirect(next_url):
                 next_url = url_for("dashboard")
@@ -840,7 +885,10 @@ def login():
             return redirect(next_url)
         else:
             register_failed_attempt(client_ip)
-            log(f"[AUTH FAIL] login attempt for user={username} from {client_ip}")
+            log(
+                "[AUTH FAIL] Invalid credentials",
+                context={"username": username, "client_ip": client_ip},
+            )
             error = "Invalid username or password."
             captcha_question = _refresh_captcha()
 
@@ -921,7 +969,10 @@ def api_control():
 
     client_ip = get_client_ip()
 
-    log(f"[CONTROL] Received action '{action}' from {client_ip}")
+    log(
+        "[CONTROL] Received action",
+        context={"action": action, "client_ip": client_ip},
+    )
 
     if action == "stop":
         rotation_active = False
@@ -1093,8 +1144,12 @@ def csp_violation_report():
 
     if len(attempts) >= CSP_REPORT_RATE_LIMIT:
         log(
-            f"[CSP VIOLATION] rate limit exceeded for {client_ip} "
-            f"({CSP_REPORT_RATE_LIMIT} reports / {int(CSP_REPORT_RATE_WINDOW.total_seconds())}s)"
+            "[CSP VIOLATION] rate limit exceeded",
+            context={
+                "client_ip": client_ip,
+                "limit": CSP_REPORT_RATE_LIMIT,
+                "window_seconds": int(CSP_REPORT_RATE_WINDOW.total_seconds()),
+            },
         )
         return "", 429
 
@@ -1105,7 +1160,12 @@ def csp_violation_report():
         and content_length > CSP_REPORT_MAX_SIZE
     ):
         log(
-            f"[CSP VIOLATION] payload rejected (too large: {content_length} bytes) from {client_ip}"
+            "[CSP VIOLATION] payload rejected",
+            context={
+                "client_ip": client_ip,
+                "content_length": content_length,
+                "max_length": CSP_REPORT_MAX_SIZE,
+            },
         )
         return "", 413
 
@@ -1145,7 +1205,7 @@ def csp_violation_report():
         "blocked_uri": blocked_uri or "unknown",
     }
 
-    log(f"[CSP VIOLATION] {json.dumps(filtered_report, ensure_ascii=False)}")
+    log("[CSP VIOLATION] Report received", context=filtered_report)
     return "", 204
 
 
