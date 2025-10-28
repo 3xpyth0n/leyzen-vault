@@ -11,11 +11,16 @@ x-filebrowser-base: &filebrowser-base
     FILEBROWSER_ADMIN_PASSWORD: ${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}
   expose:
     - "80"
+  restart: on-failure
+  healthcheck:
+    test: ["CMD-SHELL", "/healthcheck.sh || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
   volumes:
     - filebrowser-data:/srv
     - filebrowser-database:/database
     - filebrowser-config:/config
-  restart: on-failure
   depends_on:
     - orchestrator
   networks:
