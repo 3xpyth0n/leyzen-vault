@@ -13,8 +13,8 @@ x-filebrowser-base: &filebrowser-base
   healthcheck:
     test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
     interval: 1s
-    timeout: 5s
-    retries: 5
+    timeout: 10s
+    retries: 10
   volumes:
     - filebrowser-data:/srv
     - filebrowser-database:/database
@@ -51,9 +51,9 @@ services:
           "CMD-SHELL",
           "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1",
         ]
-      interval: 5s
+      interval: 1s
       timeout: 5s
-      retries: 5
+      retries: 10
     networks:
       - vault-net
 
@@ -81,7 +81,7 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"]
       interval: 1s
       timeout: 10s
-      retries: 5
+      retries: 10
     env_file:
       - .env
     environment:
