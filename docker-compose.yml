@@ -13,7 +13,7 @@ x-filebrowser-base: &filebrowser-base
     - "80"
   restart: on-failure
   healthcheck:
-    test: ["CMD-SHELL", "/healthcheck.sh || exit 1"]
+    test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
     interval: 10s
     timeout: 5s
     retries: 5
@@ -43,8 +43,7 @@ services:
     image: haproxy:2.8-alpine
     container_name: haproxy
     volumes:
-      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-      - ./haproxy/503.http:/usr/local/etc/haproxy/503.http:ro
+      - ./haproxy:/usr/local/etc/haproxy:ro
     ports:
       - "8080:80"
     restart: on-failure
