@@ -2,3 +2,4 @@ Flask
 Flask-WTF
 requests
 pytz
+Pillow
