@@ -751,6 +751,31 @@ def login_required(f):
     return decorated_function
 
 
+def _generate_captcha() -> tuple[str, str]:
+    """Return a simple captcha question and its answer."""
+
+    first = random.randint(1, 9)
+    second = random.randint(1, 9)
+    question = f"What is {first} + {second}?"
+    answer = str(first + second)
+    return question, answer
+
+
+def _refresh_captcha() -> str:
+    question, answer = _generate_captcha()
+    session["captcha_question"] = question
+    session["captcha_answer"] = answer
+    return question
+
+
+def _get_captcha_question() -> str:
+    question = session.get("captcha_question")
+    answer = session.get("captcha_answer")
+    if not question or answer is None:
+        question = _refresh_captcha()
+    return question
+
+
 def is_safe_redirect(target: Optional[str]) -> bool:
     """Return True when *target* is a safe redirect destination."""
 
@@ -772,16 +797,36 @@ def login():
     error = None
 
     client_ip = get_client_ip()
+    captcha_question = _get_captcha_question()
 
     if request.method == "POST":
         # Check if IP is temporarily blocked
         if is_blocked(client_ip):
             log(f"[AUTH BLOCKED] Too many attempts from {client_ip}")
             error = "Too many attempts, try again later."
-            return render_template("login.html", error=error), 429
+            captcha_question = _refresh_captcha()
+            return (
+                render_template(
+                    "login.html", error=error, captcha_question=captcha_question
+                ),
+                429,
+            )
 
         username = request.form.get("username", "")
         password = request.form.get("password", "")
+        captcha_response = request.form.get("captcha", "").strip()
+        expected_captcha = session.get("captcha_answer")
+
+        if not expected_captcha or captcha_response != str(expected_captcha):
+            register_failed_attempt(client_ip)
+            error = "Invalid captcha response."
+            captcha_question = _refresh_captcha()
+            return (
+                render_template(
+                    "login.html", error=error, captcha_question=captcha_question
+                ),
+                400,
+            )
 
         if verify_credentials(username, password):
             session["logged_in"] = True
@@ -790,13 +835,16 @@ def login():
             next_url = request.args.get("next")
             if not is_safe_redirect(next_url):
                 next_url = url_for("dashboard")
+            session.pop("captcha_question", None)
+            session.pop("captcha_answer", None)
             return redirect(next_url)
         else:
             register_failed_attempt(client_ip)
             log(f"[AUTH FAIL] login attempt for user={username} from {client_ip}")
             error = "Invalid username or password."
+            captcha_question = _refresh_captcha()
 
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=error, captcha_question=captcha_question)
 
 
 @app.route("/orchestrator/logout", methods=["GET"], endpoint="logout_get")
