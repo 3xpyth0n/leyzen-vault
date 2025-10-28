@@ -4,13 +4,16 @@ FROM alpine:3.19 AS filebrowser
 ARG FILEBROWSER_VERSION=2.44.2
 ARG FILEBROWSER_DOWNLOAD_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
 
-RUN apk add --no-cache ca-certificates curl tar && \
+RUN apk add --no-cache ca-certificates curl tar su-exec && \
     mkdir -p /usr/local/bin && \
     curl -fsSL "$FILEBROWSER_DOWNLOAD_URL" -o /tmp/filebrowser.tar.gz && \
     tar -xzf /tmp/filebrowser.tar.gz -C /usr/local/bin filebrowser && \
     chmod +x /usr/local/bin/filebrowser && \
     rm -f /tmp/filebrowser.tar.gz && \
-    mkdir -p /config /database /srv
+    addgroup -S filebrowser && \
+    adduser -S -H -D -G filebrowser filebrowser && \
+    mkdir -p /config /database /srv && \
+    chown -R filebrowser:filebrowser /config /database /srv
 
 COPY ./entrypoint.sh /usr/local/bin/filebrowser-entrypoint.sh
 RUN chmod +x /usr/local/bin/filebrowser-entrypoint.sh

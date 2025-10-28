@@ -9,6 +9,29 @@ log() {
   printf '%s\n' "[filebrowser-entrypoint] $*" >&2
 }
 
+# --- Fix potential permission issues on mounted volumes ---
+log "Fixing ownership on /config, /database, /srv if needed..."
+if [ "$(id -u)" -eq 0 ]; then
+  chown -R filebrowser:filebrowser /config /database /srv 2>/dev/null || true
+  # Re-drop privileges to the filebrowser user
+  exec su-exec filebrowser "$0" "$@"
+fi
+# -----------------------------------------------------------
+
+ensure_writable_dir() {
+  dir="$1"
+  if [ ! -d "$dir" ]; then
+    log "Directory $dir is missing; ensure the corresponding volume is present."
+    exit 1
+  fi
+
+  tmp_file="$dir/.filebrowser-permission-test-$$"
+  if ! (touch "$tmp_file" 2>/dev/null && rm -f "$tmp_file" 2>/dev/null); then
+    log "Directory $dir must be writable by the filebrowser user. Adjust ownership or permissions on the mounted volume."
+    exit 1
+  fi
+}
+
 require_var() {
   var_name="$1"
   eval "value=\"\${$var_name:-}\""
@@ -38,6 +61,10 @@ update_admin_password() {
 }
 
 mkdir -p "$(dirname "$CONFIG_PATH")" "$(dirname "$DATABASE_PATH")"
+
+ensure_writable_dir /config
+ensure_writable_dir /database
+ensure_writable_dir /srv
 
 if [ ! -e "$CONFIG_PATH" ]; then
   log "Initializing Filebrowser configuration at $CONFIG_PATH."
