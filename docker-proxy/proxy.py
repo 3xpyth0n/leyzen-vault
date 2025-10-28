@@ -2,7 +2,8 @@ import logging
 import os
 import sys
 import hmac
-from typing import Dict, Iterable, Tuple
+import re
+from typing import Dict, Iterable, Pattern, Tuple
 
 from flask import Flask, Response, jsonify, request
 import httpx
@@ -44,6 +45,14 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
+ALLOWED_ENDPOINTS: Tuple[Tuple[str, Pattern[str]], ...] = (
+    ("GET", re.compile(r"^containers/[^/]+/json$")),
+    (
+        "POST",
+        re.compile(r"^containers/[^/]+/(start|stop|wait|unpause)$"),
+    ),
+)
+
 
 class ProxyUnauthorized(Unauthorized):
     description = "Missing or invalid Authorization header"
@@ -51,6 +60,10 @@ class ProxyUnauthorized(Unauthorized):
 
 class ProxyForbidden(Forbidden):
     description = "Invalid bearer token"
+
+
+class ProxyRequestForbidden(Forbidden):
+    description = "Operation not allowed via proxy"
 
 
 @app.errorhandler(ProxyUnauthorized)
@@ -64,6 +77,17 @@ def handle_unauthorized(error: ProxyUnauthorized):
 @app.errorhandler(ProxyForbidden)
 def handle_forbidden(error: ProxyForbidden):
     logger.warning("Denied request with incorrect token from %s", request.remote_addr)
+    return jsonify({"error": error.description}), 403
+
+
+@app.errorhandler(ProxyRequestForbidden)
+def handle_request_forbidden(error: ProxyRequestForbidden):
+    logger.warning(
+        "Denied disallowed Docker API request %s %s from %s",
+        request.method,
+        request.full_path,
+        request.remote_addr,
+    )
     return jsonify({"error": error.description}), 403
 
 
@@ -132,6 +156,14 @@ def healthcheck() -> Tuple[str, int]:
 )
 def proxy(path: str) -> Response:
     _validate_token()
+
+    normalized_path = path.strip("/")
+
+    for allowed_method, pattern in ALLOWED_ENDPOINTS:
+        if request.method == allowed_method and pattern.fullmatch(normalized_path):
+            break
+    else:
+        raise ProxyRequestForbidden()
 
     upstream_path = f"/{path}" if path else "/"
     upstream_url = f"{BASE_URL}{upstream_path}"
