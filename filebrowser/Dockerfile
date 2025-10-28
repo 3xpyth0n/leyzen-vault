@@ -2,11 +2,23 @@
 FROM alpine:3.19 AS filebrowser
 
 ARG FILEBROWSER_VERSION=2.44.2
-ARG FILEBROWSER_DOWNLOAD_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/linux-amd64-filebrowser.tar.gz"
+ARG FILEBROWSER_ARCHIVE_NAME="linux-amd64-filebrowser.tar.gz"
+ARG FILEBROWSER_CHECKSUMS_NAME="filebrowser_${FILEBROWSER_VERSION}_checksums.txt"
+ARG FILEBROWSER_DOWNLOAD_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/${FILEBROWSER_ARCHIVE_NAME}"
+ARG FILEBROWSER_CHECKSUMS_URL="https://github.com/filebrowser/filebrowser/releases/download/v${FILEBROWSER_VERSION}/${FILEBROWSER_CHECKSUMS_NAME}"
 
 RUN apk add --no-cache ca-certificates curl tar su-exec && \
     mkdir -p /usr/local/bin && \
     curl -fsSL "$FILEBROWSER_DOWNLOAD_URL" -o /tmp/filebrowser.tar.gz && \
+    FILEBROWSER_SHA256="$(curl -fsSL "$FILEBROWSER_CHECKSUMS_URL" | awk -v file="$FILEBROWSER_ARCHIVE_NAME" '$2 == file {print $1}')" && \
+    [ -n "$FILEBROWSER_SHA256" ] || { \
+        echo "Failed to retrieve checksum for $FILEBROWSER_ARCHIVE_NAME"; \
+        exit 1; \
+    } && \
+    echo "${FILEBROWSER_SHA256}  /tmp/filebrowser.tar.gz" | sha256sum -c - || { \
+        echo "Checksum verification failed"; \
+        exit 1; \
+    } && \
     tar -xzf /tmp/filebrowser.tar.gz -C /usr/local/bin filebrowser && \
     chmod +x /usr/local/bin/filebrowser && \
     rm -f /tmp/filebrowser.tar.gz && \

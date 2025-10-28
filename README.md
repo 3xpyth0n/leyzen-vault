@@ -99,6 +99,7 @@ journalctl -u leyzen.service -f
 - The **Python Orchestrator** performs randomized rotation cycles.
 - **Shared volumes** (`filebrowser-data:/srv`, `filebrowser-database:/database`, `filebrowser-config:/config`) preserve Filebrowser uploads, user accounts, and configuration between container lifespans.
 - Filebrowser runs without external databases or caches, simplifying the demo stack.
+- When updating the Filebrowser binary (bumping `FILEBROWSER_VERSION` in `filebrowser/Dockerfile`), the Docker build automatically retrieves the matching checksum from the upstream `filebrowser_<version>_checksums.txt` manifest, so no manual refresh is required.
 - Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`) with a rotating `DOCKER_PROXY_TOKEN`, replacing direct socket mounts.
 
 ---
