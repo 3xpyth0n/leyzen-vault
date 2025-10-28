@@ -80,7 +80,33 @@ CSP_REPORT_RATE_WINDOW = timedelta(seconds=60)
 # Paths
 # ------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(BASE_DIR, "vault_orchestrator.log")
+
+# Allow overriding the log directory so the application code can be mounted
+# read-only while keeping the log writable via a dedicated volume.
+_log_dir_override = os.environ.get("ORCHESTRATOR_LOG_DIR")
+if _log_dir_override:
+    LOG_DIR = os.path.abspath(_log_dir_override)
+else:
+    LOG_DIR = BASE_DIR
+
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+except OSError:
+    # In very restricted environments the directory may be read-only.
+    # Fall back to the application directory so the orchestrator keeps working.
+    LOG_DIR = BASE_DIR
+
+LOG_FILE = os.path.join(
+    LOG_DIR, os.environ.get("ORCHESTRATOR_LOG_FILE", "vault_orchestrator.log")
+)
+
+try:
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "a"):
+            pass
+except OSError:
+    # If we cannot create the file, later log attempts will surface the error.
+    pass
 HTML_DIR = os.path.join(os.path.dirname(__file__))
 
 # ------------------------------
@@ -1151,4 +1177,4 @@ if __name__ == "__main__":
     log("=== Orchestrator started ===")
     Thread(target=orchestrator_loop, daemon=True).start()
     Thread(target=uptime_tracker_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=8081, debug=False)
+    app.run(host="0.0.0.0", port=80, debug=False)
