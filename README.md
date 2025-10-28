@@ -114,6 +114,7 @@ journalctl -u leyzen.service -f
   2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.
   3. Reload the stack (`docker compose up -d orchestrator docker-proxy`).
   4. Revoke the old token wherever it was stored.
+- The Docker proxy enforces an explicit container allowlist before any request reaches the Docker socket. Populate `VAULT_WEB_CONTAINERS` with the identifiers you expect the orchestrator to manage; the proxy reads the same variable to gate Docker API calls.
 
 ### CSP reporting endpoint protection
 

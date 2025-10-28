@@ -66,6 +66,7 @@ services:
       DOCKER_PROXY_TOKEN: ${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}
       DOCKER_PROXY_TIMEOUT: ${DOCKER_PROXY_TIMEOUT:-30}
       LOG_LEVEL: ${DOCKER_PROXY_LOG_LEVEL:-INFO}
+      VAULT_WEB_CONTAINERS: ${VAULT_WEB_CONTAINERS:?Set VAULT_WEB_CONTAINERS in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:

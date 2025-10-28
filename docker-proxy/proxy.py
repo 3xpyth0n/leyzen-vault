@@ -3,7 +3,7 @@ import os
 import sys
 import hmac
 import re
-from typing import Dict, Iterable, Pattern, Tuple
+from typing import Dict, FrozenSet, Iterable, Optional, Pattern, Tuple
 
 from flask import Flask, Response, jsonify, request
 import httpx
@@ -46,12 +46,39 @@ HOP_BY_HOP_HEADERS = {
 }
 
 ALLOWED_ENDPOINTS: Tuple[Tuple[str, Pattern[str]], ...] = (
-    ("GET", re.compile(r"^containers/[^/]+/json$")),
+    ("GET", re.compile(r"^containers/(?P<name>[^/]+)/json$")),
     (
         "POST",
-        re.compile(r"^containers/[^/]+/(start|stop|wait|unpause)$"),
+        re.compile(r"^containers/(?P<name>[^/]+)/(start|stop|wait|unpause)$"),
     ),
 )
+
+
+def _parse_container_tokens(raw: str) -> FrozenSet[str]:
+    tokens = set()
+    for part in re.split(r"[,\s]+", raw):
+        name = part.strip()
+        if name:
+            tokens.add(name)
+    return frozenset(tokens)
+
+
+def _load_allowed_containers() -> FrozenSet[str]:
+    raw = os.environ.get("VAULT_WEB_CONTAINERS")
+    if not raw:
+        logger.error("VAULT_WEB_CONTAINERS must include at least one container identifier")
+        raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
+
+    allowed = _parse_container_tokens(raw)
+    if not allowed:
+        logger.error("Parsed VAULT_WEB_CONTAINERS is empty after tokenization")
+        raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
+
+    logger.info("Loaded %d allowed container identifiers", len(allowed))
+    return allowed
+
+
+ALLOWED_CONTAINERS: FrozenSet[str] = _load_allowed_containers()
 
 
 class ProxyUnauthorized(Unauthorized):
@@ -159,10 +186,24 @@ def proxy(path: str) -> Response:
 
     normalized_path = path.strip("/")
 
+    container_name: Optional[str] = None
     for allowed_method, pattern in ALLOWED_ENDPOINTS:
-        if request.method == allowed_method and pattern.fullmatch(normalized_path):
+        if request.method != allowed_method:
+            continue
+
+        match = pattern.fullmatch(normalized_path)
+        if match:
+            container_name = match.groupdict().get("name")
             break
     else:
+        raise ProxyRequestForbidden()
+
+    if container_name and container_name not in ALLOWED_CONTAINERS:
+        logger.warning(
+            "Denied request for container %s outside allowed list from %s",
+            container_name,
+            request.remote_addr,
+        )
         raise ProxyRequestForbidden()
 
     upstream_path = f"/{path}" if path else "/"

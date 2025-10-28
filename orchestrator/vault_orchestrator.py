@@ -10,6 +10,7 @@ from io import BytesIO
 from threading import Thread
 import logging
 import json
+import re
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin, urlsplit
 from flask import (
@@ -46,7 +47,33 @@ LOCAL_TZ = pytz.timezone(os.getenv("TIMEZONE", "UTC"))
 # ------------------------------
 # Environment
 # ------------------------------
-WEB_CONTAINERS = os.environ.get("VAULT_WEB_CONTAINERS").split(",")
+
+
+def _parse_container_names(raw_value: Optional[str], *, source: str, required: bool) -> list[str]:
+    if raw_value is None:
+        if required:
+            raise EnvironmentError(f"Missing {source} variable in .env")
+        return []
+
+    names = []
+    seen = set()
+    for token in re.split(r"[,\s]+", raw_value):
+        entry = token.strip()
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        names.append(entry)
+
+    if required and not names:
+        raise EnvironmentError(f"{source} must contain at least one container name")
+
+    return names
+
+
+_configured_containers = _parse_container_names(
+    os.environ.get("VAULT_WEB_CONTAINERS"), source="VAULT_WEB_CONTAINERS", required=True
+)
+
 USERNAME = os.environ.get("VAULT_USER", "admin")
 PASSWORD = os.environ.get("VAULT_PASS", None)
 _proxy_trust_raw = os.environ.get("PROXY_TRUST_COUNT", "1").strip()
@@ -252,7 +279,8 @@ client = DockerProxyClient(
     base_url=os.environ.get("DOCKER_PROXY_URL"),
     token=os.environ.get("DOCKER_PROXY_TOKEN"),
 )
-web_containers = [c.strip() for c in WEB_CONTAINERS if c.strip()]
+web_containers = list(_configured_containers)
+managed_container_names = set(web_containers)
 interval = int(str(os.environ.get("VAULT_ROTATION_INTERVAL", "90")).strip('"'))
 
 rotation_count = 0
@@ -329,6 +357,10 @@ signal.signal(signal.SIGTERM, handle_shutdown)
 # Docker helpers
 # ------------------------------
 def get_container_safe(name):
+    if name not in managed_container_names:
+        log(f"[ERROR] Attempt to access unmanaged container {name}")
+        return None
+
     try:
         payload = client.inspect(name)
         return ProxyContainer(client, name, payload)
