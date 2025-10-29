@@ -8,6 +8,8 @@ const endDateEl = document.getElementById("endDate");
 const applyCustomBtn = document.getElementById("applyCustom");
 const autoSwitch = document.getElementById("autoSwitch");
 const linesMeta = document.getElementById("linesMeta");
+const searchInput = document.getElementById("searchInput");
+const emptyState = document.getElementById("emptyState");
 
 // State
 let allLogs = pre && pre.textContent ? pre.textContent : "";
@@ -15,6 +17,7 @@ let selectedPeriod = "day"; // default
 let autoRefreshHandle = null;
 let isFetching = false;
 let firstLoad = true;
+let searchTerm = "";
 
 // Helpers: parse date from a log line like: [2025-10-10 19:16:13]
 function parseLogDate(line) {
@@ -34,12 +37,9 @@ function updateMeta(count) {
 
 // Display filtered logs (client-side)
 function displayLogs(scrollBottom = false) {
-  if (!allLogs) {
-    pre.textContent = "";
-    updateMeta(0);
-    return;
-  }
-  const lines = allLogs.split(/\r?\n/).filter(Boolean);
+  const lines = allLogs
+    ? allLogs.split(/\r?\n/).filter((line) => line.length > 0)
+    : [];
   const now = new Date();
   let filtered = [];
 
@@ -79,13 +79,26 @@ function displayLogs(scrollBottom = false) {
     });
   }
 
-  if (filtered.length === 0) {
-    pre.innerHTML = "No logs for the selected period.";
-    updateMeta(0);
-  } else {
-    pre.textContent = filtered.join("\n");
-    updateMeta(filtered.length);
+  if (searchTerm) {
+    const needle = searchTerm.toLowerCase();
+    filtered = filtered.filter((line) => line.toLowerCase().includes(needle));
   }
+
+  if (filtered.length === 0) {
+    pre.textContent = "";
+    emptyState.classList.add("is-visible");
+    pre.setAttribute("aria-hidden", "true");
+    updateMeta(0);
+    if (scrollBottom) {
+      pre.scrollTop = 0;
+    }
+    return;
+  }
+
+  emptyState.classList.remove("is-visible");
+  pre.removeAttribute("aria-hidden");
+  pre.textContent = filtered.join("\n");
+  updateMeta(filtered.length);
 
   if (scrollBottom) {
     pre.scrollTop = pre.scrollHeight;
@@ -164,6 +177,11 @@ autoSwitch.addEventListener("click", () => {
     clearInterval(autoRefreshHandle);
     autoRefreshHandle = null;
   }
+});
+
+searchInput.addEventListener("input", (event) => {
+  searchTerm = event.target.value.trim();
+  displayLogs(false);
 });
 
 // initial boot: ensure Day is active and fetch logs
