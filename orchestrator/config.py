@@ -89,7 +89,7 @@ def _determine_log_file(base_dir: Path) -> Path:
     except OSError:
         candidate = base_dir
 
-    filename = os.environ.get("ORCHESTRATOR_LOG_FILE", "vault_orchestrator.log")
+    filename = os.environ.get("ORCHESTRATOR_LOG_FILE", "orchestrator.log")
     log_path = candidate / filename
 
     try:

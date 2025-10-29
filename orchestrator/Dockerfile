@@ -23,5 +23,5 @@ COPY . .
 # Copy compiled CSS only
 COPY --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["python3", "vault_orchestrator.py"]
+CMD ["python3", "app.py"]
 
