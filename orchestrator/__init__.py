@@ -69,7 +69,7 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
             "report-uri /orchestrator/csp-violation-report-endpoint; "
         )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("Referrer-Policy", "same-site")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
         return response
 
     return app
