@@ -1,3 +1,12 @@
+import { SSEClient } from "./core/sse-client.js";
+import {
+  CpuTimeSeriesChart,
+  MemoryTimeSeriesChart,
+  NetIoTimeSeriesChart,
+} from "./charts/time-series.js";
+import { HealthTimelineChart } from "./charts/health-timeline.js";
+import { UptimeDistributionChart } from "./charts/uptime-distribution.js";
+
 /* CONFIG */
 
 let orchestratorRunning = true;
@@ -192,6 +201,27 @@ function timeAgo(date) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function formatBytes(value) {
+  if (!Number.isFinite(value)) return "0 B";
+  const absolute = Math.abs(value);
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let idx = 0;
+  let scaled = absolute;
+  while (scaled >= 1024 && idx < units.length - 1) {
+    scaled /= 1024;
+    idx += 1;
+  }
+  const rounded = idx === 0 ? Math.round(scaled) : scaled.toFixed(1);
+  const prefix = value < 0 ? "-" : "";
+  return `${prefix}${rounded} ${units[idx]}`;
+}
+
+function formatPercent(value, options = {}) {
+  if (!Number.isFinite(value)) return "—";
+  const precision = options.precision ?? 1;
+  return `${value.toFixed(precision)}%`;
+}
+
 /* SAFE DOM HELPERS */
 function safeSetText(id, text) {
   const el = document.getElementById(id);
@@ -202,54 +232,133 @@ function safeSetHTML(id, html) {
   if (el) el.innerHTML = html;
 }
 
-/* CHART (single init + update) */
-let uptimeChart = null;
-function createChart(labels = [], data = []) {
-  const ctx = document.getElementById("uptimeChart").getContext("2d");
-  uptimeChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels,
-      datasets: [
-        {
-          data,
-          backgroundColor: ["#34d399", "#60a5fa", "#f472b6", "#f97316"],
-          borderWidth: 0,
-        },
-      ],
-    },
-    options: {
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: { color: "#cbd5e1" },
-        },
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              const value = context.parsed || 0;
-              const seconds = Math.round(value);
-              return `${context.label}: ${seconds}s`;
-            },
-          },
-        },
-      },
-      maintainAspectRatio: false,
-      cutout: "60%",
-      animation: { duration: 250, animateRotate: false, animateScale: false },
-      responsive: true,
-      hover: { mode: null },
-    },
+function setMetricValue(key, value) {
+  const nodes = document.querySelectorAll(
+    `[data-metric-value="${CSS.escape(key)}"]`,
+  );
+  nodes.forEach((node) => {
+    node.textContent = value;
   });
 }
-function updateChartData(labels, data) {
-  if (!uptimeChart) {
-    createChart(labels, data);
-    return;
+
+/* CHARTS */
+let uptimeChart = null;
+let cpuChart = null;
+let memoryChart = null;
+let netChart = null;
+const containerTimelineCharts = new Map();
+const detachSparklineHandlers = [];
+
+function initCharts() {
+  const uptimeEl = document.getElementById("uptimeChart");
+  if (uptimeEl) {
+    uptimeChart = new UptimeDistributionChart(uptimeEl);
   }
-  uptimeChart.data.labels = labels;
-  uptimeChart.data.datasets[0].data = data;
-  uptimeChart.update({ duration: 150, easing: "linear" });
+
+  const cpuEl = document.querySelector('[data-timeseries="cpu"]');
+  if (cpuEl) {
+    cpuChart = new CpuTimeSeriesChart(cpuEl, {
+      windowSize: 180,
+    });
+  }
+
+  const memoryEl = document.querySelector('[data-timeseries="memory"]');
+  if (memoryEl) {
+    memoryChart = new MemoryTimeSeriesChart(memoryEl, {
+      windowSize: 180,
+    });
+  }
+
+  const netEl = document.querySelector('[data-timeseries="net"]');
+  if (netEl) {
+    netChart = new NetIoTimeSeriesChart(netEl, {
+      windowSize: 180,
+      yAxisFormatter: (value) => formatBytes(value) + "/s",
+    });
+  }
+
+  const sparklineSelectors = [
+    { selector: '[data-timeseries-sparkline="cpu"]', chart: () => cpuChart },
+    {
+      selector: '[data-timeseries-sparkline="memory"]',
+      chart: () => memoryChart,
+    },
+    {
+      selector: '[data-timeseries-sparkline="net-ingress"]',
+      chart: () => netChart,
+      options: { seriesIndex: 0 },
+    },
+    {
+      selector: '[data-timeseries-sparkline="net-egress"]',
+      chart: () => netChart,
+      options: { seriesIndex: 1 },
+    },
+  ];
+
+  for (const entry of sparklineSelectors) {
+    const nodes = document.querySelectorAll(entry.selector);
+    nodes.forEach((node) => {
+      const chart = entry.chart();
+      if (chart && typeof chart.attachSparkline === "function") {
+        const detach = chart.attachSparkline(node, entry.options);
+        detachSparklineHandlers.push(detach);
+      }
+    });
+  }
+}
+
+function updateUptimeChart(labels, data) {
+  if (uptimeChart) {
+    uptimeChart.update(labels, data);
+  }
+}
+
+function updateMetricCharts(metrics) {
+  if (!metrics) return;
+  const timestamp = metrics.timestamp || Date.now();
+
+  if (cpuChart && metrics.cpu) {
+    const usage = Number(metrics.cpu.usage);
+    if (Number.isFinite(usage)) {
+      cpuChart.pushSample(timestamp, { usage });
+      setMetricValue("cpu", formatPercent(usage));
+    }
+  }
+
+  if (memoryChart && metrics.memory) {
+    const used = Number(metrics.memory.used);
+    const total = Number(metrics.memory.total);
+    if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {
+      const percent = (used / total) * 100;
+      memoryChart.pushSample(timestamp, { percent });
+      setMetricValue(
+        "memory",
+        `${formatBytes(used)} / ${formatBytes(total)} (${formatPercent(percent)})`,
+      );
+    }
+  }
+
+  if (netChart && metrics.net_io) {
+    const rx = Number(metrics.net_io.rx_rate ?? metrics.net_io.rx);
+    const tx = Number(metrics.net_io.tx_rate ?? metrics.net_io.tx);
+    const sample = {};
+    if (Number.isFinite(rx)) sample.rx = rx;
+    if (Number.isFinite(tx)) sample.tx = tx;
+    if (Object.keys(sample).length > 0) {
+      netChart.pushSample(timestamp, sample);
+      if (Number.isFinite(rx)) {
+        setMetricValue("net-ingress", `${formatBytes(rx)}/s ↓`);
+      }
+      if (Number.isFinite(tx)) {
+        setMetricValue("net-egress", `${formatBytes(tx)}/s ↑`);
+      }
+      if (Number.isFinite(rx) || Number.isFinite(tx)) {
+        const rxLabel = Number.isFinite(rx) ? `${formatBytes(rx)}/s ↓` : "—";
+        const txLabel = Number.isFinite(tx) ? `${formatBytes(tx)}/s ↑` : "—";
+        setMetricValue("net", `${rxLabel} • ${txLabel}`);
+      }
+    }
+  }
 }
 
 /* STATE */
@@ -321,6 +430,7 @@ function updateDashboardFromData(json) {
     );
 
     const containers = json.containers || {};
+    updateMetricCharts(json.metrics || null);
     const total = Object.values(containers).reduce(
       (s, c) => s + (c.uptime || 0),
       0,
@@ -419,6 +529,20 @@ function updateDashboardFromData(json) {
         }
       }
 
+      let timelineChart = containerTimelineCharts.get(name);
+      if (!timelineChart) {
+        const timelineEl = rowEl.querySelector("[data-health-timeline]");
+        if (timelineEl) {
+          timelineChart = new HealthTimelineChart(timelineEl, {
+            windowSize: 120,
+          });
+          containerTimelineCharts.set(name, timelineChart);
+        }
+      }
+      if (timelineChart) {
+        timelineChart.addSample(Date.now(), state, health || "unknown");
+      }
+
       if (dot) {
         dot.classList.remove("pulse");
         dot.style.backgroundColor = "";
@@ -447,10 +571,17 @@ function updateDashboardFromData(json) {
     const namesSet = new Set(Object.keys(containers));
     for (const r of existingRows) {
       const rn = r.getAttribute("data-row");
-      if (!namesSet.has(rn)) r.remove();
+      if (!namesSet.has(rn)) {
+        r.remove();
+        const timelineChart = containerTimelineCharts.get(rn);
+        if (timelineChart) {
+          timelineChart.dispose();
+          containerTimelineCharts.delete(rn);
+        }
+      }
     }
 
-    updateChartData(labels, data);
+    updateUptimeChart(labels, data);
 
     safeSetText("rotation-count", json.rotation_count ?? 0);
     safeSetText("rot-count-small", json.rotation_count ?? 0);
@@ -530,79 +661,79 @@ function updateDashboardFromData(json) {
 }
 
 /* ==== SSE CONNECTION ==== */
-let evtSource = null;
-let reconnectTimer = null;
+let sseClient = null;
 let hasReceivedData = false;
 
-function connectSSE() {
-  if (evtSource) {
-    try {
-      evtSource.close();
-    } catch {}
-    evtSource = null;
+function setupSse() {
+  if (sseClient) {
+    sseClient.stop();
   }
 
   hasReceivedData = false;
   safeSetHTML(
     "api-status",
-    `<span class="api-offline">Reconnecting to stream…</span>`,
+    `<span class="api-offline">Connecting to stream…</span>`,
   );
 
-  try {
-    evtSource = new EventSource("/orchestrator/api/stream");
-  } catch (e) {
-    console.error("SSE init error:", e);
-    scheduleReconnect();
-    return;
-  }
+  sseClient = new SSEClient(
+    [
+      {
+        name: "dashboard",
+        url: "/orchestrator/api/stream",
+        event: "snapshot",
+      },
+    ],
+    { throttleMs: 600, retryDelay: 5000 },
+  );
 
-  // Called only when HTTP handshake (200 OK) succeeds
-  evtSource.onopen = () => {
-    console.log("SSE connection established (HTTP 200)");
+  sseClient.subscribe("connection-open", () => {
     safeSetHTML(
       "api-status",
       `<span class="api-online">Connected to live stream</span>`,
     );
-  };
+  });
 
-  evtSource.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(event.data);
-      hasReceivedData = true;
-      updateDashboardFromData(payload);
-    } catch (e) {
-      console.error("Invalid SSE data:", e);
-    }
-  };
+  sseClient.subscribe("connection-reconnecting", () => {
+    const message = hasReceivedData
+      ? "Reconnecting to stream…"
+      : "Connecting to stream…";
+    safeSetHTML("api-status", `<span class="api-offline">${message}</span>`);
+  });
 
-  evtSource.onerror = (err) => {
-    console.warn("SSE connection lost:", err);
+  sseClient.subscribe("connection-error", (event) => {
+    console.warn(
+      "SSE connection error",
+      event.detail?.error || "unknown error",
+    );
+    hasReceivedData = false;
+    safeSetHTML(
+      "api-status",
+      `<span class="api-offline">Connection lost, retrying…</span>`,
+    );
+  });
 
-    // Only show reconnecting if connection was previously open
-    if (hasReceivedData || evtSource.readyState === EventSource.CLOSED) {
-      safeSetHTML(
-        "api-status",
-        `<span class="api-offline">Reconnecting to stream…</span>`,
-      );
-    }
+  sseClient.subscribe("snapshot", (event) => {
+    hasReceivedData = true;
+    if (!event?.detail?.data) return;
+    updateDashboardFromData(event.detail.data);
+  });
 
-    try {
-      evtSource.close();
-    } catch {}
-    evtSource = null;
-    scheduleReconnect();
-  };
+  sseClient.start();
 }
 
-function scheduleReconnect() {
-  if (!reconnectTimer) {
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      console.log("Attempting to reconnect SSE…");
-      connectSSE();
-    }, 5000);
+initCharts();
+setupSse();
+
+window.addEventListener("beforeunload", () => {
+  detachSparklineHandlers.forEach((fn) => {
+    try {
+      fn();
+    } catch (err) {
+      console.warn("Failed to detach sparkline", err);
+    }
+  });
+  detachSparklineHandlers.length = 0;
+  if (sseClient) {
+    sseClient.stop();
   }
-}
-
-// start initial connection
-connectSSE();
+});

@@ -12,8 +12,8 @@
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
-    <script src="/orchestrator/static/js/dashboard.js" defer></script>
-    <script src="/orchestrator/static/js/vendor/chart.min.js" defer></script>
+    <script src="/orchestrator/static/js/vendor/echarts.min.js" defer></script>
+    <script type="module" src="/orchestrator/static/js/dashboard.js"></script>
   </head>
   <body>
     <div id="app">
@@ -156,19 +156,23 @@
 
             <div class="panel-body">
               <template id="row-template">
-                <div class="container-row">
-                  <div class="container-info">
-                    <div class="status-dot" data-dot></div>
-                    <div>
-                      <div class="container-name" data-name></div>
-                      <div class="container-sub" data-sub></div>
+                <div class="container-card">
+                  <div class="container-row">
+                    <div class="container-info">
+                      <div class="status-dot" data-dot></div>
+                      <div>
+                        <div class="container-name" data-name></div>
+                        <div class="container-sub" data-sub></div>
+                      </div>
+                    </div>
+
+                    <div class="container-metrics">
+                      <div class="metric-uptime" data-uptime></div>
+                      <span class="metric-percent" data-percent></span>
                     </div>
                   </div>
 
-                  <div class="container-metrics">
-                    <div class="metric-uptime" data-uptime></div>
-                    <span class="metric-percent" data-percent></span>
-                  </div>
+                  <div class="container-timeline" data-health-timeline></div>
                 </div>
               </template>
 
@@ -179,7 +183,7 @@
           <aside class="panel glass">
             <h3 class="panel-title">Uptime distribution</h3>
             <div class="chart-area">
-              <canvas id="uptimeChart"></canvas>
+              <div id="uptimeChart" class="chart-surface"></div>
             </div>
 
             <div class="chart-footer">
@@ -198,6 +202,90 @@
             </p>
           </aside>
         </div>
+
+        <section class="panel glass metrics-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Live performance</h2>
+            <div class="panel-meta">Real-time container resource telemetry</div>
+          </div>
+
+          <div class="metrics-grid">
+            <article class="timeseries-card">
+              <header class="timeseries-card-header">
+                <div>
+                  <h3 class="metric-title">CPU usage</h3>
+                  <p class="metric-subtitle">
+                    Average across running containers
+                  </p>
+                </div>
+                <span class="metric-reading" data-metric-value="cpu">—</span>
+              </header>
+              <div class="timeseries-chart" data-timeseries="cpu"></div>
+              <div class="timeseries-sparklines">
+                <div
+                  class="timeseries-sparkline"
+                  data-timeseries-sparkline="cpu"
+                ></div>
+              </div>
+            </article>
+
+            <article class="timeseries-card">
+              <header class="timeseries-card-header">
+                <div>
+                  <h3 class="metric-title">Memory usage</h3>
+                  <p class="metric-subtitle">
+                    Tracked containers vs. provisioned capacity
+                  </p>
+                </div>
+                <span class="metric-reading" data-metric-value="memory">—</span>
+              </header>
+              <div class="timeseries-chart" data-timeseries="memory"></div>
+              <div class="timeseries-sparklines">
+                <div
+                  class="timeseries-sparkline"
+                  data-timeseries-sparkline="memory"
+                ></div>
+              </div>
+            </article>
+
+            <article class="timeseries-card">
+              <header class="timeseries-card-header">
+                <div>
+                  <h3 class="metric-title">Network throughput</h3>
+                  <p class="metric-subtitle">
+                    Ingress / egress bytes per second
+                  </p>
+                </div>
+                <span class="metric-reading" data-metric-value="net">—</span>
+              </header>
+              <div class="timeseries-chart" data-timeseries="net"></div>
+              <div class="timeseries-sparklines dual">
+                <div class="sparkline-group">
+                  <div class="sparkline-label">Ingress</div>
+                  <div
+                    class="timeseries-sparkline"
+                    data-timeseries-sparkline="net-ingress"
+                  ></div>
+                  <span
+                    class="sparkline-reading"
+                    data-metric-value="net-ingress"
+                    >—</span
+                  >
+                </div>
+                <div class="sparkline-group">
+                  <div class="sparkline-label">Egress</div>
+                  <div
+                    class="timeseries-sparkline"
+                    data-timeseries-sparkline="net-egress"
+                  ></div>
+                  <span class="sparkline-reading" data-metric-value="net-egress"
+                    >—</span
+                  >
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
       </main>
 
       <footer class="flex items-center justify-center border-t border-white/5">
