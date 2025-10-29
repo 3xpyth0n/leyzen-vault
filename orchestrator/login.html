@@ -55,7 +55,7 @@
           <label for="captcha">Captcha</label>
           <div class="captcha-display">
             <img
-              src="{{ url_for('captcha_image') }}?nonce={{ captcha_nonce }}"
+              src="{{ url_for('auth.captcha_image') }}?nonce={{ captcha_nonce }}"
               alt="Captcha image"
               class="captcha-image"
               data-captcha-image

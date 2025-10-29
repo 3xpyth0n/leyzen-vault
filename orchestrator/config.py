@@ -1,0 +1,199 @@
+"""Configuration loading for the vault orchestrator application."""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass
+from datetime import timedelta
+from pathlib import Path
+from typing import List, Optional
+
+import pytz
+from werkzeug.security import generate_password_hash
+
+
+class ConfigurationError(EnvironmentError):
+    """Raised when required configuration values are missing or invalid."""
+
+
+def _parse_container_names(
+    raw_value: Optional[str], *, source: str, required: bool
+) -> List[str]:
+    if raw_value is None:
+        if required:
+            raise ConfigurationError(f"Missing {source} variable in .env")
+        return []
+
+    names: List[str] = []
+    seen = set()
+    for token in re.split(r"[,\s]+", raw_value):
+        entry = token.strip()
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        names.append(entry)
+
+    if required and not names:
+        raise ConfigurationError(f"{source} must contain at least one container name")
+
+    return names
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Application settings derived from environment variables."""
+
+    timezone: pytz.BaseTzInfo
+    username: str
+    password_hash: str
+    proxy_trust_count: int
+    docker_proxy_url: str
+    docker_proxy_token: str
+    web_containers: List[str]
+    rotation_interval: int
+    log_file: Path
+    html_dir: Path
+    secret_key: str
+    captcha_image_width: int
+    captcha_image_height: int
+    captcha_length: int
+    captcha_store_ttl: int
+    login_csrf_ttl: int
+    csp_report_max_size: int
+    csp_report_rate_limit: int
+    csp_report_rate_window: timedelta
+
+    @property
+    def log_dir(self) -> Path:
+        return self.log_file.parent
+
+
+def _ensure_required_variables(required: List[str]) -> None:
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise ConfigurationError(
+            f"Missing required environment variables: {', '.join(sorted(missing))}"
+        )
+
+
+def _determine_log_file(base_dir: Path) -> Path:
+    override = os.environ.get("ORCHESTRATOR_LOG_DIR")
+    if override:
+        candidate = Path(override).expanduser().resolve()
+    else:
+        candidate = base_dir
+
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        candidate = base_dir
+
+    filename = os.environ.get("ORCHESTRATOR_LOG_FILE", "vault_orchestrator.log")
+    log_path = candidate / filename
+
+    try:
+        if not log_path.exists():
+            log_path.touch()
+    except OSError:
+        # If the file cannot be created now, the logger will surface the error later.
+        pass
+
+    return log_path
+
+
+def load_settings() -> Settings:
+    """Load orchestrator settings from environment variables."""
+
+    _ensure_required_variables(
+        ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"]
+    )
+
+    timezone_name = os.getenv("TIMEZONE", "UTC")
+    try:
+        timezone = pytz.timezone(timezone_name)
+    except pytz.UnknownTimeZoneError as exc:
+        raise ConfigurationError(f"Unknown timezone '{timezone_name}'") from exc
+
+    raw_containers = os.environ.get("VAULT_WEB_CONTAINERS")
+    web_containers = _parse_container_names(
+        raw_containers, source="VAULT_WEB_CONTAINERS", required=True
+    )
+
+    username = os.environ.get("VAULT_USER", "admin")
+    password = os.environ.get("VAULT_PASS") or ""
+    password_hash = generate_password_hash(password)
+
+    proxy_trust_raw = os.environ.get("PROXY_TRUST_COUNT", "1").strip()
+    try:
+        proxy_trust_count = max(0, int(proxy_trust_raw))
+    except ValueError:
+        proxy_trust_count = 1
+
+    rotation_raw = os.environ.get("VAULT_ROTATION_INTERVAL", "90").strip('"')
+    try:
+        rotation_interval = max(1, int(rotation_raw))
+    except ValueError:
+        rotation_interval = 90
+
+    base_dir = Path(__file__).resolve().parent
+    html_dir = base_dir
+    log_file = _determine_log_file(base_dir)
+
+    captcha_image_width = int(os.getenv("CAPTCHA_IMAGE_WIDTH", "220"))
+    captcha_image_height = int(os.getenv("CAPTCHA_IMAGE_HEIGHT", "70"))
+    captcha_length = int(os.getenv("CAPTCHA_LENGTH", "6"))
+    captcha_store_ttl = int(os.getenv("CAPTCHA_STORE_TTL_SECONDS", "300"))
+    login_csrf_ttl = max(60, int(os.getenv("LOGIN_CSRF_TTL_SECONDS", "900")))
+
+    csp_report_max_default = 4096
+    csp_report_max_raw = os.environ.get(
+        "CSP_REPORT_MAX_SIZE", str(csp_report_max_default)
+    ).strip()
+    try:
+        csp_report_max_size = max(0, int(csp_report_max_raw.strip('"')))
+    except ValueError:
+        csp_report_max_size = csp_report_max_default
+
+    csp_rate_limit_default = 5
+    csp_rate_limit_raw = os.environ.get(
+        "CSP_REPORT_RATE_LIMIT", str(csp_rate_limit_default)
+    ).strip()
+    try:
+        csp_report_rate_limit = max(1, int(csp_rate_limit_raw.strip('"')))
+    except ValueError:
+        csp_report_rate_limit = csp_rate_limit_default
+
+    csp_report_rate_window = timedelta(seconds=60)
+
+    docker_proxy_url = (
+        os.environ.get("DOCKER_PROXY_URL") or "http://docker-proxy:2375"
+    ).rstrip("/")
+    docker_proxy_token = os.environ.get("DOCKER_PROXY_TOKEN", "")
+
+    secret_key = os.environ.get("VAULT_SECRET_KEY", "")
+
+    return Settings(
+        timezone=timezone,
+        username=username,
+        password_hash=password_hash,
+        proxy_trust_count=proxy_trust_count,
+        docker_proxy_url=docker_proxy_url,
+        docker_proxy_token=docker_proxy_token,
+        web_containers=list(web_containers),
+        rotation_interval=rotation_interval,
+        log_file=log_file,
+        html_dir=html_dir,
+        secret_key=secret_key,
+        captcha_image_width=captcha_image_width,
+        captcha_image_height=captcha_image_height,
+        captcha_length=captcha_length,
+        captcha_store_ttl=captcha_store_ttl,
+        login_csrf_ttl=login_csrf_ttl,
+        csp_report_max_size=csp_report_max_size,
+        csp_report_rate_limit=csp_report_rate_limit,
+        csp_report_rate_window=csp_report_rate_window,
+    )
+
+
+__all__ = ["Settings", "load_settings", "ConfigurationError"]
