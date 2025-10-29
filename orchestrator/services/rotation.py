@@ -10,7 +10,12 @@ from threading import Lock, Thread
 from typing import Dict, Optional
 
 from ..config import Settings
-from .docker_proxy import DockerProxyError, DockerProxyService
+from .docker_proxy import (
+    DockerProxyError,
+    DockerProxyNotFound,
+    DockerProxyService,
+    ProxyContainer,
+)
 from .logging import FileLogger
 
 
@@ -44,6 +49,8 @@ class RotationService:
         self._managed_containers: list[str] = []
         self._active_index: Optional[int] = None
         self._next_switch_override: Optional[datetime] = None
+        self._container_cache: Dict[str, ProxyContainer] = {}
+        self._container_cache_lock = Lock()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -247,9 +254,7 @@ class RotationService:
             )
             elapsed = self.accumulate_and_clear_active(active_name)
             if elapsed > 0:
-                total_seconds = self.container_total_active_seconds.get(
-                    active_name, 0
-                )
+                total_seconds = self.container_total_active_seconds.get(active_name, 0)
                 self._logger.log(
                     f"Accumulated {elapsed}s for {active_name} (total={total_seconds}s) before rotation"
                 )
@@ -309,14 +314,24 @@ class RotationService:
         return False, active_index, active_name
 
     def _uptime_tracker_loop(self) -> None:
+        local_cache: Dict[str, ProxyContainer] = {}
         while True:
             try:
                 now = datetime.now(self._settings.timezone)
 
                 for name in self._settings.web_containers:
-                    cont = self._docker.get_container_safe(name)
-                    if not cont:
-                        continue
+                    cont = local_cache.get(name)
+                    if cont is None:
+                        with self._container_cache_lock:
+                            cont = self._container_cache.get(name)
+                        if cont is None:
+                            cont = self._docker.get_container_safe(name)
+                            if cont:
+                                local_cache[name] = cont
+                                with self._container_cache_lock:
+                                    self._container_cache[name] = cont
+                            else:
+                                continue
 
                     try:
                         cont.reload()
@@ -324,6 +339,15 @@ class RotationService:
                         self._logger.log(
                             f"[UPTIME ERROR] Failed to reload {name}: {exc}"
                         )
+                        continue
+                    except DockerProxyNotFound:
+                        self._logger.log(
+                            f"[UPTIME ERROR] Container {name} disappeared during tracking"
+                        )
+                        local_cache.pop(name, None)
+                        with self._container_cache_lock:
+                            self._container_cache.pop(name, None)
+                        self._docker.invalidate_container_cache(name)
                         continue
 
                     status = cont.status
@@ -430,9 +454,7 @@ class RotationService:
             active_index = self._active_index
             active_name = self.last_active_container
 
-            self._logger.log(
-                f"[CONTROL] Manual rotation requested from {active_name}"
-            )
+            self._logger.log(f"[CONTROL] Manual rotation requested from {active_name}")
 
             rotated, new_index, new_name = self._select_next_active(
                 self._managed_containers,
@@ -451,9 +473,9 @@ class RotationService:
             self.rotation_count += 1
             self.last_rotation_time = datetime.now(self._settings.timezone)
             self.next_rotation_eta = self._settings.rotation_interval
-            self._next_switch_override = datetime.now(self._settings.timezone) + timedelta(
-                seconds=self._settings.rotation_interval
-            )
+            self._next_switch_override = datetime.now(
+                self._settings.timezone
+            ) + timedelta(seconds=self._settings.rotation_interval)
             self._active_index = new_index
             self.last_active_container = new_name
 
@@ -482,7 +504,13 @@ class RotationService:
         now = datetime.now(self._settings.timezone)
         containers: Dict[str, Dict[str, object]] = {}
         for name in self._settings.web_containers:
-            cont = self._docker.get_container_safe(name)
+            with self._container_cache_lock:
+                cont = self._container_cache.get(name)
+            if not cont:
+                cont = self._docker.get_container_safe(name)
+                if cont:
+                    with self._container_cache_lock:
+                        self._container_cache[name] = cont
             state = cont.status if cont else "not found"
             health = (
                 cont.attrs.get("State", {}).get("Health", {}).get("Status")

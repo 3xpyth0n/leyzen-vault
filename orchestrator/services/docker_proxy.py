@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from threading import Lock
+from typing import Any, Callable, Dict, Optional
 
 import requests
 
@@ -94,13 +95,26 @@ class DockerProxyClient:
 class ProxyContainer:
     """Container facade backed by DockerProxyClient responses."""
 
-    def __init__(self, client: DockerProxyClient, name: str, payload: Dict[str, Any]):
+    def __init__(
+        self,
+        client: DockerProxyClient,
+        name: str,
+        payload: Dict[str, Any],
+        *,
+        cache_update: Optional[Callable[[Dict[str, Any]], None]] = None,
+        cache_invalidate: Optional[Callable[[], None]] = None,
+    ):
         self._client = client
         self.name = name
         self._payload = payload
+        self._cache_update = cache_update
+        self._cache_invalidate = cache_invalidate
 
     def reload(self) -> None:
-        self._payload = self._client.inspect(self.name)
+        payload = self._client.inspect(self.name)
+        self._payload = payload
+        if self._cache_update:
+            self._cache_update(payload)
 
     @property
     def status(self) -> Optional[str]:
@@ -120,10 +134,14 @@ class ProxyContainer:
         return {}
 
     def start(self) -> None:
+        if self._cache_invalidate:
+            self._cache_invalidate()
         self._client.start(self.name)
         self.reload()
 
     def stop(self, timeout: Optional[int] = None) -> None:
+        if self._cache_invalidate:
+            self._cache_invalidate()
         self._client.stop(self.name, timeout=timeout)
         self.reload()
 
@@ -131,6 +149,8 @@ class ProxyContainer:
         self._client.wait(self.name, timeout=timeout)
 
     def unpause(self) -> None:
+        if self._cache_invalidate:
+            self._cache_invalidate()
         self._client.unpause(self.name)
         self.reload()
 
@@ -146,6 +166,9 @@ class DockerProxyService:
             token=settings.docker_proxy_token,
         )
         self.managed_container_names = set(settings.web_containers)
+        self._inspect_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_meta: Dict[str, float] = {}
+        self._cache_lock = Lock()
 
     @property
     def web_containers(self) -> list[str]:
@@ -156,15 +179,50 @@ class DockerProxyService:
             self._logger.log(f"[ERROR] Attempt to access unmanaged container {name}")
             return None
 
+        payload = self._get_cached_payload(name)
+        if payload is None:
+            payload = self.refresh_container_cache(name)
+            if payload is None:
+                return None
+
+        return ProxyContainer(
+            self.client,
+            name,
+            payload,
+            cache_update=lambda data: self._store_cache(name, data),
+            cache_invalidate=lambda: self.invalidate_container_cache(name),
+        )
+
+    def _get_cached_payload(self, name: str) -> Optional[Dict[str, Any]]:
+        with self._cache_lock:
+            entry = self._inspect_cache.get(name)
+            if entry is None:
+                return None
+            return entry
+
+    def _store_cache(self, name: str, payload: Dict[str, Any]) -> None:
+        with self._cache_lock:
+            self._inspect_cache[name] = payload
+            self._cache_meta[name] = time.time()
+
+    def invalidate_container_cache(self, name: str) -> None:
+        with self._cache_lock:
+            self._inspect_cache.pop(name, None)
+            self._cache_meta.pop(name, None)
+
+    def refresh_container_cache(self, name: str) -> Optional[Dict[str, Any]]:
         try:
             payload = self.client.inspect(name)
-            return ProxyContainer(self.client, name, payload)
         except DockerProxyNotFound:
+            self.invalidate_container_cache(name)
             self._logger.log(f"[ERROR] Container {name} not found")
             return None
         except DockerProxyError as exc:
             self._logger.log(f"[ERROR] Error getting container {name}: {exc}")
             return None
+
+        self._store_cache(name, payload)
+        return payload
 
     def wait_until_healthy(
         self,
