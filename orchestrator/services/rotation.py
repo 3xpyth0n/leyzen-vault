@@ -158,6 +158,23 @@ class RotationService:
             try:
                 now = datetime.now(self._settings.timezone)
 
+                # Synchronise with any manual rotation that may have happened
+                # since the previous loop iteration. Without this check the
+                # orchestrator would continue operating with stale
+                # ``active_name`` / ``active_index`` values which leads to it
+                # trying to stop the previously active container (already
+                # stopped by the manual rotation). That in turn prevents the
+                # automated rotation from progressing as expected.
+                with self._rotation_lock:
+                    shared_index = self._active_index
+                    shared_name = self.last_active_container
+
+                if shared_name and shared_name != active_name:
+                    active_name = shared_name
+
+                if shared_index is not None and shared_index != active_index:
+                    active_index = shared_index
+
                 override = None
                 with self._rotation_lock:
                     if self._next_switch_override is not None:
