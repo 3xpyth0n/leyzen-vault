@@ -47,7 +47,7 @@ def _rotation_service() -> RotationService:
 def dashboard():
     settings = _settings()
     return render_template(
-        "index.html",
+        "dashboard/index.html",
         vault_rotation_interval=int(settings.rotation_interval),
     )
 

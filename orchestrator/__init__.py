@@ -22,8 +22,9 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
 
     app = Flask(
         __name__,
-        template_folder=str(settings.html_dir),
-        static_folder=str(settings.html_dir),
+        template_folder=str(settings.html_dir / "templates"),
+        static_folder=str(settings.html_dir / "static"),
+        static_url_path="/orchestrator/static",
     )
     app.wsgi_app = ProxyFix(  # type: ignore[assignment]
         app.wsgi_app,

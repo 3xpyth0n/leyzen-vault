@@ -121,6 +121,17 @@ document.getElementById("btn-kill").onclick = () => {
   }
 };
 
+function refreshRotationState() {
+  const stateEl = document.getElementById("rotation-state");
+  if (stateEl) {
+    stateEl.textContent = orchestratorRunning ? "Active" : "Paused";
+  }
+  const dotEl = document.getElementById("rotation-state-dot");
+  if (dotEl) {
+    dotEl.classList.toggle("state-paused", !orchestratorRunning);
+  }
+}
+
 function updateControlButtons() {
   const btnStart = document.getElementById("btn-start");
   const btnStop = document.getElementById("btn-stop");
@@ -150,6 +161,7 @@ function updateControlButtons() {
     btnKill.disabled = false;
     btnKill.style.opacity = "1";
   }
+  refreshRotationState();
 }
 updateControlButtons();
 
@@ -167,6 +179,17 @@ function fmtHMS(s) {
 }
 function humanTime(ts) {
   return ts || "N/A";
+}
+
+function timeAgo(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 0) return "just now";
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 /* SAFE DOM HELPERS */
@@ -288,6 +311,7 @@ function updateDashboardFromData(json) {
       orchestratorRunning = json.rotation_active;
       updateControlButtons();
     }
+    refreshRotationState();
 
     safeSetHTML(
       "api-status",
@@ -297,10 +321,14 @@ function updateDashboardFromData(json) {
     );
 
     const containers = json.containers || {};
-    let total = Object.values(containers).reduce(
+    const total = Object.values(containers).reduce(
       (s, c) => s + (c.uptime || 0),
       0,
     );
+    const totalCount = Object.keys(containers).length;
+    let healthyCount = 0;
+    let runningCount = 0;
+
     const rowsEl = document.getElementById("rows");
     if (!rowsEl) return;
 
@@ -344,9 +372,11 @@ function updateDashboardFromData(json) {
         badgeLabel = "stopped";
         badgeClass = "status-not-found";
       } else {
+        runningCount += 1;
         if (health.toLowerCase().includes("healthy")) {
           badgeLabel = "running";
           badgeClass = "status-running";
+          healthyCount += 1;
         } else if (health.toLowerCase().includes("starting")) {
           badgeLabel = "starting";
           badgeClass = "status-starting";
@@ -356,6 +386,7 @@ function updateDashboardFromData(json) {
         } else {
           badgeLabel = "running";
           badgeClass = "status-running";
+          healthyCount += 1;
         }
       }
 
@@ -370,17 +401,21 @@ function updateDashboardFromData(json) {
 
       if (percentEl) {
         if (badgeClass === "status-running") {
-          percentEl.style.background = "#052e14";
+          percentEl.style.background = "rgba(34,197,94,0.12)";
           percentEl.style.color = "#34d399";
+          percentEl.style.boxShadow = "0 0 10px rgba(34,197,94,0.12)";
         } else if (badgeClass === "status-starting") {
-          percentEl.style.background = "#2b1b05";
+          percentEl.style.background = "rgba(245,158,11,0.12)";
           percentEl.style.color = "#f59e0b";
+          percentEl.style.boxShadow = "0 0 10px rgba(245,158,11,0.12)";
         } else if (badgeClass === "status-unhealthy") {
-          percentEl.style.background = "#2b0f0f";
+          percentEl.style.background = "rgba(248,113,113,0.12)";
           percentEl.style.color = "#ef4444";
+          percentEl.style.boxShadow = "0 0 10px rgba(248,113,113,0.12)";
         } else {
-          percentEl.style.background = "#1f2937";
+          percentEl.style.background = "rgba(148,163,184,0.1)";
           percentEl.style.color = "#94a3b8";
+          percentEl.style.boxShadow = "none";
         }
       }
 
@@ -419,12 +454,30 @@ function updateDashboardFromData(json) {
 
     safeSetText("rotation-count", json.rotation_count ?? 0);
     safeSetText("rot-count-small", json.rotation_count ?? 0);
-    safeSetText(
-      "total-uptime",
-      fmtHMS(
-        Object.values(containers).reduce((s, c) => s + (c.uptime || 0), 0),
-      ),
-    );
+    safeSetText("total-uptime", fmtHMS(total));
+    safeSetText("avg-uptime", fmtHMS(totalCount > 0 ? total / totalCount : 0));
+    safeSetText("healthy-count", healthyCount);
+    safeSetText("container-count", totalCount);
+    safeSetText("degraded-count", Math.max(totalCount - healthyCount, 0));
+    safeSetText("running-count", runningCount);
+    safeSetText("running-count-chart", runningCount);
+
+    const lastRotationRaw = json.last_rotation;
+    let lastRotationDate = null;
+    if (lastRotationRaw) {
+      const parsed = new Date(lastRotationRaw.replace(" ", "T"));
+      if (!Number.isNaN(parsed.getTime())) {
+        lastRotationDate = parsed;
+      }
+    }
+
+    if (lastRotationDate) {
+      safeSetText("last-rotation", lastRotationDate.toLocaleString());
+      safeSetText("last-rotation-ago", timeAgo(lastRotationDate));
+    } else {
+      safeSetText("last-rotation", "—");
+      safeSetText("last-rotation-ago", "Awaiting data");
+    }
 
     const nextEl = document.getElementById("next-rotation");
     if (nextEl) {
@@ -435,8 +488,8 @@ function updateDashboardFromData(json) {
         stopCountdown("Next in: paused");
       } else if (hasEta) {
         startCountdown(Math.floor(eta));
-      } else if (json.last_rotation) {
-        const newLastTs = new Date(json.last_rotation.replace(" ", "T"));
+      } else if (lastRotationDate) {
+        const newLastTs = lastRotationDate;
         const now = new Date();
         if (
           !lastRotationTs ||
