@@ -101,6 +101,18 @@ def api_control():
             400,
         )
 
+    if action == "rotate" and not rotation.rotation_active:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Resume rotation before forcing a switch.",
+                    "rotation_active": rotation.rotation_active,
+                }
+            ),
+            400,
+        )
+
     client_ip = get_client_ip()
     _logger().log(
         "[CONTROL] Received action",
@@ -137,6 +149,18 @@ def api_control():
                 "rotation_active": rotation.rotation_active,
             }
         )
+
+    if action == "rotate":
+        success, message, snapshot = rotation.force_rotate()
+        status_code = 200 if success else 409
+        response = {
+            "status": "ok" if success else "error",
+            "message": message,
+            "rotation_active": rotation.rotation_active,
+        }
+        if snapshot:
+            response["snapshot"] = snapshot
+        return jsonify(response), status_code
 
     return jsonify({"status": "error", "message": f"Unknown action '{action}'"}), 400
 

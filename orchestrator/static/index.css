@@ -205,6 +205,10 @@ footer {
   color: #fbbf24;
   box-shadow: 0 0 8px rgba(251, 191, 36, 0.15);
 }
+.control-btn.rotate:hover {
+  color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+}
 .control-btn.kill:hover {
   color: #ef4444;
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
