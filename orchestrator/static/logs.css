@@ -66,6 +66,33 @@ body {
   gap: 0.75rem;
 }
 
+.search {
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  min-width: 200px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
 /* Buttons */
 .btn {
   background: transparent;
@@ -191,7 +218,13 @@ body {
 }
 
 /* Log area */
-pre {
+.log-area {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
+.log-area pre {
   flex: 1;
   margin: 0;
   padding: 1rem;
@@ -205,19 +238,19 @@ pre {
 }
 
 /* Scrollbar */
-pre::-webkit-scrollbar {
+.log-area pre::-webkit-scrollbar {
   width: 10px;
 }
-pre::-webkit-scrollbar-track {
+.log-area pre::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
   border-radius: 10px;
 }
-pre::-webkit-scrollbar-thumb {
+.log-area pre::-webkit-scrollbar-thumb {
   background: linear-gradient(45deg, var(--accent1), var(--accent2));
   border-radius: 10px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
-pre::-webkit-scrollbar-thumb:hover {
+.log-area pre::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(45deg, #3ae9d2, #7eb4ff);
 }
 
@@ -236,10 +269,24 @@ pre::-webkit-scrollbar-thumb:hover {
     flex-wrap: wrap;
     gap: 0.5rem;
   }
+  .search-input {
+    min-width: 160px;
+    width: 100%;
+  }
 }
 
-.empty {
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
   color: var(--muted-2);
+  font-size: 1rem;
   text-align: center;
-  padding: 1rem;
+  pointer-events: none;
+}
+
+.empty-state.is-visible {
+  display: flex;
 }

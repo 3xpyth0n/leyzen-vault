@@ -16,6 +16,16 @@
         </div>
 
         <div class="controls" aria-label="log controls">
+          <div class="search">
+            <input
+              id="searchInput"
+              class="search-input"
+              type="search"
+              placeholder="Search logs..."
+              aria-label="Search logs"
+            />
+          </div>
+
           <button
             id="refreshBtn"
             class="btn"
@@ -59,8 +69,17 @@
           </div>
         </div>
       </div>
-
-      <pre id="log">{{ log_content | e }}</pre>
+      <div class="log-area">
+        <pre id="log">{{ log_content | e }}</pre>
+        <div
+          id="emptyState"
+          class="empty-state"
+          role="status"
+          aria-live="polite"
+        >
+          No Logs
+        </div>
+      </div>
     </div>
   </body>
 </html>
