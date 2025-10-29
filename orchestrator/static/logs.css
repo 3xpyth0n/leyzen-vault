@@ -19,16 +19,15 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
-  height: 100%;
+  height: 100vh;
   display: flex;
-  justify-content: center;
-  align-items: center;
+  flex-direction: column;
 }
 
 /* Container: almost full screen */
 .container {
   width: 90vw;
-  height: 90vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -40,7 +39,26 @@ body {
   box-sizing: border-box;
 }
 
-/* Header */
+.log-area {
+  position: relative;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.log-area pre {
+  flex: 1;
+  margin: 0;
+  padding: 1rem;
+  overflow-y: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  background: transparent;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #dfeff6;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -57,6 +75,25 @@ body {
   font-size: 1.1rem;
   margin: 0;
   font-weight: 600;
+}
+
+body {
+  overflow: hidden;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+footer {
+  flex: 0 0 auto;
+  padding: 0.5rem 1.5rem;
+  color: #9aa6b2;
+  font-size: 0.85rem;
 }
 
 /* Controls group */
