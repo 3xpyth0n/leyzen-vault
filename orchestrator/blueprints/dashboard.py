@@ -165,7 +165,7 @@ def logs_raw():
         return f"Error reading logs: {exc}", 500
 
 
-@dashboard_bp.route("/js/<path:filename>", strict_slashes=False)
+@dashboard_bp.route("/static/js/<path:filename>", strict_slashes=False)
 @login_required
 def serve_js(filename: str):
     js_dir = Path(__file__).resolve().parent.parent / "static" / "js"
