@@ -40,6 +40,10 @@ class RotationService:
 
         self._threads_started = False
         self._start_lock = Lock()
+        self._rotation_lock = Lock()
+        self._managed_containers: list[str] = []
+        self._active_index: Optional[int] = None
+        self._next_switch_override: Optional[datetime] = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -97,6 +101,11 @@ class RotationService:
             self._logger.log("[ERROR] No valid container found to manage.")
             return
 
+        with self._rotation_lock:
+            self._managed_containers = managed_containers[:]
+            self._active_index = None
+            self._next_switch_override = None
+
         self._logger.log("[INIT] Stopping all containers before rotation startup...")
         for name in managed_containers:
             self._docker.stop_container(name, reason="initial cleanup")
@@ -126,6 +135,9 @@ class RotationService:
         self._docker.ensure_single_active(active_name, managed_containers)
         self.mark_active(active_name)
         self.last_active_container = active_name
+        with self._rotation_lock:
+            self._active_index = active_index
+            self._managed_containers = managed_containers[:]
         self.rotation_count = 0
         self.last_rotation_time = datetime.now(self._settings.timezone)
         self._logger.log(f"Initial rotation: {active_name} active")
@@ -138,6 +150,19 @@ class RotationService:
         while True:
             try:
                 now = datetime.now(self._settings.timezone)
+
+                override = None
+                with self._rotation_lock:
+                    if self._next_switch_override is not None:
+                        override = self._next_switch_override
+                        self._next_switch_override = None
+
+                if override is not None:
+                    next_switch_time = override
+                    remaining = (next_switch_time - now).total_seconds()
+                    self.next_rotation_eta = max(0, int(remaining))
+                    time.sleep(1)
+                    continue
 
                 if self.rotation_resuming:
                     next_switch_time = now + timedelta(seconds=interval)
@@ -163,96 +188,25 @@ class RotationService:
                     continue
 
                 rotated = False
-                total_containers = len(managed_containers)
-                candidate_indices = [
-                    idx for idx in range(total_containers) if idx != active_index
-                ]
-                random.shuffle(candidate_indices)
-
-                for next_index in candidate_indices:
-                    next_name = managed_containers[next_index]
-
-                    released = self._docker.stop_container(
-                        active_name, reason="releasing shared database for rotation"
+                with self._rotation_lock:
+                    rotated, active_index, active_name = self._select_next_active(
+                        managed_containers,
+                        active_index if active_index is not None else 0,
+                        active_name or managed_containers[0],
+                        start_reason="preparing for rotation",
+                        restore_reason="restoring active after failed candidate",
                     )
-                    elapsed = self.accumulate_and_clear_active(active_name)
-                    if elapsed > 0:
-                        total_seconds = self.container_total_active_seconds.get(
-                            active_name, 0
-                        )
-                        self._logger.log(
-                            f"Accumulated {elapsed}s for {active_name} (total={total_seconds}s) before rotation"
-                        )
+                    if rotated:
+                        self.rotation_count += 1
+                        self.last_rotation_time = datetime.now(self._settings.timezone)
+                        self.next_rotation_eta = interval
+                        self._next_switch_override = None
 
-                    if not released:
-                        self._logger.log(
-                            f"[WARNING] Failed to stop {active_name} prior to rotation; will retry later."
-                        )
-                        self.mark_active(active_name)
-                        time.sleep(2)
-                        continue
-
-                    next_cont = self._docker.start_container(
-                        next_name, reason="preparing for rotation"
-                    )
-                    if not next_cont:
-                        restore = self._docker.start_container(
-                            active_name,
-                            reason="restoring active after failed candidate",
-                        )
-                        if restore and self._docker.wait_until_healthy(restore):
-                            self.mark_active(active_name)
-                            self._docker.ensure_single_active(
-                                active_name, managed_containers
-                            )
-                        else:
-                            self._logger.log(
-                                f"[ERROR] Unable to restart {active_name} after {next_name} failed to launch."
-                            )
-                        continue
-
-                    if not self._docker.wait_until_healthy(next_cont):
-                        self._logger.log(
-                            f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
-                        )
-                        self._docker.stop_container(
-                            next_name, reason="failed rotation health check"
-                        )
-                        restore = self._docker.start_container(
-                            active_name,
-                            reason="restoring active after failed candidate",
-                        )
-                        if restore and self._docker.wait_until_healthy(restore):
-                            self.mark_active(active_name)
-                            self._docker.ensure_single_active(
-                                active_name, managed_containers
-                            )
-                        else:
-                            self._logger.log(
-                                f"[ERROR] Unable to restore {active_name} after unhealthy rotation candidate {next_name}."
-                            )
-                        continue
-
-                    self._logger.log(
-                        f"{next_name} marked ACTIVE at {datetime.now(self._settings.timezone).strftime('%H:%M:%S')}"
-                    )
-                    self.mark_active(next_name)
-                    active_name = next_name
-                    active_index = next_index
-                    self._docker.ensure_single_active(active_name, managed_containers)
-
-                    self.rotation_count += 1
-                    self.last_rotation_time = datetime.now(self._settings.timezone)
-                    self.next_rotation_eta = interval
-                    self.last_active_container = active_name
-
+                if rotated:
                     self._logger.log(
                         f"Rotation #{self.rotation_count}: {active_name} is now active"
                     )
-                    rotated = True
-                    break
-
-                if not rotated:
+                else:
                     self._logger.log(
                         f"[WARNING] Rotation skipped — no healthy candidates available. {active_name} remains active."
                     )
@@ -266,6 +220,93 @@ class RotationService:
                     f"Exception in orchestrator loop:\n{traceback.format_exc()}"
                 )
                 time.sleep(5)
+
+    def _select_next_active(
+        self,
+        managed_containers: list[str],
+        active_index: int,
+        active_name: str,
+        *,
+        start_reason: str,
+        restore_reason: str,
+    ) -> tuple[bool, int, str]:
+        total_containers = len(managed_containers)
+        if total_containers <= 1:
+            return False, active_index, active_name
+
+        candidate_indices = [
+            idx for idx in range(total_containers) if idx != active_index
+        ]
+        random.shuffle(candidate_indices)
+
+        for next_index in candidate_indices:
+            next_name = managed_containers[next_index]
+
+            released = self._docker.stop_container(
+                active_name, reason="releasing shared database for rotation"
+            )
+            elapsed = self.accumulate_and_clear_active(active_name)
+            if elapsed > 0:
+                total_seconds = self.container_total_active_seconds.get(
+                    active_name, 0
+                )
+                self._logger.log(
+                    f"Accumulated {elapsed}s for {active_name} (total={total_seconds}s) before rotation"
+                )
+
+            if not released:
+                self._logger.log(
+                    f"[WARNING] Failed to stop {active_name} prior to rotation; will retry later."
+                )
+                self.mark_active(active_name)
+                time.sleep(2)
+                continue
+
+            next_cont = self._docker.start_container(next_name, reason=start_reason)
+            if not next_cont:
+                restore = self._docker.start_container(
+                    active_name, reason=restore_reason
+                )
+                if restore and self._docker.wait_until_healthy(restore):
+                    self.mark_active(active_name)
+                    self._docker.ensure_single_active(active_name, managed_containers)
+                else:
+                    self._logger.log(
+                        f"[ERROR] Unable to restart {active_name} after {next_name} failed to launch."
+                    )
+                continue
+
+            if not self._docker.wait_until_healthy(next_cont):
+                self._logger.log(
+                    f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
+                )
+                self._docker.stop_container(
+                    next_name, reason="failed rotation health check"
+                )
+                restore = self._docker.start_container(
+                    active_name, reason=restore_reason
+                )
+                if restore and self._docker.wait_until_healthy(restore):
+                    self.mark_active(active_name)
+                    self._docker.ensure_single_active(active_name, managed_containers)
+                else:
+                    self._logger.log(
+                        f"[ERROR] Unable to restore {active_name} after unhealthy rotation candidate {next_name}."
+                    )
+                continue
+
+            self._logger.log(
+                f"{next_name} marked ACTIVE at {datetime.now(self._settings.timezone).strftime('%H:%M:%S')}"
+            )
+            self.mark_active(next_name)
+            self._docker.ensure_single_active(next_name, managed_containers)
+            self._active_index = next_index
+            self.last_active_container = next_name
+            return True, next_index, next_name
+
+        self._active_index = active_index
+        self.last_active_container = active_name
+        return False, active_index, active_name
 
     def _uptime_tracker_loop(self) -> None:
         while True:
@@ -370,6 +411,58 @@ class RotationService:
             self._logger.log(f"[RESUME ERROR] Failed during resume: {exc}")
         finally:
             self.rotation_resuming = False
+
+    def force_rotate(self) -> tuple[bool, str, Optional[Dict[str, object]]]:
+        if not self.rotation_active:
+            return False, "Rotation is paused; resume before rotating.", None
+
+        with self._rotation_lock:
+            if not self._managed_containers or len(self._managed_containers) <= 1:
+                return (
+                    False,
+                    "Not enough containers are available to rotate.",
+                    None,
+                )
+
+            if self._active_index is None or not self.last_active_container:
+                return False, "No active container is currently tracked.", None
+
+            active_index = self._active_index
+            active_name = self.last_active_container
+
+            self._logger.log(
+                f"[CONTROL] Manual rotation requested from {active_name}"
+            )
+
+            rotated, new_index, new_name = self._select_next_active(
+                self._managed_containers,
+                active_index,
+                active_name,
+                start_reason="manual rotation request",
+                restore_reason="restoring active after failed manual rotation",
+            )
+
+            if not rotated:
+                self._logger.log(
+                    "[CONTROL] Manual rotation skipped — no healthy candidates available."
+                )
+                return False, "No healthy candidates were available for rotation.", None
+
+            self.rotation_count += 1
+            self.last_rotation_time = datetime.now(self._settings.timezone)
+            self.next_rotation_eta = self._settings.rotation_interval
+            self._next_switch_override = datetime.now(self._settings.timezone) + timedelta(
+                seconds=self._settings.rotation_interval
+            )
+            self._active_index = new_index
+            self.last_active_container = new_name
+
+            self._logger.log(
+                f"[CONTROL] Manual rotation completed: {active_name} -> {new_name}"
+            )
+
+            snapshot = self.build_stream_snapshot()
+            return True, f"{new_name} is now active.", snapshot
 
     def kill_all_containers(self) -> list[str]:
         stopped: list[str] = []

@@ -42,6 +42,10 @@ async function sendControl(action) {
     showStatus("Stop orchestrator before kill.");
     return;
   }
+  if (action === "rotate" && !orchestratorRunning) {
+    showStatus("Resume rotation before rotating.");
+    return;
+  }
 
   showStatus(`<span class="loader"></span> Processing ${action}...`, {
     allowHtml: true,
@@ -70,6 +74,11 @@ async function sendControl(action) {
         orchestratorRunning = json.rotation_active;
       }
       updateControlButtons();
+      if (json.snapshot) {
+        updateDashboardFromData(json.snapshot);
+      } else if (action === "rotate" && orchestratorRunning) {
+        startCountdown(ROTATION_INTERVAL_SECONDS);
+      }
       if (!orchestratorRunning) {
         stopCountdown("Next in: paused");
       }
@@ -105,6 +114,7 @@ function autoFadeStatus() {
 
 document.getElementById("btn-start").onclick = () => sendControl("start");
 document.getElementById("btn-stop").onclick = () => sendControl("stop");
+document.getElementById("btn-rotate").onclick = () => sendControl("rotate");
 document.getElementById("btn-kill").onclick = () => {
   if (confirm("⚠️  Are you sure you want to stop all the containers?")) {
     sendControl("kill");
@@ -115,12 +125,17 @@ function updateControlButtons() {
   const btnStart = document.getElementById("btn-start");
   const btnStop = document.getElementById("btn-stop");
   const btnKill = document.getElementById("btn-kill");
+  const btnRotate = document.getElementById("btn-rotate");
 
   if (orchestratorRunning) {
     btnStart.disabled = true;
     btnStart.style.opacity = "0.5";
     btnStop.disabled = false;
     btnStop.style.opacity = "1";
+    if (btnRotate) {
+      btnRotate.disabled = false;
+      btnRotate.style.opacity = "1";
+    }
     btnKill.disabled = true;
     btnKill.style.opacity = "0.5";
   } else {
@@ -128,6 +143,10 @@ function updateControlButtons() {
     btnStart.style.opacity = "1";
     btnStop.disabled = true;
     btnStop.style.opacity = "0.5";
+    if (btnRotate) {
+      btnRotate.disabled = true;
+      btnRotate.style.opacity = "0.5";
+    }
     btnKill.disabled = false;
     btnKill.style.opacity = "1";
   }
