@@ -96,6 +96,32 @@ footer {
   font-size: 0.85rem;
 }
 
+.logout-form {
+  display: inline;
+}
+
+.logout-button {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: #94a3b8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.logout-button:hover,
+.logout-button:focus {
+  color: #e2e8f0;
+  outline: none;
+}
+
+.logout-button:focus-visible {
+  outline: 2px solid rgba(226, 232, 240, 0.5);
+  outline-offset: 2px;
+}
+
 /* Controls group */
 .controls {
   display: flex;
