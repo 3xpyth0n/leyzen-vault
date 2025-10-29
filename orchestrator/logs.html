@@ -8,78 +8,112 @@
     <title>Vault Orchestrator Logs</title>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <div class="header-left">
-          <h1>Vault Orchestrator Logs</h1>
-          <div class="meta" id="linesMeta">Lines: —</div>
-        </div>
-
-        <div class="controls" aria-label="log controls">
-          <div class="search">
-            <input
-              id="searchInput"
-              class="search-input"
-              type="search"
-              placeholder="Search logs..."
-              aria-label="Search logs"
-            />
+    <main>
+      <div class="container">
+        <div class="header">
+          <div class="header-left">
+            <h1>Vault Orchestrator Logs</h1>
+            <div class="meta" id="linesMeta">Lines: —</div>
           </div>
 
-          <button
-            id="refreshBtn"
-            class="btn"
-            title="Reload logs (scroll to bottom)"
+          <div class="controls" aria-label="log controls">
+            <div class="search">
+              <input
+                id="searchInput"
+                class="search-input"
+                type="search"
+                placeholder="Search logs..."
+                aria-label="Search logs"
+              />
+            </div>
+
+            <button
+              id="refreshBtn"
+              class="btn"
+              title="Reload logs (scroll to bottom)"
+            >
+              Refresh
+            </button>
+
+            <div class="periods" role="tablist" aria-label="Period filters">
+              <button
+                class="period-btn active"
+                data-period="day"
+                aria-pressed="true"
+              >
+                Day
+              </button>
+              <button
+                class="period-btn"
+                data-period="month"
+                aria-pressed="false"
+              >
+                Month
+              </button>
+              <button
+                class="period-btn"
+                data-period="year"
+                aria-pressed="false"
+              >
+                Year
+              </button>
+              <button
+                class="period-btn"
+                data-period="custom"
+                aria-pressed="false"
+              >
+                Custom
+              </button>
+            </div>
+
+            <div id="customRange" class="custom-range is-hidden">
+              <input type="date" id="startDate" />
+              <input type="date" id="endDate" />
+              <button id="applyCustom" class="btn">Apply</button>
+            </div>
+
+            <div id="autoSwitch" class="switch" title="Auto refresh (1s)">
+              <div class="track"><div class="thumb"></div></div>
+              <span class="switch-label">Auto Refresh</span>
+            </div>
+          </div>
+        </div>
+        <div class="log-area">
+          <pre id="log">{{ log_content | e }}</pre>
+          <div
+            id="emptyState"
+            class="empty-state"
+            role="status"
+            aria-live="polite"
           >
-            Refresh
-          </button>
-
-          <div class="periods" role="tablist" aria-label="Period filters">
-            <button
-              class="period-btn active"
-              data-period="day"
-              aria-pressed="true"
-            >
-              Day
-            </button>
-            <button class="period-btn" data-period="month" aria-pressed="false">
-              Month
-            </button>
-            <button class="period-btn" data-period="year" aria-pressed="false">
-              Year
-            </button>
-            <button
-              class="period-btn"
-              data-period="custom"
-              aria-pressed="false"
-            >
-              Custom
-            </button>
-          </div>
-
-          <div id="customRange" class="custom-range is-hidden">
-            <input type="date" id="startDate" />
-            <input type="date" id="endDate" />
-            <button id="applyCustom" class="btn">Apply</button>
-          </div>
-
-          <div id="autoSwitch" class="switch" title="Auto refresh (1s)">
-            <div class="track"><div class="thumb"></div></div>
-            <span class="switch-label">Auto Refresh</span>
+            No Logs
           </div>
         </div>
       </div>
-      <div class="log-area">
-        <pre id="log">{{ log_content | e }}</pre>
-        <div
-          id="emptyState"
-          class="empty-state"
-          role="status"
-          aria-live="polite"
+    </main>
+    <footer class="flex items-center justify-center border-t border-white/5">
+      <div class="p-3 text-xs text-slate-400 flex items-center gap-3">
+        <form
+          method="post"
+          action="/orchestrator/logout"
+          class="logout-form"
+          title="Logout"
         >
-          No Logs
-        </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <button type="submit" class="logout-button">Logout</button>
+        </form>
+
+        <span class="text-slate-600">•</span>
+        <span class="font-bold">Leyzen™</span>
+        <span class="text-slate-600">•</span>
+        <a
+          href="/orchestrator"
+          class="text-xs text-slate-400 underline hover:text-slate-200"
+          title="Dashboard"
+        >
+          View Dashboard
+        </a>
       </div>
-    </div>
+    </footer>
   </body>
 </html>
