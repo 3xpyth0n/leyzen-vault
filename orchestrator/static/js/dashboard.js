@@ -106,7 +106,7 @@ function autoFadeStatus() {
 document.getElementById("btn-start").onclick = () => sendControl("start");
 document.getElementById("btn-stop").onclick = () => sendControl("stop");
 document.getElementById("btn-kill").onclick = () => {
-  if (confirm("⚠️ Are you sure you want to stop all Paperless containers?")) {
+  if (confirm("⚠️  Are you sure you want to stop all the containers?")) {
     sendControl("kill");
   }
 };

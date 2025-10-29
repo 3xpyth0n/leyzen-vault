@@ -168,7 +168,7 @@ def logs_raw():
 @dashboard_bp.route("/js/<path:filename>", strict_slashes=False)
 @login_required
 def serve_js(filename: str):
-    js_dir = Path(__file__).resolve().parent.parent / "js"
+    js_dir = Path(__file__).resolve().parent.parent / "static" / "js"
     response = send_from_directory(str(js_dir), filename)
     response.headers["Cache-Control"] = "public, max-age=3600, immutable"
     response.headers["Content-Type"] = "application/javascript; charset=utf-8"
