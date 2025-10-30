@@ -12,6 +12,36 @@ import { UptimeDistributionChart } from "./charts/uptime-distribution.js";
 let orchestratorRunning = true;
 const MAX_FAILS = 5; // after N fails consider API offline
 
+let pendingAnimationFrame = null;
+let pendingSnapshot = null;
+
+function flushDashboardQueue() {
+  if (!pendingSnapshot) {
+    pendingAnimationFrame = null;
+    return;
+  }
+  const snapshot = pendingSnapshot;
+  pendingSnapshot = null;
+  pendingAnimationFrame = null;
+  updateDashboardFromData(snapshot);
+}
+
+function scheduleDashboardUpdate(data, options = {}) {
+  if (!data) return;
+  const { immediate = false } = options;
+  pendingSnapshot = data;
+  if (immediate) {
+    if (pendingAnimationFrame) {
+      cancelAnimationFrame(pendingAnimationFrame);
+      pendingAnimationFrame = null;
+    }
+    flushDashboardQueue();
+    return;
+  }
+  if (pendingAnimationFrame) return;
+  pendingAnimationFrame = requestAnimationFrame(flushDashboardQueue);
+}
+
 function readNumberMeta(name) {
   const meta = document.querySelector(`meta[name="${name}"]`);
   if (!meta) return null;
@@ -84,7 +114,7 @@ async function sendControl(action) {
       }
       updateControlButtons();
       if (json.snapshot) {
-        updateDashboardFromData(json.snapshot);
+        scheduleDashboardUpdate(json.snapshot, { immediate: true });
       } else if (action === "rotate" && orchestratorRunning) {
         startCountdown(ROTATION_INTERVAL_SECONDS);
       }
@@ -715,12 +745,129 @@ function setupSse() {
   sseClient.subscribe("snapshot", (event) => {
     hasReceivedData = true;
     if (!event?.detail?.data) return;
-    updateDashboardFromData(event.detail.data);
+    scheduleDashboardUpdate(event.detail.data);
   });
 
   sseClient.start();
 }
 
+function initMetricTabs() {
+  const tablist = document.querySelector("[data-metric-tabs]");
+  if (!tablist) return;
+
+  const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+  if (!tabs.length) return;
+
+  const mediaQuery = window.matchMedia("(min-width: 1024px)");
+  const tabToPanel = new Map();
+
+  for (const tab of tabs) {
+    const key = tab.getAttribute("data-metric-tab");
+    if (!key) continue;
+    const panel = document.querySelector(`[data-metric-panel="${key}"]`);
+    if (panel) {
+      tabToPanel.set(tab, panel);
+    }
+  }
+
+  if (!tabToPanel.size) return;
+
+  let activeTab = tabs.find(
+    (tab) => tab.getAttribute("aria-selected") === "true",
+  );
+  if (!activeTab) {
+    activeTab = tabs[0];
+  }
+
+  function applyPanelState(tab, isActive) {
+    const panel = tabToPanel.get(tab);
+    if (!panel) return;
+    if (mediaQuery.matches) {
+      panel.setAttribute("aria-hidden", "false");
+      panel.setAttribute("tabindex", "0");
+      panel.classList.add("is-active");
+    } else {
+      panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+      panel.setAttribute("tabindex", isActive ? "0" : "-1");
+      panel.classList.toggle("is-active", isActive);
+    }
+  }
+
+  function activateTab(nextTab, { focus = true } = {}) {
+    if (!nextTab) return;
+    if (activeTab === nextTab && !mediaQuery.matches) {
+      if (focus) nextTab.focus();
+      return;
+    }
+
+    for (const tab of tabs) {
+      const isSelected = tab === nextTab;
+      tab.setAttribute("aria-selected", isSelected ? "true" : "false");
+      tab.classList.toggle("is-active", isSelected);
+      applyPanelState(tab, isSelected);
+    }
+
+    activeTab = nextTab;
+    if (focus) {
+      nextTab.focus();
+    }
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => activateTab(tab, { focus: false }));
+  });
+
+  tablist.addEventListener("keydown", (event) => {
+    const { key } = event;
+    const currentIndex = tabs.indexOf(document.activeElement);
+    if (key === "ArrowRight" || key === "ArrowDown") {
+      event.preventDefault();
+      const next = tabs[(currentIndex + 1) % tabs.length];
+      activateTab(next, { focus: false });
+      next.focus();
+    } else if (key === "ArrowLeft" || key === "ArrowUp") {
+      event.preventDefault();
+      const next = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
+      activateTab(next, { focus: false });
+      next.focus();
+    } else if (key === "Home") {
+      event.preventDefault();
+      activateTab(tabs[0], { focus: false });
+      tabs[0].focus();
+    } else if (key === "End") {
+      event.preventDefault();
+      const last = tabs[tabs.length - 1];
+      activateTab(last, { focus: false });
+      last.focus();
+    } else if (key === " " || key === "Enter") {
+      event.preventDefault();
+      const target = document.activeElement;
+      if (tabs.includes(target)) {
+        activateTab(target, { focus: false });
+      }
+    }
+  });
+
+  function syncPanels(e) {
+    if (e.matches) {
+      for (const tab of tabs) {
+        applyPanelState(tab, tab === activeTab);
+      }
+    } else {
+      activateTab(activeTab, { focus: false });
+    }
+  }
+
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", syncPanels);
+  } else if (typeof mediaQuery.addListener === "function") {
+    mediaQuery.addListener(syncPanels);
+  }
+  syncPanels(mediaQuery);
+  activateTab(activeTab, { focus: false });
+}
+
+initMetricTabs();
 initCharts();
 setupSse();
 
@@ -735,5 +882,8 @@ window.addEventListener("beforeunload", () => {
   detachSparklineHandlers.length = 0;
   if (sseClient) {
     sseClient.stop();
+  }
+  if (pendingAnimationFrame) {
+    cancelAnimationFrame(pendingAnimationFrame);
   }
 });

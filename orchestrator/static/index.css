@@ -9,6 +9,13 @@ body {
   background-color: #0b1220;
   color: #e6eef6;
 }
+
+:root {
+  --safe-x: max(env(safe-area-inset-left), 0px);
+  --safe-x-right: max(env(safe-area-inset-right), 0px);
+  --safe-y: max(env(safe-area-inset-top), 0px);
+  --safe-y-bottom: max(env(safe-area-inset-bottom), 0px);
+}
 body {
   background-image: linear-gradient(180deg, #071025 0%, #0b1220 100%);
   background-repeat: no-repeat;
@@ -43,7 +50,8 @@ footer {
 }
 
 .dashboard-header {
-  padding: 1.5rem;
+  padding: calc(1.5rem + var(--safe-y)) calc(1.5rem + var(--safe-x-right))
+    calc(1.5rem + var(--safe-y-bottom)) calc(1.5rem + var(--safe-x));
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -247,6 +255,7 @@ footer {
   border-radius: 0.95rem;
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid rgba(148, 163, 184, 0.08);
+  will-change: transform, opacity;
   transition:
     transform 0.25s ease,
     border-color 0.25s ease,
@@ -254,7 +263,7 @@ footer {
 }
 
 .container-card:hover {
-  transform: translateY(-2px);
+  transform: translate3d(0, -2px, 0);
   border-color: rgba(148, 163, 184, 0.25);
   background: rgba(30, 41, 59, 0.6);
 }
@@ -279,6 +288,7 @@ footer {
   height: 12px;
   border-radius: 50%;
   display: inline-block;
+  will-change: transform, opacity;
   transition:
     background-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -290,19 +300,24 @@ footer {
 
 @keyframes pulseBlink {
   0% {
-    opacity: 0.4;
+    opacity: 0.45;
+    transform: scale3d(0.95, 0.95, 1);
   }
   25% {
     opacity: 1;
+    transform: scale3d(1.05, 1.05, 1);
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.55;
+    transform: scale3d(0.97, 0.97, 1);
   }
   75% {
     opacity: 1;
+    transform: scale3d(1.05, 1.05, 1);
   }
   100% {
-    opacity: 0.4;
+    opacity: 0.45;
+    transform: scale3d(0.95, 0.95, 1);
   }
 }
 
@@ -643,6 +658,13 @@ footer {
   color: #94a3b8;
 }
 
+@media (pointer: coarse) {
+  .control-btn {
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+  }
+}
+
 @media (min-width: 1024px) {
   .content-grid {
     grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
@@ -721,6 +743,39 @@ footer {
 
   footer {
     text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 0.95rem;
+  }
+
+  .panel-title {
+    font-size: 1rem;
+  }
+
+  .summary-value {
+    font-size: clamp(1.5rem, 6vw, 1.75rem);
+  }
+
+  .stat-primary {
+    font-size: clamp(1.1rem, 5.5vw, 1.25rem);
+  }
+
+  .control-btn {
+    font-size: 1rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .metrics-grid {
+    gap: 0.75rem;
+  }
+}
+
+@media (min-resolution: 2dppx) {
+  .glass {
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.45);
   }
 }
 

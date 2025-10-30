@@ -12,6 +12,7 @@
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
+    <link rel="stylesheet" href="/orchestrator/static/dashboard.css" />
     <script src="/orchestrator/static/js/vendor/echarts.min.js" defer></script>
     <script type="module" src="/orchestrator/static/js/dashboard.js"></script>
   </head>
@@ -38,7 +39,7 @@
           <div id="controls" class="controls">
             <button
               id="btn-start"
-              class="control-btn start"
+              class="control-btn start touch-target"
               title="Start rotation"
             >
               <svg
@@ -54,7 +55,7 @@
 
             <button
               id="btn-stop"
-              class="control-btn stop"
+              class="control-btn stop touch-target"
               title="Pause rotation"
             >
               <svg
@@ -70,7 +71,7 @@
 
             <button
               id="btn-rotate"
-              class="control-btn rotate"
+              class="control-btn rotate touch-target"
               title="Rotate to the next container"
             >
               <svg
@@ -89,7 +90,7 @@
 
             <button
               id="btn-kill"
-              class="control-btn kill"
+              class="control-btn kill touch-target"
               title="Kill all containers"
             >
               <svg
@@ -108,7 +109,7 @@
         </div>
       </header>
 
-      <section class="summary-grid">
+      <section class="summary-grid stack-panels">
         <article class="stat-card">
           <div class="stat-label">Rotation status</div>
           <div class="stat-primary">
@@ -145,8 +146,8 @@
       </section>
 
       <main>
-        <div class="content-grid">
-          <section class="panel glass">
+        <div class="content-grid stack-panels">
+          <section class="panel glass glass-preserve">
             <div class="panel-header">
               <h2 class="panel-title">Container status</h2>
               <div class="panel-meta">
@@ -156,7 +157,7 @@
 
             <div class="panel-body">
               <template id="row-template">
-                <div class="container-card">
+                <div class="container-card gpu-translate">
                   <div class="container-row">
                     <div class="container-info">
                       <div class="status-dot" data-dot></div>
@@ -180,7 +181,7 @@
             </div>
           </section>
 
-          <aside class="panel glass">
+          <aside class="panel glass glass-preserve">
             <h3 class="panel-title">Uptime distribution</h3>
             <div class="chart-area">
               <div id="uptimeChart" class="chart-surface"></div>
@@ -203,14 +204,63 @@
           </aside>
         </div>
 
-        <section class="panel glass metrics-panel">
+        <section class="panel glass glass-preserve metrics-panel">
           <div class="panel-header">
             <h2 class="panel-title">Live performance</h2>
             <div class="panel-meta">Real-time container resource telemetry</div>
           </div>
 
+          <nav
+            class="dashboard-tabs"
+            role="tablist"
+            aria-label="Live performance metrics"
+            data-metric-tabs
+          >
+            <button
+              type="button"
+              id="metric-tab-cpu"
+              class="dashboard-tab touch-target-tight"
+              role="tab"
+              aria-selected="true"
+              aria-controls="metric-panel-cpu"
+              data-metric-tab="cpu"
+            >
+              CPU
+            </button>
+            <button
+              type="button"
+              id="metric-tab-memory"
+              class="dashboard-tab touch-target-tight"
+              role="tab"
+              aria-selected="false"
+              aria-controls="metric-panel-memory"
+              data-metric-tab="memory"
+            >
+              Memory
+            </button>
+            <button
+              type="button"
+              id="metric-tab-net"
+              class="dashboard-tab touch-target-tight"
+              role="tab"
+              aria-selected="false"
+              aria-controls="metric-panel-net"
+              data-metric-tab="net"
+            >
+              Network
+            </button>
+          </nav>
+
           <div class="metrics-grid">
-            <article class="timeseries-card">
+            <article
+              class="timeseries-card"
+              role="tabpanel"
+              id="metric-panel-cpu"
+              aria-labelledby="metric-tab-cpu"
+              tabindex="0"
+              data-metric-panel="cpu"
+              aria-hidden="false"
+            >
               <header class="timeseries-card-header">
                 <div>
                   <h3 class="metric-title">CPU usage</h3>
@@ -229,7 +279,15 @@
               </div>
             </article>
 
-            <article class="timeseries-card">
+            <article
+              class="timeseries-card"
+              role="tabpanel"
+              id="metric-panel-memory"
+              aria-labelledby="metric-tab-memory"
+              tabindex="-1"
+              data-metric-panel="memory"
+              aria-hidden="true"
+            >
               <header class="timeseries-card-header">
                 <div>
                   <h3 class="metric-title">Memory usage</h3>
@@ -248,7 +306,15 @@
               </div>
             </article>
 
-            <article class="timeseries-card">
+            <article
+              class="timeseries-card"
+              role="tabpanel"
+              id="metric-panel-net"
+              aria-labelledby="metric-tab-net"
+              tabindex="-1"
+              data-metric-panel="net"
+              aria-hidden="true"
+            >
               <header class="timeseries-card-header">
                 <div>
                   <h3 class="metric-title">Network throughput</h3>
