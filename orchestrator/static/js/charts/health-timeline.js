@@ -1,11 +1,14 @@
-import { BaseChart } from "./base-chart.js";
-
 const STATUS_DEFS = [
   { key: "running", color: "#34d399" },
   { key: "starting", color: "#fbbf24" },
   { key: "unhealthy", color: "#f87171" },
   { key: "stopped", color: "#94a3b8" },
 ];
+
+const STATUS_COLOR_MAP = STATUS_DEFS.reduce((acc, def) => {
+  acc[def.key] = def.color;
+  return acc;
+}, {});
 
 function formatTimestamp(ts) {
   const date = new Date(ts);
@@ -20,99 +23,57 @@ function formatTimestamp(ts) {
     .replace(/^(\d{2}):(\d{2}):(\d{2})$/, "$1:$2:$3");
 }
 
-export class HealthTimelineChart extends BaseChart {
+export class HealthTimelineChart {
   constructor(element, options = {}) {
-    super(element, options);
-    this.windowSize = options.windowSize || 80;
+    if (!element) {
+      throw new Error("HealthTimelineChart requires a DOM element");
+    }
+
+    this.el = element;
+    this.windowSize = Math.max(4, options.windowSize || 80);
     this.history = [];
-    this._initChart();
+    this._disposed = false;
+    this._dpr = window.devicePixelRatio || 1;
+    this._resizeObserver = null;
+
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "timeline-canvas";
+    this.canvas.setAttribute("role", "img");
+    this.canvas.setAttribute("aria-hidden", "true");
+    this.el.innerHTML = "";
+    this.el.appendChild(this.canvas);
+
+    this.ctx = this.canvas.getContext("2d");
+
+    this._handleResize = this._handleResize.bind(this);
+    if (typeof ResizeObserver !== "undefined") {
+      this._resizeObserver = new ResizeObserver(this._handleResize);
+      this._resizeObserver.observe(this.el);
+    } else {
+      window.addEventListener("resize", this._handleResize);
+    }
+
+    this._handleResize();
   }
 
-  _initChart() {
-    if (!this.chart) return;
+  _handleResize() {
+    if (this._disposed) return;
 
-    this.setOption(
-      {
-        grid: { left: 2, right: 6, top: 6, bottom: 2, containLabel: false },
-        tooltip: {
-          trigger: "axis",
-          formatter: (params) => {
-            if (!params || !params.length) return "";
-            const entry = this.history[params[0].dataIndex];
-            if (!entry) return "";
-            const lines = [
-              `<strong>${entry.label}</strong>`,
-              `State: ${entry.state}`,
-              `Health: ${entry.health}`,
-            ];
-            return lines.join("<br>");
-          },
-        },
-        xAxis: {
-          type: "category",
-          data: [],
-          boundaryGap: true,
-          axisLine: { show: false },
-          axisTick: { show: false },
-          axisLabel: { show: false },
-        },
-        yAxis: {
-          type: "value",
-          min: 0,
-          max: STATUS_DEFS.length,
-          axisLine: { show: false },
-          axisTick: { show: false },
-          axisLabel: { show: false },
-          splitLine: { show: false },
-        },
-        series: [
-          ...STATUS_DEFS.map((status) => ({
-            name: status.key,
-            type: "bar",
-            stack: "status",
-            barWidth: "90%",
-            emphasis: { focus: "series" },
-            itemStyle: { color: status.color },
-            data: [],
-            animationDuration: 200,
-          })),
-          {
-            name: "markers",
-            type: "line",
-            data: [],
-            smooth: true,
-            showSymbol: true,
-            symbol: "circle",
-            symbolSize: (value, params) => {
-              const item = this.history[params.dataIndex];
-              return item && item.status === "stopped" ? 8 : 4;
-            },
-            lineStyle: { color: "rgba(148, 163, 184, 0.45)", width: 1.2 },
-            itemStyle: {
-              color: (params) => {
-                const item = this.history[params.dataIndex];
-                if (!item) return "#e2e8f0";
-                switch (item.status) {
-                  case "running":
-                    return "#34d399";
-                  case "starting":
-                    return "#fbbf24";
-                  case "unhealthy":
-                    return "#f87171";
-                  default:
-                    return "#94a3b8";
-                }
-              },
-            },
-            animationDuration: 200,
-          },
-        ],
-      },
-      { notMerge: true },
-    );
+    const rect = this.el.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    const dpr = window.devicePixelRatio || 1;
+    this._dpr = dpr;
+    this.canvas.width = Math.round(width * dpr);
+    this.canvas.height = Math.round(height * dpr);
+    this.canvas.style.width = `${Math.round(width)}px`;
+    this.canvas.style.height = `${Math.round(height)}px`;
+    this._render();
   }
 
   addSample(timestamp, state, health) {
+    if (this._disposed) return;
+
     const label = formatTimestamp(timestamp);
     const normalizedState = (state || "unknown").toString();
     const normalizedHealth = (health || "unknown").toString();
@@ -126,40 +87,82 @@ export class HealthTimelineChart extends BaseChart {
     });
 
     if (this.history.length > this.windowSize) {
-      this.history.shift();
+      this.history.splice(0, this.history.length - this.windowSize);
     }
+
+    const tooltipLines = [
+      `${label || "Timestamp"}`,
+      `State: ${normalizedState}`,
+      `Health: ${normalizedHealth}`,
+    ];
+    this.el.setAttribute("title", tooltipLines.join("\n"));
 
     this._render();
   }
 
   _render() {
-    if (!this.chart) return;
+    if (!this.ctx || this._disposed) return;
 
-    const categories = this.history.map((item) => item.label);
-    const stackedSeries = STATUS_DEFS.map((definition) =>
-      this.history.map((item) => (item.status === definition.key ? 1 : 0)),
-    );
+    const ctx = this.ctx;
+    const { width, height } = this.canvas;
+    if (width === 0 || height === 0) return;
 
-    const markers = this.history.map(
-      (item) => STATUS_DEFS.findIndex((def) => def.key === item.status) + 0.5,
-    );
+    ctx.save();
+    ctx.clearRect(0, 0, width, height);
 
-    this.setOption(
-      {
-        xAxis: { data: categories },
-        series: [
-          ...STATUS_DEFS.map((definition, index) => ({
-            name: definition.key,
-            data: stackedSeries[index],
-          })),
-          {
-            name: "markers",
-            data: markers,
-          },
-        ],
-      },
-      { notMerge: false },
-    );
+    const count = this.history.length;
+    if (!count) {
+      ctx.restore();
+      return;
+    }
+
+    const dpr = this._dpr;
+    ctx.scale(dpr, dpr);
+
+    const logicalWidth = width / dpr;
+    const logicalHeight = height / dpr;
+    const maxBars = this.windowSize;
+    const columnWidth = logicalWidth / maxBars;
+    const startIndex = Math.max(0, count - maxBars);
+    const visibleItems = this.history.slice(startIndex);
+    let x = logicalWidth - columnWidth * visibleItems.length;
+
+    for (let i = 0; i < visibleItems.length; i += 1) {
+      const item = visibleItems[i];
+      const color = STATUS_COLOR_MAP[item.status] || "#334155";
+      const nextX = x + columnWidth;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.floor(x), 0, Math.ceil(nextX - x) + 1, logicalHeight);
+
+      // divider line for readability
+      ctx.fillStyle = "rgba(15, 23, 42, 0.45)";
+      ctx.fillRect(Math.floor(nextX) - 1, 0, 1, logicalHeight);
+
+      x = nextX;
+    }
+
+    const latest = visibleItems[visibleItems.length - 1];
+    if (latest) {
+      ctx.fillStyle = "rgba(15, 23, 42, 0.2)";
+      ctx.fillRect(logicalWidth - columnWidth, 0, columnWidth, logicalHeight);
+    }
+
+    ctx.restore();
+  }
+
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    } else {
+      window.removeEventListener("resize", this._handleResize);
+    }
+    if (this.canvas && this.canvas.parentNode === this.el) {
+      this.el.removeChild(this.canvas);
+    }
+    this.ctx = null;
   }
 }
 

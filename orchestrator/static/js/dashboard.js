@@ -280,6 +280,16 @@ let uptimeChart = null;
 let cpuChart = null;
 let memoryChart = null;
 let netChart = null;
+let activeMetricKey = "cpu";
+const initialMetricTab = document.querySelector(
+  '[data-metric-tabs] [role="tab"][aria-selected="true"]',
+);
+if (initialMetricTab) {
+  const key = initialMetricTab.getAttribute("data-metric-tab");
+  if (key) {
+    activeMetricKey = key;
+  }
+}
 const containerTimelineCharts = new Map();
 const containerRowState = new Map();
 
@@ -342,6 +352,20 @@ function getDotStyle(badgeClass) {
 }
 const detachSparklineHandlers = [];
 
+function updateMetricChartActivation() {
+  const entries = [
+    ["cpu", cpuChart],
+    ["memory", memoryChart],
+    ["net", netChart],
+  ];
+
+  for (const [key, chart] of entries) {
+    if (chart && typeof chart.setActive === "function") {
+      chart.setActive(key === activeMetricKey);
+    }
+  }
+}
+
 function initCharts() {
   const uptimeEl = document.getElementById("uptimeChart");
   if (uptimeEl) {
@@ -352,6 +376,7 @@ function initCharts() {
   if (cpuEl) {
     cpuChart = new CpuTimeSeriesChart(cpuEl, {
       windowSize: 180,
+      initiallyActive: activeMetricKey === "cpu",
     });
   }
 
@@ -359,6 +384,7 @@ function initCharts() {
   if (memoryEl) {
     memoryChart = new MemoryTimeSeriesChart(memoryEl, {
       windowSize: 180,
+      initiallyActive: activeMetricKey === "memory",
     });
   }
 
@@ -367,6 +393,7 @@ function initCharts() {
     netChart = new NetIoTimeSeriesChart(netEl, {
       windowSize: 180,
       yAxisFormatter: (value) => formatBytes(value) + "/s",
+      initiallyActive: activeMetricKey === "net",
     });
   }
 
@@ -398,6 +425,8 @@ function initCharts() {
       }
     });
   }
+
+  updateMetricChartActivation();
 }
 
 function updateUptimeChart(labels, data) {
@@ -858,7 +887,6 @@ function initMetricTabs() {
   const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
   if (!tabs.length) return;
 
-  const mediaQuery = window.matchMedia("(min-width: 1024px)");
   const tabToPanel = new Map();
 
   for (const tab of tabs) {
@@ -882,21 +910,22 @@ function initMetricTabs() {
   function applyPanelState(tab, isActive) {
     const panel = tabToPanel.get(tab);
     if (!panel) return;
-    if (mediaQuery.matches) {
-      panel.setAttribute("aria-hidden", "false");
-      panel.setAttribute("tabindex", "0");
-      panel.classList.add("is-active");
-    } else {
-      panel.setAttribute("aria-hidden", isActive ? "false" : "true");
-      panel.setAttribute("tabindex", isActive ? "0" : "-1");
-      panel.classList.toggle("is-active", isActive);
-    }
+    panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+    panel.setAttribute("tabindex", isActive ? "0" : "-1");
+    panel.classList.toggle("is-active", isActive);
   }
 
   function activateTab(nextTab, { focus = true } = {}) {
     if (!nextTab) return;
-    if (activeTab === nextTab && !mediaQuery.matches) {
+    if (activeTab === nextTab) {
       if (focus) nextTab.focus();
+      if (activeTab) {
+        const key = activeTab.getAttribute("data-metric-tab");
+        if (key) {
+          activeMetricKey = key;
+          updateMetricChartActivation();
+        }
+      }
       return;
     }
 
@@ -908,6 +937,11 @@ function initMetricTabs() {
     }
 
     activeTab = nextTab;
+    const key = activeTab.getAttribute("data-metric-tab");
+    if (key) {
+      activeMetricKey = key;
+      updateMetricChartActivation();
+    }
     if (focus) {
       nextTab.focus();
     }
@@ -947,28 +981,11 @@ function initMetricTabs() {
       }
     }
   });
-
-  function syncPanels(e) {
-    if (e.matches) {
-      for (const tab of tabs) {
-        applyPanelState(tab, tab === activeTab);
-      }
-    } else {
-      activateTab(activeTab, { focus: false });
-    }
-  }
-
-  if (typeof mediaQuery.addEventListener === "function") {
-    mediaQuery.addEventListener("change", syncPanels);
-  } else if (typeof mediaQuery.addListener === "function") {
-    mediaQuery.addListener(syncPanels);
-  }
-  syncPanels(mediaQuery);
   activateTab(activeTab, { focus: false });
 }
 
-initMetricTabs();
 initCharts();
+initMetricTabs();
 setupSse();
 
 window.addEventListener("beforeunload", () => {
