@@ -14,6 +14,7 @@ const MAX_FAILS = 5; // after N fails consider API offline
 
 let pendingAnimationFrame = null;
 let pendingSnapshot = null;
+let hasBootstrappedHistory = false;
 
 function flushDashboardQueue() {
   if (!pendingSnapshot) {
@@ -47,6 +48,19 @@ function readNumberMeta(name) {
   if (!meta) return null;
   const value = Number(meta.content);
   return Number.isFinite(value) ? value : null;
+}
+
+function readInitialSnapshot() {
+  const script = document.getElementById("initial-dashboard-state");
+  if (!script) return null;
+  const text = script.textContent || "";
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.warn("Failed to parse initial dashboard snapshot", err);
+    return null;
+  }
 }
 
 const rotationIntervalMeta = readNumberMeta("dashboard-rotation-interval") || 0;
@@ -292,6 +306,7 @@ if (initialMetricTab) {
 }
 const containerTimelineCharts = new Map();
 const containerRowState = new Map();
+const timelineHistoryQueue = new Map();
 
 function getPercentStyle(badgeClass) {
   switch (badgeClass) {
@@ -435,15 +450,18 @@ function updateUptimeChart(labels, data) {
   }
 }
 
-function updateMetricCharts(metrics) {
+function updateMetricCharts(metrics, options = {}) {
   if (!metrics) return;
   const timestamp = metrics.timestamp || Date.now();
+  const { updateLabels = true } = options;
 
   if (cpuChart && metrics.cpu) {
     const usage = Number(metrics.cpu.usage);
     if (Number.isFinite(usage)) {
       cpuChart.pushSample(timestamp, { usage });
-      setMetricValue("cpu", formatPercent(usage));
+      if (updateLabels) {
+        setMetricValue("cpu", formatPercent(usage));
+      }
     }
   }
 
@@ -453,10 +471,12 @@ function updateMetricCharts(metrics) {
     if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {
       const percent = (used / total) * 100;
       memoryChart.pushSample(timestamp, { percent });
-      setMetricValue(
-        "memory",
-        `${formatBytes(used)} / ${formatBytes(total)} (${formatPercent(percent)})`,
-      );
+      if (updateLabels) {
+        setMetricValue(
+          "memory",
+          `${formatBytes(used)} / ${formatBytes(total)} (${formatPercent(percent)})`,
+        );
+      }
     }
   }
 
@@ -468,19 +488,115 @@ function updateMetricCharts(metrics) {
     if (Number.isFinite(tx)) sample.tx = tx;
     if (Object.keys(sample).length > 0) {
       netChart.pushSample(timestamp, sample);
-      if (Number.isFinite(rx)) {
-        setMetricValue("net-ingress", `${formatBytes(rx)}/s ↓`);
-      }
-      if (Number.isFinite(tx)) {
-        setMetricValue("net-egress", `${formatBytes(tx)}/s ↑`);
-      }
-      if (Number.isFinite(rx) || Number.isFinite(tx)) {
-        const rxLabel = Number.isFinite(rx) ? `${formatBytes(rx)}/s ↓` : "—";
-        const txLabel = Number.isFinite(tx) ? `${formatBytes(tx)}/s ↑` : "—";
-        setMetricValue("net", `${rxLabel} • ${txLabel}`);
+      if (updateLabels) {
+        if (Number.isFinite(rx)) {
+          setMetricValue("net-ingress", `${formatBytes(rx)}/s ↓`);
+        }
+        if (Number.isFinite(tx)) {
+          setMetricValue("net-egress", `${formatBytes(tx)}/s ↑`);
+        }
+        if (Number.isFinite(rx) || Number.isFinite(tx)) {
+          const rxLabel = Number.isFinite(rx) ? `${formatBytes(rx)}/s ↓` : "—";
+          const txLabel = Number.isFinite(tx) ? `${formatBytes(tx)}/s ↑` : "—";
+          setMetricValue("net", `${rxLabel} • ${txLabel}`);
+        }
       }
     }
   }
+}
+
+function primeMetricHistory(history) {
+  if (!Array.isArray(history) || !history.length) return false;
+  const sanitized = history
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => {
+      const ts = Number(entry.timestamp);
+      if (!Number.isFinite(ts)) return null;
+      return {
+        timestamp: ts,
+        cpu: entry.cpu && typeof entry.cpu === "object" ? entry.cpu : null,
+        memory:
+          entry.memory && typeof entry.memory === "object"
+            ? entry.memory
+            : null,
+        net_io:
+          entry.net_io && typeof entry.net_io === "object"
+            ? entry.net_io
+            : null,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (!sanitized.length) return false;
+
+  const historyWithoutLatest = sanitized.slice(0, -1);
+  historyWithoutLatest.forEach((entry) => {
+    updateMetricCharts(entry, { updateLabels: false });
+  });
+
+  return true;
+}
+
+function queueContainerHistory(history) {
+  if (!Array.isArray(history) || !history.length) return false;
+  const sanitized = history
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => {
+      const ts = Number(entry.timestamp);
+      if (!Number.isFinite(ts)) return null;
+      const containers =
+        entry.containers && typeof entry.containers === "object"
+          ? entry.containers
+          : {};
+      return { timestamp: ts, containers };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (!sanitized.length) return false;
+
+  const historyWithoutLatest = sanitized.slice(0, -1);
+  let added = false;
+  historyWithoutLatest.forEach((entry) => {
+    const { timestamp, containers } = entry;
+    Object.entries(containers || {}).forEach(([name, snapshot]) => {
+      if (!name) return;
+      const stateRaw = snapshot?.state;
+      const healthRaw = snapshot?.health;
+      const state =
+        typeof stateRaw === "string"
+          ? stateRaw
+          : stateRaw != null
+            ? String(stateRaw)
+            : "";
+      const health =
+        typeof healthRaw === "string"
+          ? healthRaw
+          : healthRaw != null
+            ? String(healthRaw)
+            : "";
+
+      if (!timelineHistoryQueue.has(name)) {
+        timelineHistoryQueue.set(name, []);
+      }
+      timelineHistoryQueue.get(name).push({ timestamp, state, health });
+      added = true;
+    });
+  });
+
+  return added;
+}
+
+function flushTimelineHistory(name, timelineChart) {
+  if (!timelineChart) return;
+  const history = timelineHistoryQueue.get(name);
+  if (!history || !history.length) return;
+  history.sort((a, b) => a.timestamp - b.timestamp);
+  history.forEach((entry) => {
+    timelineChart.addSample(entry.timestamp, entry.state, entry.health);
+  });
+  timelineHistoryQueue.delete(name);
 }
 
 /* STATE */
@@ -692,6 +808,9 @@ function updateDashboardFromData(json) {
           containerTimelineCharts.set(name, timelineChart);
         }
       }
+      if (timelineChart) {
+        flushTimelineHistory(name, timelineChart);
+      }
       const normalizedHealth = health || "unknown";
       const timelineNeedsUpdate =
         prevState.state !== state ||
@@ -872,9 +991,17 @@ function setupSse() {
   });
 
   sseClient.subscribe("snapshot", (event) => {
+    const data = event?.detail?.data;
+    if (!data) return;
+    if (!hasBootstrappedHistory) {
+      const primed = primeMetricHistory(data.metrics_history);
+      const queued = queueContainerHistory(data.container_history);
+      if (primed || queued) {
+        hasBootstrappedHistory = true;
+      }
+    }
     hasReceivedData = true;
-    if (!event?.detail?.data) return;
-    scheduleDashboardUpdate(event.detail.data);
+    scheduleDashboardUpdate(data);
   });
 
   sseClient.start();
@@ -984,8 +1111,20 @@ function initMetricTabs() {
   activateTab(activeTab, { focus: false });
 }
 
+const initialSnapshot = readInitialSnapshot();
+
 initCharts();
 initMetricTabs();
+
+if (initialSnapshot) {
+  const primed = primeMetricHistory(initialSnapshot.metrics_history);
+  const queued = queueContainerHistory(initialSnapshot.container_history);
+  if (primed || queued) {
+    hasBootstrappedHistory = true;
+  }
+  scheduleDashboardUpdate(initialSnapshot, { immediate: true });
+}
+
 setupSse();
 
 window.addEventListener("beforeunload", () => {
