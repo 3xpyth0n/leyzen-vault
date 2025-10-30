@@ -1,3 +1,4 @@
 flask==3.0.2
 httpx==0.27.0
 gunicorn==21.2.0
+gevent>=24.2.1

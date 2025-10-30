@@ -62,6 +62,8 @@ services:
       context: ./docker-proxy
     container_name: docker-proxy
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       DOCKER_PROXY_TOKEN: ${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}
       DOCKER_PROXY_TIMEOUT: ${DOCKER_PROXY_TIMEOUT:-30}
