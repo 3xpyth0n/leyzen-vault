@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from threading import Lock
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
 
@@ -113,18 +113,28 @@ class ProxyContainer:
         *,
         cache_update: Optional[Callable[[Dict[str, Any]], None]] = None,
         cache_invalidate: Optional[Callable[[], None]] = None,
+        payload_timestamp: Optional[float] = None,
     ):
         self._client = client
         self.name = name
         self._payload = payload
+        self._payload_timestamp = payload_timestamp or time.time()
         self._cache_update = cache_update
         self._cache_invalidate = cache_invalidate
 
     def reload(self) -> None:
         payload = self._client.inspect(self.name)
         self._payload = payload
+        self._payload_timestamp = time.time()
         if self._cache_update:
             self._cache_update(payload)
+
+    def ensure_fresh(self, max_age: float) -> None:
+        if max_age <= 0:
+            self.reload()
+            return
+        if time.time() - self._payload_timestamp > max_age:
+            self.reload()
 
     @property
     def status(self) -> Optional[str]:
@@ -165,6 +175,9 @@ class ProxyContainer:
         self.reload()
 
 
+INSPECT_CACHE_TTL = 2.0
+
+
 class DockerProxyService:
     """High-level helpers around the docker proxy client."""
 
@@ -189,16 +202,20 @@ class DockerProxyService:
             self._logger.log(f"[ERROR] Attempt to access unmanaged container {name}")
             return None
 
-        payload = self._get_cached_payload(name)
-        if payload is None:
-            payload = self.refresh_container_cache(name)
-            if payload is None:
+        cached = self._get_cached_payload(name)
+        if cached is None:
+            refreshed = self.refresh_container_cache(name)
+            if refreshed is None:
                 return None
+            payload, timestamp = refreshed
+        else:
+            payload, timestamp = cached
 
         return ProxyContainer(
             self.client,
             name,
             payload,
+            payload_timestamp=timestamp,
             cache_update=lambda data: self._store_cache(name, data),
             cache_invalidate=lambda: self.invalidate_container_cache(name),
         )
@@ -215,24 +232,48 @@ class DockerProxyService:
         except (DockerProxyNotFound, DockerProxyError):
             return None
 
-    def _get_cached_payload(self, name: str) -> Optional[Dict[str, Any]]:
+    def _get_cached_payload(self, name: str) -> Optional[Tuple[Dict[str, Any], float]]:
         with self._cache_lock:
             entry = self._inspect_cache.get(name)
             if entry is None:
                 return None
-            return entry
 
-    def _store_cache(self, name: str, payload: Dict[str, Any]) -> None:
+            # If the cached inspect payload is too old return ``None`` so the
+            # caller refreshes it from the proxy.  This prevents the
+            # orchestrator UI from getting stuck with stale state (e.g. a
+            # container forever reported as ``starting``) when no other
+            # operation refreshes the cache for a while.
+            timestamp = self._cache_meta.get(name)
+            if timestamp is not None:
+                # The inspect payload contains container state data which can
+                # change quickly when a container is warming up.  A short TTL
+                # keeps the dashboard responsive without overwhelming the
+                # proxy.
+                if time.time() - timestamp > INSPECT_CACHE_TTL:
+                    self._inspect_cache.pop(name, None)
+                    self._cache_meta.pop(name, None)
+                    return None
+
+            if timestamp is None:
+                timestamp = time.time()
+
+            return entry, timestamp
+
+    def _store_cache(self, name: str, payload: Dict[str, Any]) -> float:
+        timestamp = time.time()
         with self._cache_lock:
             self._inspect_cache[name] = payload
-            self._cache_meta[name] = time.time()
+            self._cache_meta[name] = timestamp
+        return timestamp
 
     def invalidate_container_cache(self, name: str) -> None:
         with self._cache_lock:
             self._inspect_cache.pop(name, None)
             self._cache_meta.pop(name, None)
 
-    def refresh_container_cache(self, name: str) -> Optional[Dict[str, Any]]:
+    def refresh_container_cache(
+        self, name: str
+    ) -> Optional[Tuple[Dict[str, Any], float]]:
         try:
             payload = self.client.inspect(name)
         except DockerProxyNotFound:
@@ -243,8 +284,8 @@ class DockerProxyService:
             self._logger.log(f"[ERROR] Error getting container {name}: {exc}")
             return None
 
-        self._store_cache(name, payload)
-        return payload
+        timestamp = self._store_cache(name, payload)
+        return payload, timestamp
 
     def wait_until_healthy(
         self,

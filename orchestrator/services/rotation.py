@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 from ..config import Settings
 from .docker_proxy import (
+    INSPECT_CACHE_TTL,
     DockerProxyError,
     DockerProxyNotFound,
     DockerProxyService,
@@ -746,6 +747,21 @@ class RotationService:
                 if cont:
                     with self._container_cache_lock:
                         self._container_cache[name] = cont
+            if cont:
+                try:
+                    cont.ensure_fresh(INSPECT_CACHE_TTL)
+                except DockerProxyNotFound:
+                    self._logger.log(
+                        f"[STREAM WARN] Container {name} disappeared during snapshot"
+                    )
+                    with self._container_cache_lock:
+                        self._container_cache.pop(name, None)
+                    self._docker.invalidate_container_cache(name)
+                    cont = None
+                except DockerProxyError as exc:
+                    self._logger.log(
+                        f"[STREAM WARN] Failed to refresh {name} for snapshot: {exc}"
+                    )
             state = cont.status if cont else "not found"
             health = (
                 cont.attrs.get("State", {}).get("Health", {}).get("Status")
