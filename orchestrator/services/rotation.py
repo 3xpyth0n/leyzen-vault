@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime, timedelta
 from threading import Lock, Thread
@@ -159,7 +160,9 @@ class RotationService:
         return max(0.0, percent)
 
     def _collect_metrics(
-        self, running_containers: list[str]
+        self,
+        running_containers: list[str],
+        stats_map: Optional[Dict[str, Optional[Dict[str, object]]]] = None,
     ) -> Optional[Dict[str, object]]:
         if not running_containers:
             now = time.time()
@@ -183,7 +186,11 @@ class RotationService:
         total_tx = 0.0
 
         for name in running_containers:
-            stats = self._docker.get_container_stats(name)
+            stats: Optional[Dict[str, object]] = None
+            if stats_map is not None:
+                stats = stats_map.get(name)
+            if stats is None:
+                stats = self._docker.get_container_stats(name)
             if not stats:
                 self._log_stats_error(
                     name, f"[METRICS] Stats unavailable for container {name}", now=now
@@ -227,12 +234,14 @@ class RotationService:
 
         metrics: Dict[str, object] = {"timestamp": int(now * 1000)}
 
+        cpu_payload: Optional[Dict[str, float]] = None
         if cpu_samples:
             avg_cpu = sum(cpu_samples) / len(cpu_samples)
-            metrics["cpu"] = {"usage": round(avg_cpu, 2)}
+            cpu_payload = {"usage": round(avg_cpu, 2)}
 
+        memory_payload: Optional[Dict[str, int]] = None
         if total_memory_limit > 0:
-            metrics["memory"] = {
+            memory_payload = {
                 "used": int(total_memory_used),
                 "total": int(total_memory_limit),
             }
@@ -259,12 +268,18 @@ class RotationService:
             "tx": total_tx,
         }
 
-        net_payload: Dict[str, float] = {}
-        if isinstance(rx_rate, (int, float)):
-            net_payload["rx_rate"] = max(0.0, float(rx_rate))
-        if isinstance(tx_rate, (int, float)):
-            net_payload["tx_rate"] = max(0.0, float(tx_rate))
+        net_payload: Optional[Dict[str, float]] = None
+        if isinstance(rx_rate, (int, float)) or isinstance(tx_rate, (int, float)):
+            net_payload = {}
+            if isinstance(rx_rate, (int, float)):
+                net_payload["rx_rate"] = max(0.0, float(rx_rate))
+            if isinstance(tx_rate, (int, float)):
+                net_payload["tx_rate"] = max(0.0, float(tx_rate))
 
+        if cpu_payload is not None:
+            metrics["cpu"] = cpu_payload
+        if memory_payload is not None:
+            metrics["memory"] = memory_payload
         if net_payload:
             metrics["net_io"] = net_payload
 
@@ -583,6 +598,8 @@ class RotationService:
 
     def _metrics_collector_loop(self) -> None:
         base_interval = max(0.2, self._settings.sse_stream_interval_ms / 1000.0)
+        worst_iteration = 0.0
+        last_report = time.perf_counter()
         while True:
             loop_start = time.perf_counter()
             try:
@@ -598,7 +615,29 @@ class RotationService:
                     if cont and cont.status == "running":
                         running_containers.append(name)
 
-                metrics = self._collect_metrics(running_containers)
+                stats_map: Dict[str, Optional[Dict[str, object]]] = {}
+                if running_containers:
+                    max_workers = min(len(running_containers), 8)
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {
+                            executor.submit(
+                                self._docker.get_container_stats, name
+                            ): name
+                            for name in running_containers
+                        }
+                        for future in as_completed(futures):
+                            name = futures[future]
+                            try:
+                                stats_map[name] = future.result()
+                            except Exception as exc:
+                                stats_map[name] = None
+                                self._log_stats_error(
+                                    name,
+                                    f"[METRICS] Stats retrieval failed for {name}: {exc}",
+                                    now=time.time(),
+                                )
+
+                metrics = self._collect_metrics(running_containers, stats_map)
                 with self._metrics_lock:
                     self._latest_metrics = metrics
                     self._metrics_updated_at = time.time()
@@ -606,6 +645,19 @@ class RotationService:
                 self._logger.log(f"[METRICS LOOP ERROR] {exc}")
 
             elapsed = time.perf_counter() - loop_start
+            if elapsed > worst_iteration:
+                worst_iteration = elapsed
+            if elapsed > 1.0:
+                self._logger.log(
+                    f"[METRICS LOOP WARN] Iteration exceeded 1s budget: {elapsed:.3f}s"
+                )
+            now = time.perf_counter()
+            if now - last_report >= 60.0:
+                self._logger.log(
+                    f"[METRICS LOOP] Worst iteration in last interval: {worst_iteration:.3f}s"
+                )
+                worst_iteration = 0.0
+                last_report = now
             delay = max(base_interval - elapsed, 0.05)
             time.sleep(delay)
 
@@ -618,7 +670,8 @@ class RotationService:
 
         if cached_metrics is not None and cached_timestamp:
             age = time.time() - cached_timestamp
-            freshness_window = max(1.0, self._settings.sse_stream_interval_ms / 500.0)
+            base_interval = max(0.2, self._settings.sse_stream_interval_ms / 1000.0)
+            freshness_window = max(0.5, base_interval * 2.5)
             if age <= freshness_window:
                 return cached_metrics
 
