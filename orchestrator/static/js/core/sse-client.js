@@ -1,5 +1,5 @@
 const DEFAULT_RETRY = 5000;
-const DEFAULT_THROTTLE = 750;
+const DEFAULT_THROTTLE = 500;
 
 export class SSEClient extends EventTarget {
   constructor(streams, options = {}) {

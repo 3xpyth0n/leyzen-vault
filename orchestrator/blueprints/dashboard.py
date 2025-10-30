@@ -298,12 +298,12 @@ def api_stream():
                 data = rotation.build_stream_snapshot()
                 chunk = f"data: {json.dumps(data)}\n\n"
                 yield chunk
-                time.sleep(0.9)
+                time.sleep(0.5)
             except GeneratorExit:
                 break
             except Exception as exc:
                 _logger().log(f"[SSE ERROR] {exc}")
-                time.sleep(0.9)
+                time.sleep(0.5)
 
     response = Response(event_stream(), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-cache"
