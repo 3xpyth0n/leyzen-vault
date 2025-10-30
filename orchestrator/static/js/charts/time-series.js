@@ -55,6 +55,8 @@ export class TimeSeriesChart extends BaseChart {
     };
     this.timestampFormatter =
       options.timestampFormatter || ((value) => defaultFormatTimestamp(value));
+    this.isActive = options.initiallyActive ?? true;
+    this.needsRender = false;
 
     this._initChart();
   }
@@ -246,11 +248,17 @@ export class TimeSeriesChart extends BaseChart {
 
     this.lastSample = sample;
     this.lastTimestamp = resolvedTs;
+    this.needsRender = true;
     this._render();
   }
 
   _render() {
     if (!this.chart) return;
+    if (!this.isActive) {
+      this.needsRender = true;
+      return;
+    }
+    this.needsRender = false;
     const xData = this.timestamps.slice(-this.windowSize);
     const updateSeries = this.seriesDefinitions.map((definition, index) => ({
       id: definition.id,
@@ -274,6 +282,7 @@ export class TimeSeriesChart extends BaseChart {
 
   _updateSparklines(xAxisValues) {
     if (!this.sparklineCharts.length) return;
+    if (!this.isActive) return;
     const xData = xAxisValues || this.timestamps.slice(-this.windowSize);
     this.sparklineCharts.forEach((config) => {
       const data =
@@ -301,6 +310,22 @@ export class TimeSeriesChart extends BaseChart {
     if (!this.lastSample) return null;
     const value = this.lastSample[key];
     return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  setActive(isActive) {
+    const nextState = Boolean(isActive);
+    if (this.isActive === nextState) {
+      if (nextState && this.needsRender) {
+        this._render();
+      }
+      return;
+    }
+
+    this.isActive = nextState;
+    if (this.isActive) {
+      this.resize();
+      this._render();
+    }
   }
 }
 

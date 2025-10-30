@@ -77,19 +77,6 @@
   display: flex;
 }
 
-@media (min-width: 1024px) {
-  .dashboard-tabs {
-    display: none;
-  }
-
-  [data-metric-panel] {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: none !important;
-    display: flex !important;
-  }
-}
-
 @media (max-width: 640px) {
   .dashboard-tabs {
     margin-inline: calc(var(--safe-x, 0));
