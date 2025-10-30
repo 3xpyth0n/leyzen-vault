@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
 import random
 import time
 import traceback
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -59,9 +61,29 @@ class RotationService:
         self._latest_metrics: Optional[Dict[str, object]] = None
         self._metrics_updated_at: float = 0.0
         self._metrics_lock = Lock()
+        metrics_interval = max(0.2, self._settings.sse_stream_interval_ms / 1000.0)
+        self._metrics_history_window_seconds = 60.0
+        self._metrics_history = deque(
+            maxlen=self._calculate_history_maxlen(
+                self._metrics_history_window_seconds,
+                metrics_interval,
+                cap=1800,
+            )
+        )
+        self._metrics_history_lock = Lock()
         self._latest_snapshot: Optional[Dict[str, object]] = None
         self._snapshot_updated_at: float = 0.0
         self._snapshot_lock = Lock()
+        snapshot_interval = float(self._settings.sse_stream_interval_seconds)
+        self._container_history_window_seconds = 60.0
+        self._container_history = deque(
+            maxlen=self._calculate_history_maxlen(
+                self._container_history_window_seconds,
+                snapshot_interval,
+                cap=1200,
+            )
+        )
+        self._container_history_lock = Lock()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -284,6 +306,65 @@ class RotationService:
             metrics["net_io"] = net_payload
 
         return metrics if len(metrics) > 1 else None
+
+    # ------------------------------------------------------------------
+    def _calculate_history_maxlen(
+        self, window_seconds: float, interval_seconds: float, *, cap: int
+    ) -> int:
+        interval = max(0.05, float(interval_seconds))
+        estimate = int(math.ceil(window_seconds / interval))
+        return max(1, min(estimate + 2, cap))
+
+    def _append_metrics_history(self, metrics: Optional[Dict[str, object]]) -> None:
+        if not metrics:
+            return
+
+        timestamp = metrics.get("timestamp")
+        if not isinstance(timestamp, (int, float)):
+            timestamp = int(time.time() * 1000)
+        sample: Dict[str, object] = {"timestamp": int(timestamp)}
+
+        for key in ("cpu", "memory", "net_io"):
+            value = metrics.get(key)
+            if isinstance(value, dict) and value:
+                sample[key] = deepcopy(value)
+
+        with self._metrics_history_lock:
+            self._metrics_history.append(sample)
+
+    def _get_metrics_history(self) -> list[Dict[str, object]]:
+        with self._metrics_history_lock:
+            return [deepcopy(entry) for entry in self._metrics_history]
+
+    def _append_container_history(
+        self, timestamp_ms: int, containers: Dict[str, Dict[str, object]]
+    ) -> None:
+        sanitized: Dict[str, Dict[str, Optional[str]]] = {}
+        for name, info in containers.items():
+            state = info.get("state")
+            health = info.get("health")
+            state_value = (
+                state
+                if isinstance(state, str)
+                else (str(state) if state is not None else None)
+            )
+            health_value = (
+                health
+                if isinstance(health, str)
+                else (str(health) if health is not None else None)
+            )
+            sanitized[name] = {"state": state_value, "health": health_value}
+
+        if not sanitized:
+            return
+
+        sample = {"timestamp": int(timestamp_ms), "containers": sanitized}
+        with self._container_history_lock:
+            self._container_history.append(sample)
+
+    def _get_container_history(self) -> list[Dict[str, object]]:
+        with self._container_history_lock:
+            return [deepcopy(entry) for entry in self._container_history]
 
     # ------------------------------------------------------------------
     def _orchestrator_loop(self) -> None:
@@ -638,6 +719,8 @@ class RotationService:
                                 )
 
                 metrics = self._collect_metrics(running_containers, stats_map)
+                if metrics:
+                    self._append_metrics_history(metrics)
                 with self._metrics_lock:
                     self._latest_metrics = metrics
                     self._metrics_updated_at = time.time()
@@ -676,6 +759,8 @@ class RotationService:
                 return cached_metrics
 
         metrics = self._collect_metrics(running_containers)
+        if metrics:
+            self._append_metrics_history(metrics)
         with self._metrics_lock:
             self._latest_metrics = metrics
             self._metrics_updated_at = time.time()
@@ -851,7 +936,11 @@ class RotationService:
 
         eta = self.next_rotation_eta
         metrics = self._get_latest_metrics(running_containers)
-        return {
+        timestamp_ms = int(now.timestamp() * 1000)
+        self._append_container_history(timestamp_ms, containers)
+        metrics_history = self._get_metrics_history()
+        container_history = self._get_container_history()
+        snapshot: Dict[str, object] = {
             "containers": containers,
             "rotation_count": self.rotation_count,
             "last_rotation": (
@@ -865,6 +954,11 @@ class RotationService:
             ),
             "metrics": metrics,
         }
+        if metrics_history:
+            snapshot["metrics_history"] = metrics_history
+        if container_history:
+            snapshot["container_history"] = container_history
+        return snapshot
 
     def _snapshot_loop(self) -> None:
         interval = max(float(self._settings.sse_stream_interval_seconds), 0.1)

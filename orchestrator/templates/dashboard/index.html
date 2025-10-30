@@ -18,6 +18,9 @@
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
     <link rel="stylesheet" href="/orchestrator/static/dashboard.css" />
     <script src="/orchestrator/static/js/vendor/echarts.min.js" defer></script>
+    <script id="initial-dashboard-state" type="application/json">
+      {{ initial_snapshot|tojson }}
+    </script>
     <script type="module" src="/orchestrator/static/js/dashboard.js"></script>
   </head>
   <body>
@@ -160,6 +163,24 @@
             </div>
 
             <div class="panel-body">
+              <div class="timeline-legend" role="list">
+                <span class="legend-item" role="listitem">
+                  <span class="legend-icon running">▶</span>
+                  Running
+                </span>
+                <span class="legend-item" role="listitem">
+                  <span class="legend-icon starting">⏳</span>
+                  Starting
+                </span>
+                <span class="legend-item" role="listitem">
+                  <span class="legend-icon unhealthy">⚠</span>
+                  Unhealthy
+                </span>
+                <span class="legend-item" role="listitem">
+                  <span class="legend-icon stopped">■</span>
+                  Stopped
+                </span>
+              </div>
               <template id="row-template">
                 <div class="container-card gpu-translate">
                   <div class="container-row">

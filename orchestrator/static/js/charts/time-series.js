@@ -199,11 +199,51 @@ export class TimeSeriesChart extends BaseChart {
       { notMerge: true },
     );
 
-    const config = { chart, element, seriesIndex, seriesId };
+    let resizeObserver = null;
+    let detachResizeListener = null;
+
+    if (typeof window !== "undefined" && element) {
+      if (
+        "ResizeObserver" in window &&
+        typeof window.ResizeObserver === "function"
+      ) {
+        resizeObserver = new window.ResizeObserver(() => {
+          chart.resize();
+        });
+        resizeObserver.observe(element);
+      } else if (typeof window.addEventListener === "function") {
+        const handler = () => {
+          chart.resize();
+        };
+        window.addEventListener("resize", handler);
+        detachResizeListener = () => {
+          window.removeEventListener("resize", handler);
+        };
+      }
+    }
+
+    const config = {
+      chart,
+      element,
+      seriesIndex,
+      seriesId,
+      resizeObserver,
+      detachResizeListener,
+    };
     this.sparklineCharts.push(config);
     this._updateSparklines();
 
     return () => {
+      if (resizeObserver) {
+        try {
+          resizeObserver.disconnect();
+        } catch (err) {
+          console.warn("Failed to disconnect ResizeObserver", err);
+        }
+      }
+      if (typeof detachResizeListener === "function") {
+        detachResizeListener();
+      }
       chart.dispose();
       this.sparklineCharts = this.sparklineCharts.filter(
         (item) => item !== config,
@@ -320,14 +360,27 @@ export class TimeSeriesChart extends BaseChart {
       if (nextState && this.needsRender) {
         this._render();
       }
+      if (nextState) {
+        this._resizeSparklineCharts();
+      }
       return;
     }
 
     this.isActive = nextState;
     if (this.isActive) {
       this.resize();
+      this._resizeSparklineCharts();
       this._render();
     }
+  }
+
+  _resizeSparklineCharts() {
+    if (!this.sparklineCharts.length) return;
+    this.sparklineCharts.forEach((config) => {
+      if (config?.chart && typeof config.chart.resize === "function") {
+        config.chart.resize();
+      }
+    });
   }
 }
 

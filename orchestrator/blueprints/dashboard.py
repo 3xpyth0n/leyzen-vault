@@ -46,10 +46,17 @@ def _rotation_service() -> RotationService:
 @login_required
 def dashboard():
     settings = _settings()
+    rotation = _rotation_service()
+    try:
+        initial_snapshot = rotation.get_latest_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        _logger().log(f"[DASHBOARD WARN] Failed to build initial snapshot: {exc}")
+        initial_snapshot = {}
     return render_template(
         "dashboard/index.html",
         vault_rotation_interval=int(settings.rotation_interval),
         sse_stream_interval_ms=int(settings.sse_stream_interval_ms),
+        initial_snapshot=initial_snapshot,
     )
 
 
