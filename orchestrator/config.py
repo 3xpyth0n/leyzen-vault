@@ -63,10 +63,17 @@ class Settings:
     csp_report_max_size: int
     csp_report_rate_limit: int
     csp_report_rate_window: timedelta
+    sse_stream_interval_ms: int
 
     @property
     def log_dir(self) -> Path:
         return self.log_file.parent
+
+    @property
+    def sse_stream_interval_seconds(self) -> float:
+        """Return the SSE stream interval expressed in seconds."""
+
+        return max(0.05, self.sse_stream_interval_ms / 1000.0)
 
 
 def _ensure_required_variables(required: List[str]) -> None:
@@ -173,6 +180,13 @@ def load_settings() -> Settings:
 
     secret_key = os.environ.get("VAULT_SECRET_KEY", "")
 
+    try:
+        sse_stream_interval_ms = max(
+            50, int(os.getenv("ORCHESTRATOR_SSE_INTERVAL_MS", "500"))
+        )
+    except ValueError:
+        sse_stream_interval_ms = 500
+
     return Settings(
         timezone=timezone,
         username=username,
@@ -193,6 +207,7 @@ def load_settings() -> Settings:
         csp_report_max_size=csp_report_max_size,
         csp_report_rate_limit=csp_report_rate_limit,
         csp_report_rate_window=csp_report_rate_window,
+        sse_stream_interval_ms=sse_stream_interval_ms,
     )
 
 

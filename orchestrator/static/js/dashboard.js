@@ -51,6 +51,10 @@ function readNumberMeta(name) {
 
 const rotationIntervalMeta = readNumberMeta("dashboard-rotation-interval") || 0;
 const ROTATION_INTERVAL_SECONDS = Math.max(0, rotationIntervalMeta);
+const sseThrottleMeta = readNumberMeta("sse-throttle-ms");
+const SSE_THROTTLE_MS = Number.isFinite(sseThrottleMeta)
+  ? Math.max(50, sseThrottleMeta)
+  : 500;
 
 /* ==== CONTROL BUTTONS ==== */
 function getCookie(name) {
@@ -809,7 +813,7 @@ function setupSse() {
         event: "snapshot",
       },
     ],
-    { throttleMs: 500, retryDelay: 5000 },
+    { throttleMs: SSE_THROTTLE_MS, retryDelay: 5000 },
   );
 
   sseClient.subscribe("connection-open", () => {

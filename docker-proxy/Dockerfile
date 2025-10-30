@@ -1,14 +1,16 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /srv
 
+RUN apk add --no-cache curl
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY proxy.py ./
+COPY . .
 
 EXPOSE 2375
 
