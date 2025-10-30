@@ -6,6 +6,7 @@ function getEcharts() {
 }
 
 const DEFAULT_WINDOW = 120;
+let sparklineIdCounter = 0;
 
 function defaultFormatTimestamp(ts) {
   const date = new Date(ts);
@@ -38,7 +39,10 @@ export class TimeSeriesChart extends BaseChart {
     super(element, options);
 
     this.windowSize = options.windowSize || DEFAULT_WINDOW;
-    this.seriesDefinitions = options.series || [];
+    this.seriesDefinitions = (options.series || []).map((definition, index) => {
+      const id = definition.id || definition.key || `series-${index}`;
+      return { ...definition, id };
+    });
     this.timestamps = [];
     this.seriesData = this.seriesDefinitions.map(() => []);
     this.sparklineCharts = [];
@@ -105,7 +109,9 @@ export class TimeSeriesChart extends BaseChart {
             formatter: (value) => this.yAxisFormatter(value),
           },
         },
+        animationDurationUpdate: 260,
         series: this.seriesDefinitions.map((definition) => ({
+          id: definition.id,
           name: definition.name,
           type: "line",
           smooth: true,
@@ -138,6 +144,9 @@ export class TimeSeriesChart extends BaseChart {
       renderer: "canvas",
     });
 
+    const seriesId =
+      options.seriesId || `spark-${seriesIndex}-${sparklineIdCounter++}`;
+
     chart.setOption(
       {
         grid: { left: 4, right: 4, top: 4, bottom: 4 },
@@ -159,6 +168,7 @@ export class TimeSeriesChart extends BaseChart {
         },
         series: [
           {
+            id: seriesId,
             type: "line",
             data: [],
             smooth: true,
@@ -187,7 +197,7 @@ export class TimeSeriesChart extends BaseChart {
       { notMerge: true },
     );
 
-    const config = { chart, element, seriesIndex };
+    const config = { chart, element, seriesIndex, seriesId };
     this.sparklineCharts.push(config);
     this._updateSparklines();
 
@@ -242,29 +252,21 @@ export class TimeSeriesChart extends BaseChart {
   _render() {
     if (!this.chart) return;
     const xData = this.timestamps.slice(-this.windowSize);
-    const series = this.seriesDefinitions.map((definition, index) => ({
-      name: definition.name,
-      type: "line",
-      smooth: true,
-      showSymbol: false,
-      animationDuration: 220,
-      lineStyle: { color: definition.color, width: 2 },
-      areaStyle:
-        definition.fill === false
-          ? undefined
-          : {
-              color: definition.areaColor || definition.color,
-              opacity: definition.areaOpacity ?? 0.15,
-            },
+    const updateSeries = this.seriesDefinitions.map((definition, index) => ({
+      id: definition.id,
       data: this.seriesData[index].slice(-this.windowSize),
+      animationDuration: 0,
+      animationDurationUpdate: 160,
     }));
 
     this.setOption(
       {
+        animationDuration: 0,
+        animationDurationUpdate: 220,
         xAxis: { data: xData },
-        series,
+        series: updateSeries,
       },
-      { notMerge: false, replaceMerge: ["series"] },
+      { notMerge: false, lazyUpdate: true },
     );
 
     this._updateSparklines(xData);
@@ -278,10 +280,19 @@ export class TimeSeriesChart extends BaseChart {
         this.seriesData[config.seriesIndex]?.slice(-this.windowSize) || [];
       config.chart.setOption(
         {
+          animationDuration: 0,
+          animationDurationUpdate: 160,
           xAxis: { data: xData },
-          series: [{ data }],
+          series: [
+            {
+              id: config.seriesId,
+              data,
+              animationDuration: 0,
+              animationDurationUpdate: 160,
+            },
+          ],
         },
-        { notMerge: false, replaceMerge: ["series"] },
+        { notMerge: false, lazyUpdate: true },
       );
     });
   }

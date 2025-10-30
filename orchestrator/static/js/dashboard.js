@@ -277,6 +277,65 @@ let cpuChart = null;
 let memoryChart = null;
 let netChart = null;
 const containerTimelineCharts = new Map();
+const containerRowState = new Map();
+
+function getPercentStyle(badgeClass) {
+  switch (badgeClass) {
+    case "status-running":
+      return {
+        background: "rgba(34,197,94,0.12)",
+        color: "#34d399",
+        boxShadow: "0 0 10px rgba(34,197,94,0.12)",
+      };
+    case "status-starting":
+      return {
+        background: "rgba(245,158,11,0.12)",
+        color: "#f59e0b",
+        boxShadow: "0 0 10px rgba(245,158,11,0.12)",
+      };
+    case "status-unhealthy":
+      return {
+        background: "rgba(248,113,113,0.12)",
+        color: "#ef4444",
+        boxShadow: "0 0 10px rgba(248,113,113,0.12)",
+      };
+    default:
+      return {
+        background: "rgba(148,163,184,0.1)",
+        color: "#94a3b8",
+        boxShadow: "none",
+      };
+  }
+}
+
+function getDotStyle(badgeClass) {
+  switch (badgeClass) {
+    case "status-running":
+      return {
+        backgroundColor: "#34d399",
+        boxShadow: "0 0 8px rgba(52,211,153,0.12)",
+        pulse: true,
+      };
+    case "status-starting":
+      return {
+        backgroundColor: "#f59e0b",
+        boxShadow: "0 0 8px rgba(245,158,11,0.12)",
+        pulse: true,
+      };
+    case "status-unhealthy":
+      return {
+        backgroundColor: "#ef4444",
+        boxShadow: "",
+        pulse: false,
+      };
+    default:
+      return {
+        backgroundColor: "#94a3b8",
+        boxShadow: "",
+        pulse: false,
+      };
+  }
+}
 const detachSparklineHandlers = [];
 
 function initCharts() {
@@ -443,7 +502,8 @@ function updateDashboardFromData(json) {
   try {
     const wasRunning = orchestratorRunning;
     failCount = 0;
-    lastSuccessfulFetch = Date.now();
+    const updateTimestamp = Date.now();
+    lastSuccessfulFetch = updateTimestamp;
     lastKnownData = json;
 
     if (typeof json.rotation_active === "boolean") {
@@ -489,15 +549,32 @@ function updateDashboardFromData(json) {
         rowEl = rowsEl.lastElementChild;
         if (!rowEl) continue;
         rowEl.setAttribute("data-row", name);
+        rowEl._refs = {
+          dot: rowEl.querySelector("[data-dot]"),
+          name: rowEl.querySelector("[data-name]"),
+          sub: rowEl.querySelector("[data-sub]"),
+          uptime: rowEl.querySelector("[data-uptime]"),
+          percent: rowEl.querySelector("[data-percent]"),
+          timeline: rowEl.querySelector("[data-health-timeline]"),
+        };
       }
 
-      const dot = rowEl.querySelector("[data-dot]");
-      const nm = rowEl.querySelector("[data-name]");
-      const sub = rowEl.querySelector("[data-sub]");
-      const upEl = rowEl.querySelector("[data-uptime]");
-      const percentEl = rowEl.querySelector("[data-percent]");
+      const refs = rowEl._refs || {
+        dot: rowEl.querySelector("[data-dot]"),
+        name: rowEl.querySelector("[data-name]"),
+        sub: rowEl.querySelector("[data-sub]"),
+        uptime: rowEl.querySelector("[data-uptime]"),
+        percent: rowEl.querySelector("[data-percent]"),
+        timeline: rowEl.querySelector("[data-health-timeline]"),
+      };
 
-      if (nm) nm.textContent = name;
+      rowEl._refs = refs;
+
+      const prevState = containerRowState.get(name) || {};
+
+      if (refs.name && prevState.name !== name) {
+        refs.name.textContent = name;
+      }
 
       const state = (info.state || "").toString();
       let health = (info.health || "").toString();
@@ -530,38 +607,51 @@ function updateDashboardFromData(json) {
         }
       }
 
-      if (sub) {
-        sub.innerHTML = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
-          health ? " • health: " + health : ""
-        }</span>`;
+      const statusHtml = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
+        health ? " • health: " + health : ""
+      }</span>`;
+
+      if (refs.sub && prevState.statusHtml !== statusHtml) {
+        refs.sub.innerHTML = statusHtml;
       }
 
-      if (upEl) upEl.textContent = fmtHMS(uptime);
-      if (percentEl) percentEl.textContent = percent + "%";
+      const uptimeText = fmtHMS(uptime);
+      if (refs.uptime && prevState.uptimeText !== uptimeText) {
+        refs.uptime.textContent = uptimeText;
+      }
 
-      if (percentEl) {
-        if (badgeClass === "status-running") {
-          percentEl.style.background = "rgba(34,197,94,0.12)";
-          percentEl.style.color = "#34d399";
-          percentEl.style.boxShadow = "0 0 10px rgba(34,197,94,0.12)";
-        } else if (badgeClass === "status-starting") {
-          percentEl.style.background = "rgba(245,158,11,0.12)";
-          percentEl.style.color = "#f59e0b";
-          percentEl.style.boxShadow = "0 0 10px rgba(245,158,11,0.12)";
-        } else if (badgeClass === "status-unhealthy") {
-          percentEl.style.background = "rgba(248,113,113,0.12)";
-          percentEl.style.color = "#ef4444";
-          percentEl.style.boxShadow = "0 0 10px rgba(248,113,113,0.12)";
-        } else {
-          percentEl.style.background = "rgba(148,163,184,0.1)";
-          percentEl.style.color = "#94a3b8";
-          percentEl.style.boxShadow = "none";
-        }
+      const percentText = percent + "%";
+      if (refs.percent && prevState.percentText !== percentText) {
+        refs.percent.textContent = percentText;
+      }
+
+      const percentStyle = getPercentStyle(badgeClass);
+      if (
+        refs.percent &&
+        (prevState.percentBg !== percentStyle.background ||
+          prevState.percentColor !== percentStyle.color ||
+          prevState.percentShadow !== percentStyle.boxShadow)
+      ) {
+        refs.percent.style.background = percentStyle.background;
+        refs.percent.style.color = percentStyle.color;
+        refs.percent.style.boxShadow = percentStyle.boxShadow;
+      }
+
+      const dotStyle = getDotStyle(badgeClass);
+      if (
+        refs.dot &&
+        (prevState.dotColor !== dotStyle.backgroundColor ||
+          prevState.dotShadow !== dotStyle.boxShadow ||
+          prevState.dotPulse !== dotStyle.pulse)
+      ) {
+        refs.dot.style.backgroundColor = dotStyle.backgroundColor;
+        refs.dot.style.boxShadow = dotStyle.boxShadow;
+        refs.dot.classList.toggle("pulse", dotStyle.pulse);
       }
 
       let timelineChart = containerTimelineCharts.get(name);
       if (!timelineChart) {
-        const timelineEl = rowEl.querySelector("[data-health-timeline]");
+        const timelineEl = refs.timeline;
         if (timelineEl) {
           timelineChart = new HealthTimelineChart(timelineEl, {
             windowSize: 120,
@@ -569,32 +659,37 @@ function updateDashboardFromData(json) {
           containerTimelineCharts.set(name, timelineChart);
         }
       }
-      if (timelineChart) {
-        timelineChart.addSample(Date.now(), state, health || "unknown");
-      }
+      const normalizedHealth = health || "unknown";
+      const timelineNeedsUpdate =
+        prevState.state !== state ||
+        prevState.health !== normalizedHealth ||
+        !prevState.timelineTs ||
+        updateTimestamp - prevState.timelineTs >= 5000;
 
-      if (dot) {
-        dot.classList.remove("pulse");
-        dot.style.backgroundColor = "";
-        dot.style.boxShadow = "";
-
-        if (badgeClass === "status-running") {
-          dot.style.backgroundColor = "#34d399";
-          dot.classList.add("pulse");
-          dot.style.boxShadow = "0 0 8px rgba(52,211,153,0.12)";
-        } else if (badgeClass === "status-starting") {
-          dot.style.backgroundColor = "#f59e0b";
-          dot.classList.add("pulse");
-          dot.style.boxShadow = "0 0 8px rgba(245,158,11,0.12)";
-        } else if (badgeClass === "status-unhealthy") {
-          dot.style.backgroundColor = "#ef4444";
-        } else {
-          dot.style.backgroundColor = "#94a3b8";
-        }
+      if (timelineChart && timelineNeedsUpdate) {
+        timelineChart.addSample(updateTimestamp, state, normalizedHealth);
       }
 
       labels.push(name);
       data.push(uptime);
+
+      containerRowState.set(name, {
+        name,
+        uptimeText,
+        percentText,
+        statusHtml,
+        percentBg: percentStyle.background,
+        percentColor: percentStyle.color,
+        percentShadow: percentStyle.boxShadow,
+        dotColor: dotStyle.backgroundColor,
+        dotShadow: dotStyle.boxShadow,
+        dotPulse: dotStyle.pulse,
+        state,
+        health: normalizedHealth,
+        timelineTs: timelineNeedsUpdate
+          ? updateTimestamp
+          : prevState.timelineTs || updateTimestamp,
+      });
     }
 
     const existingRows = Array.from(rowsEl.querySelectorAll("[data-row]"));
@@ -608,6 +703,7 @@ function updateDashboardFromData(json) {
           timelineChart.dispose();
           containerTimelineCharts.delete(rn);
         }
+        containerRowState.delete(rn);
       }
     }
 
@@ -713,7 +809,7 @@ function setupSse() {
         event: "snapshot",
       },
     ],
-    { throttleMs: 600, retryDelay: 5000 },
+    { throttleMs: 500, retryDelay: 5000 },
   );
 
   sseClient.subscribe("connection-open", () => {
