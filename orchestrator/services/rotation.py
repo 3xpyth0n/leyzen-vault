@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import time
 import traceback
+from copy import deepcopy
 from datetime import datetime, timedelta
 from threading import Lock, Thread
 from typing import Dict, List, Optional
@@ -57,6 +58,9 @@ class RotationService:
         self._latest_metrics: Optional[Dict[str, object]] = None
         self._metrics_updated_at: float = 0.0
         self._metrics_lock = Lock()
+        self._latest_snapshot: Optional[Dict[str, object]] = None
+        self._snapshot_updated_at: float = 0.0
+        self._snapshot_lock = Lock()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -88,7 +92,19 @@ class RotationService:
             Thread(target=self._orchestrator_loop, daemon=True).start()
             Thread(target=self._uptime_tracker_loop, daemon=True).start()
             Thread(target=self._metrics_collector_loop, daemon=True).start()
+            Thread(target=self._snapshot_loop, daemon=True).start()
             self._threads_started = True
+
+    def _update_snapshot_cache(self, snapshot: Dict[str, object]) -> None:
+        with self._snapshot_lock:
+            self._latest_snapshot = snapshot
+            self._snapshot_updated_at = time.time()
+
+    def _get_snapshot_cache(self) -> tuple[Optional[Dict[str, object]], float]:
+        with self._snapshot_lock:
+            cached = deepcopy(self._latest_snapshot) if self._latest_snapshot else None
+            updated = self._snapshot_updated_at
+        return cached, updated
 
     def _log_stats_error(
         self, name: str, message: str, *, now: Optional[float] = None
@@ -796,6 +812,57 @@ class RotationService:
             ),
             "metrics": metrics,
         }
+
+    def _snapshot_loop(self) -> None:
+        interval = max(float(self._settings.sse_stream_interval_seconds), 0.1)
+        while True:
+            loop_start = time.perf_counter()
+            try:
+                snapshot = self.build_stream_snapshot()
+                self._update_snapshot_cache(snapshot)
+            except (DockerProxyError, DockerProxyNotFound) as exc:
+                self._logger.log(
+                    f"[STREAM WARN] Snapshot refresh failed due to Docker error: {exc}"
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self._logger.log(
+                    f"[STREAM ERROR] Unexpected snapshot failure: {exc}\n"
+                    f"{traceback.format_exc()}"
+                )
+            elapsed = time.perf_counter() - loop_start
+            delay = max(interval - elapsed, 0.0)
+            if delay:
+                time.sleep(delay)
+
+    def get_latest_snapshot(self) -> Dict[str, object]:
+        interval = max(float(self._settings.sse_stream_interval_seconds), 0.1)
+        stale_threshold = interval * 2
+        cached, updated = self._get_snapshot_cache()
+        now = time.time()
+        if cached and now - updated <= stale_threshold:
+            return cached
+
+        try:
+            snapshot = self.build_stream_snapshot()
+            self._update_snapshot_cache(snapshot)
+            return deepcopy(snapshot)
+        except (DockerProxyError, DockerProxyNotFound) as exc:
+            self._logger.log(
+                f"[STREAM WARN] Snapshot rebuild failed due to Docker error: {exc}"
+            )
+            cached, _ = self._get_snapshot_cache()
+            if cached:
+                return cached
+            return {}
+        except Exception as exc:  # pragma: no cover - defensive
+            self._logger.log(
+                f"[STREAM ERROR] Unexpected snapshot rebuild failure: {exc}\n"
+                f"{traceback.format_exc()}"
+            )
+            cached, _ = self._get_snapshot_cache()
+            if cached:
+                return cached
+            return {}
 
 
 __all__ = ["RotationService"]

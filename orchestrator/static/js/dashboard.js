@@ -697,7 +697,7 @@ function updateDashboardFromData(json) {
         prevState.state !== state ||
         prevState.health !== normalizedHealth ||
         !prevState.timelineTs ||
-        updateTimestamp - prevState.timelineTs >= 5000;
+        updateTimestamp - prevState.timelineTs >= 500;
 
       if (timelineChart && timelineNeedsUpdate) {
         timelineChart.addSample(updateTimestamp, state, normalizedHealth);

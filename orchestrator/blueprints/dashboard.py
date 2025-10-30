@@ -299,7 +299,7 @@ def api_stream():
         while True:
             loop_start = time.perf_counter()
             try:
-                data = rotation.build_stream_snapshot()
+                data = rotation.get_latest_snapshot()
                 chunk = f"data: {json.dumps(data)}\n\n"
                 yield chunk
             except GeneratorExit:
