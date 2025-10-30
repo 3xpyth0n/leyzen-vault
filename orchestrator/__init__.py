@@ -59,7 +59,7 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' unsafe-inline https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data: blob:; "
             "font-src 'self' https://fonts.gstatic.com; "
             "connect-src 'self'; "
