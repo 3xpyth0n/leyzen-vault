@@ -7,7 +7,7 @@ import time
 import traceback
 from datetime import datetime, timedelta
 from threading import Lock, Thread
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from ..config import Settings
 from .docker_proxy import (
@@ -53,6 +53,9 @@ class RotationService:
         self._container_cache_lock = Lock()
         self._previous_net_snapshot: Optional[Dict[str, float]] = None
         self._stats_error_last_logged: Dict[str, float] = {}
+        self._latest_metrics: Optional[Dict[str, object]] = None
+        self._metrics_updated_at: float = 0.0
+        self._metrics_lock = Lock()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -83,6 +86,7 @@ class RotationService:
             self._logger.log("=== Orchestrator started ===")
             Thread(target=self._orchestrator_loop, daemon=True).start()
             Thread(target=self._uptime_tracker_loop, daemon=True).start()
+            Thread(target=self._metrics_collector_loop, daemon=True).start()
             self._threads_started = True
 
     def _log_stats_error(
@@ -560,6 +564,53 @@ class RotationService:
                 self._logger.log(f"[UPTIME TRACKER ERROR] {exc}")
                 time.sleep(2)
 
+    def _metrics_collector_loop(self) -> None:
+        base_interval = max(0.2, self._settings.sse_stream_interval_ms / 1000.0)
+        while True:
+            loop_start = time.perf_counter()
+            try:
+                running_containers: List[str] = []
+                for name in self._settings.web_containers:
+                    with self._container_cache_lock:
+                        cont = self._container_cache.get(name)
+                    if cont is None:
+                        cont = self._docker.get_container_safe(name)
+                        if cont:
+                            with self._container_cache_lock:
+                                self._container_cache[name] = cont
+                    if cont and cont.status == "running":
+                        running_containers.append(name)
+
+                metrics = self._collect_metrics(running_containers)
+                with self._metrics_lock:
+                    self._latest_metrics = metrics
+                    self._metrics_updated_at = time.time()
+            except Exception as exc:
+                self._logger.log(f"[METRICS LOOP ERROR] {exc}")
+
+            elapsed = time.perf_counter() - loop_start
+            delay = max(base_interval - elapsed, 0.05)
+            time.sleep(delay)
+
+    def _get_latest_metrics(
+        self, running_containers: List[str]
+    ) -> Optional[Dict[str, object]]:
+        with self._metrics_lock:
+            cached_metrics = self._latest_metrics
+            cached_timestamp = self._metrics_updated_at
+
+        if cached_metrics is not None and cached_timestamp:
+            age = time.time() - cached_timestamp
+            freshness_window = max(1.0, self._settings.sse_stream_interval_ms / 500.0)
+            if age <= freshness_window:
+                return cached_metrics
+
+        metrics = self._collect_metrics(running_containers)
+        with self._metrics_lock:
+            self._latest_metrics = metrics
+            self._metrics_updated_at = time.time()
+        return metrics
+
     # ------------------------------------------------------------------
     # Control helpers used by HTTP handlers
     # ------------------------------------------------------------------
@@ -714,7 +765,7 @@ class RotationService:
                 running_containers.append(name)
 
         eta = self.next_rotation_eta
-        metrics = self._collect_metrics(running_containers)
+        metrics = self._get_latest_metrics(running_containers)
         return {
             "containers": containers,
             "rotation_count": self.rotation_count,

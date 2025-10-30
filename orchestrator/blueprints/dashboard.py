@@ -49,6 +49,7 @@ def dashboard():
     return render_template(
         "dashboard/index.html",
         vault_rotation_interval=int(settings.rotation_interval),
+        sse_stream_interval_ms=int(settings.sse_stream_interval_ms),
     )
 
 
@@ -291,19 +292,24 @@ def csp_violation_report():
 @login_required
 def api_stream():
     rotation = _rotation_service()
+    settings = _settings()
+    sleep_interval = settings.sse_stream_interval_seconds
 
     def event_stream():
         while True:
+            loop_start = time.perf_counter()
             try:
                 data = rotation.build_stream_snapshot()
                 chunk = f"data: {json.dumps(data)}\n\n"
                 yield chunk
-                time.sleep(0.5)
             except GeneratorExit:
                 break
             except Exception as exc:
                 _logger().log(f"[SSE ERROR] {exc}")
-                time.sleep(0.5)
+            elapsed = time.perf_counter() - loop_start
+            delay = max(sleep_interval - elapsed, 0.0)
+            if delay:
+                time.sleep(delay)
 
     response = Response(event_stream(), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-cache"

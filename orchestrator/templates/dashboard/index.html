@@ -8,6 +8,10 @@
       name="dashboard-rotation-interval"
       content="{{ vault_rotation_interval|tojson }}"
     />
+    <meta
+      name="sse-throttle-ms"
+      content="{{ sse_stream_interval_ms|tojson }}"
+    />
     <title>Vault Orchestrator — Dashboard</title>
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />

@@ -13,7 +13,7 @@ x-filebrowser-base: &filebrowser-base
   healthcheck:
     test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
     interval: 1s
-    timeout: 10s
+    timeout: 5s
     retries: 10
   volumes:
     - filebrowser-data:/srv
@@ -53,7 +53,7 @@ services:
         ]
       interval: 1s
       timeout: 5s
-      retries: 10
+      retries: 5
     networks:
       - vault-net
 
@@ -69,6 +69,11 @@ services:
       DOCKER_PROXY_TIMEOUT: ${DOCKER_PROXY_TIMEOUT:-30}
       LOG_LEVEL: ${DOCKER_PROXY_LOG_LEVEL:-INFO}
       VAULT_WEB_CONTAINERS: ${VAULT_WEB_CONTAINERS:?Set VAULT_WEB_CONTAINERS in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:2375/healthz || exit 1"]
+      interval: 1s
+      timeout: 10s
+      retries: 10
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -82,7 +87,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"]
       interval: 1s
-      timeout: 10s
+      timeout: 5s
       retries: 10
     env_file:
       - .env
