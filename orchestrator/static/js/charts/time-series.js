@@ -254,11 +254,7 @@ export class TimeSeriesChart extends BaseChart {
 
   _render() {
     if (!this.chart) return;
-    if (!this.isActive) {
-      this.needsRender = true;
-      return;
-    }
-    this.needsRender = false;
+
     const xData = this.timestamps.slice(-this.windowSize);
     const updateSeries = this.seriesDefinitions.map((definition, index) => ({
       id: definition.id,
@@ -267,6 +263,13 @@ export class TimeSeriesChart extends BaseChart {
       animationDurationUpdate: 160,
     }));
 
+    if (!this.isActive) {
+      this.needsRender = true;
+      this._updateSparklines(xData);
+      return;
+    }
+
+    this.needsRender = false;
     this.setOption(
       {
         animationDuration: 0,
@@ -282,7 +285,6 @@ export class TimeSeriesChart extends BaseChart {
 
   _updateSparklines(xAxisValues) {
     if (!this.sparklineCharts.length) return;
-    if (!this.isActive) return;
     const xData = xAxisValues || this.timestamps.slice(-this.windowSize);
     this.sparklineCharts.forEach((config) => {
       const data =

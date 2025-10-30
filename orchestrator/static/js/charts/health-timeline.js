@@ -10,6 +10,62 @@ const STATUS_COLOR_MAP = STATUS_DEFS.reduce((acc, def) => {
   return acc;
 }, {});
 
+function hexToRgb(hex) {
+  if (typeof hex !== "string") {
+    return { r: 51, g: 65, b: 85 };
+  }
+
+  const normalized = hex.replace("#", "").trim();
+  if (!/^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(normalized)) {
+    return { r: 51, g: 65, b: 85 };
+  }
+
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => `${char}${char}`)
+          .join("")
+      : normalized;
+
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return { r, g, b };
+}
+
+function withAlpha(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex);
+  const clampedAlpha = Math.min(1, Math.max(0, Number(alpha) || 0));
+  return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const w = Math.max(0, width);
+  const h = Math.max(0, height);
+  const r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
+
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, r);
+    ctx.closePath();
+    return;
+  }
+
+  const right = x + w;
+  const bottom = y + h;
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(right - r, y);
+  ctx.quadraticCurveTo(right, y, right, y + r);
+  ctx.lineTo(right, bottom - r);
+  ctx.quadraticCurveTo(right, bottom, right - r, bottom);
+  ctx.lineTo(x + r, bottom);
+  ctx.quadraticCurveTo(x, bottom, x, bottom - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
 function formatTimestamp(ts) {
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return "";
@@ -123,29 +179,80 @@ export class HealthTimelineChart {
     const logicalHeight = height / dpr;
     const maxBars = this.windowSize;
     const columnWidth = logicalWidth / maxBars;
+    const gap = Math.min(4, columnWidth * 0.35);
+    const barWidth = Math.max(2, columnWidth - gap);
+    const verticalPadding = Math.min(8, logicalHeight * 0.25);
+    const barHeight = Math.max(2, logicalHeight - verticalPadding * 2);
+    const radius = Math.min(6, barWidth / 2, barHeight / 2);
     const startIndex = Math.max(0, count - maxBars);
     const visibleItems = this.history.slice(startIndex);
     let x = logicalWidth - columnWidth * visibleItems.length;
 
-    for (let i = 0; i < visibleItems.length; i += 1) {
-      const item = visibleItems[i];
+    const background = ctx.createLinearGradient(0, 0, 0, logicalHeight);
+    background.addColorStop(0, "rgba(15, 23, 42, 0.35)");
+    background.addColorStop(1, "rgba(15, 23, 42, 0.6)");
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+    visibleItems.forEach((item, index) => {
       const color = STATUS_COLOR_MAP[item.status] || "#334155";
-      const nextX = x + columnWidth;
-      ctx.fillStyle = color;
-      ctx.fillRect(Math.floor(x), 0, Math.ceil(nextX - x) + 1, logicalHeight);
+      const rectX = x + gap / 2;
+      const rectY = (logicalHeight - barHeight) / 2;
 
-      // divider line for readability
-      ctx.fillStyle = "rgba(15, 23, 42, 0.45)";
-      ctx.fillRect(Math.floor(nextX) - 1, 0, 1, logicalHeight);
+      ctx.save();
+      drawRoundedRect(ctx, rectX, rectY, barWidth, barHeight, radius);
+      ctx.fillStyle = withAlpha(color, 0.95);
+      ctx.fill();
 
-      x = nextX;
-    }
+      const gloss = ctx.createLinearGradient(
+        rectX,
+        rectY,
+        rectX,
+        rectY + barHeight,
+      );
+      gloss.addColorStop(0, withAlpha("#ffffff", 0.14));
+      gloss.addColorStop(0.5, withAlpha(color, 0.08));
+      gloss.addColorStop(1, withAlpha("#000000", 0.22));
+      ctx.fillStyle = gloss;
+      ctx.fill();
+      ctx.restore();
 
-    const latest = visibleItems[visibleItems.length - 1];
-    if (latest) {
-      ctx.fillStyle = "rgba(15, 23, 42, 0.2)";
-      ctx.fillRect(logicalWidth - columnWidth, 0, columnWidth, logicalHeight);
-    }
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(15, 23, 42, 0.5)";
+      drawRoundedRect(ctx, rectX, rectY, barWidth, barHeight, radius);
+      ctx.stroke();
+      ctx.restore();
+
+      if (index === visibleItems.length - 1) {
+        const { r, g, b } = hexToRgb(color);
+
+        ctx.save();
+        ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.35)`;
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.85)`;
+        drawRoundedRect(ctx, rectX, rectY, barWidth, barHeight, radius);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        const pulse = ctx.createLinearGradient(
+          rectX,
+          rectY,
+          rectX,
+          rectY + barHeight,
+        );
+        pulse.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.25)`);
+        pulse.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        ctx.fillStyle = pulse;
+        drawRoundedRect(ctx, rectX, rectY, barWidth, barHeight, radius);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      x += columnWidth;
+    });
 
     ctx.restore();
   }
