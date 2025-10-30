@@ -77,6 +77,16 @@ class DockerProxyClient:
         state = data.get("State", {}).get("Status")
         return {"status": state, "attrs": data}
 
+    def stats(self, name: str) -> Dict[str, Any]:
+        data = self._request(
+            "GET",
+            f"containers/{name}/stats",
+            params={"stream": "false"},
+        )
+        if not isinstance(data, dict):
+            return {}
+        return data
+
     def start(self, name: str) -> None:
         self._request("POST", f"containers/{name}/start")
 
@@ -192,6 +202,18 @@ class DockerProxyService:
             cache_update=lambda data: self._store_cache(name, data),
             cache_invalidate=lambda: self.invalidate_container_cache(name),
         )
+
+    def get_container_stats(self, name: str) -> Optional[Dict[str, Any]]:
+        if name not in self.managed_container_names:
+            self._logger.log(
+                f"[ERROR] Attempt to read stats for unmanaged container {name}"
+            )
+            return None
+
+        try:
+            return self.client.stats(name)
+        except (DockerProxyNotFound, DockerProxyError):
+            return None
 
     def _get_cached_payload(self, name: str) -> Optional[Dict[str, Any]]:
         with self._cache_lock:

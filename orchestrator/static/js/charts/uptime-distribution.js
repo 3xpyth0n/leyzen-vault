@@ -10,6 +10,7 @@ export class UptimeDistributionChart extends BaseChart {
     if (!this.chart) return;
     this.setOption(
       {
+        backgroundColor: "transparent",
         tooltip: {
           trigger: "item",
           formatter: (params) => {
@@ -30,7 +31,7 @@ export class UptimeDistributionChart extends BaseChart {
             avoidLabelOverlap: true,
             itemStyle: {
               borderRadius: 8,
-              borderColor: "#0b1220",
+              borderColor: "rgba(255, 255, 255, 0.08)",
               borderWidth: 2,
             },
             label: {

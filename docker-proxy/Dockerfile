@@ -12,4 +12,4 @@ COPY proxy.py ./
 
 EXPOSE 2375
 
-CMD ["gunicorn", "--bind", "0.0.0.0:2375", "--workers", "2", "--threads", "4", "proxy:app"]
+CMD ["gunicorn", "--worker-class", "gevent", "--workers", "2", "--threads", "4", "--bind", "0.0.0.0:2375", "--timeout", "0", "--graceful-timeout", "5", "--access-logfile", "-", "proxy:app"]

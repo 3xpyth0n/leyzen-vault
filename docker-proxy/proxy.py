@@ -47,6 +47,7 @@ HOP_BY_HOP_HEADERS = {
 
 ALLOWED_ENDPOINTS: Tuple[Tuple[str, Pattern[str]], ...] = (
     ("GET", re.compile(r"^containers/(?P<name>[^/]+)/json$")),
+    ("GET", re.compile(r"^containers/(?P<name>[^/]+)/stats$")),
     (
         "POST",
         re.compile(r"^containers/(?P<name>[^/]+)/(start|stop|wait|unpause)$"),
@@ -184,9 +185,13 @@ def healthcheck() -> Tuple[str, int]:
     ],
 )
 def proxy(path: str) -> Response:
+    logger.debug("TRACE 1: entering proxy()")
     _validate_token()
-
-    normalized_path = path.strip("/")
+    logger.debug("TRACE 2: token validated")
+    normalized_path = request.path.lstrip("/")
+    logger.debug(
+        f"TRACE 3: normalized_path = {normalized_path!r}, method = {request.method}"
+    )
 
     container_name: Optional[str] = None
     for allowed_method, pattern in ALLOWED_ENDPOINTS:
@@ -208,7 +213,7 @@ def proxy(path: str) -> Response:
         )
         raise ProxyRequestForbidden()
 
-    upstream_path = f"/{path}" if path else "/"
+    upstream_path = request.path or "/"
     upstream_url = f"{BASE_URL}{upstream_path}"
     logger.debug(
         "Forwarding %s request for %s to docker socket", request.method, upstream_url
