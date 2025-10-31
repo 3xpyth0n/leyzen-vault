@@ -294,6 +294,8 @@ let uptimeChart = null;
 let cpuChart = null;
 let memoryChart = null;
 let netChart = null;
+let stateWaveChart = null;
+let stateWaveHasRealData = false;
 let activeMetricKey = "cpu";
 const initialMetricTab = document.querySelector(
   '[data-metric-tabs] [role="tab"][aria-selected="true"]',
@@ -307,6 +309,37 @@ if (initialMetricTab) {
 const containerTimelineCharts = new Map();
 const containerRowState = new Map();
 const timelineHistoryQueue = new Map();
+
+const STATE_WAVE_WINDOW_MS = 60_000;
+const STATE_WAVE_TARGETS = [
+  { key: "filebrowser_web1", label: "filebrowser_web1", accent: "#38bdf8" },
+  { key: "filebrowser_web2", label: "filebrowser_web2", accent: "#818cf8" },
+  { key: "filebrowser_web3", label: "filebrowser_web3", accent: "#34d399" },
+];
+
+const STATE_WAVE_STATE_LABELS = {
+  0: "Stopped",
+  1: "Starting",
+  2: "Healthy",
+};
+
+const STATE_WAVE_STATE_RGB = {
+  0: { r: 148, g: 163, b: 184 },
+  1: { r: 251, g: 191, b: 36 },
+  2: { r: 34, g: 197, b: 94 },
+};
+
+const STATE_WAVE_BAND_COLORS = {
+  0: "rgba(148,163,184,0.16)",
+  1: "rgba(251,191,36,0.12)",
+  2: "rgba(34,197,94,0.12)",
+};
+
+const STATE_WAVE_BANDS = [
+  { value: 2, from: 1.5, to: 2.2 },
+  { value: 1, from: 0.5, to: 1.5 },
+  { value: 0, from: -0.2, to: 0.5 },
+];
 
 function getPercentStyle(badgeClass) {
   switch (badgeClass) {
@@ -367,6 +400,349 @@ function getDotStyle(badgeClass) {
 }
 const detachSparklineHandlers = [];
 
+function hexToRgb(hex) {
+  if (!hex) return null;
+  let normalized = hex.trim();
+  if (!normalized) return null;
+  if (normalized.startsWith("#")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized.length === 3) {
+    normalized = normalized
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  if (normalized.length !== 6) return null;
+  const value = parseInt(normalized, 16);
+  if (Number.isNaN(value)) return null;
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+function resolveStateWaveSegmentColor(value, accentRgb, type = "border") {
+  const rounded = Math.round(Number.isFinite(value) ? value : -1);
+  const base = STATE_WAVE_STATE_RGB[rounded];
+  if (!base) {
+    return type === "background"
+      ? "rgba(148,163,184,0.08)"
+      : "rgba(148,163,184,0.45)";
+  }
+
+  const accent = accentRgb || base;
+  const baseWeight = type === "background" ? 0.75 : 0.55;
+  const accentWeight = 1 - baseWeight;
+  const alpha = type === "background" ? 0.16 : 0.9;
+
+  const r = Math.round(base.r * baseWeight + accent.r * accentWeight);
+  const g = Math.round(base.g * baseWeight + accent.g * accentWeight);
+  const b = Math.round(base.b * baseWeight + accent.b * accentWeight);
+
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+const stateWaveBandsPlugin = {
+  id: "stateWaveBands",
+  beforeDraw(chart) {
+    const { ctx, chartArea } = chart;
+    const scaleY = chart.scales?.y;
+    if (!ctx || !chartArea || !scaleY) return;
+    ctx.save();
+    STATE_WAVE_BANDS.forEach((band) => {
+      const topPx = scaleY.getPixelForValue(band.to);
+      const bottomPx = scaleY.getPixelForValue(band.from);
+      const top = Math.min(topPx, bottomPx);
+      const height = Math.abs(bottomPx - topPx);
+      ctx.fillStyle =
+        STATE_WAVE_BAND_COLORS[band.value] || "rgba(15,23,42,0.05)";
+      ctx.fillRect(
+        chartArea.left,
+        top,
+        chartArea.right - chartArea.left,
+        height,
+      );
+    });
+    ctx.restore();
+  },
+};
+
+function initStateWaveChart(initialSnapshot = null) {
+  const canvas = document.getElementById("stateWaveChart");
+  if (!canvas) return;
+  if (typeof window.Chart === "undefined") {
+    console.warn("Chart.js was not found; state wave chart disabled.");
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    console.warn("Unable to acquire rendering context for state wave chart.");
+    return;
+  }
+
+  const datasetMap = new Map();
+  const datasets = STATE_WAVE_TARGETS.map((target) => {
+    const accentRgb = hexToRgb(target.accent);
+    const dataset = {
+      label: target.label,
+      data: [],
+      borderColor: target.accent,
+      backgroundColor: "transparent",
+      accentRgb,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      pointHitRadius: 8,
+      pointBorderWidth: 0,
+      stepped: true,
+      spanGaps: true,
+      borderWidth: 2,
+      borderCapStyle: "round",
+      borderJoinStyle: "round",
+      segment: {
+        borderColor: (ctx) =>
+          resolveStateWaveSegmentColor(
+            ctx?.p1?.parsed?.y ?? ctx?.p0?.parsed?.y,
+            ctx?.dataset?.accentRgb,
+          ),
+        backgroundColor: (ctx) =>
+          resolveStateWaveSegmentColor(
+            ctx?.p1?.parsed?.y ?? ctx?.p0?.parsed?.y,
+            ctx?.dataset?.accentRgb,
+            "background",
+          ),
+      },
+    };
+    datasetMap.set(target.key, dataset);
+    return dataset;
+  });
+
+  const now = Date.now();
+  const chart = new window.Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    plugins: [stateWaveBandsPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      parsing: false,
+      normalized: true,
+      layout: {
+        padding: { top: 12, right: 16, bottom: 12, left: 8 },
+      },
+      interaction: {
+        mode: "nearest",
+        axis: "x",
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: "#cbd5f5",
+            usePointStyle: true,
+            pointStyle: "line",
+            boxWidth: 26,
+            padding: 16,
+            font: {
+              family: "'Inter', ui-sans-serif",
+              size: 12,
+              weight: "500",
+            },
+          },
+        },
+        tooltip: {
+          mode: "nearest",
+          intersect: false,
+          displayColors: false,
+          callbacks: {
+            title(items) {
+              if (!items?.length) return "";
+              const ts = items[0]?.parsed?.x;
+              return ts ? new Date(ts).toLocaleTimeString() : "";
+            },
+            label(context) {
+              const value = Math.round(context?.parsed?.y ?? -1);
+              const label = STATE_WAVE_STATE_LABELS[value] || "Unknown";
+              return `${context.dataset.label}: ${label}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: "linear",
+          min: now - STATE_WAVE_WINDOW_MS,
+          max: now,
+          grid: {
+            color: "rgba(148,163,184,0.12)",
+            lineWidth: 0.75,
+          },
+          border: {
+            color: "rgba(148,163,184,0.25)",
+          },
+          ticks: {
+            color: "#94a3b8",
+            maxRotation: 0,
+            autoSkip: true,
+            callback(value) {
+              const chartInstance = this.chart;
+              const scale = chartInstance?.scales?.x;
+              if (!scale) return value;
+              const diff = Math.round((value - scale.max) / 1000);
+              if (diff === 0) return "Now";
+              return `${diff}s`;
+            },
+          },
+        },
+        y: {
+          min: -0.2,
+          max: 2.2,
+          ticks: {
+            stepSize: 1,
+            padding: 6,
+            color: (ctx) =>
+              STATE_WAVE_STATE_LABELS[ctx.value] ? "#e2e8f0" : "#475569",
+            callback(value) {
+              return STATE_WAVE_STATE_LABELS[value] || "";
+            },
+          },
+          grid: {
+            color: "rgba(148,163,184,0.14)",
+            lineWidth: 0.75,
+          },
+          border: {
+            color: "rgba(148,163,184,0.25)",
+          },
+        },
+      },
+    },
+  });
+
+  chart._stateWave = { datasetMap };
+  stateWaveChart = chart;
+
+  if (initialSnapshot?.containers && initialSnapshot.containers !== null) {
+    updateStateWaveChart(Date.now(), initialSnapshot.containers);
+  } else {
+    seedStateWaveChart(chart);
+  }
+}
+
+function seedStateWaveChart(chart) {
+  if (!chart || !chart._stateWave) return;
+  stateWaveHasRealData = false;
+  const now = Date.now();
+  const start = now - STATE_WAVE_WINDOW_MS;
+  const steps = 12;
+  const interval = STATE_WAVE_WINDOW_MS / steps;
+
+  for (const dataset of chart._stateWave.datasetMap.values()) {
+    dataset.data.length = 0;
+  }
+
+  chart.data.datasets.forEach((dataset, index) => {
+    for (let i = 0; i <= steps; i += 1) {
+      const ts = start + i * interval;
+      const value = (i + index) % 3;
+      dataset.data.push({ x: ts, y: value });
+    }
+  });
+
+  chart.options.scales.x.min = start;
+  chart.options.scales.x.max = now;
+  chart.update("none");
+}
+
+function computeStateWaveValue(stateRaw, healthRaw) {
+  const state = (stateRaw || "").toString().toLowerCase();
+  const health = (healthRaw || "").toString().toLowerCase();
+
+  if (!state && !health) {
+    return 0;
+  }
+
+  if (state.includes("starting") || health.includes("starting")) {
+    return 1;
+  }
+
+  if (health.includes("healthy")) {
+    return 2;
+  }
+
+  if (health.includes("unhealthy") || health.includes("degraded")) {
+    return 1;
+  }
+
+  if (state === "running") {
+    return health ? 1 : 2;
+  }
+
+  if (state.includes("up") || state.includes("healthy")) {
+    return 2;
+  }
+
+  if (
+    state.includes("created") ||
+    state.includes("exited") ||
+    state.includes("dead")
+  ) {
+    return 0;
+  }
+
+  return 0;
+}
+
+function updateStateWaveChart(timestamp, containers) {
+  if (!stateWaveChart || !stateWaveChart._stateWave) return;
+  const now = Number(timestamp);
+  if (!Number.isFinite(now)) return;
+
+  const datasetMap = stateWaveChart._stateWave.datasetMap;
+  const containerMap =
+    containers && typeof containers === "object" ? containers : {};
+
+  const hasRealPayload = Object.keys(containerMap).length > 0;
+  if (hasRealPayload && !stateWaveHasRealData) {
+    stateWaveHasRealData = true;
+    for (const dataset of datasetMap.values()) {
+      dataset.data.length = 0;
+    }
+  }
+
+  const windowStart = now - STATE_WAVE_WINDOW_MS;
+
+  STATE_WAVE_TARGETS.forEach((target) => {
+    const dataset = datasetMap.get(target.key);
+    if (!dataset) return;
+    const info = containerMap[target.key] || null;
+    const value = computeStateWaveValue(info?.state, info?.health);
+
+    const last = dataset.data[dataset.data.length - 1];
+    if (last && now - last.x <= 250) {
+      last.x = now;
+      last.y = value;
+    } else {
+      dataset.data.push({ x: now, y: value });
+    }
+
+    while (dataset.data.length && dataset.data[0].x < windowStart) {
+      dataset.data.shift();
+    }
+
+    if (!dataset.data.length) {
+      dataset.data.push({ x: now, y: value });
+    }
+  });
+
+  stateWaveChart.options.scales.x.min = windowStart;
+  stateWaveChart.options.scales.x.max = now;
+  stateWaveChart.update("none");
+}
+
 function updateMetricChartActivation() {
   const entries = [
     ["cpu", cpuChart],
@@ -381,7 +757,8 @@ function updateMetricChartActivation() {
   }
 }
 
-function initCharts() {
+function initCharts(options = {}) {
+  const { initialSnapshot = null } = options;
   const uptimeEl = document.getElementById("uptimeChart");
   if (uptimeEl) {
     uptimeChart = new UptimeDistributionChart(uptimeEl);
@@ -442,6 +819,8 @@ function initCharts() {
   }
 
   updateMetricChartActivation();
+
+  initStateWaveChart(initialSnapshot);
 }
 
 function updateUptimeChart(labels, data) {
@@ -670,6 +1049,7 @@ function updateDashboardFromData(json) {
 
     const containers = json.containers || {};
     updateMetricCharts(json.metrics || null);
+    updateStateWaveChart(updateTimestamp, containers);
     const total = Object.values(containers).reduce(
       (s, c) => s + (c.uptime || 0),
       0,
@@ -1113,7 +1493,7 @@ function initMetricTabs() {
 
 const initialSnapshot = readInitialSnapshot();
 
-initCharts();
+initCharts({ initialSnapshot });
 initMetricTabs();
 
 if (initialSnapshot) {
