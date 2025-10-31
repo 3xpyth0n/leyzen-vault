@@ -6,6 +6,23 @@ import {
 } from "./charts/time-series.js";
 import { UptimeDistributionChart } from "./charts/uptime-distribution.js";
 
+function registerStreamingPlugin() {
+  if (typeof window === "undefined") return;
+  const chartGlobal = window.Chart;
+  const streamingPlugin = window.ChartStreaming || window.streamingPlugin;
+  if (!chartGlobal || !streamingPlugin) return;
+  const registryFlag = "__streamingPluginRegistered";
+  if (chartGlobal[registryFlag]) return;
+  try {
+    chartGlobal.register(streamingPlugin);
+    chartGlobal[registryFlag] = true;
+  } catch (err) {
+    console.warn("Failed to register chartjs-plugin-streaming", err);
+  }
+}
+
+registerStreamingPlugin();
+
 /* CONFIG */
 
 let orchestratorRunning = true;
@@ -620,6 +637,7 @@ function syncStateWaveDatasets(chart, targets, options = {}) {
     }
     dataset._key = target.key;
     dataset._glowColor = deriveGlowColorFromAccent(accentRgb);
+    ensureStateWaveQueue(dataset);
     datasets.push(dataset);
     nextMap.set(target.key, dataset);
   });
@@ -745,6 +763,31 @@ const stateWaveGlowPlugin = {
   },
 };
 
+function ensureStateWaveQueue(dataset) {
+  if (!dataset) return [];
+  if (!Array.isArray(dataset._stateWaveQueue)) {
+    dataset._stateWaveQueue = [];
+  }
+  return dataset._stateWaveQueue;
+}
+
+function flushStateWaveQueues(chart) {
+  if (!chart || !chart._stateWave) return;
+  const datasetMap = chart._stateWave.datasetMap || new Map();
+  datasetMap.forEach((dataset) => {
+    if (!dataset) return;
+    const queue = ensureStateWaveQueue(dataset);
+    if (!queue.length) return;
+    const target = Array.isArray(dataset.data)
+      ? dataset.data
+      : (dataset.data = []);
+    for (let i = 0; i < queue.length; i += 1) {
+      target.push(queue[i]);
+    }
+    queue.length = 0;
+  });
+}
+
 function initStateWaveChart(initialSnapshot = null) {
   const canvas = document.getElementById("stateWaveChart");
   if (!canvas) return;
@@ -753,6 +796,8 @@ function initStateWaveChart(initialSnapshot = null) {
     return;
   }
 
+  registerStreamingPlugin();
+
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     console.warn("Unable to acquire rendering context for state wave chart.");
@@ -760,7 +805,6 @@ function initStateWaveChart(initialSnapshot = null) {
   }
 
   const datasetMap = new Map();
-  const now = Date.now();
   const chart = new window.Chart(ctx, {
     type: "line",
     data: { datasets: [] },
@@ -768,7 +812,6 @@ function initStateWaveChart(initialSnapshot = null) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false,
       parsing: false,
       normalized: true,
       layout: {
@@ -818,9 +861,16 @@ function initStateWaveChart(initialSnapshot = null) {
       },
       scales: {
         x: {
-          type: "linear",
-          min: now - STATE_WAVE_WINDOW_MS,
-          max: now,
+          type: "realtime",
+          realtime: {
+            duration: STATE_WAVE_WINDOW_MS,
+            refresh: 1000,
+            delay: 1000,
+            frameRate: 60,
+            onRefresh(chartInstance) {
+              flushStateWaveQueues(chartInstance);
+            },
+          },
           grid: {
             color: "rgba(148,163,184,0.12)",
             lineWidth: 0.75,
@@ -835,8 +885,15 @@ function initStateWaveChart(initialSnapshot = null) {
             callback(value) {
               const chartInstance = this.chart;
               const scale = chartInstance?.scales?.x;
-              if (!scale) return value;
-              const diff = Math.round((value - scale.max) / 1000);
+              const maxValue = Number(scale?.max ?? Date.now());
+              const numericValue = Number(value);
+              if (
+                !Number.isFinite(numericValue) ||
+                !Number.isFinite(maxValue)
+              ) {
+                return value;
+              }
+              const diff = Math.round((numericValue - maxValue) / 1000);
               if (diff === 0) return "Now";
               return `${diff}s`;
             },
@@ -925,6 +982,8 @@ function seedStateWaveChart(chart) {
     dataset._orderIndex = index;
     dataset._stateWaveOffset = offset;
     dataset.data.length = 0;
+    const queue = ensureStateWaveQueue(dataset);
+    queue.length = 0;
     for (let i = 0; i <= steps; i += 1) {
       const ts = start + i * interval;
       const value = (i + index) % 3;
@@ -936,8 +995,6 @@ function seedStateWaveChart(chart) {
     }
   });
 
-  chart.options.scales.x.min = start;
-  chart.options.scales.x.max = now;
   chart.update("none");
 }
 
@@ -977,6 +1034,8 @@ function primeStateWaveHistory(snapshot) {
   const datasetMap = chart._stateWave.datasetMap || new Map();
   datasetMap.forEach((dataset) => {
     dataset.data = [];
+    const queue = ensureStateWaveQueue(dataset);
+    queue.length = 0;
   });
 
   stateWaveHasRealData = true;
@@ -1014,8 +1073,6 @@ function primeStateWaveHistory(snapshot) {
     }
   });
 
-  chart.options.scales.x.min = windowStart;
-  chart.options.scales.x.max = latest.timestamp;
   chart.update("none");
 
   hasPrimedStateWaveHistory = true;
@@ -1032,6 +1089,7 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
   const now = Number(timestamp);
   if (!Number.isFinite(now)) return;
   const { animate = true } = options;
+  void animate;
 
   const chart = stateWaveChart;
   const containerMap =
@@ -1053,15 +1111,12 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
     stateWaveHasRealData = true;
     for (const dataset of datasetMap.values()) {
       dataset.data.length = 0;
+      const queue = ensureStateWaveQueue(dataset);
+      queue.length = 0;
     }
   }
 
-  const windowStart = now - STATE_WAVE_WINDOW_MS;
-
   if (!datasetMap.size) {
-    chart.options.scales.x.min = windowStart;
-    chart.options.scales.x.max = now;
-    chart.update(animate ? undefined : "none");
     return;
   }
 
@@ -1069,36 +1124,30 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
     const info = containerMap[key] || null;
     const value = computeStateWaveValue(info?.state, info?.health);
     const offset = dataset._stateWaveOffset || 0;
+    const queue = ensureStateWaveQueue(dataset);
+    const pendingTarget = queue.length ? queue : dataset.data;
+    const last = pendingTarget[pendingTarget.length - 1];
 
-    const last = dataset.data[dataset.data.length - 1];
     if (last && now - last.x <= 250) {
       last.x = now;
       last.state = value;
       last.y = applyStateWaveOffset(value, offset);
     } else {
-      dataset.data.push({
+      queue.push({
         x: now,
         state: value,
         y: applyStateWaveOffset(value, offset),
       });
     }
 
-    while (dataset.data.length && dataset.data[0].x < windowStart) {
-      dataset.data.shift();
-    }
-
-    if (!dataset.data.length) {
-      dataset.data.push({
+    if (!dataset.data.length && !queue.length) {
+      queue.push({
         x: now,
         state: value,
         y: applyStateWaveOffset(value, offset),
       });
     }
   });
-
-  chart.options.scales.x.min = windowStart;
-  chart.options.scales.x.max = now;
-  chart.update(animate ? undefined : "none");
 }
 
 function updateMetricChartActivation() {
