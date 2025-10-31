@@ -2,6 +2,8 @@
 
 > **Dynamic Moving-Target Infrastructure — Proof of Concept**
 >
+> Licensed under the **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE) for details.
+>
 > A self-rotating, self-healing environment built to demonstrate _ephemeral compute security_ through automated container polymorphism.
 
 ---
@@ -120,4 +122,4 @@ Leyzen Vault is an evolving demonstrator exploring automated ephemeral backends,
 
 ---
 
-> © 2025 Saad Idrissi — All rights reserved.
+> © 2025 Saad Idrissi — Licensed under the Business Source License 1.1.

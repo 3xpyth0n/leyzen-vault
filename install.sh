@@ -1,4 +1,6 @@
 #!/bin/bash
+# Licensed under the Business Source License 1.1 (see LICENSE).
+# Copyright (c) 2025 Saad Idrissi.
 set -e
 set -o pipefail
 

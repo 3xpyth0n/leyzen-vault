@@ -730,15 +730,8 @@ class RotationService:
             elapsed = time.perf_counter() - loop_start
             if elapsed > worst_iteration:
                 worst_iteration = elapsed
-            if elapsed > 1.0:
-                self._logger.log(
-                    f"[METRICS LOOP WARN] Iteration exceeded 1s budget: {elapsed:.3f}s"
-                )
             now = time.perf_counter()
             if now - last_report >= 60.0:
-                self._logger.log(
-                    f"[METRICS LOOP] Worst iteration in last interval: {worst_iteration:.3f}s"
-                )
                 worst_iteration = 0.0
                 last_report = now
             delay = max(base_interval - elapsed, 0.05)

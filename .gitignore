@@ -1,0 +1,15 @@
+.git/
+.env
+venv/
+*.log
+*.bak
+__pycache__/
+node_modules/
+*.tmp
+*.swp
+*.swo
+diff.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
