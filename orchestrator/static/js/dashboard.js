@@ -313,6 +313,19 @@ let memoryChart = null;
 let netChart = null;
 let stateWaveChart = null;
 let stateWaveHasRealData = false;
+
+function pauseStateWaveRealtime(chart) {
+  const realtime = chart?.options?.scales?.x?.realtime;
+  if (!realtime) return () => {};
+  const previousPause = realtime.pause;
+  realtime.pause = true;
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    realtime.pause = previousPause;
+  };
+}
 let activeMetricKey = "cpu";
 const initialMetricTab = document.querySelector(
   '[data-metric-tabs] [role="tab"][aria-selected="true"]',
@@ -611,11 +624,12 @@ function createStateWaveDataset(target) {
 
 function syncStateWaveDatasets(chart, targets, options = {}) {
   if (!chart || !chart._stateWave) return;
-  const { placeholder = false } = options;
+  const { placeholder = false, commit = true } = options;
   const normalized = normalizeStateWaveTargets(targets);
   const currentMap = chart._stateWave.datasetMap || new Map();
   const nextMap = new Map();
   const datasets = [];
+  let mutated = normalized.length !== currentMap.size;
 
   normalized.forEach((target) => {
     const accentHex = target.accent || stringToColorHex(target.key);
@@ -629,6 +643,7 @@ function syncStateWaveDatasets(chart, targets, options = {}) {
         accentRgb,
         placeholder,
       });
+      mutated = true;
     } else {
       dataset.label = target.label;
       dataset.borderColor = accentHex;
@@ -642,9 +657,72 @@ function syncStateWaveDatasets(chart, targets, options = {}) {
     nextMap.set(target.key, dataset);
   });
 
+  if (!mutated && currentMap.size) {
+    currentMap.forEach((_, key) => {
+      if (!nextMap.has(key)) {
+        mutated = true;
+      }
+    });
+  }
+
   chart._stateWave.datasetMap = nextMap;
-  chart.data.datasets = datasets;
-  syncStateWaveOffsets(chart);
+  const previousOrder = chart._stateWave.datasetOrder || [];
+  const nextOrder = datasets.map((dataset) => dataset._key);
+  if (
+    previousOrder.length !== nextOrder.length ||
+    nextOrder.some((key, index) => previousOrder[index] !== key)
+  ) {
+    mutated = true;
+  }
+  chart._stateWave.datasetOrder = nextOrder;
+
+  let resumeRealtime = null;
+
+  if (mutated) {
+    chart._stateWave.syncing = (chart._stateWave.syncing || 0) + 1;
+    resumeRealtime = pauseStateWaveRealtime(chart);
+    // Reset interactive state before the streaming plugin queries dataset metas
+    // that may no longer exist after a membership or order change.
+    if (typeof chart.setActiveElements === "function") {
+      chart.setActiveElements([]);
+    } else if (Array.isArray(chart._active)) {
+      chart._active.length = 0;
+    }
+    const tooltip = chart.tooltip;
+    if (tooltip) {
+      if (typeof tooltip.setActiveElements === "function") {
+        tooltip.setActiveElements([], { x: NaN, y: NaN });
+      } else if (Array.isArray(tooltip._active)) {
+        tooltip._active.length = 0;
+      }
+      if (typeof tooltip.update === "function") {
+        tooltip.update();
+      }
+    }
+  }
+
+  try {
+    chart.data.datasets = datasets;
+    syncStateWaveOffsets(chart);
+
+    if (typeof chart.buildOrUpdateControllers === "function") {
+      chart.buildOrUpdateControllers();
+    }
+
+    if (commit && mutated && typeof chart.update === "function") {
+      chart.update("none");
+    }
+  } finally {
+    if (mutated) {
+      chart._stateWave.syncing = Math.max(
+        0,
+        (chart._stateWave.syncing || 1) - 1,
+      );
+    }
+    if (resumeRealtime) {
+      resumeRealtime();
+    }
+  }
 }
 
 const stateWaveBandsPlugin = {
@@ -772,7 +850,8 @@ function ensureStateWaveQueue(dataset) {
 }
 
 function flushStateWaveQueues(chart) {
-  if (!chart || !chart._stateWave) return;
+  if (!chart || !chart._stateWave || !chart._stateWave.ready) return;
+  if (chart._stateWave.syncing) return;
   const datasetMap = chart._stateWave.datasetMap || new Map();
   datasetMap.forEach((dataset) => {
     if (!dataset) return;
@@ -785,6 +864,37 @@ function flushStateWaveQueues(chart) {
       target.push(queue[i]);
     }
     queue.length = 0;
+  });
+}
+
+function buildStateWavePlaceholderDatasets() {
+  const now = Date.now();
+  const start = now - STATE_WAVE_WINDOW_MS;
+  const steps = 12;
+  const interval = STATE_WAVE_WINDOW_MS / steps;
+  const total = STATE_WAVE_PLACEHOLDER_TARGETS.length;
+
+  return STATE_WAVE_PLACEHOLDER_TARGETS.map((target, index) => {
+    const dataset = createStateWaveDataset({
+      ...target,
+      placeholder: true,
+    });
+    const offset = computeStateWaveOffset(index, total);
+    dataset._orderIndex = index;
+    dataset._stateWaveOffset = offset;
+    const queue = ensureStateWaveQueue(dataset);
+    queue.length = 0;
+    dataset.data.length = 0;
+    for (let i = 0; i <= steps; i += 1) {
+      const ts = start + i * interval;
+      const value = (i + index) % 3;
+      dataset.data.push({
+        x: ts,
+        y: applyStateWaveOffset(value, offset),
+        state: value,
+      });
+    }
+    return dataset;
   });
 }
 
@@ -804,10 +914,14 @@ function initStateWaveChart(initialSnapshot = null) {
     return;
   }
 
+  const placeholderDatasets = buildStateWavePlaceholderDatasets();
   const datasetMap = new Map();
+  placeholderDatasets.forEach((dataset) => {
+    datasetMap.set(dataset._key, dataset);
+  });
   const chart = new window.Chart(ctx, {
     type: "line",
-    data: { datasets: [] },
+    data: { datasets: placeholderDatasets },
     plugins: [stateWaveBandsPlugin, stateWaveGlowPlugin],
     options: {
       responsive: true,
@@ -923,7 +1037,12 @@ function initStateWaveChart(initialSnapshot = null) {
     },
   });
 
-  chart._stateWave = { datasetMap };
+  chart._stateWave = {
+    datasetMap,
+    ready: false,
+    datasetOrder: placeholderDatasets.map((dataset) => dataset._key),
+    syncing: 0,
+  };
   stateWaveChart = chart;
 
   let bootstrapped = false;
@@ -963,6 +1082,8 @@ function initStateWaveChart(initialSnapshot = null) {
       seedStateWaveChart(chart);
     }
   }
+
+  chart._stateWave.ready = true;
 }
 
 function seedStateWaveChart(chart) {
@@ -970,6 +1091,7 @@ function seedStateWaveChart(chart) {
   stateWaveHasRealData = false;
   syncStateWaveDatasets(chart, STATE_WAVE_PLACEHOLDER_TARGETS, {
     placeholder: true,
+    commit: false,
   });
   const now = Date.now();
   const start = now - STATE_WAVE_WINDOW_MS;
@@ -1029,7 +1151,7 @@ function primeStateWaveHistory(snapshot) {
 
   const chart = stateWaveChart;
   const targets = Array.from(keySet).map((key) => ({ key, label: key }));
-  syncStateWaveDatasets(chart, targets);
+  syncStateWaveDatasets(chart, targets, { commit: false });
 
   const datasetMap = chart._stateWave.datasetMap || new Map();
   datasetMap.forEach((dataset) => {
