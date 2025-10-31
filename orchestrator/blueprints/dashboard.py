@@ -52,11 +52,21 @@ def dashboard():
     except Exception as exc:  # pragma: no cover - defensive logging
         _logger().log(f"[DASHBOARD WARN] Failed to build initial snapshot: {exc}")
         initial_snapshot = {}
+
+    try:
+        asset_path = (
+            Path(__file__).resolve().parent.parent / "static" / "js" / "dashboard.js"
+        )
+        asset_version = int(asset_path.stat().st_mtime)
+    except (OSError, ValueError):  # pragma: no cover - fallback when file missing
+        asset_version = int(time.time())
+
     return render_template(
         "dashboard/index.html",
         vault_rotation_interval=int(settings.rotation_interval),
         sse_stream_interval_ms=int(settings.sse_stream_interval_ms),
         initial_snapshot=initial_snapshot,
+        asset_version=asset_version,
     )
 
 
