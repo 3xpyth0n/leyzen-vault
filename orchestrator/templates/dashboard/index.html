@@ -25,7 +25,10 @@
     <script id="initial-dashboard-state" type="application/json">
       {{ initial_snapshot|tojson }}
     </script>
-    <script type="module" src="/orchestrator/static/js/dashboard.js"></script>
+    <script
+      type="module"
+      src="/orchestrator/static/js/dashboard.js?v={{ asset_version }}"
+    ></script>
   </head>
   <body>
     <div id="app">

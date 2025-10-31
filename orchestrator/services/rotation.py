@@ -75,7 +75,7 @@ class RotationService:
         self._snapshot_updated_at: float = 0.0
         self._snapshot_lock = Lock()
         snapshot_interval = float(self._settings.sse_stream_interval_seconds)
-        self._container_history_window_seconds = 60.0
+        self._container_history_window_seconds = 300.0
         self._container_history = deque(
             maxlen=self._calculate_history_maxlen(
                 self._container_history_window_seconds,
@@ -954,6 +954,7 @@ class RotationService:
             ),
             "metrics": metrics,
         }
+        snapshot["timestamp"] = timestamp_ms
         if metrics_history:
             snapshot["metrics_history"] = metrics_history
         if container_history:

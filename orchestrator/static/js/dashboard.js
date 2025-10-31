@@ -14,6 +14,7 @@ const MAX_FAILS = 5; // after N fails consider API offline
 let pendingAnimationFrame = null;
 let pendingSnapshot = null;
 let hasBootstrappedHistory = false;
+let hasPrimedStateWaveHistory = false;
 
 function flushDashboardQueue() {
   if (!pendingSnapshot) {
@@ -305,7 +306,7 @@ if (initialMetricTab) {
     activeMetricKey = key;
   }
 }
-const STATE_WAVE_WINDOW_MS = 60_000;
+const STATE_WAVE_WINDOW_MS = 300_000;
 const STATE_WAVE_PLACEHOLDER_TARGETS = [
   { key: "__placeholder_a", label: "Container A" },
   { key: "__placeholder_b", label: "Container B" },
@@ -769,18 +770,42 @@ function initStateWaveChart(initialSnapshot = null) {
   chart._stateWave = { datasetMap };
   stateWaveChart = chart;
 
-  const initialContainers =
-    initialSnapshot && typeof initialSnapshot.containers === "object"
-      ? initialSnapshot.containers
-      : null;
-  const initialKeys = initialContainers ? Object.keys(initialContainers) : [];
+  let bootstrapped = false;
+  if (initialSnapshot) {
+    const historyBootstrap = primeStateWaveHistory(initialSnapshot);
+    if (historyBootstrap) {
+      const primeTimestamp = Number(historyBootstrap.timestamp);
+      const timestamp = Number.isFinite(primeTimestamp)
+        ? primeTimestamp
+        : Date.now();
+      const containers =
+        historyBootstrap.containers &&
+        typeof historyBootstrap.containers === "object"
+          ? historyBootstrap.containers
+          : {};
+      updateStateWaveChart(timestamp, containers, { animate: false });
+      bootstrapped = true;
+    }
+  }
 
-  if (initialKeys.length) {
-    const targets = initialKeys.map((key) => ({ key, label: key }));
-    syncStateWaveDatasets(chart, targets);
-    updateStateWaveChart(Date.now(), initialContainers);
-  } else {
-    seedStateWaveChart(chart);
+  if (!bootstrapped) {
+    const initialContainers =
+      initialSnapshot && typeof initialSnapshot.containers === "object"
+        ? initialSnapshot.containers
+        : null;
+    const initialKeys = initialContainers ? Object.keys(initialContainers) : [];
+
+    if (initialKeys.length) {
+      const targets = initialKeys.map((key) => ({ key, label: key }));
+      syncStateWaveDatasets(chart, targets);
+      const snapshotTimestamp = Number(initialSnapshot?.timestamp);
+      const timestamp = Number.isFinite(snapshotTimestamp)
+        ? snapshotTimestamp
+        : Date.now();
+      updateStateWaveChart(timestamp, initialContainers, { animate: false });
+    } else {
+      seedStateWaveChart(chart);
+    }
   }
 }
 
@@ -817,14 +842,97 @@ function seedStateWaveChart(chart) {
   chart.update("none");
 }
 
+function primeStateWaveHistory(snapshot) {
+  if (hasPrimedStateWaveHistory) return null;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  if (!stateWaveChart || !stateWaveChart._stateWave) return null;
+
+  const historyRaw = snapshot.container_history;
+  if (!Array.isArray(historyRaw) || !historyRaw.length) return null;
+
+  const history = historyRaw
+    .map((entry) => {
+      const timestamp = Number(entry?.timestamp);
+      if (!Number.isFinite(timestamp)) return null;
+      const containersRaw = entry?.containers;
+      const containers =
+        containersRaw && typeof containersRaw === "object" ? containersRaw : {};
+      return { timestamp, containers };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (!history.length) return null;
+
+  const keySet = new Set();
+  history.forEach((entry) => {
+    Object.keys(entry.containers).forEach((key) => keySet.add(key));
+  });
+
+  if (!keySet.size) return null;
+
+  const chart = stateWaveChart;
+  const targets = Array.from(keySet).map((key) => ({ key, label: key }));
+  syncStateWaveDatasets(chart, targets);
+
+  const datasetMap = chart._stateWave.datasetMap || new Map();
+  datasetMap.forEach((dataset) => {
+    dataset.data = [];
+  });
+
+  stateWaveHasRealData = true;
+
+  history.forEach((entry) => {
+    datasetMap.forEach((dataset, key) => {
+      const info = entry.containers?.[key] || null;
+      const value = computeStateWaveValue(info?.state, info?.health);
+      const offset = dataset._stateWaveOffset || 0;
+      dataset.data.push({
+        x: entry.timestamp,
+        state: value,
+        y: applyStateWaveOffset(value, offset),
+      });
+    });
+  });
+
+  const latest = history[history.length - 1];
+  const windowStart = latest.timestamp - STATE_WAVE_WINDOW_MS;
+
+  datasetMap.forEach((dataset) => {
+    const offset = dataset._stateWaveOffset || 0;
+    const latestInfo = latest.containers?.[dataset._key] || null;
+    const latestValue = computeStateWaveValue(
+      latestInfo?.state,
+      latestInfo?.health,
+    );
+    dataset.data = dataset.data.filter((point) => point.x >= windowStart);
+    if (!dataset.data.length) {
+      dataset.data.push({
+        x: latest.timestamp,
+        state: latestValue,
+        y: applyStateWaveOffset(latestValue, offset),
+      });
+    }
+  });
+
+  chart.options.scales.x.min = windowStart;
+  chart.options.scales.x.max = latest.timestamp;
+  chart.update("none");
+
+  hasPrimedStateWaveHistory = true;
+
+  return { timestamp: latest.timestamp, containers: latest.containers };
+}
+
 function computeStateWaveValue(stateRaw, healthRaw) {
   return evaluateContainerStatus(stateRaw, healthRaw).value;
 }
 
-function updateStateWaveChart(timestamp, containers) {
+function updateStateWaveChart(timestamp, containers, options = {}) {
   if (!stateWaveChart || !stateWaveChart._stateWave) return;
   const now = Number(timestamp);
   if (!Number.isFinite(now)) return;
+  const { animate = true } = options;
 
   const chart = stateWaveChart;
   const containerMap =
@@ -854,7 +962,7 @@ function updateStateWaveChart(timestamp, containers) {
   if (!datasetMap.size) {
     chart.options.scales.x.min = windowStart;
     chart.options.scales.x.max = now;
-    chart.update("none");
+    chart.update(animate ? undefined : "none");
     return;
   }
 
@@ -891,7 +999,7 @@ function updateStateWaveChart(timestamp, containers) {
 
   chart.options.scales.x.min = windowStart;
   chart.options.scales.x.max = now;
-  chart.update("none");
+  chart.update(animate ? undefined : "none");
 }
 
 function updateMetricChartActivation() {
@@ -1120,7 +1228,10 @@ function updateDashboardFromData(json) {
   try {
     const wasRunning = orchestratorRunning;
     failCount = 0;
-    const updateTimestamp = Date.now();
+    const serverTimestamp = Number(json.timestamp);
+    const updateTimestamp = Number.isFinite(serverTimestamp)
+      ? serverTimestamp
+      : Date.now();
     lastSuccessfulFetch = updateTimestamp;
     lastKnownData = json;
 
@@ -1139,7 +1250,9 @@ function updateDashboardFromData(json) {
 
     const containers = json.containers || {};
     updateMetricCharts(json.metrics || null);
-    updateStateWaveChart(updateTimestamp, containers);
+    updateStateWaveChart(updateTimestamp, containers, {
+      animate: hasPrimedStateWaveHistory,
+    });
     const total = Object.values(containers).reduce(
       (s, c) => s + (c.uptime || 0),
       0,
@@ -1307,6 +1420,25 @@ function setupSse() {
       const primed = primeMetricHistory(data.metrics_history);
       if (primed) {
         hasBootstrappedHistory = true;
+      }
+    }
+    if (
+      !hasPrimedStateWaveHistory &&
+      Array.isArray(data.container_history) &&
+      data.container_history.length
+    ) {
+      const historyBootstrap = primeStateWaveHistory(data);
+      if (historyBootstrap) {
+        const primeTimestamp = Number(historyBootstrap.timestamp);
+        const timestamp = Number.isFinite(primeTimestamp)
+          ? primeTimestamp
+          : Date.now();
+        const containers =
+          historyBootstrap.containers &&
+          typeof historyBootstrap.containers === "object"
+            ? historyBootstrap.containers
+            : {};
+        updateStateWaveChart(timestamp, containers, { animate: false });
       }
     }
     hasReceivedData = true;
