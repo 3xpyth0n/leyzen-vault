@@ -22,6 +22,15 @@
       src="/orchestrator/static/js/vendor/chart.umd.min.js"
       defer
     ></script>
+    <script src="/orchestrator/static/js/vendor/luxon.min.js" defer></script>
+    <script
+      src="/orchestrator/static/js/vendor/chartjs-adapter-luxon.min.js"
+      defer
+    ></script>
+    <script
+      src="/orchestrator/static/js/vendor/chartjs-plugin-streaming.min.js"
+      defer
+    ></script>
     <script id="initial-dashboard-state" type="application/json">
       {{ initial_snapshot|tojson }}
     </script>
@@ -293,7 +302,7 @@
                 <div>
                   <h3 class="metric-title">Memory usage</h3>
                   <p class="metric-subtitle">
-                    Tracked containers vs. provisioned capacity
+                    For the tracked containers
                   </p>
                 </div>
                 <span class="metric-reading" data-metric-value="memory">—</span>
