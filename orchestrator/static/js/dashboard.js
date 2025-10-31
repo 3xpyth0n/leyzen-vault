@@ -546,6 +546,12 @@ function normalizeStateWaveTargets(targets) {
     .filter(Boolean);
 }
 
+function deriveGlowColorFromAccent(accentRgb, alpha = 0.55) {
+  if (!accentRgb) return null;
+  const { r, g, b } = accentRgb;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function createStateWaveDataset(target) {
   const accentHex = target.accent || stringToColorHex(target.key);
   const accentRgb =
@@ -561,7 +567,7 @@ function createStateWaveDataset(target) {
     pointHitRadius: 8,
     pointBorderWidth: 0,
     spanGaps: true,
-    borderWidth: 2,
+    borderWidth: 3.5,
     borderCapStyle: "round",
     borderJoinStyle: "round",
     cubicInterpolationMode: "monotone",
@@ -582,6 +588,7 @@ function createStateWaveDataset(target) {
   };
   dataset._placeholder = Boolean(target.placeholder);
   dataset._key = target.key;
+  dataset._glowColor = deriveGlowColorFromAccent(accentRgb);
   return dataset;
 }
 
@@ -612,6 +619,7 @@ function syncStateWaveDatasets(chart, targets, options = {}) {
       dataset._placeholder = placeholder;
     }
     dataset._key = target.key;
+    dataset._glowColor = deriveGlowColorFromAccent(accentRgb);
     datasets.push(dataset);
     nextMap.set(target.key, dataset);
   });
@@ -646,6 +654,97 @@ const stateWaveBandsPlugin = {
   },
 };
 
+const stateWaveGlowPlugin = {
+  id: "stateWaveGlow",
+  afterDatasetsDraw(chart, args, options) {
+    const { ctx } = chart;
+    if (!ctx) return;
+
+    const metasets =
+      typeof chart.getSortedVisibleDatasetMetas === "function"
+        ? chart.getSortedVisibleDatasetMetas()
+        : chart._sortedMetasets || chart._metasets || [];
+
+    if (!metasets?.length) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    metasets.forEach((meta) => {
+      if (!meta || meta.hidden) return;
+      const datasetIndex =
+        typeof meta.index === "number"
+          ? meta.index
+          : typeof meta._datasetIndex === "number"
+            ? meta._datasetIndex
+            : null;
+      if (datasetIndex === null) return;
+      const dataset = chart.data?.datasets?.[datasetIndex];
+      if (!dataset || dataset.hidden) return;
+      const fallbackGlowColor =
+        dataset._glowColor || dataset.borderColor || "rgba(34,197,94,0.45)";
+
+      const lineElement = meta.dataset;
+      if (!lineElement || typeof lineElement.path !== "function") return;
+      const points = lineElement.points || meta.data;
+      if (!points || !points.length) return;
+
+      const baseWidth =
+        dataset.borderWidth || lineElement.options?.borderWidth || 3.25;
+      const blur = options?.shadowBlur ?? 20;
+      const widthMultiplier = options?.lineWidthMultiplier ?? 1.25;
+      const lineCap =
+        dataset.borderCapStyle ||
+        lineElement.options?.borderCapStyle ||
+        "round";
+      const lineJoin =
+        dataset.borderJoinStyle ||
+        lineElement.options?.borderJoinStyle ||
+        "round";
+
+      const drawGlowStroke = (color, width, segment) => {
+        if (!color) return;
+        ctx.save();
+        ctx.shadowBlur = blur;
+        ctx.shadowColor = color;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.lineCap = segment?.style?.borderCapStyle || lineCap;
+        ctx.lineJoin = segment?.style?.borderJoinStyle || lineJoin;
+        ctx.lineWidth = width;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        if (segment) {
+          if (typeof lineElement.pathSegment === "function") {
+            lineElement.pathSegment(ctx, segment, { move: true });
+          } else {
+            lineElement.path(ctx);
+          }
+        } else {
+          lineElement.path(ctx);
+        }
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const segments = lineElement.segments || [];
+      if (segments.length) {
+        segments.forEach((segment) => {
+          const style = segment?.style || {};
+          const segmentColor = style.borderColor || fallbackGlowColor;
+          const segmentWidth =
+            (style.borderWidth || baseWidth) * widthMultiplier;
+          drawGlowStroke(segmentColor, segmentWidth, segment);
+        });
+      } else {
+        drawGlowStroke(fallbackGlowColor, baseWidth * widthMultiplier);
+      }
+    });
+
+    ctx.restore();
+  },
+};
+
 function initStateWaveChart(initialSnapshot = null) {
   const canvas = document.getElementById("stateWaveChart");
   if (!canvas) return;
@@ -665,7 +764,7 @@ function initStateWaveChart(initialSnapshot = null) {
   const chart = new window.Chart(ctx, {
     type: "line",
     data: { datasets: [] },
-    plugins: [stateWaveBandsPlugin],
+    plugins: [stateWaveBandsPlugin, stateWaveGlowPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
