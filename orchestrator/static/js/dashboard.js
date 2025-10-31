@@ -4,7 +4,6 @@ import {
   MemoryTimeSeriesChart,
   NetIoTimeSeriesChart,
 } from "./charts/time-series.js";
-import { HealthTimelineChart } from "./charts/health-timeline.js";
 import { UptimeDistributionChart } from "./charts/uptime-distribution.js";
 
 /* CONFIG */
@@ -306,10 +305,6 @@ if (initialMetricTab) {
     activeMetricKey = key;
   }
 }
-const containerTimelineCharts = new Map();
-const containerRowState = new Map();
-const timelineHistoryQueue = new Map();
-
 const STATE_WAVE_WINDOW_MS = 60_000;
 const STATE_WAVE_PLACEHOLDER_TARGETS = [
   { key: "__placeholder_a", label: "Container A" },
@@ -336,68 +331,115 @@ const STATE_WAVE_BAND_COLORS = {
 };
 
 const STATE_WAVE_BANDS = [
-  { value: 2, from: 1.5, to: 2.2 },
+  { value: 2, from: 1.5, to: 2.3 },
   { value: 1, from: 0.5, to: 1.5 },
-  { value: 0, from: -0.2, to: 0.5 },
+  { value: 0, from: -0.3, to: 0.5 },
 ];
 
-function getPercentStyle(badgeClass) {
-  switch (badgeClass) {
-    case "status-running":
-      return {
-        background: "rgba(34,197,94,0.12)",
-        color: "#34d399",
-        boxShadow: "0 0 10px rgba(34,197,94,0.12)",
-      };
-    case "status-starting":
-      return {
-        background: "rgba(245,158,11,0.12)",
-        color: "#f59e0b",
-        boxShadow: "0 0 10px rgba(245,158,11,0.12)",
-      };
-    case "status-unhealthy":
-      return {
-        background: "rgba(248,113,113,0.12)",
-        color: "#ef4444",
-        boxShadow: "0 0 10px rgba(248,113,113,0.12)",
-      };
-    default:
-      return {
-        background: "rgba(148,163,184,0.1)",
-        color: "#94a3b8",
-        boxShadow: "none",
-      };
-  }
+const STATE_WAVE_Y_MIN = -0.3;
+const STATE_WAVE_Y_MAX = 2.3;
+const STATE_WAVE_LINE_SPACING = 0.24;
+
+function tokenizeStatus(value) {
+  if (!value) return [];
+  return value
+    .toString()
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
 }
 
-function getDotStyle(badgeClass) {
-  switch (badgeClass) {
-    case "status-running":
-      return {
-        backgroundColor: "#34d399",
-        boxShadow: "0 0 8px rgba(52,211,153,0.12)",
-        pulse: true,
-      };
-    case "status-starting":
-      return {
-        backgroundColor: "#f59e0b",
-        boxShadow: "0 0 8px rgba(245,158,11,0.12)",
-        pulse: true,
-      };
-    case "status-unhealthy":
-      return {
-        backgroundColor: "#ef4444",
-        boxShadow: "",
-        pulse: false,
-      };
-    default:
-      return {
-        backgroundColor: "#94a3b8",
-        boxShadow: "",
-        pulse: false,
-      };
+function evaluateContainerStatus(stateRaw, healthRaw) {
+  const stateTokens = tokenizeStatus(stateRaw);
+  const healthTokens = tokenizeStatus(healthRaw);
+  const hasState = (token) => stateTokens.includes(token);
+  const hasHealth = (token) => healthTokens.includes(token);
+
+  if (!stateTokens.length && !healthTokens.length) {
+    return { value: 0, isRunning: false, isHealthy: false };
   }
+
+  const isPaused = hasState("paused") || hasHealth("paused");
+  const isStopped =
+    hasState("exited") ||
+    hasState("dead") ||
+    hasState("stopped") ||
+    hasState("created");
+  const rawRunning = hasState("running") || hasState("up") || hasHealth("up");
+  const isRunning = rawRunning && !isPaused && !isStopped;
+  const isStarting = hasState("starting") || hasHealth("starting");
+  const isUnhealthy = hasHealth("unhealthy") || hasHealth("degraded");
+  const isExplicitHealthy = hasHealth("healthy") && !isUnhealthy;
+  const isStateHealthy = hasState("healthy") && !isUnhealthy;
+
+  let value = 0;
+
+  if (isPaused || isStopped) {
+    value = 0;
+  } else if (isStarting) {
+    value = 1;
+  } else if (isUnhealthy) {
+    value = 1;
+  } else if (isExplicitHealthy || isStateHealthy) {
+    value = 2;
+  } else if (isRunning) {
+    value = healthTokens.length ? 1 : 2;
+  } else if (hasState("up")) {
+    value = isUnhealthy ? 1 : 2;
+  } else {
+    value = 0;
+  }
+
+  return { value, isRunning, isHealthy: value === 2 };
 }
+
+function computeStateWaveOffset(index, total) {
+  if (!Number.isFinite(index) || !Number.isFinite(total) || total <= 1) {
+    return 0;
+  }
+  const center = (total - 1) / 2;
+  return (index - center) * STATE_WAVE_LINE_SPACING;
+}
+
+function applyStateWaveOffset(value, offset) {
+  const base = Number.isFinite(value) ? value : 0;
+  const off = Number.isFinite(offset) ? offset : 0;
+  const adjusted = base + off;
+  if (adjusted < STATE_WAVE_Y_MIN) return STATE_WAVE_Y_MIN;
+  if (adjusted > STATE_WAVE_Y_MAX) return STATE_WAVE_Y_MAX;
+  return adjusted;
+}
+
+function syncStateWaveOffsets(chart) {
+  if (!chart || !chart.data) return;
+  const datasets = chart.data.datasets || [];
+  const total = datasets.length;
+  datasets.forEach((dataset, index) => {
+    const offset = computeStateWaveOffset(index, total);
+    dataset._orderIndex = index;
+    dataset._stateWaveOffset = offset;
+    if (Array.isArray(dataset.data)) {
+      dataset.data.forEach((point) => {
+        if (!point || typeof point !== "object") return;
+        const base = Number.isFinite(point.state)
+          ? point.state
+          : Math.round((Number(point.y) || 0) - offset);
+        point.state = base;
+        point.y = applyStateWaveOffset(base, offset);
+      });
+    }
+  });
+}
+
+function resolveStateFromSegmentCtx(ctx) {
+  const stateValue = ctx?.p1?.raw?.state ?? ctx?.p0?.raw?.state;
+  if (Number.isFinite(stateValue)) return stateValue;
+  const parsed = ctx?.p1?.parsed?.y ?? ctx?.p0?.parsed?.y;
+  const offset = ctx?.dataset?._stateWaveOffset ?? 0;
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed - offset);
+}
+
 const detachSparklineHandlers = [];
 
 function hexToRgb(hex) {
@@ -517,20 +559,21 @@ function createStateWaveDataset(target) {
     pointHoverRadius: 4,
     pointHitRadius: 8,
     pointBorderWidth: 0,
-    stepped: true,
     spanGaps: true,
     borderWidth: 2,
     borderCapStyle: "round",
     borderJoinStyle: "round",
+    cubicInterpolationMode: "monotone",
+    tension: 0.35,
     segment: {
       borderColor: (ctx) =>
         resolveStateWaveSegmentColor(
-          ctx?.p1?.parsed?.y ?? ctx?.p0?.parsed?.y,
+          resolveStateFromSegmentCtx(ctx),
           ctx?.dataset?.accentRgb,
         ),
       backgroundColor: (ctx) =>
         resolveStateWaveSegmentColor(
-          ctx?.p1?.parsed?.y ?? ctx?.p0?.parsed?.y,
+          resolveStateFromSegmentCtx(ctx),
           ctx?.dataset?.accentRgb,
           "background",
         ),
@@ -574,6 +617,7 @@ function syncStateWaveDatasets(chart, targets, options = {}) {
 
   chart._stateWave.datasetMap = nextMap;
   chart.data.datasets = datasets;
+  syncStateWaveOffsets(chart);
 }
 
 const stateWaveBandsPlugin = {
@@ -662,7 +706,10 @@ function initStateWaveChart(initialSnapshot = null) {
               return ts ? new Date(ts).toLocaleTimeString() : "";
             },
             label(context) {
-              const value = Math.round(context?.parsed?.y ?? -1);
+              const rawState = context?.raw?.state;
+              const offset = context?.dataset?._stateWaveOffset ?? 0;
+              const fallback = Math.round((context?.parsed?.y ?? 0) - offset);
+              const value = Number.isFinite(rawState) ? rawState : fallback;
               const label = STATE_WAVE_STATE_LABELS[value] || "Unknown";
               return `${context.dataset.label}: ${label}`;
             },
@@ -696,8 +743,8 @@ function initStateWaveChart(initialSnapshot = null) {
           },
         },
         y: {
-          min: -0.2,
-          max: 2.2,
+          min: STATE_WAVE_Y_MIN,
+          max: STATE_WAVE_Y_MAX,
           ticks: {
             stepSize: 1,
             padding: 6,
@@ -748,12 +795,20 @@ function seedStateWaveChart(chart) {
   const steps = 12;
   const interval = STATE_WAVE_WINDOW_MS / steps;
 
+  const total = chart.data.datasets.length;
   chart.data.datasets.forEach((dataset, index) => {
+    const offset = computeStateWaveOffset(index, total);
+    dataset._orderIndex = index;
+    dataset._stateWaveOffset = offset;
     dataset.data.length = 0;
     for (let i = 0; i <= steps; i += 1) {
       const ts = start + i * interval;
       const value = (i + index) % 3;
-      dataset.data.push({ x: ts, y: value });
+      dataset.data.push({
+        x: ts,
+        y: applyStateWaveOffset(value, offset),
+        state: value,
+      });
     }
   });
 
@@ -763,42 +818,7 @@ function seedStateWaveChart(chart) {
 }
 
 function computeStateWaveValue(stateRaw, healthRaw) {
-  const state = (stateRaw || "").toString().toLowerCase();
-  const health = (healthRaw || "").toString().toLowerCase();
-
-  if (!state && !health) {
-    return 0;
-  }
-
-  if (state.includes("starting") || health.includes("starting")) {
-    return 1;
-  }
-
-  if (health.includes("healthy")) {
-    return 2;
-  }
-
-  if (health.includes("unhealthy") || health.includes("degraded")) {
-    return 1;
-  }
-
-  if (state === "running") {
-    return health ? 1 : 2;
-  }
-
-  if (state.includes("up") || state.includes("healthy")) {
-    return 2;
-  }
-
-  if (
-    state.includes("created") ||
-    state.includes("exited") ||
-    state.includes("dead")
-  ) {
-    return 0;
-  }
-
-  return 0;
+  return evaluateContainerStatus(stateRaw, healthRaw).value;
 }
 
 function updateStateWaveChart(timestamp, containers) {
@@ -820,6 +840,7 @@ function updateStateWaveChart(timestamp, containers) {
   }
 
   const datasetMap = chart._stateWave.datasetMap || new Map();
+  syncStateWaveOffsets(chart);
 
   if (hasRealPayload && !stateWaveHasRealData) {
     stateWaveHasRealData = true;
@@ -840,13 +861,19 @@ function updateStateWaveChart(timestamp, containers) {
   datasetMap.forEach((dataset, key) => {
     const info = containerMap[key] || null;
     const value = computeStateWaveValue(info?.state, info?.health);
+    const offset = dataset._stateWaveOffset || 0;
 
     const last = dataset.data[dataset.data.length - 1];
     if (last && now - last.x <= 250) {
       last.x = now;
-      last.y = value;
+      last.state = value;
+      last.y = applyStateWaveOffset(value, offset);
     } else {
-      dataset.data.push({ x: now, y: value });
+      dataset.data.push({
+        x: now,
+        state: value,
+        y: applyStateWaveOffset(value, offset),
+      });
     }
 
     while (dataset.data.length && dataset.data[0].x < windowStart) {
@@ -854,7 +881,11 @@ function updateStateWaveChart(timestamp, containers) {
     }
 
     if (!dataset.data.length) {
-      dataset.data.push({ x: now, y: value });
+      dataset.data.push({
+        x: now,
+        state: value,
+        y: applyStateWaveOffset(value, offset),
+      });
     }
   });
 
@@ -1037,67 +1068,6 @@ function primeMetricHistory(history) {
   return true;
 }
 
-function queueContainerHistory(history) {
-  if (!Array.isArray(history) || !history.length) return false;
-  const sanitized = history
-    .filter((entry) => entry && typeof entry === "object")
-    .map((entry) => {
-      const ts = Number(entry.timestamp);
-      if (!Number.isFinite(ts)) return null;
-      const containers =
-        entry.containers && typeof entry.containers === "object"
-          ? entry.containers
-          : {};
-      return { timestamp: ts, containers };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  if (!sanitized.length) return false;
-
-  const historyWithoutLatest = sanitized.slice(0, -1);
-  let added = false;
-  historyWithoutLatest.forEach((entry) => {
-    const { timestamp, containers } = entry;
-    Object.entries(containers || {}).forEach(([name, snapshot]) => {
-      if (!name) return;
-      const stateRaw = snapshot?.state;
-      const healthRaw = snapshot?.health;
-      const state =
-        typeof stateRaw === "string"
-          ? stateRaw
-          : stateRaw != null
-            ? String(stateRaw)
-            : "";
-      const health =
-        typeof healthRaw === "string"
-          ? healthRaw
-          : healthRaw != null
-            ? String(healthRaw)
-            : "";
-
-      if (!timelineHistoryQueue.has(name)) {
-        timelineHistoryQueue.set(name, []);
-      }
-      timelineHistoryQueue.get(name).push({ timestamp, state, health });
-      added = true;
-    });
-  });
-
-  return added;
-}
-
-function flushTimelineHistory(name, timelineChart) {
-  if (!timelineChart) return;
-  const history = timelineHistoryQueue.get(name);
-  if (!history || !history.length) return;
-  history.sort((a, b) => a.timestamp - b.timestamp);
-  history.forEach((entry) => {
-    timelineChart.addSample(entry.timestamp, entry.state, entry.health);
-  });
-  timelineHistoryQueue.delete(name);
-}
-
 /* STATE */
 let lastSuccessfulFetch = null;
 let failCount = 0;
@@ -1178,224 +1148,24 @@ function updateDashboardFromData(json) {
     let healthyCount = 0;
     let runningCount = 0;
 
-    const rowsEl = document.getElementById("rows");
-    const rowTemplate = document.getElementById("row-template");
-    const canRenderRows =
-      rowsEl instanceof HTMLElement &&
-      rowTemplate instanceof HTMLElement &&
-      "content" in rowTemplate;
-
-    const labels = [],
-      data = [];
+    const labels = [];
+    const data = [];
 
     for (const [name, info] of Object.entries(containers)) {
-      const uptime = info.uptime || 0;
-      const percent = total > 0 ? Math.round((uptime / total) * 100) : 0;
-
-      const state = (info.state || "").toString();
-      let health = (info.health || "").toString();
-
-      if (state.toLowerCase() === "exited") {
-        health = "stopped";
-      }
-
-      let badgeLabel = "";
-      let badgeClass = "status-not-found";
-      if (state !== "running") {
-        badgeLabel = "stopped";
-        badgeClass = "status-not-found";
-      } else {
-        runningCount += 1;
-        if (health.toLowerCase().includes("healthy")) {
-          badgeLabel = "running";
-          badgeClass = "status-running";
-          healthyCount += 1;
-        } else if (health.toLowerCase().includes("starting")) {
-          badgeLabel = "starting";
-          badgeClass = "status-starting";
-        } else if (health.toLowerCase().includes("unhealthy")) {
-          badgeLabel = "unhealthy";
-          badgeClass = "status-unhealthy";
-        } else {
-          badgeLabel = "running";
-          badgeClass = "status-running";
-          healthyCount += 1;
-        }
-      }
-
-      const statusHtml = `<span class="badge ${badgeClass}">${badgeLabel}</span>&nbsp;<span class="text-xs text-slate-400">state: ${state}${
-        health ? " • health: " + health : ""
-      }</span>`;
-      const uptimeText = fmtHMS(uptime);
-      const percentText = `${percent}%`;
-      const percentStyle = getPercentStyle(badgeClass);
-      const dotStyle = getDotStyle(badgeClass);
-      const normalizedHealth = health || "unknown";
-
+      const uptime = Number(info?.uptime) || 0;
       labels.push(name);
       data.push(uptime);
 
-      const prevState = containerRowState.get(name) || {};
+      const stateRaw = info?.state ?? "";
+      const healthRaw = info?.health ?? "";
+      const status = evaluateContainerStatus(stateRaw, healthRaw);
 
-      if (!canRenderRows) {
-        containerRowState.set(name, {
-          name,
-          uptimeText,
-          percentText,
-          statusHtml,
-          percentBg: percentStyle.background,
-          percentColor: percentStyle.color,
-          percentShadow: percentStyle.boxShadow,
-          dotColor: dotStyle.backgroundColor,
-          dotShadow: dotStyle.boxShadow,
-          dotPulse: dotStyle.pulse,
-          state,
-          health: normalizedHealth,
-          timelineTs: updateTimestamp,
-        });
-        continue;
+      if (status.isRunning) {
+        runningCount += 1;
       }
 
-      let rowEl = rowsEl.querySelector(`[data-row="${CSS.escape(name)}"]`);
-
-      if (!rowEl) {
-        const clone = rowTemplate.content.cloneNode(true);
-        rowsEl.appendChild(clone);
-        rowEl = rowsEl.lastElementChild;
-        if (!rowEl) continue;
-        rowEl.setAttribute("data-row", name);
-        rowEl._refs = {
-          dot: rowEl.querySelector("[data-dot]"),
-          name: rowEl.querySelector("[data-name]"),
-          sub: rowEl.querySelector("[data-sub]"),
-          uptime: rowEl.querySelector("[data-uptime]"),
-          percent: rowEl.querySelector("[data-percent]"),
-          timeline: rowEl.querySelector("[data-health-timeline]"),
-        };
-      }
-
-      const refs = rowEl._refs || {
-        dot: rowEl.querySelector("[data-dot]"),
-        name: rowEl.querySelector("[data-name]"),
-        sub: rowEl.querySelector("[data-sub]"),
-        uptime: rowEl.querySelector("[data-uptime]"),
-        percent: rowEl.querySelector("[data-percent]"),
-        timeline: rowEl.querySelector("[data-health-timeline]"),
-      };
-
-      rowEl._refs = refs;
-
-      if (refs.name && prevState.name !== name) {
-        refs.name.textContent = name;
-      }
-
-      if (refs.sub && prevState.statusHtml !== statusHtml) {
-        refs.sub.innerHTML = statusHtml;
-      }
-
-      if (refs.uptime && prevState.uptimeText !== uptimeText) {
-        refs.uptime.textContent = uptimeText;
-      }
-
-      if (refs.percent && prevState.percentText !== percentText) {
-        refs.percent.textContent = percentText;
-      }
-
-      if (
-        refs.percent &&
-        (prevState.percentBg !== percentStyle.background ||
-          prevState.percentColor !== percentStyle.color ||
-          prevState.percentShadow !== percentStyle.boxShadow)
-      ) {
-        refs.percent.style.background = percentStyle.background;
-        refs.percent.style.color = percentStyle.color;
-        refs.percent.style.boxShadow = percentStyle.boxShadow;
-      }
-
-      if (
-        refs.dot &&
-        (prevState.dotColor !== dotStyle.backgroundColor ||
-          prevState.dotShadow !== dotStyle.boxShadow ||
-          prevState.dotPulse !== dotStyle.pulse)
-      ) {
-        refs.dot.style.backgroundColor = dotStyle.backgroundColor;
-        refs.dot.style.boxShadow = dotStyle.boxShadow;
-        refs.dot.classList.toggle("pulse", dotStyle.pulse);
-      }
-
-      let timelineChart = containerTimelineCharts.get(name);
-      if (!timelineChart) {
-        const timelineEl = refs.timeline;
-        if (timelineEl) {
-          timelineChart = new HealthTimelineChart(timelineEl, {
-            windowSize: 120,
-          });
-          containerTimelineCharts.set(name, timelineChart);
-        }
-      }
-      if (timelineChart) {
-        flushTimelineHistory(name, timelineChart);
-      }
-      const timelineNeedsUpdate =
-        prevState.state !== state ||
-        prevState.health !== normalizedHealth ||
-        !prevState.timelineTs ||
-        updateTimestamp - prevState.timelineTs >= 500;
-
-      if (timelineChart && timelineNeedsUpdate) {
-        timelineChart.addSample(updateTimestamp, state, normalizedHealth);
-      }
-
-      containerRowState.set(name, {
-        name,
-        uptimeText,
-        percentText,
-        statusHtml,
-        percentBg: percentStyle.background,
-        percentColor: percentStyle.color,
-        percentShadow: percentStyle.boxShadow,
-        dotColor: dotStyle.backgroundColor,
-        dotShadow: dotStyle.boxShadow,
-        dotPulse: dotStyle.pulse,
-        state,
-        health: normalizedHealth,
-        timelineTs: timelineNeedsUpdate
-          ? updateTimestamp
-          : prevState.timelineTs || updateTimestamp,
-      });
-    }
-
-    if (canRenderRows) {
-      const existingRows = Array.from(rowsEl.querySelectorAll("[data-row]"));
-      const namesSet = new Set(Object.keys(containers));
-      for (const r of existingRows) {
-        const rn = r.getAttribute("data-row");
-        if (!namesSet.has(rn)) {
-          r.remove();
-          const timelineChart = containerTimelineCharts.get(rn);
-          if (timelineChart) {
-            timelineChart.dispose();
-            containerTimelineCharts.delete(rn);
-          }
-          containerRowState.delete(rn);
-        }
-      }
-    } else {
-      if (containerTimelineCharts.size) {
-        containerTimelineCharts.forEach((chartInstance) => {
-          try {
-            chartInstance.dispose();
-          } catch (err) {
-            console.warn("Failed to dispose timeline chart", err);
-          }
-        });
-        containerTimelineCharts.clear();
-      }
-      const activeNames = new Set(Object.keys(containers));
-      for (const existingName of Array.from(containerRowState.keys())) {
-        if (!activeNames.has(existingName)) {
-          containerRowState.delete(existingName);
-        }
+      if (status.isHealthy) {
+        healthyCount += 1;
       }
     }
 
@@ -1535,8 +1305,7 @@ function setupSse() {
     if (!data) return;
     if (!hasBootstrappedHistory) {
       const primed = primeMetricHistory(data.metrics_history);
-      const queued = queueContainerHistory(data.container_history);
-      if (primed || queued) {
+      if (primed) {
         hasBootstrappedHistory = true;
       }
     }
@@ -1658,8 +1427,7 @@ initMetricTabs();
 
 if (initialSnapshot) {
   const primed = primeMetricHistory(initialSnapshot.metrics_history);
-  const queued = queueContainerHistory(initialSnapshot.container_history);
-  if (primed || queued) {
+  if (primed) {
     hasBootstrappedHistory = true;
   }
   scheduleDashboardUpdate(initialSnapshot, { immediate: true });
