@@ -1331,6 +1331,23 @@ function renderStateWaveHealthyUptime(summary) {
     ? summary.filter((item) => item && Number.isFinite(item.uptime))
     : [];
 
+  const existingItems = new Map();
+  const previousRects = new Map();
+
+  Array.from(listEl.children).forEach((child) => {
+    const label =
+      child.dataset.container ||
+      child.querySelector?.(".state-wave-health-label")?.textContent ||
+      "";
+
+    if (!label) {
+      return;
+    }
+
+    existingItems.set(label, child);
+    previousRects.set(label, child.getBoundingClientRect());
+  });
+
   entries.sort((a, b) => {
     if (a.isHealthy !== b.isHealthy) {
       return Number(b.isHealthy) - Number(a.isHealthy);
@@ -1341,41 +1358,96 @@ function renderStateWaveHealthyUptime(summary) {
     return a.name.localeCompare(b.name);
   });
 
-  listEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+  const nextItems = new Map();
 
   entries.forEach((entry) => {
-    const item = document.createElement("li");
+    const key = entry.name;
+    const existing = existingItems.get(key) || null;
+    const item = existing ?? document.createElement("li");
     item.className = "state-wave-health-item";
     item.dataset.state = String(entry.statusValue ?? "");
+    item.dataset.container = key;
 
-    const nameWrapper = document.createElement("div");
-    nameWrapper.className = "state-wave-health-name";
-
-    const nameEl = document.createElement("span");
-    nameEl.className = "state-wave-health-label";
-    nameEl.textContent = entry.name;
-    nameWrapper.appendChild(nameEl);
-
-    if (entry.statusLabel) {
-      const statusEl = document.createElement("span");
-      statusEl.className = "state-wave-health-status";
-      statusEl.textContent = entry.statusLabel;
-      nameWrapper.appendChild(statusEl);
+    let nameWrapper = item.querySelector(".state-wave-health-name");
+    if (!nameWrapper) {
+      nameWrapper = document.createElement("div");
+      nameWrapper.className = "state-wave-health-name";
+      item.appendChild(nameWrapper);
     }
 
-    const uptimeEl = document.createElement("span");
-    uptimeEl.className = "state-wave-health-uptime";
-    uptimeEl.textContent = fmtHMS(entry.uptime);
+    let nameEl = nameWrapper.querySelector(".state-wave-health-label");
+    if (!nameEl) {
+      nameEl = document.createElement("span");
+      nameEl.className = "state-wave-health-label";
+      nameWrapper.insertBefore(nameEl, nameWrapper.firstChild);
+    }
+    nameEl.textContent = entry.name;
+
+    let statusEl = nameWrapper.querySelector(".state-wave-health-status");
+    if (entry.statusLabel) {
+      if (!statusEl) {
+        statusEl = document.createElement("span");
+        statusEl.className = "state-wave-health-status";
+        nameWrapper.appendChild(statusEl);
+      }
+      statusEl.textContent = entry.statusLabel;
+    } else if (statusEl) {
+      statusEl.remove();
+    }
+
+    let uptimeEl = item.querySelector(".state-wave-health-uptime");
+    if (!uptimeEl) {
+      uptimeEl = document.createElement("span");
+      uptimeEl.className = "state-wave-health-uptime";
+      item.appendChild(uptimeEl);
+    }
+
+    const uptimeText = fmtHMS(entry.uptime);
+    uptimeEl.textContent = uptimeText;
     uptimeEl.setAttribute(
       "aria-label",
-      `${entry.name} healthy for ${fmtHMS(entry.uptime)}`,
+      `${entry.name} healthy for ${uptimeText}`,
     );
 
-    item.appendChild(nameWrapper);
-    item.appendChild(uptimeEl);
-
-    listEl.appendChild(item);
+    fragment.appendChild(item);
+    nextItems.set(key, item);
   });
+
+  listEl.innerHTML = "";
+  listEl.appendChild(fragment);
+
+  const animate = () => {
+    nextItems.forEach((item, key) => {
+      const previousRect = previousRects.get(key);
+      const currentRect = item.getBoundingClientRect();
+
+      if (previousRect) {
+        const deltaX = previousRect.left - currentRect.left;
+        const deltaY = previousRect.top - currentRect.top;
+
+        if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+          item.style.transition = "none";
+          item.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+          requestAnimationFrame(() => {
+            item.style.transition = "";
+            item.style.transform = "";
+          });
+        }
+      } else {
+        item.style.transition = "none";
+        item.style.opacity = "0";
+        item.style.transform = "translate3d(0, 12px, 0)";
+        requestAnimationFrame(() => {
+          item.style.transition = "";
+          item.style.opacity = "";
+          item.style.transform = "";
+        });
+      }
+    });
+  };
+
+  requestAnimationFrame(animate);
 
   const hasEntries = entries.length > 0;
   listEl.style.display = hasEntries ? "" : "none";

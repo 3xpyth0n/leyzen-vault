@@ -169,21 +169,13 @@
       </section>
 
       <main>
-        <div class="content-grid stack-panels">
+        <div class="content-grid">
           <section class="panel glass glass-preserve state-wave-panel">
             <div class="panel-header">
               <h2 class="panel-title">Live container state transitions</h2>
               <div class="panel-meta">
                 <span id="running-count">0</span> active
               </div>
-            </div>
-
-            <div class="state-wave-chart">
-              <canvas
-                id="stateWaveChart"
-                aria-label="Container state wave chart"
-                role="img"
-              ></canvas>
             </div>
 
             <div class="state-wave-health">
@@ -197,6 +189,14 @@
                 Healthy uptime totals will appear once containers begin serving
                 traffic.
               </p>
+            </div>
+
+            <div class="state-wave-chart">
+              <canvas
+                id="stateWaveChart"
+                aria-label="Container state wave chart"
+                role="img"
+              ></canvas>
             </div>
 
             <p class="chart-note">
