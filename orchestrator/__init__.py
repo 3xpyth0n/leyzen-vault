@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
-from flask import Flask
+from flask import Flask, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .blueprints.auth import auth_bp
@@ -56,19 +57,31 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
 
     @app.after_request
     def add_csp_headers(response):
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "img-src 'self' data: blob:; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self'; "
-            "object-src 'none'; "
-            "report-uri /orchestrator/csp-violation-report-endpoint; "
-        )
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' https://cdn.jsdelivr.net",
+            "img-src 'self' data: blob:",
+            "font-src 'self' https://fonts.gstatic.com",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "object-src 'none'",
+            "upgrade-insecure-requests",
+            "report-uri /orchestrator/csp-violation-report-endpoint",
+            "report-to orchestrator-csp",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+        report_to = {
+            "group": "orchestrator-csp",
+            "max_age": 108864,
+            "endpoints": [
+                {"url": url_for("dashboard.csp_violation_report", _external=True)}
+            ],
+        }
+        response.headers["Report-To"] = json.dumps(report_to)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         return response

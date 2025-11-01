@@ -17,6 +17,7 @@ This document covers operational procedures, security controls, and advanced con
 - `docker-proxy` is attached exclusively to the internal `control-net` bridge. Other services cannot reach the Docker socket unless they are explicitly joined to that network.
 - `orchestrator` is dual-homed (`vault-net` + `control-net`) so it can expose the dashboard while still reaching the proxy for lifecycle actions.
 - Client IP attribution is mediated by Werkzeug's `ProxyFix`. Keep `PROXY_TRUST_COUNT=1` (default) when HAProxy fronts the stack, and switch to `0` if clients hit the orchestrator directly without a proxy.
+- HAProxy forwards the original `X-Forwarded-For` chain when provided, sets `X-Forwarded-Proto` for TLS frontends, and only applies HSTS when traffic arrived over HTTPS, keeping plaintext development workflows unaffected.
 - Every proxy call includes the `Authorization: Bearer <DOCKER_PROXY_TOKEN>` header. Rotate this token routinely:
   1. Generate a fresh random string (for example with `openssl rand -hex 32`).
   2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.
@@ -28,6 +29,7 @@ This document covers operational procedures, security controls, and advanced con
 
 - `CSP_REPORT_MAX_SIZE` (default `4096`) rejects oversized Content Security Policy violation reports with HTTP 413 **before** the orchestrator reads the payload.
 - `CSP_REPORT_RATE_LIMIT` (default `5`) caps accepted CSP reports per client IP over a rolling 60-second window; further requests receive HTTP 429.
+- Browsers capable of the Reporting API are instructed to use the same endpoint via `Report-To`, in addition to the legacy `report-uri`, so CSP telemetry lands at `/orchestrator/csp-violation-report-endpoint` regardless of browser support.
 
 ## Secret scanning & credential hygiene
 
