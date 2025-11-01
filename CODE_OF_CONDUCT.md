@@ -46,7 +46,7 @@ posting via an official social media account, or acting as an appointed represen
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible
-for enforcement at [@3xpyth0n](https://github.com/3xpyth0n) or via **conduct@leyzen.dev**. All complaints will be reviewed
+for enforcement at [@3xpyth0n](https://github.com/3xpyth0n). All complaints will be reviewed
 and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.

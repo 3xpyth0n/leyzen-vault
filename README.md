@@ -147,7 +147,7 @@ Environment variables live in `.env`. Restrict access (for example, `chmod 600 .
 
 Consult [`env.template`](env.template) for the full catalog and inline documentation of each setting.
 
-Shared Docker volumes are declared per plugin in the generated `docker-compose.generated.yml`. When switching plugins, Vault
+Shared Docker volumes are declared per plugin in the generated `docker-compose.yml`. When switching plugins, Vault
 creates or reuses the volumes specified by the selected module so state persists across rotations without leaking between
 services.
 
@@ -165,7 +165,7 @@ implements:
 The registry is automatically discovered at runtime. When `VAULT_SERVICE` references a plugin, `service.sh` invokes the builder to
 render:
 
-1. `docker-compose.generated.yml` — the merged Compose manifest combining the base stack with the plugin.
+1. `docker-compose.yml` — the merged Compose manifest combining the base stack with the plugin.
 2. `haproxy/haproxy.cfg` — backend pools, health checks, and routing logic for the plugin’s replicas.
 
 Filebrowser and Paperless are bundled examples demonstrating the pattern. Contributions adding new plugins are welcome—see the

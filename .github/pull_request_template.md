@@ -6,8 +6,7 @@
 
 - [ ] `./service.sh build`
 - [ ] `./service.sh start`
-- [ ] Additional commands (list below):
-  -
+- [ ] ## Additional commands (list below):
 
 ## Checklist
 

@@ -14,7 +14,6 @@ If you discover a security vulnerability, please report it privately using one o
 
 - [GitHub Security Advisories](https://github.com/3xpyth0n/leyzen-vault/security/advisories/new) — preferred for providing
   encrypted communication and tracking remediation.
-- Email the maintainer team at **security@leyzen.dev** with the details if you cannot use GitHub Advisories.
 
 Please do not open public GitHub issues, pull requests, or discussions for security reports. We will coordinate with you on
 fix timelines and public disclosure after a mitigation is available.

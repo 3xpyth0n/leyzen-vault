@@ -12,7 +12,7 @@ which regenerates configuration artifacts before delegating to Docker Compose. F
   stale configuration.
 - **Treat `.env` as the source of truth.** Update variables (for example `VAULT_SERVICE` or `VAULT_WEB_REPLICAS`) before running
   any lifecycle command.
-- **Inspect generated artifacts.** When troubleshooting, review `docker-compose.generated.yml` and `haproxy/haproxy.cfg` produced
+- **Inspect generated artifacts.** When troubleshooting, review `docker-compose.yml` and `haproxy/haproxy.cfg` produced
   by the CLI.
 
 ---
@@ -47,7 +47,7 @@ The CLI prevents partial deployments by keeping previous artifacts intact if val
 
 - **Dashboard telemetry** — The orchestrator exposes rotation metrics, audit logs, and activity feeds under `/orchestrator`.
 - **Container logs** — After running `./service.sh build` to refresh manifests, inspect logs with
-  `docker compose -f docker-compose.generated.yml logs --tail=200 <service>`.
+  `docker compose -f docker-compose.yml logs --tail=200 <service>`.
 - **HAProxy status** — Review `haproxy/haproxy.cfg` and the generated HAProxy statistics endpoint (enabled when configured in
   `.env`).
 - **Configuration drift** — Re-run `./service.sh build` after editing `.env` to ensure changes propagate to Compose and HAProxy.
