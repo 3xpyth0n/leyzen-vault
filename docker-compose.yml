@@ -23,7 +23,10 @@ x-filebrowser-base: &filebrowser-base
     - filebrowser-database:/database
     - filebrowser-config:/config
   depends_on:
-    - orchestrator
+    haproxy:
+      condition: service_healthy
+    docker-proxy:
+      condition: service_healthy
   networks:
     - vault-net
 
@@ -100,7 +103,14 @@ services:
       - ./orchestrator:/app:ro
       - orchestrator-logs:/app/logs
     depends_on:
-      - docker-proxy
+      docker-proxy:
+        condition: service_healthy
+      filebrowser_web1:
+        condition: service_started
+      filebrowser_web2:
+        condition: service_started
+      filebrowser_web3:
+        condition: service_started
     networks:
       - vault-net
       - control-net
