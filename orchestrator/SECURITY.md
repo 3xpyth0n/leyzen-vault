@@ -64,12 +64,12 @@ service and highlights considerations for extending the stack safely.
 
 - The CSP report collector enforces size limits and per-IP rate caps before
   logging sanitized payload metadata, reducing risk from log-injection or
-  flooding attacks.  
-  [`orchestrator/blueprints/dashboard.py:L104-L190`](./blueprints/dashboard.py#L104-L190)
+  flooding attacks.
+  [`orchestrator/blueprints/dashboard.py:L231-L305`](./blueprints/dashboard.py#L231-L305)
 
 - Static asset routes apply explicit MIME types and cache-control headers while
-  keeping the dashboard JS bundle authenticated-only.  
-  [`orchestrator/blueprints/dashboard.py:L80-L135`](./blueprints/dashboard.py#L80-L135)
+  keeping the dashboard JS bundle authenticated-only.
+  [`orchestrator/blueprints/dashboard.py:L210-L229`](./blueprints/dashboard.py#L210-L229)
 
 - Client IP detection respects `X-Forwarded-For` only for routable addresses,
   falling back to Flask's remote address, reducing spoofing risk from private or
@@ -91,8 +91,8 @@ service and highlights considerations for extending the stack safely.
 
 - Control endpoints validate state transitions (e.g., disallowing kill when the
   rotation loop is active) and audit every action together with the originating
-  client IP.  
-  [`orchestrator/blueprints/dashboard.py:L31-L103`](./blueprints/dashboard.py#L31-L103)
+  client IP.
+  [`orchestrator/blueprints/dashboard.py:L73-L183`](./blueprints/dashboard.py#L73-L183)
 
 ## Logging and observability
 
@@ -101,9 +101,9 @@ service and highlights considerations for extending the stack safely.
   [`orchestrator/services/logging.py:L1-L48`](./services/logging.py#L1-L48)
 
 - Authentication, control requests, and CSP reports include contextual metadata
-  to help correlate suspicious activity while avoiding sensitive payloads.  
+  to help correlate suspicious activity while avoiding sensitive payloads.
   [`orchestrator/blueprints/auth.py:L314-L360`](./blueprints/auth.py#L314-L360)
-  [`orchestrator/blueprints/dashboard.py:L31-L190`](./blueprints/dashboard.py#L31-L190)
+  [`orchestrator/blueprints/dashboard.py:L73-L305`](./blueprints/dashboard.py#L73-L305)
 
 ## Known gaps and future hardening
 

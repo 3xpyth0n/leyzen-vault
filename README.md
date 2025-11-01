@@ -123,7 +123,7 @@ The installer provisions a dedicated `leyzen` system user and adds it to the `do
 
 ### Environment variables
 
-Environment variables are loaded from `.env`. Key entries include:
+Environment variables are loaded from `.env`. Restrict the file’s permissions (for example, `chmod 600 .env`) and keep it out of shared locations to prevent credential leakage. Key entries include:
 
 - `VAULT_USER` / `VAULT_PASS` — dashboard credentials; never commit real values.
 - `VAULT_SECRET_KEY` — Flask secret key (use `openssl rand -hex 32`).
@@ -132,8 +132,9 @@ Environment variables are loaded from `.env`. Key entries include:
 - `VAULT_SESSION_COOKIE_SECURE` — mark orchestrator session cookies as `Secure` when HTTPS terminates upstream (enabled by default).
 - `VAULT_WEB_CONTAINERS` — comma-separated list of containers eligible for rotation.
 - `DOCKER_PROXY_URL` and `DOCKER_PROXY_TOKEN` — access details for the secured Docker proxy.
+- `PROXY_TRUST_COUNT` — number of upstream proxies whose forwarded headers should be trusted (`0` when serving requests directly, `1` when HAProxy fronts the stack); see [`env.template`](env.template) for additional guidance.
 
-Consult [`env.template`](env.template) for the full list and documentation of supported variables.
+Consult [`env.template`](env.template) for the full list and documentation of supported variables. When provisioning the optional systemd unit via `install.sh`, the installer automatically enforces the restrictive `.env` permissions so service deployments stay aligned with these recommendations.
 
 ### Docker resources
 
