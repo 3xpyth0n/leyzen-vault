@@ -270,6 +270,7 @@ footer {
 .state-wave-chart {
   position: relative;
   min-height: 260px;
+  max-height: 500px;
   padding: 1.25rem 1rem 1rem;
   border-radius: 1rem;
   background: linear-gradient(
@@ -550,7 +551,7 @@ footer {
 
 @media (min-width: 1024px) {
   .content-grid {
-    grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
