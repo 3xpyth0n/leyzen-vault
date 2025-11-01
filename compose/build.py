@@ -23,7 +23,7 @@ from compose.haproxy_config import (
 from vault_plugins import VaultServicePlugin
 from vault_plugins.registry import get_active_plugin
 
-OUTPUT_FILE = Path("docker-compose.generated.yml")
+OUTPUT_FILE = Path("docker-compose.yml")
 
 
 def _read_env_file(path: Path) -> dict[str, str]:

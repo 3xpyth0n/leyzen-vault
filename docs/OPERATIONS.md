@@ -1,41 +1,70 @@
 # Leyzen Vault Operations Guide
 
-This document summarizes the supported operational workflow for Leyzen Vault. All lifecycle actions are mediated by
-`./service.sh`, which ensures configuration assets are regenerated before Docker is invoked.
+This guide covers daily operations for running Leyzen Vault. All workflows rely on the unified CLI [`service.sh`](../service.sh),
+which regenerates configuration artifacts before delegating to Docker Compose. For architecture details see the
+[Technical Guide](TECHNICAL_GUIDE.md); for contribution steps see the [Contributing Guide](../CONTRIBUTING.md).
 
 ---
 
-## Operational Principles
+## Core Principles
 
-- **Always use `service.sh`.** Do not run `docker compose` directly or invoke the Python builder manually. The script calls the
-  builder, regenerates `docker-compose.generated.yml` and `haproxy/haproxy.cfg`, and then executes the requested action.
-- **Treat `.env` as the source of truth.** Update variables such as `VAULT_SERVICE`, `VAULT_WEB_REPLICAS`, and
-  `VAULT_WEB_HEALTHCHECK_PATH` there before running commands.
-- **Review generated artifacts when troubleshooting.** If a command fails, inspect the latest `docker-compose.generated.yml` and
-  `haproxy/haproxy.cfg` produced by the script for clues.
+- **Always use `service.sh`.** Direct Docker commands or manual execution of the Compose builder are unsupported and may produce
+  stale configuration.
+- **Treat `.env` as the source of truth.** Update variables (for example `VAULT_SERVICE` or `VAULT_WEB_REPLICAS`) before running
+  any lifecycle command.
+- **Inspect generated artifacts.** When troubleshooting, review `docker-compose.generated.yml` and `haproxy/haproxy.cfg` produced
+  by the CLI.
 
 ---
 
-## Common Commands
+## Lifecycle Commands
 
 ```bash
-./service.sh build     # Build or rebuild container images
+./service.sh build     # Regenerate Compose and HAProxy configs, rebuild images if needed
 ./service.sh start     # Generate configs and launch the stack
-./service.sh restart   # Regenerate configs, stop, and start containers
-./service.sh stop      # Stop containers and clean up runtime resources
+./service.sh restart   # Regenerate configs, stop existing containers, and start fresh
+./service.sh stop      # Gracefully stop containers without removing volumes
+./service.sh status    # Display the current state of all containers
 ```
 
-Additional helper actions are documented by running `./service.sh help`.
+Run `./service.sh` without arguments to view usage information and command descriptions.
 
 ---
 
-## Recommended Workflow
+## Switching Plugins
 
-1. Update `.env` with the desired plugin and replica counts.
-2. Execute `./service.sh build` to refresh images and regenerate configuration.
-3. Start or restart the stack using `./service.sh start` or `./service.sh restart`.
-4. Validate access via `http://localhost:8080/` (plugin UI) and `http://localhost:8080/orchestrator` (dashboard).
-5. Use `./service.sh stop` for graceful shutdowns; volumes remain intact for the next session.
+1. Edit `.env` and set `VAULT_SERVICE` to the desired plugin slug. Adjust replica counts or ports as needed.
+2. Execute `./service.sh build` to regenerate configuration artifacts for the new plugin.
+3. Run `./service.sh restart` to cycle the stack with the updated configuration.
+4. Validate application access at `http://localhost:8080/` and the orchestrator dashboard at
+   `http://localhost:8080/orchestrator`.
 
-Following this process keeps the generated Compose manifest and HAProxy configuration synchronized with your environment
-variables, ensuring consistent deployments across machines and automation pipelines.
+The CLI prevents partial deployments by keeping previous artifacts intact if validation fails.
+
+---
+
+## Monitoring and Troubleshooting
+
+- **Dashboard telemetry** — The orchestrator exposes rotation metrics, audit logs, and activity feeds under `/orchestrator`.
+- **Container logs** — After running `./service.sh build` to refresh manifests, inspect logs with
+  `docker compose -f docker-compose.generated.yml logs --tail=200 <service>`.
+- **HAProxy status** — Review `haproxy/haproxy.cfg` and the generated HAProxy statistics endpoint (enabled when configured in
+  `.env`).
+- **Configuration drift** — Re-run `./service.sh build` after editing `.env` to ensure changes propagate to Compose and HAProxy.
+
+If you encounter persistent issues, capture the CLI output, generated artifacts, and dashboard logs when filing a report (see the
+issue templates in `.github/ISSUE_TEMPLATE/`).
+
+---
+
+## Updates and Maintenance
+
+- **Refreshing dependencies** — Pull the latest `main` branch, review release notes, then run `./service.sh build` to rebuild
+  images.
+- **Backups** — Persist plugin-specific data volumes using Docker's standard tooling or by copying the volume directories defined
+  in the generated Compose file.
+- **Security updates** — Monitor the [Security Policy](../SECURITY.md) for disclosure timelines and apply patched releases
+  promptly.
+
+For maintainer-specific tasks such as tagging releases and triaging contributions, consult the
+[Maintainer Guide](MAINTAINER_GUIDE.md).

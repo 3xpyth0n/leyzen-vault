@@ -1,0 +1,39 @@
+name: Documentation update
+description: Improve or correct Leyzen Vault documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us keep the documentation accurate and clear. Note which guide or file you are proposing to update.
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Relative path or section header (for example `docs/OPERATIONS.md#monitoring`).
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Proposed changes
+      description: Summarize the improvements you would like to make.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Explain why the change is needed. Link to issues, PRs, or discussions if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Include draft text, screenshots, or formatting considerations.
+    validations:
+      required: false

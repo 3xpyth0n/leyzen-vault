@@ -1,33 +1,88 @@
-# Contributing Guide
+# Contributing to Leyzen Vault
 
-We welcome contributions that improve Leyzen Vault. Follow the guidelines below to help maintainers review your work quickly and effectively.
+We are excited to collaborate with the community on Leyzen Vault, a modular moving-target defense orchestrator. This document
+explains how to propose changes, which tools to use for testing, and what to expect from the review process. By contributing
+you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Getting Started
+## Workflow Overview
 
-1. Fork the repository and create your branch from `main`.
-2. Install project prerequisites listed in the [README](README.md#prerequisites-).
-3. Copy `env.template` to `.env` and provide the required secrets locally.
-4. Use `./service.sh start` to launch the Docker stack when testing orchestration changes.
+1. **Fork** `leyzen-vault` on GitHub and clone your fork locally.
+2. **Create a topic branch** from `main` that describes your change, for example `feature/plugin-s3-backend`.
+3. **Commit regularly** following the message guidance below.
+4. **Test everything** through the project CLI (`./service.sh`) before you open a pull request.
+5. **Open a pull request** from your forked branch back to `main` and request review.
 
-## Coding Standards
+Keeping each branch scoped to a single improvement helps reviewers merge your work quickly.
 
-- Keep all documentation and comments in English.
-- Follow existing code style conventions in the repository.
-- Add or update tests whenever practical.
-- Run available checks before submitting your changes.
+## Local Environment
 
-## Commit and PR Guidelines
+- Follow the installation prerequisites listed in the [README](README.md).
+- Copy `env.template` to `.env` and supply the secrets requested in the file.
+- Use `./service.sh` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
+  manual invocations of the Compose builder are unsupported and may leave the generated artifacts inconsistent.
+- Review the [Operations Guide](docs/OPERATIONS.md) for day-to-day usage tips and the
+  [Technical Guide](docs/TECHNICAL_GUIDE.md) for implementation details.
 
-- Write descriptive commit messages that explain the “why” behind changes.
-- Keep pull requests focused and scoped to a single improvement.
-- Include screenshots when changing user-facing dashboards or UI flows.
-- Ensure the PR description summarizes the motivation, implementation, and testing steps.
+## Testing Expectations
+
+Before submitting a pull request:
+
+- Run `./service.sh build` to regenerate images and assets.
+- Run `./service.sh start` (or `./service.sh restart` for an existing environment) to rebuild the Compose and HAProxy
+  configurations and verify the stack boots without errors.
+- Inspect the regenerated `docker-compose.generated.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
+  routing, or environment handling.
+- Add or update documentation in `docs/` when behavior or workflows change.
+
+If automated tests or additional checks become available, include their output in your pull request description.
+
+## Commit Message Convention
+
+We follow a lightweight format to keep history readable:
+
+- A short, English subject line (<= 72 characters).
+- A body of up to four lines that answers:
+  1. **Context** — why the change is needed.
+  2. **Change** — what was done.
+  3. **Testing** — which `./service.sh` actions or other checks were run.
+  4. **Impact** — anything reviewers or operators should watch for.
+
+Example:
+
+```
+Refine plugin bootstrap logging
+
+Describe plugin resolution failures in the CLI output.
+Ran ./service.sh build and ./service.sh start locally.
+Expect clearer troubleshooting with no config changes.
+```
+
+## Pull Request Checklist
+
+When you open a pull request, please:
+
+- Confirm all commits follow the message convention above.
+- Reference related issues or discussions so maintainers can track context.
+- Include screenshots or recordings for user-facing changes to the orchestrator dashboard.
+- Note any documentation you updated or intentionally left unchanged.
+- Mention if the change requires coordination with downstream deployments.
+
+Reviewers rely on this information to prioritize and merge contributions.
 
 ## Reporting Issues
 
-If you encounter a bug or have a feature request:
+Search the [issue tracker](https://github.com/3xpyth0n/leyzen-vault/issues) before filing a new report. If no existing issue
+matches, open a new one using the appropriate template and include:
 
-- Search the [issue tracker](https://github.com/3xpyth0n/leyzen-vault/issues) to avoid duplicates.
-- Open a new issue with clear reproduction steps, expected behavior, and logs when available.
+- Clear reproduction steps, including the `./service.sh` commands you executed.
+- Expected versus actual results.
+- Relevant logs, screenshots, or generated artifacts.
 
-Thank you for helping improve Leyzen Vault!
+Security issues should be reported privately following the [Security Policy](SECURITY.md).
+
+## Additional Resources
+
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) — writing and testing plugins.
+- [Maintainer Guide](docs/MAINTAINER_GUIDE.md) — triage, reviews, and releases.
+- [Technical Guide](docs/TECHNICAL_GUIDE.md) — architecture and runtime internals.
+- [Operations Guide](docs/OPERATIONS.md) — operating the stack with `service.sh`.

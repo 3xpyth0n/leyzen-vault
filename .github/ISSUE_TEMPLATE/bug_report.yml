@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem with Leyzen Vault.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Leyzen Vault. Please fill out each section so maintainers can reproduce the issue quickly.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "Leyzen Vault version or commit, operating system, and plugin (from VAULT_SERVICE)."
+      placeholder: "v1.2.0 on Ubuntu 22.04, plugin=filebrowser"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Provide a concise description of the problem.
+      placeholder: "Starting the stack fails with a missing volume error."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact commands run (prefer `./service.sh` invocations) and configuration edits made.
+      placeholder: |
+        1. Set VAULT_SERVICE=paperless in .env
+        2. Run ./service.sh build
+        3. Run ./service.sh start
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Paste relevant CLI output, stack traces, or screenshots. Use code blocks for multi-line logs.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else we should know? Mention related issues or workarounds.
+    validations:
+      required: false
