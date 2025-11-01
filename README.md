@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](LICENSE)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
 
 > **Modular Moving-Target Defense Orchestrator — Proof of Concept**
 >
@@ -84,10 +85,10 @@ system is designed to host many more services as the plugin catalog grows.
            ┌───────────────┴───────────────┐
            │                               │
            ▼                               ▼
-  ┌─────────────────┐            ┌──────────────────────┐
-  │  Orchestrator   │            │  Plugin-defined Stack │
-  │   (dashboard)   │            │   (rotating replicas) │
-  └─────────────────┘            └──────────────────────┘
+  ┌─────────────────┐            ┌────────────────────────┐
+  │  Orchestrator   │            │  Plugin-defined Stack  │
+  │   (dashboard)   │            │   (rotating replicas)  │
+  └─────────────────┘            └────────────────────────┘
 ```
 
 ---

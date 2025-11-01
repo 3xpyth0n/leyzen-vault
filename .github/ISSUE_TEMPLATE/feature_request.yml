@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an enhancement or new capability for Leyzen Vault.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share your idea for improving the platform. If you are proposing a new plugin, reference the 🎯 Future Plugins roadmap issue.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Provide a concise headline for the feature.
+      placeholder: "Add S3 archival plugin"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Describe the operator or developer problem this feature solves.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Outline how the feature should work. Mention CLI commands, plugins, or builder changes involved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: List other approaches you evaluated and why they were not chosen.
+    validations:
+      required: false
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add mockups, diagrams, or links to related discussions.
+    validations:
+      required: false

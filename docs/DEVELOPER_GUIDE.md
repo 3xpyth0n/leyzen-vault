@@ -1,13 +1,14 @@
 # Leyzen Vault Developer Guide
 
-This guide explains how to extend Leyzen Vault by adding new service plugins to the dynamic orchestration system. Familiarity
-with Docker Compose and the existing plugin layout is assumed.
+This guide describes how to extend Leyzen Vault by authoring plugins that integrate new services into the orchestrator. It
+assumes familiarity with Docker Compose and the structure documented in the [Technical Guide](TECHNICAL_GUIDE.md). Before you
+begin, review the [Contributing Guide](../CONTRIBUTING.md) for workflow expectations and commit conventions.
 
 ---
 
-## Directory Layout
+## Plugin Directory Layout
 
-Plugins live under [`vault_plugins/`](../vault_plugins/). Each service occupies its own directory:
+Each plugin lives under [`vault_plugins/`](../vault_plugins/) and follows a consistent structure:
 
 ```
 vault_plugins/
@@ -16,16 +17,16 @@ vault_plugins/
     plugin.py
 ```
 
-`plugin.py` must export a subclass of `VaultServicePlugin`. The registry automatically discovers modules using Python package
-metadata, so no additional wiring is required once the directory structure matches the pattern above.
+The package must expose exactly one subclass of `VaultServicePlugin`. Discovery is automatic as long as the directory is a valid
+Python package and the subclass is imported in `__init__.py`.
 
 ---
 
-## Required Interface
+## Implementing `VaultServicePlugin`
 
-Every plugin must implement the following pieces:
+Every plugin must define the following pieces:
 
-1. **Subclass declaration**
+1. **Subclass Declaration**
 
    ```python
    from vault_plugins import VaultServicePlugin
@@ -34,8 +35,7 @@ Every plugin must implement the following pieces:
        ...
    ```
 
-2. **Metadata** — populate the `metadata` attribute to declare the plugin name, default port, health-check defaults, and optional
-   description used by operator tooling.
+2. **Metadata** — Populate the `metadata` attribute to describe the plugin:
 
    ```python
    metadata = VaultServicePlugin.Metadata(
@@ -46,36 +46,32 @@ Every plugin must implement the following pieces:
    )
    ```
 
-3. **`build_compose(self, env)`** — return a dictionary containing Compose fragments. Typical keys are `services`, `volumes`, and
-   `networks`. The Compose builder merges this fragment with the base stack, so keep service names unique and reuse shared
-   networks (`vault-net`, `control-net`) when appropriate.
+   Metadata powers the CLI selection menu, health checks, and default routing.
 
-4. **`get_containers(self)`** — return an iterable of service names that expose the web application. These names are used both for
-   orchestrator rotation and for HAProxy backend generation.
+3. **`build_compose(self, env)`** — Return a dictionary containing Compose schema fragments (`services`, `volumes`, `networks`).
+   Use helper methods like `self.resolve_port(env)` and `self.resolve_replicas(env)` to respect operator overrides.
 
-5. **Optional attributes**:
-   - `dependencies` — ordered list of service names that should start before the plugin’s main workload (for example databases or
-     caches).
-   - `min_replicas` — enforce a minimum number of `VAULT_WEB_REPLICAS` for stability.
-   - `default_environment` — additional environment variables injected into the plugin services.
+4. **`get_containers(self)`** — Return an iterable of service names that expose HTTP endpoints. These identifiers feed both the
+   orchestrator rotation logic and the HAProxy generator.
 
----
+5. **Optional Attributes** — Provide `dependencies`, `default_environment`, or `min_replicas` when you need to influence startup
+   order, inject environment variables, or enforce scaling requirements.
 
-## Handling Ports and Replicas
-
-`VaultServicePlugin` exposes helper methods to honour operator overrides:
-
-- Call `self.resolve_port(env)` to apply `VAULT_WEB_PORT` if present, otherwise fall back to `metadata.default_port`.
-- Use `self.resolve_replicas(env)` to derive the number of web containers, respecting `VAULT_WEB_REPLICAS` and any plugin minimum.
-
-When scaling containers, ensure your Compose fragment uses the resolved replica count for both service definitions and any
-supporting constructs (for example, HAProxy labels or init containers).
+The [Operations Guide](OPERATIONS.md) explains how operators select plugins at runtime.
 
 ---
 
-## Volumes and Dependencies
+## Compose Fragment Patterns
 
-Plugins may declare additional Docker volumes or external services. Add them to the dictionaries returned by `build_compose()`:
+`build_compose()` merges directly into the base manifest. Keep fragments self-contained and reuse project resources:
+
+- Attach plugin services to `vault-net` for user traffic and to `control-net` when the orchestrator must reach them.
+- Reference secrets and credentials via environment variables loaded from `.env`.
+- Declare additional volumes or networks at the root level of the fragment when necessary.
+- For stateful dependencies (databases, caches), list their service names in `dependencies` so they bootstrap before the web
+  workload.
+
+Example skeleton:
 
 ```python
 def build_compose(self, env):
@@ -86,7 +82,9 @@ def build_compose(self, env):
             "myservice-web": {
                 "image": "example/myservice:latest",
                 "deploy": {"replicas": replicas},
-                "ports": [f"{port}:8080"],
+                "environment": {
+                    "MY_SERVICE_PORT": port,
+                },
                 "networks": ["vault-net"],
             },
             "myservice-db": {
@@ -101,36 +99,33 @@ def build_compose(self, env):
     }
 ```
 
-Declare dependent service names in `dependencies` so that `service.sh` renders them before the orchestrator and HAProxy.
+---
+
+## HAProxy and Rotation
+
+The HAProxy configuration is derived automatically from `get_containers()`. You do **not** need to edit `haproxy.cfg`
+manually. Ensure the container names you return correspond to services that expose HTTP endpoints. When a plugin exports
+multiple endpoints, return each container and manage routing internally within the plugin or by using dedicated frontend
+services.
 
 ---
 
-## HAProxy Integration
+## Testing Plugins
 
-No manual HAProxy edits are required. The generator consumes the containers returned by `get_containers()` and automatically:
+Always test plugins using `./service.sh`:
 
-- Registers each replica in the backend pool.
-- Applies `VAULT_WEB_HEALTHCHECK_PATH` (`VAULT_HEALTH_PATH`) and `VAULT_WEB_HEALTHCHECK_HOST` overrides when set.
-- Points health checks to the plugin’s default port unless `VAULT_WEB_PORT` specifies a custom value.
+1. Export or set `VAULT_SERVICE=<your-plugin>` in `.env`.
+2. Run `./service.sh build` to regenerate the Compose manifest and HAProxy configuration.
+3. Run `./service.sh start` to launch the stack and confirm the plugin boots.
+4. Inspect `docker-compose.generated.yml` and `haproxy/haproxy.cfg` to verify service definitions and backend pools.
+5. Use the orchestrator dashboard (`/orchestrator`) to ensure rotation metrics update as expected.
 
-If your workload exposes multiple HTTP entry points, consider returning dedicated container names for each entry point and handle
-routing inside the plugin (for example through an internal load balancer).
-
----
-
-## Testing a Plugin
-
-1. Add the plugin directory and implementation.
-2. Update `.env` with `VAULT_SERVICE=<your-plugin>` and any custom settings.
-3. Run `./service.sh build` followed by `./service.sh start` to generate new Compose and HAProxy artifacts.
-4. Inspect `docker-compose.generated.yml` and `haproxy/haproxy.cfg` to confirm your services and backends appear as expected.
-
-Because `service.sh` orchestrates configuration regeneration, avoid invoking the Python builder or Docker Compose directly during
-plugin development.
+If your plugin modifies documentation, update `docs/` accordingly and cross-link relevant sections.
 
 ---
 
-## Contributing
+## Submitting Changes
 
-Submit pull requests with new plugins or enhancements to the base orchestration system. Provide documentation describing the
-service, default credentials (if any), and security considerations so operators can deploy the plugin confidently.
+Follow the workflow and commit guidelines in [CONTRIBUTING.md](../CONTRIBUTING.md). Mention any new environment variables,
+secrets, or operational considerations in your pull request description so maintainers can update the
+[Maintainer Guide](MAINTAINER_GUIDE.md) or [Operations Guide](OPERATIONS.md) as needed.
