@@ -15,6 +15,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from compose.base_stack import BASE_NETWORKS, BASE_VOLUMES, build_base_services
+from compose.haproxy_config import (
+    HAPROXY_CONFIG_PATH,
+    render_haproxy_config,
+    resolve_backend_port,
+)
 from vault_plugins import VaultServicePlugin
 from vault_plugins.registry import get_active_plugin
 
@@ -62,7 +67,7 @@ def _parse_container_names(value: str) -> list[str]:
     return names
 
 
-def _ensure_web_containers(
+def resolve_web_containers(
     env: Mapping[str, str], plugin: VaultServicePlugin
 ) -> tuple[list[str], str]:
     env_value = env.get("VAULT_WEB_CONTAINERS", "").strip()
@@ -80,7 +85,11 @@ def _ensure_web_containers(
 
 
 def build_compose_manifest(
-    env: Mapping[str, str], plugin: VaultServicePlugin | None = None
+    env: Mapping[str, str],
+    plugin: VaultServicePlugin | None = None,
+    *,
+    web_containers: list[str] | None = None,
+    web_container_string: str | None = None,
 ) -> OrderedDict[str, object]:
     """Construct the docker-compose manifest for the active plugin."""
 
@@ -94,7 +103,10 @@ def build_compose_manifest(
     plugin_volumes = OrderedDict(plugin_data.get("volumes", {}))
     plugin_networks = OrderedDict(plugin_data.get("networks", {}))
 
-    web_containers, web_container_string = _ensure_web_containers(env, active_plugin)
+    if web_containers is None or web_container_string is None:
+        web_containers, web_container_string = resolve_web_containers(
+            env, active_plugin
+        )
 
     base_services = build_base_services(env, web_containers, web_container_string)
 
@@ -199,11 +211,43 @@ def write_manifest(manifest: Mapping[str, object], path: Path = OUTPUT_FILE) -> 
 
 def main() -> None:
     env = load_environment()
-    plugin = get_active_plugin(env)
+
+    try:
+        plugin = get_active_plugin(env)
+    except KeyError as e:
+        # Extract the invalid name from the message for clarity
+        raw_service = env.get("VAULT_SERVICE", "").strip() or "(none)"
+        print("\n[error] Invalid service selected in .env")
+        print(f"        VAULT_SERVICE = '{raw_service}' is not recognized.")
+        print(f"        {e}")
+        sys.exit(1)
+
     print(f"[compose] Active service plugin: {plugin.name}")
-    replicas = env.get("VAULT_WEB_REPLICAS", "").strip()
-    print(f"[compose] Number of replicas chosen: {replicas}")
-    manifest = build_compose_manifest(env, plugin)
+    replicas_raw = env.get("VAULT_WEB_REPLICAS", "").strip()
+    if replicas_raw:
+        print(f"[compose] Number of replicas chosen: {replicas_raw}")
+    else:
+        print(
+            f"[compose] Number of replicas chosen: {plugin.active_replicas} (default)"
+        )
+    web_containers, web_container_string = resolve_web_containers(env, plugin)
+    backend_port = resolve_backend_port(env, plugin)
+    haproxy_config = render_haproxy_config(plugin, web_containers, backend_port)
+    HAPROXY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    HAPROXY_CONFIG_PATH.write_text(haproxy_config)
+    backend_summary = ", ".join(f"{name}:{backend_port}" for name in web_containers)
+    print(
+        f"[haproxy] Generated config for plugin: {plugin.name} "
+        f"({len(web_containers)} replica{'s' if len(web_containers) != 1 else ''})"
+    )
+    if backend_summary:
+        print(f"[haproxy] Backends: {backend_summary}")
+    manifest = build_compose_manifest(
+        env,
+        plugin,
+        web_containers=web_containers,
+        web_container_string=web_container_string,
+    )
     write_manifest(manifest, OUTPUT_FILE)
     print(f"[compose] Wrote {OUTPUT_FILE}\n")
 

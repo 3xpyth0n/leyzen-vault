@@ -49,12 +49,12 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ## Core Components ⚙️
 
-| Component               | Description                                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Vault Orchestrator**  | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.                                                    |
-| **Filebrowser Cluster** | Trio of lightweight file-manager containers rotated polymorphically.                                                                        |
-| **HAProxy**             | Reverse proxy exposed on port **8080**, routing users to Filebrowser or the Orchestrator dashboard.                                         |
-| **Shared Volumes**      | Docker volumes (`filebrowser-data`, `filebrowser-database`, `filebrowser-config`) persisting uploads, users, and settings across rotations. |
+| Component               | Description                                                                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vault Orchestrator**  | Python-based orchestrator handling container rotation, metrics, and dashboard rendering.                                                                        |
+| **Filebrowser Cluster** | Trio of lightweight file-manager containers rotated polymorphically.                                                                                            |
+| **HAProxy**             | Reverse proxy exposed on port **8080**, automatically routing users to the active service plugin (Filebrowser, Paperless, etc.) and the Orchestrator dashboard. |
+| **Shared Volumes**      | Docker volumes (`filebrowser-data`, `filebrowser-database`, `filebrowser-config`) persisting uploads, users, and settings across rotations.                     |
 
 ---
 
@@ -133,6 +133,9 @@ Environment variables are loaded from `.env`. Restrict the file’s permissions 
 - `VAULT_SESSION_COOKIE_SECURE` — mark orchestrator session cookies as `Secure` when HTTPS terminates upstream (enabled by default).
 - `VAULT_SERVICE` — selects the active web stack plugin (`filebrowser`, `paperless`, or custom implementations under `vault_plugins/`).
 - `VAULT_WEB_REPLICAS` — desired number of front-end replicas for the active plugin; values below the plugin minimum are automatically clamped.
+- `VAULT_WEB_PORT` — optional override for the plugin’s internal HTTP port; defaults to the plugin’s native value when unset.
+- `VAULT_WEB_HEALTHCHECK_PATH` — optional override for the HTTP path HAProxy polls to determine backend health; defaults to `/`.
+- `VAULT_WEB_HEALTHCHECK_HOST` — optional override for the Host header emitted during HAProxy health checks; defaults to the plugin-provided value (`localhost` for bundled services).
 - `VAULT_WEB_CONTAINERS` — optional comma-separated override for the rotation allowlist; when omitted the orchestrator derives the list from `VAULT_SERVICE`.
 - `DOCKER_PROXY_URL` and `DOCKER_PROXY_TOKEN` — access details for the secured Docker proxy.
 - `PROXY_TRUST_COUNT` — number of upstream proxies whose forwarded headers should be trusted (`0` when serving requests directly, `1` when HAProxy fronts the stack); see [`env.template`](env.template) for additional guidance.
@@ -157,7 +160,7 @@ When switching to the Paperless plugin the following additional volumes are crea
 
 ### Service plugins
 
-Leyzen Vault’s web layer is now delivered through dynamically discovered plugins under [`vault_plugins/`](vault_plugins/). The helper script invokes [`compose/build.py`](compose/build.py) before every lifecycle action to generate `docker-compose.generated.yml`, merge the base stack with the selected plugin, and populate dependency allowlists for the orchestrator and Docker proxy. Set `VAULT_SERVICE` in `.env` (default: `filebrowser`) to switch stacks; `paperless` provisions Paperless-ngx along with Redis and Postgres sidecars. Additional plugins can be added by dropping a `vault_plugins/<name>/plugin.py` module that subclasses `VaultServicePlugin`. Each plugin exposes its web-facing container names through `get_containers()` so the orchestrator can rotate them automatically, and honours `VAULT_WEB_REPLICAS` to scale the number of front-end clones (subject to plugin-specific minimums).
+Leyzen Vault’s web layer is now delivered through dynamically discovered plugins under [`vault_plugins/`](vault_plugins/). The helper script invokes [`compose/build.py`](compose/build.py) before every lifecycle action to generate `docker-compose.generated.yml`, merge the base stack with the selected plugin, populate dependency allowlists for the orchestrator and Docker proxy, and render `haproxy/haproxy.cfg` with the matching backend list. Set `VAULT_SERVICE` in `.env` (default: `filebrowser`) to switch stacks; `paperless` provisions Paperless-ngx along with Redis and Postgres sidecars. Additional plugins can be added by dropping a `vault_plugins/<name>/plugin.py` module that subclasses `VaultServicePlugin`. Each plugin exposes its web-facing container names through `get_containers()` so the orchestrator can rotate them automatically, honours `VAULT_WEB_REPLICAS` to scale the number of front-end clones (subject to plugin-specific minimums), and supports port overrides via `VAULT_WEB_PORT` (plus health-check tuning via `VAULT_WEB_HEALTHCHECK_PATH` / `VAULT_WEB_HEALTHCHECK_HOST`) when needed.
 
 ---
 
@@ -172,6 +175,8 @@ The `service.sh` helper centralizes day-to-day operations:
 ./service.sh restart  # Stop then start the stack again
 ./service.sh status   # Display container states and exposed ports
 ```
+
+Each invocation regenerates both `docker-compose.generated.yml` and `haproxy/haproxy.cfg` so the selected plugin (`VAULT_SERVICE`), replica count (`VAULT_WEB_REPLICAS`), and optional backend port override (`VAULT_WEB_PORT`) stay in sync with the running stack.
 
 To manage the optional systemd unit:
 
@@ -203,12 +208,12 @@ For a deeper walkthrough of the threat model and mitigations, consult the dedica
 
 ## Service Endpoints 🌐
 
-| Service                          | URL / Port                                                               | Description                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| **HAProxy**                      | `:8080`                                                                  | Routes to Filebrowser and Orchestrator                                          |
-| **Docker Proxy**                 | internal (`docker-proxy:2375`)                                           | Mediates container lifecycle calls                                              |
-| **Active web service**           | [http://localhost:8080/](http://localhost:8080/)                         | Filebrowser UI by default; switches to Paperless when `VAULT_SERVICE=paperless` |
-| **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control                                                |
+| Service                          | URL / Port                                                               | Description                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| **HAProxy**                      | `:8080`                                                                  | Routes to the active plugin plus Orchestrator; backend port defaults to `80` and honors `VAULT_WEB_PORT`. |
+| **Docker Proxy**                 | internal (`docker-proxy:2375`)                                           | Mediates container lifecycle calls                                                                        |
+| **Active web service**           | [http://localhost:8080/](http://localhost:8080/)                         | Filebrowser UI by default; switches to Paperless when `VAULT_SERVICE=paperless`                           |
+| **Vault Orchestrator Dashboard** | [http://localhost:8080/orchestrator](http://localhost:8080/orchestrator) | Real-time monitoring and control                                                                          |
 
 ---
 
