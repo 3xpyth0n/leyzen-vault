@@ -104,6 +104,8 @@ Review `.env` before the first launch and set strong secrets. Then start the ful
 ./service.sh start
 ```
 
+> 💡 **If you’re testing the stack over plain HTTP (`http://localhost:8080`)**: set `VAULT_SESSION_COOKIE_SECURE=false` in your `.env` file (see the documented block in [`.env`/`env.template`](env.template)). Without this setting, the session cookie’s `Secure` attribute prevents it from being sent without TLS, causing a login loop.
+
 If the stack is managed through `systemd`, run the installer to provision the service unit:
 
 ```bash
@@ -183,7 +185,7 @@ For operational procedures, security controls, and advanced configuration, see t
 
 ## License 📄
 
-This project is distributed under the [Business Source License 1.1](LICENSE). Usage terms and the conversion date to an open-source license are detailed in the license file.
+This project is distributed under the [Business Source License 1.1](LICENSE). Until the change date of **2030-01-01**, the Additional Use Grant permits personal, educational, and non-commercial internal use; other uses require a commercial license. On the change date, the code automatically converts to **AGPLv3**. For more context, consult the [BSL FAQ](https://mariadb.com/bsl-faq/).
 Notices for bundled third-party assets are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
