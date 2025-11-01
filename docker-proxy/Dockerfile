@@ -21,4 +21,4 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 2375
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "--worker-class", "gevent", "--workers", "2", "--threads", "4", "--bind", "0.0.0.0:2375", "--timeout", "0", "--graceful-timeout", "5", "--access-logfile", "-", "proxy:app"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "2375", "--workers", "2", "--timeout-keep-alive", "5", "--log-level", "info"]

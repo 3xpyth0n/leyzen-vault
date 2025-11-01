@@ -192,22 +192,31 @@ class DockerProxyService:
         self._inspect_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_meta: Dict[str, float] = {}
         self._cache_lock = Lock()
+        self._proxy_error_last_logged: Dict[str, float] = {}
 
     @property
     def web_containers(self) -> list[str]:
         return list(self._settings.web_containers)
 
-    def get_container_safe(self, name: str) -> Optional[ProxyContainer]:
+    def get_container_safe(
+        self, name: str, *, suppress_errors: bool = True
+    ) -> Optional[ProxyContainer]:
         if name not in self.managed_container_names:
             self._logger.log(f"[ERROR] Attempt to access unmanaged container {name}")
             return None
 
         cached = self._get_cached_payload(name)
         if cached is None:
-            refreshed = self.refresh_container_cache(name)
-            if refreshed is None:
+            try:
+                payload, timestamp = self.refresh_container_cache(
+                    name, log_errors=suppress_errors
+                )
+            except DockerProxyNotFound:
                 return None
-            payload, timestamp = refreshed
+            except DockerProxyError:
+                if suppress_errors:
+                    return None
+                raise
         else:
             payload, timestamp = cached
 
@@ -272,20 +281,42 @@ class DockerProxyService:
             self._cache_meta.pop(name, None)
 
     def refresh_container_cache(
-        self, name: str
-    ) -> Optional[Tuple[Dict[str, Any], float]]:
+        self, name: str, *, log_errors: bool = True
+    ) -> Tuple[Dict[str, Any], float]:
         try:
             payload = self.client.inspect(name)
         except DockerProxyNotFound:
             self.invalidate_container_cache(name)
-            self._logger.log(f"[ERROR] Container {name} not found")
-            return None
+            if log_errors:
+                self._logger.log(f"[ERROR] Container {name} not found")
+            raise
         except DockerProxyError as exc:
-            self._logger.log(f"[ERROR] Error getting container {name}: {exc}")
-            return None
+            if log_errors:
+                self._log_proxy_error(name, exc)
+            raise
 
         timestamp = self._store_cache(name, payload)
         return payload, timestamp
+
+    def _log_proxy_error(self, name: str, exc: Exception) -> None:
+        message = str(exc)
+        if "Failed to reach docker proxy" in message:
+            if self._should_log_proxy_error("connection", interval=5.0):
+                self._logger.log(
+                    "[ERROR] Docker proxy unreachable while inspecting containers: "
+                    f"{message}"
+                )
+            return
+
+        self._logger.log(f"[ERROR] Error getting container {name}: {message}")
+
+    def _should_log_proxy_error(self, key: str, *, interval: float) -> bool:
+        now = time.time()
+        last = self._proxy_error_last_logged.get(key, 0.0)
+        if now - last >= interval:
+            self._proxy_error_last_logged[key] = now
+            return True
+        return False
 
     def wait_until_healthy(
         self,
