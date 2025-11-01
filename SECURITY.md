@@ -8,7 +8,6 @@ Leyzen Vault is a proof-of-concept project. We currently maintain only the `main
 
 Please report suspected security issues through one of the private channels below:
 
-- Email: security@leyzen.io (PGP optional; request the key if needed).
 - GitHub Security Advisories: [Create a private report](https://github.com/3xpyth0n/leyzen-vault/security/advisories/new).
 
 Avoid filing public GitHub issues for vulnerabilities until we have coordinated on a fix or disclosure timeline.

@@ -1,6 +1,6 @@
 # Leyzen Vault ⚙️
 
-[![CI status](https://img.shields.io/badge/CI%20status-configured-blue)](https://github.com/3xpyth0n/leyzen-vault/actions)
+[![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](LICENSE)
 
 > **Dynamic Moving-Target Infrastructure — Proof of Concept**
@@ -204,6 +204,8 @@ Need help or found an issue?
 ## Project Status 📊
 
 Leyzen Vault is an evolving demonstrator exploring automated ephemeral backends, dynamic routing, and autonomous cyber defense patterns.
+
+Automated GitHub Actions CI runs [`python -m compileall orchestrator docker-proxy`](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml) on every push and pull request to catch syntax issues early in both Python services.
 
 ---
 
