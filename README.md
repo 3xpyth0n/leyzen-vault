@@ -21,6 +21,7 @@
 - [Installation](#installation-)
 - [Configuration](#configuration-)
 - [Usage](#usage-)
+- [Security](#security-)
 - [Service Endpoints](#service-endpoints-)
 - [Further Documentation](#further-documentation-)
 - [License](#license-)
@@ -164,6 +165,25 @@ To manage the optional systemd unit:
 sudo systemctl status leyzen.service      # Inspect service health
 journalctl -u leyzen.service -f           # Follow live logs
 ```
+
+---
+
+## Security 🔐
+
+Leyzen Vault ships with layered safeguards intended to shrink the attack surface while keeping the demo stack operable:
+
+- **Browser protections** — The orchestrator templates enforce a locked-down Content Security Policy (CSP) and embed CSRF tokens so that authenticated actions cannot be replayed from foreign origins.
+- **Abuse defenses** — Login flows require CAPTCHA completion and throttle repeated attempts, limiting credential stuffing windows.
+- **Network isolation** — Administrative Docker operations are gated behind the separate [`docker-proxy`](docker-proxy) service, ensuring the Docker socket is never exposed directly to end users.
+- **Secrets hygiene** — All credentials and API tokens reside in a local `.env` file with restrictive permissions (`chmod 600 .env` recommended) and must be provisioned before first launch.
+
+Operationally critical settings include:
+
+- `VAULT_SESSION_COOKIE_SECURE` — Keep this enabled in production so session cookies are transmitted only over HTTPS; disable temporarily **only** for local HTTP testing.
+- `DOCKER_PROXY_TOKEN` — Rotate the proxy bearer token regularly and update any automation that references it.
+- `.env` permissions — Ensure only the service account (and trusted administrators) can read secrets by locking down the file system access bits.
+
+For a deeper walkthrough of the threat model and mitigations, consult the dedicated [Security Policy](SECURITY.md) and extended [Technical Guide](docs/TECHNICAL_GUIDE.md).
 
 ---
 
