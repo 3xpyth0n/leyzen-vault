@@ -84,9 +84,14 @@ class VaultServicePlugin(ABC):
 
     def _resolve_healthcheck_path(self, env: Mapping[str, str]) -> str:
         override = env.get("VAULT_WEB_HEALTHCHECK_PATH", "").strip()
+        alias = env.get("VAULT_HEALTH_PATH", "").strip()
         if override:
-            return self._sanitize_healthcheck_path(override)
-        return self._sanitize_healthcheck_path(self.healthcheck_path)
+            candidate = override
+        elif alias:
+            candidate = alias
+        else:
+            candidate = self.healthcheck_path
+        return self._sanitize_healthcheck_path(candidate)
 
     def _resolve_healthcheck_host(self, env: Mapping[str, str]) -> str:
         override = env.get("VAULT_WEB_HEALTHCHECK_HOST", "").strip()
