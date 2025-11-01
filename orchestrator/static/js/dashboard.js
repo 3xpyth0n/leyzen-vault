@@ -29,19 +29,41 @@ let orchestratorRunning = true;
 const MAX_FAILS = 5; // after N fails consider API offline
 
 let pendingAnimationFrame = null;
+let pendingFallbackTimeout = null;
 let pendingSnapshot = null;
 let hasBootstrappedHistory = false;
 let hasPrimedStateWaveHistory = false;
 
 function flushDashboardQueue() {
-  if (!pendingSnapshot) {
+  if (pendingAnimationFrame !== null) {
+    if (typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(pendingAnimationFrame);
+    }
     pendingAnimationFrame = null;
+  }
+  if (pendingFallbackTimeout !== null) {
+    clearTimeout(pendingFallbackTimeout);
+    pendingFallbackTimeout = null;
+  }
+  if (!pendingSnapshot) {
     return;
   }
   const snapshot = pendingSnapshot;
   pendingSnapshot = null;
-  pendingAnimationFrame = null;
   updateDashboardFromData(snapshot);
+}
+
+function shouldUseTimeoutFallback() {
+  if (typeof document === "undefined") return false;
+  if (typeof requestAnimationFrame !== "function") return true;
+  const { visibilityState, hidden } = document;
+  if (typeof visibilityState === "string") {
+    return visibilityState !== "visible";
+  }
+  if (typeof hidden === "boolean") {
+    return hidden;
+  }
+  return false;
 }
 
 function scheduleDashboardUpdate(data, options = {}) {
@@ -49,15 +71,18 @@ function scheduleDashboardUpdate(data, options = {}) {
   const { immediate = false } = options;
   pendingSnapshot = data;
   if (immediate) {
-    if (pendingAnimationFrame) {
-      cancelAnimationFrame(pendingAnimationFrame);
-      pendingAnimationFrame = null;
-    }
     flushDashboardQueue();
     return;
   }
-  if (pendingAnimationFrame) return;
-  pendingAnimationFrame = requestAnimationFrame(flushDashboardQueue);
+  if (
+    pendingAnimationFrame === null &&
+    typeof requestAnimationFrame === "function"
+  ) {
+    pendingAnimationFrame = requestAnimationFrame(flushDashboardQueue);
+  }
+  if (pendingFallbackTimeout === null && shouldUseTimeoutFallback()) {
+    pendingFallbackTimeout = setTimeout(flushDashboardQueue, SSE_THROTTLE_MS);
+  }
 }
 
 function readNumberMeta(name) {
@@ -1297,6 +1322,68 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
   });
 }
 
+function renderStateWaveHealthyUptime(summary) {
+  const listEl = document.getElementById("state-wave-health-list");
+  const emptyEl = document.getElementById("state-wave-health-empty");
+  if (!listEl) return;
+
+  const entries = Array.isArray(summary)
+    ? summary.filter((item) => item && Number.isFinite(item.uptime))
+    : [];
+
+  entries.sort((a, b) => {
+    if (a.isHealthy !== b.isHealthy) {
+      return Number(b.isHealthy) - Number(a.isHealthy);
+    }
+    if (b.uptime !== a.uptime) {
+      return b.uptime - a.uptime;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  listEl.innerHTML = "";
+
+  entries.forEach((entry) => {
+    const item = document.createElement("li");
+    item.className = "state-wave-health-item";
+    item.dataset.state = String(entry.statusValue ?? "");
+
+    const nameWrapper = document.createElement("div");
+    nameWrapper.className = "state-wave-health-name";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "state-wave-health-label";
+    nameEl.textContent = entry.name;
+    nameWrapper.appendChild(nameEl);
+
+    if (entry.statusLabel) {
+      const statusEl = document.createElement("span");
+      statusEl.className = "state-wave-health-status";
+      statusEl.textContent = entry.statusLabel;
+      nameWrapper.appendChild(statusEl);
+    }
+
+    const uptimeEl = document.createElement("span");
+    uptimeEl.className = "state-wave-health-uptime";
+    uptimeEl.textContent = fmtHMS(entry.uptime);
+    uptimeEl.setAttribute(
+      "aria-label",
+      `${entry.name} healthy for ${fmtHMS(entry.uptime)}`,
+    );
+
+    item.appendChild(nameWrapper);
+    item.appendChild(uptimeEl);
+
+    listEl.appendChild(item);
+  });
+
+  const hasEntries = entries.length > 0;
+  listEl.style.display = hasEntries ? "" : "none";
+  if (emptyEl) {
+    emptyEl.style.display = hasEntries ? "none" : "";
+  }
+}
+
 function updateMetricChartActivation() {
   const entries = [
     ["cpu", cpuChart],
@@ -1558,6 +1645,7 @@ function updateDashboardFromData(json) {
 
     const labels = [];
     const data = [];
+    const healthySummary = [];
 
     for (const [name, info] of Object.entries(containers)) {
       const uptime = Number(info?.uptime) || 0;
@@ -1575,9 +1663,19 @@ function updateDashboardFromData(json) {
       if (status.isHealthy) {
         healthyCount += 1;
       }
+
+      healthySummary.push({
+        name,
+        uptime,
+        statusValue: status.value,
+        statusLabel: STATE_WAVE_STATE_LABELS[status.value] || "Unknown",
+        isHealthy: status.isHealthy,
+      });
     }
 
     updateUptimeChart(labels, data);
+
+    renderStateWaveHealthyUptime(healthySummary);
 
     safeSetText("rotation-count", json.rotation_count ?? 0);
     safeSetText("rot-count-small", json.rotation_count ?? 0);
