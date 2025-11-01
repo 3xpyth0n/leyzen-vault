@@ -38,7 +38,7 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=False,
+        SESSION_COOKIE_SECURE=settings.session_cookie_secure,
     )
 
     logger = FileLogger(settings)

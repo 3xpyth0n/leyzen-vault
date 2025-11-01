@@ -47,9 +47,12 @@ service and highlights considerations for extending the stack safely.
   [`orchestrator/blueprints/auth.py:L196-L230`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/blueprints/auth.py#L196-L230)  
   [`orchestrator/blueprints/auth.py:L321-L360`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/blueprints/auth.py#L321-L360)
 
-- Sessions are flagged `HttpOnly` and `SameSite=Lax`; background workers are
-  started lazily to limit exposure before the first authenticated request.  
-  [`orchestrator/__init__.py:L30-L57`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/__init__.py#L30-L57)  
+- Sessions are flagged `HttpOnly`, `SameSite=Lax`, and `Secure` by default to
+  ensure cookies ride only over HTTPS; background workers are started lazily to
+  limit exposure before the first authenticated request. Deployments that run
+  entirely on HTTP may toggle `VAULT_SESSION_COOKIE_SECURE` to `false`.
+  [`orchestrator/__init__.py:L30-L57`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/__init__.py#L30-L57)
+  [`orchestrator/config.py:L43-L180`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/config.py#L43-L180)
   [`orchestrator/app.py:L39-L63`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/app.py#L39-L63)
 
 ## Request handling and transport security
@@ -104,10 +107,9 @@ service and highlights considerations for extending the stack safely.
 
 ## Known gaps and future hardening
 
-- Session cookies are not yet marked `Secure`; deployments behind TLS-terminating
-  proxies should enable it by setting `SESSION_COOKIE_SECURE` to `True` when TLS
-  is guaranteed end-to-end.  
-  [`orchestrator/__init__.py:L30-L45`](https://github.com/3xpyth0n/leyzen-vault/blob/main/orchestrator/__init__.py#L30-L45)
+- Session cookies default to `Secure`, but environments without TLS must
+  explicitly relax `VAULT_SESSION_COOKIE_SECURE`. Ensure proxies terminate HTTPS
+  before disabling this protection.
 
 - The captcha store and login attempt tracker rely on in-memory globals, which
   are reset across process restarts and do not scale horizontally. Consider

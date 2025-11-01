@@ -124,6 +124,7 @@ Environment variables are loaded from `.env`. Key entries include:
 - `VAULT_SECRET_KEY` — Flask secret key (use `openssl rand -hex 32`).
 - `FILEBROWSER_ADMIN_USER` / `FILEBROWSER_ADMIN_PASSWORD` — Filebrowser administrator credentials.
 - `VAULT_ROTATION_INTERVAL` — rotation interval (seconds) for backend containers.
+- `VAULT_SESSION_COOKIE_SECURE` — mark orchestrator session cookies as `Secure` when HTTPS terminates upstream (enabled by default).
 - `VAULT_WEB_CONTAINERS` — comma-separated list of containers eligible for rotation.
 - `DOCKER_PROXY_URL` and `DOCKER_PROXY_TOKEN` — access details for the secured Docker proxy.
 
@@ -196,7 +197,7 @@ Need help or found an issue?
 
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Contributing Guide](CONTRIBUTING.md)
-- [Security Policy](orchestrator/SECURITY.md)
+- [Security Policy](SECURITY.md)
 
 ---
 
