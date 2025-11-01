@@ -64,6 +64,7 @@ class Settings:
     csp_report_rate_limit: int
     csp_report_rate_window: timedelta
     sse_stream_interval_ms: int
+    session_cookie_secure: bool
 
     @property
     def log_dir(self) -> Path:
@@ -107,6 +108,23 @@ def _determine_log_file(base_dir: Path) -> Path:
         pass
 
     return log_path
+
+
+_TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
+_FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
+
+
+def _parse_bool(value: Optional[str], *, default: bool) -> bool:
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in _TRUE_VALUES:
+        return True
+    if normalized in _FALSE_VALUES:
+        return False
+
+    return default
 
 
 def load_settings() -> Settings:
@@ -187,6 +205,10 @@ def load_settings() -> Settings:
     except ValueError:
         sse_stream_interval_ms = 500
 
+    session_cookie_secure = _parse_bool(
+        os.environ.get("VAULT_SESSION_COOKIE_SECURE"), default=True
+    )
+
     return Settings(
         timezone=timezone,
         username=username,
@@ -208,6 +230,7 @@ def load_settings() -> Settings:
         csp_report_rate_limit=csp_report_rate_limit,
         csp_report_rate_window=csp_report_rate_window,
         sse_stream_interval_ms=sse_stream_interval_ms,
+        session_cookie_secure=session_cookie_secure,
     )
 
 
