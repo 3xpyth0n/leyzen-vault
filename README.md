@@ -1,5 +1,8 @@
 # Leyzen Vault ⚙️
 
+[![CI status](https://img.shields.io/badge/CI%20status-configured-blue)](https://github.com/3xpyth0n/leyzen-vault/actions)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](LICENSE)
+
 > **Dynamic Moving-Target Infrastructure — Proof of Concept**
 >
 > Licensed under the **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE) for details.
@@ -8,9 +11,38 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview-)
+- [Key Features](#key-features-)
+- [Core Components](#core-components-)
+- [Reference Architecture](#reference-architecture-)
+- [Prerequisites](#prerequisites-)
+- [Installation](#installation-)
+- [Configuration](#configuration-)
+- [Usage](#usage-)
+- [Service Endpoints](#service-endpoints-)
+- [Further Documentation](#further-documentation-)
+- [License](#license-)
+- [Support and Contact](#support-and-contact-)
+- [Policies and Guidelines](#policies-and-guidelines-)
+- [Project Status](#project-status-)
+- [Credits](#credits-)
+
+---
+
 ## Overview 🧩
 
 Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infrastructure polymorphism to containerized applications. The orchestrator continuously rotates _Filebrowser_ backends while maintaining a seamless user experience. Each container’s lifecycle is ephemeral — born, used, and destroyed — minimizing the attack persistence window.
+
+---
+
+## Key Features 🔑
+
+- **Autonomous container rotation** keeps workloads shifting to shrink the attacker dwell time window.
+- **Self-healing deployment** restarts components automatically when health checks fail.
+- **Centralized observability** exposes live orchestrator metrics and audit logs.
+- **Security-first defaults** rely on minimal network exposure and enforced credential rotation.
 
 ---
 
@@ -55,30 +87,75 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 
 ---
 
-## Quick Start 🚀
+## Installation 🧭
 
-Clone, configure your secrets, then install:
+Clone the repository and bootstrap the Docker services:
 
 ```bash
-git clone git@github.com:3xpyth0n/leyzen-vault.git
+git clone https://github.com/3xpyth0n/leyzen-vault.git
 cd leyzen-vault
 cp env.template .env
-nano .env
+```
+
+Review `.env` before the first launch and set strong secrets. Then start the full stack using the helper script:
+
+```bash
+./service.sh start
+```
+
+If the stack is managed through `systemd`, run the installer to provision the service unit:
+
+```bash
 sudo ./install.sh
+sudo systemctl enable --now leyzen.service
 ```
 
-> ⚠️ **Security**: Set `FILEBROWSER_ADMIN_PASSWORD` to long, random value and renew it regularly.
+> ⚠️ **Security reminder:** Set `FILEBROWSER_ADMIN_PASSWORD` to a long, random value and rotate it regularly.
 
-Check service status:
+---
+
+## Configuration 🧪
+
+### Environment variables
+
+Environment variables are loaded from `.env`. Key entries include:
+
+- `VAULT_USER` / `VAULT_PASS` — dashboard credentials; never commit real values.
+- `VAULT_SECRET_KEY` — Flask secret key (use `openssl rand -hex 32`).
+- `FILEBROWSER_ADMIN_USER` / `FILEBROWSER_ADMIN_PASSWORD` — Filebrowser administrator credentials.
+- `VAULT_ROTATION_INTERVAL` — rotation interval (seconds) for backend containers.
+- `VAULT_WEB_CONTAINERS` — comma-separated list of containers eligible for rotation.
+- `DOCKER_PROXY_URL` and `DOCKER_PROXY_TOKEN` — access details for the secured Docker proxy.
+
+Consult [`env.template`](env.template) for the full list and documentation of supported variables.
+
+### Docker resources
+
+The stack relies on Docker volumes declared in `docker-compose.yml` for Filebrowser data persistence. Ensure the Docker daemon user can access:
+
+- `filebrowser-data`
+- `filebrowser-database`
+- `filebrowser-config`
+
+---
+
+## Usage 🛠️
+
+The `service.sh` helper centralizes day-to-day operations:
 
 ```bash
-sudo systemctl status leyzen.service
+./service.sh start    # Launch all containers in detached mode
+./service.sh stop     # Stop and remove running containers (volumes are preserved)
+./service.sh build    # Rebuild images and restart the stack
+./service.sh restart  # Stop then start the stack again
+./service.sh status   # Display container states and exposed ports
 ```
 
-Follow live logs:
+To manage the optional systemd unit:
 
 ```bash
-journalctl -u leyzen.service -f
+sudo systemctl status leyzen.service      # Inspect service health
+journalctl -u leyzen.service -f           # Follow live logs
 ```
 
 ---
@@ -94,18 +171,32 @@ journalctl -u leyzen.service -f
 
 ---
 
-## Design Highlights 💡
-
-✅ **Moving Target Defense:** Containers are continuously replaced to prevent persistence attacks.
-✅ **Resilience:** The service remains operational even during rotations.
-✅ **Observability:** `/orchestrator` provides full visibility into states, logs, and uptime metrics.
-✅ **Isolation:** Only HAProxy touches the host network, minimizing the exposed surface.
-
----
-
 ## Further Documentation 📚
 
 For operational procedures, security controls, and advanced configuration, see the [Technical Guide](docs/TECHNICAL_GUIDE.md).
+
+---
+
+## License 📄
+
+This project is distributed under the [Business Source License 1.1](LICENSE). Usage terms and the conversion date to an open-source license are detailed in the license file.
+
+---
+
+## Support and Contact 🤝
+
+Need help or found an issue?
+
+- Open a ticket in the [GitHub issue tracker](https://github.com/3xpyth0n/leyzen-vault/issues).
+- For private matters, reach out to the maintainer via the contact options on the [GitHub profile](https://github.com/3xpyth0n).
+
+---
+
+## Policies and Guidelines 📑
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Security Policy](orchestrator/SECURITY.md)
 
 ---
 
