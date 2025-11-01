@@ -1,49 +1,105 @@
 # Leyzen Vault Technical Guide
 
-This document covers operational procedures, security controls, and advanced configuration for the Leyzen Vault proof-of-concept. Use it as a companion to the high-level overview in the main README.
+This guide describes the internal architecture that powers Leyzen Vault’s modular moving-target defense platform. Use it as a
+companion to the high-level overview in the main README and the implementation references in `compose/` and `vault_plugins/`.
 
-## Operations
+---
 
-- Network isolation uses two dedicated bridges: `vault-net` (user-facing services) and `control-net` (docker-proxy control plane). Only HAProxy is exposed publicly.
-- Health checks ensure uptime and auto-recovery.
-- The **Python Orchestrator** performs randomized rotation cycles.
-- **Service plugins** under [`vault_plugins/`](../vault_plugins/) define the web workload that HAProxy exposes. Filebrowser remains the default plugin, while the Paperless plugin extends the stack with Redis and Postgres sidecars.
-- [`compose/haproxy_config.py`](../compose/haproxy_config.py) renders `haproxy/haproxy.cfg` on each build so HAProxy targets the active plugin replicas. `VAULT_WEB_PORT` overrides the backend port when a plugin listens somewhere other than `80`, while `VAULT_WEB_HEALTHCHECK_PATH` / `VAULT_WEB_HEALTHCHECK_HOST` tweak the HTTP health checks (path + Host header) emitted towards the backend.
-- **Shared volumes** are provisioned per plugin. Filebrowser mounts `filebrowser-data`, `filebrowser-database`, and `filebrowser-config`; Paperless adds `paperless-data`, `paperless-media`, `paperless-export`, `paperless-postgres`, and `paperless-redis`.
-- When updating the Filebrowser binary (bumping `FILEBROWSER_VERSION` in `filebrowser/Dockerfile`), the Docker build automatically retrieves the matching checksum from the upstream `filebrowser_<version>_checksums.txt` manifest, so no manual refresh is required.
-- Container lifecycle commands flow through the secured `docker-proxy` API (`DOCKER_PROXY_URL`) with a rotating `DOCKER_PROXY_TOKEN`, replacing direct socket mounts.
+## Architectural Overview
 
-## Control Plane Security
+Leyzen Vault assembles its runtime dynamically from three cooperating subsystems:
 
-- `docker-proxy` is attached exclusively to the internal `control-net` bridge. Other services cannot reach the Docker socket unless they are explicitly joined to that network.
-- `orchestrator` is dual-homed (`vault-net` + `control-net`) so it can expose the dashboard while still reaching the proxy for lifecycle actions.
-- Client IP attribution is mediated by Werkzeug's `ProxyFix`. Keep `PROXY_TRUST_COUNT=1` (default) when HAProxy fronts the stack, and switch to `0` if clients hit the orchestrator directly without a proxy.
-- HAProxy forwards the original `X-Forwarded-For` chain when provided, sets `X-Forwarded-Proto` for TLS frontends, and only applies HSTS when traffic arrived over HTTPS, keeping plaintext development workflows unaffected.
-- Every proxy call includes the `Authorization: Bearer <DOCKER_PROXY_TOKEN>` header. Rotate this token routinely:
-  1. Generate a fresh random string (for example with `openssl rand -hex 32`).
-  2. Update the value of `DOCKER_PROXY_TOKEN` in your local `.env` file.
-  3. Reload the stack (`docker compose up -d orchestrator docker-proxy`).
-  4. Revoke the old token wherever it was stored.
-- The Docker proxy enforces an explicit container allowlist before any request reaches the Docker socket. The compose builder injects the plugin’s container names by default; set `VAULT_WEB_CONTAINERS` manually only when you need to override the plugin-provided list.
+1. **Plugin Loader** — The registry under [`vault_plugins/`](../vault_plugins/) discovers modules that subclass
+   `VaultServicePlugin`. Each plugin exposes metadata, Compose fragments, and rotation-aware container names.
+2. **Compose Builder** — [`compose/build.py`](../compose/build.py) merges the base services with the selected plugin to generate a
+   tailored `docker-compose.generated.yml`. It handles dependency ordering, volume aggregation, and environment overrides.
+3. **HAProxy Generator** — [`compose/haproxy_config.py`](../compose/haproxy_config.py) renders `haproxy/haproxy.cfg` so that
+   frontend routing, health checks, and replica pools align with the active plugin.
 
-### CSP reporting endpoint protection
+These pieces are orchestrated automatically through `service.sh`, ensuring the stack remains self-contained and consistent with
+the `.env` configuration.
 
-- `CSP_REPORT_MAX_SIZE` (default `4096`) rejects oversized Content Security Policy violation reports with HTTP 413 **before** the orchestrator reads the payload.
-- `CSP_REPORT_RATE_LIMIT` (default `5`) caps accepted CSP reports per client IP over a rolling 60-second window; further requests receive HTTP 429.
-- Browsers capable of the Reporting API are instructed to use the same endpoint via `Report-To`, in addition to the legacy `report-uri`, so CSP telemetry lands at `/orchestrator/csp-violation-report-endpoint` regardless of browser support.
+---
 
-## Secret scanning & credential hygiene
+## Workflow
 
-- Run comprehensive secret scans before shipping changes:
-  - `trufflehog --json --regex .` to sweep repository history for high-entropy strings and credential patterns.
-  - `git secrets --scan` to lint the working tree against common AWS and generic secret signatures.
-  - Targeted ripgrep checks (`rg "SECRET"`, `rg "PASSWORD"`, `rg "TOKEN"`) to spot hard-coded configuration values.
-- The latest audit (see repository history) reported only high-entropy false positives from the minified vendor bundles (`orchestrator/static/js/vendor/chart.umd.min.js`, `chartjs-plugin-streaming.min.js`, `chartjs-adapter-luxon.min.js`, `echarts.min.js`, `luxon.min.js`) and the `orchestrator/package-lock.json` lockfile; no actionable credentials were identified.
-- Keep the committed `env.template` free of real values. Populate secrets solely in the untracked `.env` file and rotate them regularly.
+1. **Operator invokes `service.sh`.** Every lifecycle command (`build`, `start`, `restart`, `stop`, etc.) funnels through the
+   helper script.
+2. **Environment loading.** `service.sh` calls the Compose builder, which reads `.env` via `compose.build.load_environment()` and
+   merges the file with any exported shell variables.
+3. **Plugin selection.** The builder resolves `VAULT_SERVICE` and loads the matching plugin via the registry. If the variable is
+   unset, the default plugin declared in `env.template` is used. An invalid name raises a clear error listing the available
+   plugins so operators can correct the value before the stack is modified.
+4. **Asset generation.** With a plugin selected, the builder produces two artifacts:
+   - `docker-compose.generated.yml` — merged base services plus plugin-defined workloads, volumes, and networks.
+   - `haproxy/haproxy.cfg` — front-end configuration that registers each plugin replica as an HAProxy backend, including health
+     checks and port overrides.
+5. **Execution.** Only after artifacts are rebuilt does `service.sh` delegate to Docker Compose (`docker compose up`, `down`,
+   etc.) to perform the requested action.
+6. **Routing.** HAProxy automatically routes user traffic to the plugin’s containers while forwarding `/orchestrator` to the
+   dashboard. Health probes follow the configuration derived from the plugin metadata and `.env` overrides.
 
-## Plugin architecture
+---
 
-- [`compose/build.py`](../compose/build.py) merges the static HAProxy/orchestrator/docker-proxy stack with the active service plugin and writes `docker-compose.generated.yml`. `service.sh` runs this builder automatically before `start`, `stop`, `build`, or `restart` operations.
-- Plugins live under [`vault_plugins/`](../vault_plugins/) and must provide a `plugin.py` module exporting a subclass of `VaultServicePlugin`. The orchestrator and compose builder load plugins via `pkgutil.walk_packages`, so new stacks can be added without touching the base code.
-- Each plugin implements `build_compose(env)` to declare its Docker services and `get_containers()` to expose the names eligible for rotation. Optional `dependencies` ensure supporting services (for example Postgres/Redis) appear ahead of the base stack in the generated manifest. The compose builder consumes this list both for the orchestrator/Docker proxy allowlists and for the generated HAProxy backend. `VAULT_WEB_REPLICAS` controls the number of web clones instantiated for the active plugin, clamped to plugin-defined minimums to preserve rotation guarantees.
-- Set `VAULT_SERVICE` in `.env` to choose the plugin at runtime (`filebrowser` by default, `paperless` for Paperless-ngx). When unset, the registry falls back to Filebrowser for backward compatibility.
+## Environment Variables
+
+The following settings drive the plugin workflow:
+
+- `VAULT_SERVICE` — selects which plugin to activate. Invalid values produce a registry error with the canonical list of
+  available options.
+- `VAULT_WEB_REPLICAS` — scales the number of web containers launched for the active plugin. The builder clamps the value to any
+  plugin-defined minimum to maintain rotation guarantees.
+- `VAULT_WEB_PORT` — optional override for the plugin’s internal HTTP port. When omitted, the plugin’s default metadata is used.
+- `VAULT_WEB_HEALTHCHECK_PATH` (`VAULT_HEALTH_PATH`) — optional path for HAProxy health checks. Defaults to the plugin’s
+  recommended endpoint when unset.
+- `VAULT_WEB_HEALTHCHECK_HOST` — optional override for the Host header emitted during HAProxy health checks.
+
+Additional variables such as `VAULT_WEB_CONTAINERS`, `VAULT_USER`, and `DOCKER_PROXY_TOKEN` control container allowlists,
+dashboard credentials, and Docker proxy authentication. Refer to [`env.template`](../env.template) for the complete catalog.
+
+If the `.env` file is missing required settings, the builder surfaces human-readable errors so operators can correct them before
+proceeding. Failure to resolve a plugin halts execution and leaves previously generated artifacts untouched, avoiding accidental
+configuration drift.
+
+---
+
+## Error Handling and Fallbacks
+
+- **Unknown plugin names** — The registry raises a `ValueError` listing detected plugins. `service.sh` prints the message and
+  exits with a non-zero status so automation can react accordingly.
+- **Missing container definitions** — If a plugin returns no web containers, the builder instructs operators to override the
+  allowlist with `VAULT_WEB_CONTAINERS`.
+- **Replica bounds** — Plugins may enforce minimum replica counts. Requests below the threshold are automatically bumped to the
+  safe value.
+- **Health checks** — When `VAULT_WEB_HEALTHCHECK_PATH` or `VAULT_WEB_HEALTHCHECK_HOST` is unset, HAProxy falls back to the
+  plugin-provided defaults, guaranteeing a functional configuration even when optional overrides are omitted.
+
+---
+
+## Implementing a Plugin
+
+Developers create new plugins under `vault_plugins/<service>/plugin.py`. Each module should:
+
+1. Subclass `VaultServicePlugin` and populate the `metadata` attribute with the display name, default port, and health-check
+   defaults.
+2. Implement `build_compose(env)` to return a dictionary compatible with Docker Compose schema fragments (`services`, `volumes`,
+   `networks`). The builder merges this fragment with the base stack.
+3. Provide `get_containers()` so the orchestrator knows which service names participate in rotation.
+4. Declare optional `dependencies` for supporting services (for example, databases or caches). Dependencies are inserted before
+   the base stack to preserve startup order.
+
+Plugins automatically benefit from the HAProxy generator—any containers returned by `get_containers()` are registered as backend
+servers, and scaling with `VAULT_WEB_REPLICAS` adjusts the rendered configuration without further changes. For a detailed
+implementation walkthrough, refer to the [Developer Guide](DEVELOPER_GUIDE.md).
+
+---
+
+## Related Resources
+
+- [`compose/build.py`](../compose/build.py) — Compose manifest builder.
+- [`compose/haproxy_config.py`](../compose/haproxy_config.py) — HAProxy configuration renderer.
+- [`vault_plugins/`](../vault_plugins/) — Plugin modules and registry entry point.
+- [`service.sh`](../service.sh) — Operational wrapper that guarantees configuration regeneration before lifecycle actions.
+
+Understanding these components is essential for extending the platform or integrating Leyzen Vault into custom deployment
+pipelines.
