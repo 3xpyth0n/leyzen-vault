@@ -1,0 +1,20 @@
+# Files and directories to exclude from Docker build context
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+logs/
+env.local
+.env*
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+coverage/
+build/
+dist/
+staticfiles/
+*.egg-info/

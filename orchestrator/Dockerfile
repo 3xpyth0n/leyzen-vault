@@ -25,4 +25,4 @@ COPY . .
 # Copy compiled CSS only
 COPY --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["python3", "app.py"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "80"]

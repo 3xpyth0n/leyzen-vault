@@ -3,3 +3,4 @@ Flask-WTF
 requests
 pytz
 Pillow
+uvicorn

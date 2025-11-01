@@ -375,14 +375,46 @@ class RotationService:
             self._logger.log("[WARN] No web containers configured for rotation.")
             return
 
-        managed_containers: list[str] = []
-        for name in web_containers:
-            if self._docker.get_container_safe(name):
-                managed_containers.append(name)
-            else:
-                self._logger.log(
-                    f"[ERROR] Container {name} declared but not found. It will be skipped."
-                )
+        managed_containers: list[str]
+        retry_interval = 2.0
+        quiet_period = 5.0
+        wait_log_interval = 10.0
+        next_wait_log_time = time.monotonic() + quiet_period
+        while True:
+            managed_containers = []
+            proxy_error: Optional[DockerProxyError] = None
+            for name in web_containers:
+                try:
+                    cont = self._docker.get_container_safe(name, suppress_errors=False)
+                except DockerProxyNotFound:
+                    self._logger.log(
+                        f"[ERROR] Container {name} declared but not found. It will be skipped."
+                    )
+                    continue
+                except DockerProxyError as exc:
+                    proxy_error = exc
+                    break
+
+                if cont:
+                    managed_containers.append(name)
+
+            if proxy_error is not None:
+                now = time.monotonic()
+                if now >= next_wait_log_time:
+                    self._logger.log(
+                        "[WAIT] Docker proxy unavailable during rotation startup: "
+                        f"{proxy_error}. Retrying in {retry_interval:.0f}s."
+                    )
+                    next_wait_log_time = now + wait_log_interval
+
+                delay = retry_interval
+                if now < next_wait_log_time:
+                    delay = min(delay, max(0.0, next_wait_log_time - now))
+
+                time.sleep(delay)
+                continue
+
+            break
 
         if len(managed_containers) > 1:
             random.shuffle(managed_containers)
