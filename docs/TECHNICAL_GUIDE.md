@@ -59,7 +59,7 @@ Leyzen Vault centralizes configuration in environment variables. Key inputs incl
 - `VAULT_WEB_HEALTHCHECK_HOST` — Optional host header used by HAProxy health checks.
 - `VAULT_WEB_CONTAINERS` — Explicit override for the container names returned to the orchestrator when the plugin does not
   expose web workloads automatically.
-- `DOCKER_PROXY_TOKEN`, `VAULT_USER`, `VAULT_PASSWORD`, and other secrets that secure the dashboard and Docker proxy.
+- `DOCKER_PROXY_TOKEN`, `VAULT_USER`, `VAULT_PASS`, and other secrets that secure the dashboard and Docker proxy.
 
 Refer to [`env.template`](../env.template) for the complete list of supported variables. Validation errors surface directly in
 `service.sh` output so that automation and CI can fail fast.

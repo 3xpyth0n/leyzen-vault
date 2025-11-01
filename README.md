@@ -18,6 +18,7 @@
 - [Key Capabilities](#key-capabilities-)
 - [Core Components](#core-components-)
 - [Reference Architecture](#reference-architecture-)
+- [Prerequisites](#prerequisites-)
 - [Quick Start](#quick-start-)
 - [Configuration](#configuration-)
 - [Plugin Registry](#plugin-registry-)
@@ -93,6 +94,19 @@ system is designed to host many more services as the plugin catalog grows.
 
 ---
 
+## Prerequisites 🛠️
+
+Before launching the `service.sh` script, ensure your development environment includes the following dependencies:
+
+- **Docker** with the **Docker Compose v2** plugin (`docker compose`). The ecosystem dynamically generates manifests and
+  relies on Compose to start the services.
+- **Python 3.11 or newer** — required for the orchestrator, manifest generator, and CLI scripts.
+- **Node.js** and **Tailwind CSS CLI** (via `npm`).
+
+On other platforms, follow the official installation instructions for each project.
+
+---
+
 ## Quick Start 🏁
 
 1. **Clone and prepare the repository:**
@@ -107,8 +121,9 @@ system is designed to host many more services as the plugin catalog grows.
    - `VAULT_SERVICE` — service plugin to deploy (`filebrowser`, `paperless`, or any installed plugin).
    - `VAULT_WEB_REPLICAS` — number of web containers created for the plugin.
    - `VAULT_WEB_PORT` — optional override for the plugin’s internal HTTP port.
-   - `VAULT_WEB_HEALTHCHECK_PATH` (referenced as `VAULT_HEALTH_PATH` in examples) — optional path for HAProxy health checks
-     (defaults to the plugin’s value).
+   - `VAULT_WEB_HEALTHCHECK_PATH` (alias `VAULT_HEALTH_PATH`) — optional path for HAProxy health checks (defaults to the
+     plugin’s value).
+   - `VAULT_WEB_HEALTHCHECK_HOST` — optional host header for HAProxy health checks when backends enforce allowlists.
    - Credentials (`VAULT_USER`, `VAULT_PASS`, `VAULT_SECRET_KEY`, etc.) and Docker proxy settings as documented in
      [`env.template`](env.template).
 
@@ -141,6 +156,7 @@ Environment variables live in `.env`. Restrict access (for example, `chmod 600 .
 - `VAULT_WEB_PORT` — overrides the plugin’s internal HTTP port when custom routing is required.
 - `VAULT_WEB_HEALTHCHECK_PATH` (`VAULT_HEALTH_PATH`) — optional health-check path emitted by HAProxy (defaults to plugin
   definition).
+- `VAULT_WEB_HEALTHCHECK_HOST` — custom host header sent with HAProxy health checks (defaults to the plugin definition).
 - `VAULT_USER` / `VAULT_PASS` / `VAULT_SECRET_KEY` — orchestrator credentials and Flask secret key.
 - `DOCKER_PROXY_URL` / `DOCKER_PROXY_TOKEN` — access controls for the Docker proxy.
 - `PROXY_TRUST_COUNT` — forwarded header trust depth; keep `1` when HAProxy fronts the stack.

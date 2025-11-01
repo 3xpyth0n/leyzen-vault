@@ -46,6 +46,13 @@ def render_haproxy_config(
 
     backend_name = f"{plugin.name}_backend"
     server_lines = _format_backend_servers(containers, port)
+    healthcheck_path = plugin.backend_healthcheck_path
+    healthcheck_host = plugin.backend_healthcheck_host
+    http_check_line = (
+        f"    http-check send meth GET uri {healthcheck_path} ver HTTP/1.1"
+        f" hdr Host {healthcheck_host}"
+    )
+
     lines = [
         "global",
         "    log stdout format raw local0",
@@ -90,6 +97,8 @@ def render_haproxy_config(
         "    option http-server-close",
         "    option forwardfor header X-Forwarded-For if-none",
         "    default-server resolvers docker init-addr none check",
+        "    option httpchk",
+        http_check_line,
     ]
     lines.extend(server_lines)
     lines.extend(

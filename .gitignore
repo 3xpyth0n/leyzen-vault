@@ -7,6 +7,7 @@ venv/
 __pycache__/
 node_modules/
 docker-compose.yml
+haproxy.cfg
 *.tmp
 *.swp
 *.swo
