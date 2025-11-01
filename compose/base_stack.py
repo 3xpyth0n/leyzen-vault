@@ -30,7 +30,11 @@ def build_base_services(
     haproxy = {
         "image": "haproxy:2.8-alpine",
         "container_name": "haproxy",
-        "volumes": ["./haproxy:/usr/local/etc/haproxy:ro"],
+        "volumes": [
+            "./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro",
+            "./haproxy/404.http:/usr/local/etc/haproxy/404.http:ro",
+            "./haproxy/503.http:/usr/local/etc/haproxy/503.http:ro",
+        ],
         "ports": ["8080:80"],
         "restart": "on-failure",
         "healthcheck": {

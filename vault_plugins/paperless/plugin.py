@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from urllib.parse import urlparse
 from typing import Mapping
 
 from .. import VaultServicePlugin
@@ -15,6 +16,15 @@ class PaperlessPlugin(VaultServicePlugin):
     replicas = 2
     min_replicas = 2
     dependencies: tuple[str, ...] = ("paperless_postgres", "paperless_redis")
+    web_port = 8000
+
+    def setup(self, env: Mapping[str, str]) -> None:
+        super().setup(env)
+        raw_url = env.get("PAPERLESS_URL", "").strip()
+        if raw_url:
+            parsed = urlparse(raw_url)
+            if parsed.hostname:
+                self._healthcheck_host = parsed.hostname
 
     def build_compose(self, env: Mapping[str, str]) -> Mapping[str, object]:
         self.setup(env)
@@ -88,6 +98,12 @@ class PaperlessPlugin(VaultServicePlugin):
             "depends_on": {
                 "paperless_postgres": {"condition": "service_healthy"},
                 "paperless_redis": {"condition": "service_started"},
+            },
+            "healthcheck": {
+                "test": ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"],
+                "interval": "1s",
+                "timeout": "5s",
+                "retries": 10,
             },
             "volumes": [
                 "paperless-data:/usr/src/paperless/data",
