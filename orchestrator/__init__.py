@@ -72,7 +72,13 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
             "report-uri /orchestrator/csp-violation-report-endpoint",
             "report-to orchestrator-csp",
         ]
-        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+        new_csp_policy = "; ".join(csp_directives)
+        if existing_csp := response.headers.get("Content-Security-Policy"):
+            response.headers["Content-Security-Policy"] = (
+                f"{existing_csp}; {new_csp_policy}"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = new_csp_policy
 
         report_to = {
             "group": "orchestrator-csp",
@@ -84,6 +90,7 @@ def create_app(settings: Optional[Settings] = None) -> Flask:
         response.headers["Report-To"] = json.dumps(report_to)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
         return response
 
     return app
