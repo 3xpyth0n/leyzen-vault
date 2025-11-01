@@ -9,6 +9,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
+from vault_plugins.registry import get_active_plugin
+
 import pytz
 from werkzeug.security import generate_password_hash
 
@@ -142,8 +144,21 @@ def load_settings() -> Settings:
 
     raw_containers = os.environ.get("VAULT_WEB_CONTAINERS")
     web_containers = _parse_container_names(
-        raw_containers, source="VAULT_WEB_CONTAINERS", required=True
+        raw_containers, source="VAULT_WEB_CONTAINERS", required=False
     )
+    if not web_containers:
+        try:
+            plugin = get_active_plugin(os.environ)
+            web_containers = list(plugin.get_containers())
+        except Exception as exc:  # pragma: no cover - defensive
+            raise ConfigurationError(
+                "Unable to determine web containers; set VAULT_WEB_CONTAINERS"
+            ) from exc
+
+    if not web_containers:
+        raise ConfigurationError(
+            "No web containers configured; set VAULT_WEB_CONTAINERS or VAULT_SERVICE"
+        )
 
     username = os.environ.get("VAULT_USER", "admin")
     password = os.environ.get("VAULT_PASS") or ""
