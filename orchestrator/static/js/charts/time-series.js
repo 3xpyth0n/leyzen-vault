@@ -74,19 +74,38 @@ export class TimeSeriesChart extends BaseChart {
         },
         tooltip: {
           trigger: "axis",
+          renderMode: "richText",
+          backgroundColor: "rgba(15, 23, 42, 0.94)",
+          borderColor: "#1e293b",
+          borderWidth: 1,
+          padding: [10, 14],
+          textStyle: {
+            color: "#f8fafc",
+            fontSize: 12,
+            lineHeight: 18,
+            rich: {
+              time: { fontWeight: 600, color: "#38bdf8" },
+              series: { color: "#f8fafc", fontWeight: 500 },
+              value: { color: "#cbd5f5", fontWeight: 500 },
+            },
+          },
           formatter: (params) => {
             if (!params || !params.length) return "";
-            const lines = [params[0].axisValue];
+            const lines = [];
+            const timestamp = params[0].axisValueLabel || params[0].axisValue;
+            lines.push(`{time|${timestamp}}`);
             for (const item of params) {
               const definition = this.seriesDefinitions[item.seriesIndex] || {};
               const formattedValue = definition.tooltipFormatter
                 ? definition.tooltipFormatter(item.data, item, this)
                 : item.data;
               lines.push(
-                `${item.marker} ${item.seriesName}: ${formattedValue ?? "—"}`,
+                `• {series|${item.seriesName}}: {value|${
+                  formattedValue ?? "—"
+                }}`,
               );
             }
-            return lines.join("<br>");
+            return lines.join("\n");
           },
         },
         xAxis: {

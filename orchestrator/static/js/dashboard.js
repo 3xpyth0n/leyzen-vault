@@ -956,11 +956,35 @@ function initStateWaveChart(initialSnapshot = null) {
           mode: "nearest",
           intersect: false,
           displayColors: false,
+          backgroundColor: "rgba(15, 23, 42, 0.94)",
+          borderColor: "#1e293b",
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 6,
+          caretPadding: 8,
+          titleColor: "#38bdf8",
+          titleFont: {
+            family: "'Inter', ui-sans-serif",
+            size: 13,
+            weight: "600",
+          },
+          bodyColor: "#f8fafc",
+          bodyFont: {
+            family: "'Inter', ui-sans-serif",
+            size: 12,
+            weight: "500",
+          },
           callbacks: {
             title(items) {
               if (!items?.length) return "";
               const ts = items[0]?.parsed?.x;
-              return ts ? new Date(ts).toLocaleTimeString() : "";
+              if (!ts) return "";
+              return new Date(ts).toLocaleTimeString([], {
+                hour12: false,
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              });
             },
             label(context) {
               const rawState = context?.raw?.state;
@@ -968,7 +992,8 @@ function initStateWaveChart(initialSnapshot = null) {
               const fallback = Math.round((context?.parsed?.y ?? 0) - offset);
               const value = Number.isFinite(rawState) ? rawState : fallback;
               const label = STATE_WAVE_STATE_LABELS[value] || "Unknown";
-              return `${context.dataset.label}: ${label}`;
+              const datasetLabel = context?.dataset?.label || "Series";
+              return `• ${datasetLabel}: ${label}`;
             },
           },
         },
