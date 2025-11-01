@@ -17,8 +17,8 @@ vault_plugins/
     plugin.py
 ```
 
-The package must expose exactly one subclass of `VaultServicePlugin`. Discovery is automatic as long as the directory is a valid
-Python package and the subclass is imported in `__init__.py`.
+The package must expose exactly one subclass of `VaultServicePlugin`. Discovery is automatic as long as the directory is a
+valid Python package; the `__init__.py` file can remain empty because the loader inspects `<service>/plugin.py` directly.
 
 ---
 
@@ -35,27 +35,40 @@ Every plugin must define the following pieces:
        ...
    ```
 
-2. **Metadata** — Populate the `metadata` attribute to describe the plugin:
+2. **Core class attributes** — Declare identifiers and defaults that describe the workload:
 
    ```python
-   metadata = VaultServicePlugin.Metadata(
-       name="My Service",
-       slug="myservice",
-       default_port=8080,
-       healthcheck_path="/healthz",
-   )
+   class MyServicePlugin(VaultServicePlugin):
+       name = "myservice"
+       replicas = 2
+       min_replicas = 1
+       web_port = 8080
+       healthcheck_path = "/healthz"
+       healthcheck_host = "myservice.internal"
+       dependencies = ("myservice-db",)
    ```
 
-   Metadata powers the CLI selection menu, health checks, and default routing.
+   These values seed HAProxy configuration, rotation defaults, and startup ordering. The base class enforces
+   `min_replicas <= replicas` and normalizes health-check fields.
 
-3. **`build_compose(self, env)`** — Return a dictionary containing Compose schema fragments (`services`, `volumes`, `networks`).
-   Use helper methods like `self.resolve_port(env)` and `self.resolve_replicas(env)` to respect operator overrides.
+3. **Optional `setup(self, env)` hook** — Override this method when you need to compute additional state (for example deriving
+   per-replica configuration files or reading environment toggles). Always call `super().setup(env)` so environment overrides for
+   replicas and health checks are honored before applying custom logic.
 
-4. **`get_containers(self)`** — Return an iterable of service names that expose HTTP endpoints. These identifiers feed both the
-   orchestrator rotation logic and the HAProxy generator.
+   ```python
+   def setup(self, env):
+       if env.get("MY_SERVICE_STRICT", "").lower() == "true":
+           self.healthcheck_path = "/readyz"
+       super().setup(env)
+   ```
 
-5. **Optional Attributes** — Provide `dependencies`, `default_environment`, or `min_replicas` when you need to influence startup
-   order, inject environment variables, or enforce scaling requirements.
+4. **`build_compose(self, env)`** — Return a dictionary containing Compose schema fragments (`services`, `volumes`, `networks`).
+   Most plugins call `self.setup(env)` at the start of this method. After setup runs, use `self.active_replicas` for scaling
+   values and reference `self.web_port` or other attributes as needed when shaping service definitions.
+
+5. **`get_containers(self)`** — Return an iterable of service names that expose HTTP endpoints. The default implementation uses
+   `active_replicas` to enumerate containers named `<plugin>_web1`, `<plugin>_web2`, etc. Override this method when your Compose
+   fragment uses different naming conventions.
 
 The [Operations Guide](OPERATIONS.md) explains how operators select plugins at runtime.
 
@@ -75,8 +88,9 @@ Example skeleton:
 
 ```python
 def build_compose(self, env):
-    replicas = self.resolve_replicas(env)
-    port = self.resolve_port(env)
+    self.setup(env)
+    replicas = self.active_replicas
+    port = int(env.get("MY_SERVICE_PORT", self.web_port))
     return {
         "services": {
             "myservice-web": {

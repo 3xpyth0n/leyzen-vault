@@ -11,8 +11,9 @@ the high-level overview in the [README](../README.md), the operational procedure
 Leyzen Vault assembles an ephemeral stack tailored to the active plugin. The workflow is coordinated through
 [`service.sh`](../service.sh) and the following subsystems:
 
-1. **Plugin Registry** — Packages under [`vault_plugins/`](../vault_plugins/) expose subclasses of `VaultServicePlugin` with
-   metadata, Compose fragments, and rotation-aware container identifiers.
+1. **Plugin Registry** — Packages under [`vault_plugins/`](../vault_plugins/) expose subclasses of `VaultServicePlugin` that
+   declare class attributes (name, replica counts, ports, health checks) alongside Compose fragments and rotation-aware
+   container identifiers.
 2. **Compose Builder** — [`compose/build.py`](../compose/build.py) loads `.env`, merges plugin fragments with the base stack, and
    emits `docker-compose.yml`.
 3. **HAProxy Configuration Generator** — [`compose/haproxy_config.py`](../compose/haproxy_config.py) renders
@@ -42,7 +43,8 @@ Every lifecycle command flows through `service.sh`:
 5. **Docker Compose execution** — Only after artifacts are refreshed does `service.sh` call `docker compose` with the requested
    action (`build`, `up`, `down`, etc.).
 6. **Runtime coordination** — HAProxy forwards `/orchestrator` traffic to the dashboard, and plugin-specific requests to the
-   generated backend pool. Health checks reuse metadata from the active plugin and any overrides from `.env`.
+   generated backend pool. Health checks and backend ports come from the active plugin’s resolved attributes (`web_port`,
+   `backend_healthcheck_path`, `backend_healthcheck_host`) with environment overrides applied via `setup()`.
 
 Because all lifecycle operations share this sequence, operators never need to call Docker commands directly.
 
@@ -53,8 +55,9 @@ Because all lifecycle operations share this sequence, operators never need to ca
 Leyzen Vault centralizes configuration in environment variables. Key inputs include:
 
 - `VAULT_SERVICE` — Selects the active plugin directory. Defaults are declared in `env.template`.
-- `VAULT_WEB_REPLICAS` — Number of application replicas. Plugins may enforce a minimum via `min_replicas`.
-- `VAULT_WEB_PORT` — Optional override for the plugin's HTTP port; otherwise the plugin metadata default is used.
+- `VAULT_WEB_REPLICAS` — Number of application replicas. Plugins may enforce a minimum via `min_replicas`, and the final value
+  is exposed through the plugin’s `active_replicas` property after `setup()` runs.
+- `VAULT_WEB_PORT` — Optional override for the plugin's HTTP port; otherwise the plugin’s `web_port` attribute is used.
 - `VAULT_WEB_HEALTHCHECK_PATH` (alias `VAULT_HEALTH_PATH`) — Health-check path for HAProxy.
 - `VAULT_WEB_HEALTHCHECK_HOST` — Optional host header used by HAProxy health checks.
 - `VAULT_WEB_CONTAINERS` — Explicit override for the container names returned to the orchestrator when the plugin does not
@@ -68,16 +71,23 @@ Refer to [`env.template`](../env.template) for the complete list of supported va
 
 ## Plugin Integration
 
-Plugins subclass `VaultServicePlugin` and implement:
+Plugins subclass `VaultServicePlugin` and typically override a combination of class attributes:
 
-- `metadata` — Declares the display name, slug, default port, and health-check defaults.
-- `build_compose(env)` — Returns a dictionary fragment merged by the Compose builder. Services should reuse the shared networks
-  (`vault-net`, `control-net`) where possible.
-- `get_containers()` — Lists container names eligible for rotation and HAProxy registration.
-- Optional helpers such as `dependencies`, `default_environment`, and `min_replicas` to tighten runtime guarantees.
+- `name` — Unique identifier used for container naming, HAProxy backends, and the `VAULT_SERVICE` selector.
+- `replicas` / `min_replicas` — Default and minimum replica counts. The base class enforces the floor and exposes the resolved
+  value via `active_replicas` after `setup()` processes environment overrides.
+- `web_port` — Default backend port consumed by HAProxy when `VAULT_WEB_PORT` is absent.
+- `healthcheck_path` / `healthcheck_host` — Defaults for HAProxy’s HTTP health checks, further sanitized by `setup()`.
+- `dependencies` — Optional list that ensures supporting services start before the main workload.
 
-The builder resolves replicas via `resolve_replicas(env)` and ports via `resolve_port(env)` to maintain parity between Compose
-services and HAProxy backends. See the [Developer Guide](DEVELOPER_GUIDE.md) for step-by-step authoring guidance.
+`build_compose(env)` should return a dictionary fragment merged by the Compose builder. Most plugins call `self.setup(env)` at
+the top of this method (or inside a custom override of `setup()`) so replica counts, ports, and health-check data stay in sync
+with operator overrides. `get_containers()` relies on `active_replicas` to enumerate the rotated web services; override it when
+container names diverge from the default pattern.
+
+The HAProxy renderer queries `backend_healthcheck_path`, `backend_healthcheck_host`, and `web_port`, each of which reflect any
+environment overrides processed during `setup()`. See the [Developer Guide](DEVELOPER_GUIDE.md) for step-by-step authoring
+guidance.
 
 ---
 

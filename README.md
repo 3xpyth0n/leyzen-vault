@@ -172,11 +172,16 @@ services.
 ## Plugin Registry 📦
 
 Plugins reside under [`vault_plugins/<service>/plugin.py`](vault_plugins/). Each module subclasses `VaultServicePlugin` and
-implements:
+defines a handful of class attributes alongside two key methods:
 
-- `metadata` describing the service name and default internal port.
-- `build_compose(env)` returning Compose fragments for the plugin’s services and volumes.
-- `get_containers()` returning the set of container names eligible for rotation by the orchestrator.
+- `name` — Unique identifier used by `VAULT_SERVICE` and container naming.
+- `replicas` / `min_replicas` — Default and minimum number of web replicas exposed by the plugin.
+- `web_port` — The internal HTTP port advertised to HAProxy unless overridden by environment variables.
+- `build_compose(env)` — Returns Compose fragments for the plugin’s services, volumes, and networks.
+- `get_containers()` — Lists the container names that HAProxy should register and the orchestrator should rotate.
+
+Plugins can override `setup(env)` to resolve environment-driven settings (for example replica counts or health checks) before
+building their Compose fragments.
 
 The registry is automatically discovered at runtime. When `VAULT_SERVICE` references a plugin, `service.sh` invokes the builder to
 render:
