@@ -83,6 +83,20 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+info "🔹 Checking .env permissions (expected 600)…"
+ENV_PERMS=$(stat -c "%a" .env 2>/dev/null || echo "")
+if [ "$ENV_PERMS" != "600" ]; then
+    warn ".env permissions are '$ENV_PERMS'; tightening to 600 for security."
+    if chmod 600 .env; then
+        success ".env permissions corrected to 600."
+    else
+        error "Unable to set .env permissions to 600. Adjust the file manually and re-run the installer."
+        exit 1
+    fi
+else
+    info ".env permissions already restricted to 600."
+fi
+
 get_env_value() {
     local key="$1"
     sed -n "s/^${key}=//p" .env | tail -n 1
