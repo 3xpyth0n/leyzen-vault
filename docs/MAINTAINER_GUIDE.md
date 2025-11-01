@@ -51,7 +51,7 @@ validated the change locally when possible.
 - **Cadence** — Target a minor release every 6–8 weeks or when a significant plugin or orchestrator feature lands.
 - **Tagging** — Create annotated tags (`git tag -a vX.Y.Z`) on the `main` branch once CI passes. Include highlights, notable plugin
   updates, and dependency changes in the tag message and release notes.
-- **Artifacts** — Regenerate `docker-compose.generated.yml` and `haproxy/haproxy.cfg` using the default plugin to ensure release
+- **Artifacts** — Regenerate `docker-compose.yml` and `haproxy/haproxy.cfg` using the default plugin to ensure release
   assets reflect current templates.
 - **Communication** — Update the README changelog or release notes and link relevant documentation sections (Operations,
   Technical, Developer guides) for users adopting the release.
@@ -63,7 +63,7 @@ to the implemented plugins.
 
 ## Security Coordination
 
-- Monitor the inbox for **security@leyzen.dev** and GitHub Security Advisories.
+- Monitor the inbox for GitHub Security Advisories.
 - Establish a private discussion with the reporter to clarify reproduction steps and severity.
 - Track remediation work in a private security advisory draft until a fix is merged.
 - Coordinate disclosure timing with the reporter and publish an advisory summarizing impact, patched versions, and mitigation

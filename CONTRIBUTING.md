@@ -30,7 +30,7 @@ Before submitting a pull request:
 - Run `./service.sh build` to regenerate images and assets.
 - Run `./service.sh start` (or `./service.sh restart` for an existing environment) to rebuild the Compose and HAProxy
   configurations and verify the stack boots without errors.
-- Inspect the regenerated `docker-compose.generated.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
+- Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
   routing, or environment handling.
 - Add or update documentation in `docs/` when behavior or workflows change.
 

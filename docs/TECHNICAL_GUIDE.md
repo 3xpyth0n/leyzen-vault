@@ -14,7 +14,7 @@ Leyzen Vault assembles an ephemeral stack tailored to the active plugin. The wor
 1. **Plugin Registry** — Packages under [`vault_plugins/`](../vault_plugins/) expose subclasses of `VaultServicePlugin` with
    metadata, Compose fragments, and rotation-aware container identifiers.
 2. **Compose Builder** — [`compose/build.py`](../compose/build.py) loads `.env`, merges plugin fragments with the base stack, and
-   emits `docker-compose.generated.yml`.
+   emits `docker-compose.yml`.
 3. **HAProxy Configuration Generator** — [`compose/haproxy_config.py`](../compose/haproxy_config.py) renders
    `haproxy/haproxy.cfg` to route traffic across orchestrator services and plugin replicas.
 4. **Orchestrator Dashboard** — [`orchestrator/`](../orchestrator/) is a Flask application that authenticates operators, manages
@@ -37,7 +37,7 @@ Every lifecycle command flows through `service.sh`:
    Required entries produce actionable errors when missing.
 3. **Plugin selection** — `VAULT_SERVICE` identifies the plugin module. Invalid names raise a registry error that enumerates the
    discovered plugins.
-4. **Artifact generation** — The builder emits an updated `docker-compose.generated.yml` and HAProxy generator creates
+4. **Artifact generation** — The builder emits an updated `docker-compose.yml` and HAProxy generator creates
    `haproxy/haproxy.cfg`. Existing artifacts remain untouched if validation fails, preventing accidental drift.
 5. **Docker Compose execution** — Only after artifacts are refreshed does `service.sh` call `docker compose` with the requested
    action (`build`, `up`, `down`, etc.).
