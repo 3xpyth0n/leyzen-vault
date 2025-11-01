@@ -37,5 +37,5 @@ This document covers operational procedures, security controls, and advanced con
   - `trufflehog --json --regex .` to sweep repository history for high-entropy strings and credential patterns.
   - `git secrets --scan` to lint the working tree against common AWS and generic secret signatures.
   - Targeted ripgrep checks (`rg "SECRET"`, `rg "PASSWORD"`, `rg "TOKEN"`) to spot hard-coded configuration values.
-- The latest audit (see repository history) reported only high-entropy false positives from the bundled `DejaVuSans-Bold.ttf` font and the `orchestrator/package-lock.json` lockfile; no actionable credentials were identified.
+- The latest audit (see repository history) reported only high-entropy false positives from the minified vendor bundles (`orchestrator/static/js/vendor/chart.umd.min.js`, `chartjs-plugin-streaming.min.js`, `chartjs-adapter-luxon.min.js`, `echarts.min.js`, `luxon.min.js`) and the `orchestrator/package-lock.json` lockfile; no actionable credentials were identified.
 - Keep the committed `env.template` free of real values. Populate secrets solely in the untracked `.env` file and rotate them regularly.
