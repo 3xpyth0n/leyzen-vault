@@ -99,6 +99,29 @@ fi
 chmod +x service.sh
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_FILE="/etc/systemd/system/leyzen.service"
+SERVICE_USER="leyzen"
+SERVICE_GROUP="docker"
+
+info "🔹 Preparing service account…"
+
+if ! getent group "$SERVICE_GROUP" >/dev/null; then
+    error "Required group '$SERVICE_GROUP' not found. Ensure Docker is installed correctly before continuing."
+    exit 1
+fi
+
+if id -u "$SERVICE_USER" >/dev/null 2>&1; then
+    info "System user '$SERVICE_USER' already exists."
+else
+    info "Creating system user '$SERVICE_USER' (nologin)…"
+    useradd --system --shell /usr/sbin/nologin "$SERVICE_USER"
+fi
+
+if id -nG "$SERVICE_USER" | tr ' ' '\n' | grep -qx "$SERVICE_GROUP"; then
+    info "User '$SERVICE_USER' already belongs to '$SERVICE_GROUP'."
+else
+    info "Adding '$SERVICE_USER' to '$SERVICE_GROUP' group…"
+    usermod -aG "$SERVICE_GROUP" "$SERVICE_USER"
+fi
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -113,7 +136,8 @@ ExecStart=$PROJECT_DIR/service.sh start
 ExecStop=$PROJECT_DIR/service.sh stop
 Restart=on-failure
 KillMode=control-group
-User=root
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 StandardOutput=journal
 StandardError=journal
 

@@ -84,6 +84,7 @@ Leyzen Vault is a **proof-of-concept for moving-target defense**, applying infra
 - Docker Engine + Compose plugin
 - Git
 - `sudo` privileges for installation
+- Ability to create system users and assign them to the `docker` group (the installer provisions a dedicated `leyzen` account).
 
 ---
 
@@ -109,6 +110,8 @@ If the stack is managed through `systemd`, run the installer to provision the se
 sudo ./install.sh
 sudo systemctl enable --now leyzen.service
 ```
+
+The installer provisions a dedicated `leyzen` system user and adds it to the `docker` group so the service can interact with the Docker Engine without running as `root`. Ensure the `docker` group exists (it is created automatically by Docker packages) and that your administrator account can manage group membership.
 
 > ⚠️ **Security reminder:** Set `FILEBROWSER_ADMIN_PASSWORD` to a long, random value and rotate it regularly.
 
@@ -181,6 +184,7 @@ For operational procedures, security controls, and advanced configuration, see t
 ## License 📄
 
 This project is distributed under the [Business Source License 1.1](LICENSE). Usage terms and the conversion date to an open-source license are detailed in the license file.
+Notices for bundled third-party assets are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
 
