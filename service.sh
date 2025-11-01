@@ -7,27 +7,36 @@ IFS=$'\n\t'
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+COMPOSE_FILE="docker-compose.generated.yml"
+
 
 now() {
     local msg="$1"
     echo -e "$(date '+%Y-%m-%d %H:%M:%S')  $msg"
 }
 
+ensure_manifest() {
+    python3 compose/build.py
+}
+
 start() {
+    ensure_manifest
     now "🚀 Starting Leyzen Docker stack..."
-    docker compose up -d --remove-orphans
+    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
     now "✅ Leyzen started successfully."
 }
 
 stop() {
+    ensure_manifest
     now "🛑 Stopping Leyzen..."
-    docker compose down --remove-orphans
+    docker compose -f "$COMPOSE_FILE" down --remove-orphans
     now "✅ Leyzen stopped."
 }
 
 build() {
+    ensure_manifest
     now "🧱 Rebuilding containers..."
-    docker compose up -d --build --remove-orphans
+    docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
     now "✅ Build completed and stack running."
 }
 
@@ -72,8 +81,11 @@ case "${1:-}" in
         stop
         ;;
     restart)
-        stop
-        start
+        ensure_manifest
+        now "🔁 Restarting Leyzen..."
+        docker compose -f "$COMPOSE_FILE" down --remove-orphans
+        docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+        now "✅ Leyzen restarted."
         ;;
     build)
         build

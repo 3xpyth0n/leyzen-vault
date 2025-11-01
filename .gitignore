@@ -3,8 +3,10 @@
 venv/
 *.log
 *.bak
+*test*
 __pycache__/
 node_modules/
+docker-compose.generated.yml
 *.tmp
 *.swp
 *.swo

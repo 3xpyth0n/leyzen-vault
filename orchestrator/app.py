@@ -11,6 +11,14 @@ from pathlib import Path
 from types import ModuleType
 
 
+# Ensure the repository root (which houses the dynamically loaded plugin
+# package) is importable even when this module is executed directly from the
+# ``orchestrator/`` directory or within the container image.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 def _load_orchestrator_package() -> ModuleType:
     """Import the orchestrator package regardless of sys.path layout."""
 
