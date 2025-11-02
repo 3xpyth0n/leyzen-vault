@@ -25,6 +25,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ensuring it runs correctly in both CI and container environments.
 - Preserved defensive error handling and static-analysis hints for ConfigurationError.
 
+### Documentation
+
+- Consolidated the README and legacy guides to point at the GitHub Wiki `/wiki`.
+
 ---
 
 This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).

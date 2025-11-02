@@ -20,8 +20,8 @@ Keeping each branch scoped to a single improvement helps reviewers merge your wo
 - Copy `env.template` to `.env` and supply the secrets requested in the file.
 - Use `./leyzenctl` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
   manual invocations of the Compose builder are unsupported and may leave the generated artifacts inconsistent.
-- Review the [Operations Guide](docs/OPERATIONS.md) for day-to-day usage tips and the
-  [Technical Guide](docs/TECHNICAL_GUIDE.md) for implementation details.
+- Review the [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) for day-to-day usage tips and the
+  [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) guide for implementation details.
 
 ## Testing Expectations
 
@@ -82,7 +82,7 @@ Security issues should be reported privately following the [Security Policy](SEC
 
 ## Additional Resources
 
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) — writing and testing plugins.
-- [Maintainer Guide](docs/MAINTAINER_GUIDE.md) — triage, reviews, and releases.
-- [Technical Guide](docs/TECHNICAL_GUIDE.md) — architecture and runtime internals.
-- [Operations Guide](docs/OPERATIONS.md) — operating the stack with `leyzenctl`.
+- [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) — writing and testing plugins.
+- [Maintainer guidance](https://github.com/3xpyth0n/leyzen-vault/wiki/CI-CD) — triage, reviews, and releases.
+- [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) — runtime internals.
+- [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) — operating the stack with `leyzenctl`.
