@@ -18,6 +18,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated the Compose builder, orchestrator configuration loader, and plugin registry to import shared helpers from `leyzen_common.env` instead of maintaining local copies.
 - Refactored `RotationService` to delegate metrics collection and snapshot handling to the new `RotationTelemetry` helper while preserving rotation logic and Docker interactions.
 
+### Fixed
+
+- Modified the entrypoint to dynamically import the orchestrator configuration module after resolving the package path,
+  ensuring it runs correctly in both CI and container environments.
+- Preserved defensive error handling and static-analysis hints for ConfigurationError.
+
 ---
 
 This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).

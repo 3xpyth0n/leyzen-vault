@@ -9,6 +9,9 @@ import signal
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING, Type, cast
+
+from flask import Flask
 
 
 # Ensure the repository root (which houses the dynamically loaded plugin
@@ -48,24 +51,77 @@ def _load_orchestrator_package() -> ModuleType:
 orchestrator_pkg = _load_orchestrator_package()
 create_app = orchestrator_pkg.create_app
 
+try:
+    config_module = importlib.import_module(f"{orchestrator_pkg.__name__}.config")
+except ModuleNotFoundError as exc:  # pragma: no cover - defensive guard
+    raise RuntimeError("Unable to import orchestrator configuration module") from exc
 
-app = create_app()
+try:
+    ConfigurationError = getattr(config_module, "ConfigurationError")
+except AttributeError as exc:  # pragma: no cover - defensive guard
+    raise RuntimeError("ConfigurationError type is unavailable") from exc
+
+if TYPE_CHECKING:  # pragma: no cover - help static analyzers understand the type
+    from orchestrator.config import ConfigurationError as _ConfigurationError
+
+    ConfigurationError = cast(Type[_ConfigurationError], ConfigurationError)
 
 
-# Flask 3 removed ``before_first_request``; ``before_serving`` ensures the
-# background workers are started whether the app runs via ``flask run`` or the
-# embedded development server.
-@app.before_request
-def _ensure_background_workers():  # pragma: no cover - Flask hook
-    rotation_service = app.config["ROTATION_SERVICE"]
-    rotation_service.start_background_workers()
+def _register_runtime_hooks(flask_app: Flask) -> None:
+    """Attach runtime hooks that require a fully configured Flask app."""
+
+    @flask_app.before_request  # pragma: no cover - Flask hook
+    def _ensure_background_workers():
+        rotation_service = flask_app.config["ROTATION_SERVICE"]
+        rotation_service.start_background_workers()
+
+
+def _build_placeholder_app(error: ConfigurationError) -> Flask:
+    """Return a tiny Flask app that surfaces configuration errors at runtime."""
+
+    placeholder = Flask("orchestrator.config_error")
+
+    @placeholder.route("/", defaults={"path": ""})
+    @placeholder.route("/<path:path>")
+    def _missing_config(path: str):  # pragma: no cover - runtime guard
+        message = (
+            "Leyzen Vault orchestrator cannot start because required environment "
+            "variables are missing. Set DOCKER_PROXY_TOKEN, VAULT_PASS, "
+            "VAULT_SECRET_KEY, and VAULT_USER before launching the service."
+        )
+        return message, 500, {"Content-Type": "text/plain; charset=utf-8"}
+
+    placeholder.config["CONFIGURATION_ERROR"] = error
+    return placeholder
+
+
+try:
+    app = create_app()
+except ConfigurationError as exc:
+    app = _build_placeholder_app(exc)
+else:
+    _register_runtime_hooks(app)
+
+
+def get_configured_app() -> Flask:
+    """Return the real Flask app or raise a helpful error when misconfigured."""
+
+    if "ROTATION_SERVICE" not in app.config:
+        error = app.config.get("CONFIGURATION_ERROR")
+        if isinstance(error, ConfigurationError):
+            raise RuntimeError("Orchestrator configuration is incomplete") from error
+        raise RuntimeError("Orchestrator application failed to initialize")
+
+    return app
 
 
 def main() -> None:
-    rotation_service = app.config["ROTATION_SERVICE"]
+    real_app = get_configured_app()
+
+    rotation_service = real_app.config["ROTATION_SERVICE"]
     rotation_service.start_background_workers()
 
-    logger = app.config["LOGGER"]
+    logger = real_app.config["LOGGER"]
 
     def handle_shutdown(sig, frame):  # pragma: no cover - runtime signal handler
         logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
@@ -74,7 +130,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    app.run(host="0.0.0.0", port=80, debug=False)
+    real_app.run(host="0.0.0.0", port=80, debug=False)
 
 
 if __name__ == "__main__":

@@ -19,20 +19,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-EXPECTED_TOKEN = os.environ.get("DOCKER_PROXY_TOKEN")
-if not EXPECTED_TOKEN:
-    logger.error("DOCKER_PROXY_TOKEN must be provided")
-    raise RuntimeError("DOCKER_PROXY_TOKEN must be provided")
+EXPECTED_TOKEN: Optional[str] = None
+ALLOWED_CONTAINERS: FrozenSet[str] = frozenset()
+CLIENT: Optional[httpx.Client] = None
 
 SOCKET_PATH = os.environ.get("DOCKER_SOCKET_PATH", "/var/run/docker.sock")
 BASE_URL = "http://docker"
-
-TIMEOUT = float(os.environ.get("DOCKER_PROXY_TIMEOUT", "30"))
-
-transport = httpx.HTTPTransport(uds=SOCKET_PATH)
-client = httpx.Client(
-    base_url=BASE_URL, transport=transport, timeout=httpx.Timeout(TIMEOUT)
-)
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -81,7 +73,36 @@ def _load_allowed_containers() -> FrozenSet[str]:
     return allowed
 
 
-ALLOWED_CONTAINERS: FrozenSet[str] = _load_allowed_containers()
+def _ensure_configured() -> None:
+    if EXPECTED_TOKEN is None or not ALLOWED_CONTAINERS or CLIENT is None:
+        stored_error = app.config.get("CONFIGURATION_ERROR")
+        if isinstance(stored_error, Exception):
+            raise RuntimeError(str(stored_error)) from stored_error
+
+        raise RuntimeError(
+            "Docker proxy is not configured; ensure DOCKER_PROXY_TOKEN and "
+            "VAULT_WEB_CONTAINERS are set."
+        )
+
+
+def _configure_runtime() -> None:
+    global EXPECTED_TOKEN, ALLOWED_CONTAINERS, CLIENT
+
+    token = os.environ.get("DOCKER_PROXY_TOKEN")
+    if not token:
+        raise RuntimeError("DOCKER_PROXY_TOKEN must be provided")
+
+    allowed = _load_allowed_containers()
+
+    timeout = float(os.environ.get("DOCKER_PROXY_TIMEOUT", "30"))
+    transport = httpx.HTTPTransport(uds=SOCKET_PATH)
+    client = httpx.Client(
+        base_url=BASE_URL, transport=transport, timeout=httpx.Timeout(timeout)
+    )
+
+    EXPECTED_TOKEN = token
+    ALLOWED_CONTAINERS = allowed
+    CLIENT = client
 
 
 class ProxyUnauthorized(Unauthorized):
@@ -127,6 +148,7 @@ def _validate_token() -> None:
         raise ProxyUnauthorized()
 
     provided_token = auth_header[len("Bearer ") :].strip()
+    assert EXPECTED_TOKEN is not None
     if not provided_token or not hmac.compare_digest(provided_token, EXPECTED_TOKEN):
         raise ProxyForbidden()
 
@@ -156,6 +178,11 @@ def _stream_response(upstream_response: httpx.Response) -> Iterable[bytes]:
 
 @app.route("/healthz", methods=["GET"])
 def healthcheck() -> Tuple[str, int]:
+    try:
+        _ensure_configured()
+    except RuntimeError as error:
+        return str(error), 503
+
     return "ok", 200
 
 
@@ -185,6 +212,14 @@ def healthcheck() -> Tuple[str, int]:
     ],
 )
 def proxy(path: str) -> Response:
+    try:
+        _ensure_configured()
+    except RuntimeError as error:
+        return (
+            jsonify({"error": str(error)}),
+            503,
+        )
+
     logger.debug("TRACE 1: entering proxy()")
     _validate_token()
     logger.debug("TRACE 2: token validated")
@@ -226,15 +261,18 @@ def proxy(path: str) -> Response:
 
     params = list(request.args.items(multi=True))
 
+    proxy_client = CLIENT
+    assert proxy_client is not None
+
     try:
-        prepared_request = client.build_request(
+        prepared_request = proxy_client.build_request(
             method=request.method,
             url=upstream_path,
             headers=headers,
             params=params,
             content=content,
         )
-        upstream_response = client.send(prepared_request, stream=True)
+        upstream_response = proxy_client.send(prepared_request, stream=True)
     except httpx.RequestError as exc:
         logger.error("Failed to reach docker socket: %s", exc)
         return jsonify({"error": "Docker socket unreachable"}), 502
@@ -256,6 +294,15 @@ def proxy(path: str) -> Response:
         status=upstream_response.status_code,
         headers=headers,
     )
+
+
+try:
+    _configure_runtime()
+except RuntimeError as exc:
+    logger.error("Docker proxy configuration error: %s", exc)
+    app.config["CONFIGURATION_ERROR"] = exc
+else:
+    app.config["CONFIGURATION_ERROR"] = None
 
 
 if __name__ == "__main__":
