@@ -9,7 +9,7 @@ the high-level overview in the [README](../README.md), the operational procedure
 ## Architecture Overview
 
 Leyzen Vault assembles an ephemeral stack tailored to the active plugin. The workflow is coordinated through
-[`service.sh`](../service.sh) and the following subsystems:
+[`leyzenctl`](../leyzenctl) and the following subsystems:
 
 1. **Plugin Registry** — Packages under [`vault_plugins/`](../vault_plugins/) expose subclasses of `VaultServicePlugin` that
    declare class attributes (name, replica counts, ports, health checks) alongside Compose fragments and rotation-aware
@@ -30,9 +30,9 @@ translate those definitions into a unified runtime configuration.
 
 ## Lifecycle Sequence
 
-Every lifecycle command flows through `service.sh`:
+Every lifecycle command flows through `leyzenctl`:
 
-1. **Command dispatch** — Operators run `./service.sh <action>`. The script validates prerequisites, loads helpers, and invokes
+1. **Command dispatch** — Operators run `./leyzenctl <action>`. The script validates prerequisites, loads helpers, and invokes
    the Compose builder.
 2. **Environment resolution** — `compose.build.load_environment()` combines values from `.env` and exported shell variables.
    Required entries produce actionable errors when missing.
@@ -40,7 +40,7 @@ Every lifecycle command flows through `service.sh`:
    discovered plugins.
 4. **Artifact generation** — The builder emits an updated `docker-compose.yml` and HAProxy generator creates
    `haproxy/haproxy.cfg`. Existing artifacts remain untouched if validation fails, preventing accidental drift.
-5. **Docker Compose execution** — Only after artifacts are refreshed does `service.sh` call `docker compose` with the requested
+5. **Docker Compose execution** — Only after artifacts are refreshed does `leyzenctl` call `docker compose` with the requested
    action (`build`, `up`, `down`, etc.).
 6. **Runtime coordination** — HAProxy forwards `/orchestrator` traffic to the dashboard, and plugin-specific requests to the
    generated backend pool. Health checks and backend ports come from the active plugin’s resolved attributes (`web_port`,
@@ -65,7 +65,7 @@ Leyzen Vault centralizes configuration in environment variables. Key inputs incl
 - `DOCKER_PROXY_TOKEN`, `VAULT_USER`, `VAULT_PASS`, and other secrets that secure the dashboard and Docker proxy.
 
 Refer to [`env.template`](../env.template) for the complete list of supported variables. Validation errors surface directly in
-`service.sh` output so that automation and CI can fail fast.
+`leyzenctl` output so that automation and CI can fail fast.
 
 ---
 
@@ -93,14 +93,14 @@ guidance.
 
 ## Error Handling and Observability
 
-- **Registry failures** — Unknown plugin slugs raise descriptive exceptions. `service.sh` prints the list of detected plugins to
+- **Registry failures** — Unknown plugin slugs raise descriptive exceptions. `leyzenctl` prints the list of detected plugins to
   aid selection.
 - **Validation errors** — Missing environment variables or malformed Compose fragments cause the build step to exit before Docker
   commands run, leaving prior artifacts intact.
 - **Logging** — The orchestrator streams structured logs through the dashboard. Operators can inspect full runtime logs via the
   `/orchestrator/logs` interface.
 - **Health checks** — HAProxy backends inherit plugin defaults and support optional overrides via environment variables. Changes
-  take effect the next time `./service.sh build` or `./service.sh start` runs.
+  take effect the next time `./leyzenctl build` or `./leyzenctl start` runs.
 
 For runtime security headers, CSP policies, and CSRF protections, review [`orchestrator/SECURITY.md`](../orchestrator/SECURITY.md).
 
@@ -108,7 +108,7 @@ For runtime security headers, CSP policies, and CSRF protections, review [`orche
 
 ## See Also
 
-- [Operations Guide](OPERATIONS.md) — Day-to-day commands using `service.sh`.
+- [Operations Guide](OPERATIONS.md) — Day-to-day commands using `leyzenctl`.
 - [Developer Guide](DEVELOPER_GUIDE.md) — Plugin authoring and testing practices.
 - [Maintainer Guide](MAINTAINER_GUIDE.md) — Issue triage, reviews, and release workflow.
 - [Security Policy](../SECURITY.md) — Coordinated vulnerability disclosure process.

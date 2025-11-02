@@ -23,7 +23,7 @@ fix timelines and public disclosure after a mitigation is available.
 To help us triage quickly, share:
 
 - A description of the issue and the potential impact.
-- Steps to reproduce, including the `./service.sh` commands or configuration used.
+- Steps to reproduce, including the `./leyzenctl` commands or configuration used.
 - Any logs, stack traces, or proof-of-concept exploits that demonstrate the vulnerability.
 
 ## Response Expectations

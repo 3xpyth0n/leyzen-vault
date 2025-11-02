@@ -29,11 +29,11 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: List the exact commands run (prefer `./service.sh` invocations) and configuration edits made.
+      description: List the exact commands run (prefer `./leyzenctl` invocations) and configuration edits made.
       placeholder: |
         1. Set VAULT_SERVICE=paperless in .env
-        2. Run ./service.sh build
-        3. Run ./service.sh start
+        2. Run ./leyzenctl build
+        3. Run ./leyzenctl start
     validations:
       required: true
   - type: textarea

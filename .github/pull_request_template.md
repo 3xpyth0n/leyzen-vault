@@ -4,8 +4,8 @@
 
 ## Testing
 
-- [ ] `./service.sh build`
-- [ ] `./service.sh start`
+- [ ] `./leyzenctl build`
+- [ ] `./leyzenctl start`
 - [ ] ## Additional commands (list below):
 
 ## Checklist

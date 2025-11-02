@@ -126,11 +126,11 @@ services.
 
 ## Testing Plugins
 
-Always test plugins using `./service.sh`:
+Always test plugins using `./leyzenctl`:
 
 1. Export or set `VAULT_SERVICE=<your-plugin>` in `.env`.
-2. Run `./service.sh build` to regenerate the Compose manifest and HAProxy configuration.
-3. Run `./service.sh start` to launch the stack and confirm the plugin boots.
+2. Run `./leyzenctl build` to regenerate the Compose manifest and HAProxy configuration.
+3. Run `./leyzenctl start` to launch the stack and confirm the plugin boots.
 4. Inspect `docker-compose.yml` and `haproxy/haproxy.cfg` to verify service definitions and backend pools.
 5. Use the orchestrator dashboard (`/orchestrator`) to ensure rotation metrics update as expected.
 

@@ -16,7 +16,7 @@ checks we expect before shipping changes.
 - `filebrowser/` — Dockerfile and entrypoint used to run the upstream Filebrowser
   binary with the correct defaults for the demo.
 - `docs/` — Additional operational notes.
-- `service.sh` — Deployment helper.
+- `leyzenctl` — Deployment helper.
 
 ## Python guidelines (`orchestrator/`, `docker-proxy/`)
 

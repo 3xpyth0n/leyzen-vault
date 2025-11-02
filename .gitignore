@@ -1,5 +1,6 @@
 .git/
 .env
+leyzenctl
 venv/
 *.log
 *.bak
