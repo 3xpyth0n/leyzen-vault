@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -14,32 +13,11 @@ from vault_plugins.registry import get_active_plugin
 import pytz
 from werkzeug.security import generate_password_hash
 
+from leyzen_common.env import parse_container_names
+
 
 class ConfigurationError(EnvironmentError):
     """Raised when required configuration values are missing or invalid."""
-
-
-def _parse_container_names(
-    raw_value: Optional[str], *, source: str, required: bool
-) -> List[str]:
-    if raw_value is None:
-        if required:
-            raise ConfigurationError(f"Missing {source} variable in .env")
-        return []
-
-    names: List[str] = []
-    seen = set()
-    for token in re.split(r"[,\s]+", raw_value):
-        entry = token.strip()
-        if not entry or entry in seen:
-            continue
-        seen.add(entry)
-        names.append(entry)
-
-    if required and not names:
-        raise ConfigurationError(f"{source} must contain at least one container name")
-
-    return names
 
 
 @dataclass(frozen=True)
@@ -143,9 +121,7 @@ def load_settings() -> Settings:
         raise ConfigurationError(f"Unknown timezone '{timezone_name}'") from exc
 
     raw_containers = os.environ.get("VAULT_WEB_CONTAINERS")
-    web_containers = _parse_container_names(
-        raw_containers, source="VAULT_WEB_CONTAINERS", required=False
-    )
+    web_containers = parse_container_names(raw_containers)
     if not web_containers:
         try:
             plugin = get_active_plugin(os.environ)

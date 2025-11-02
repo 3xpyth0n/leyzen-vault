@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import random
 import time
 import traceback
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -22,6 +20,7 @@ from .docker_proxy import (
     ProxyContainer,
 )
 from .logging import FileLogger
+from .rotation_telemetry import RotationTelemetry
 
 
 class RotationService:
@@ -56,34 +55,8 @@ class RotationService:
         self._next_switch_override: Optional[datetime] = None
         self._container_cache: Dict[str, ProxyContainer] = {}
         self._container_cache_lock = Lock()
-        self._previous_net_snapshot: Optional[Dict[str, float]] = None
         self._stats_error_last_logged: Dict[str, float] = {}
-        self._latest_metrics: Optional[Dict[str, object]] = None
-        self._metrics_updated_at: float = 0.0
-        self._metrics_lock = Lock()
-        metrics_interval = max(0.2, self._settings.sse_stream_interval_ms / 1000.0)
-        self._metrics_history_window_seconds = 60.0
-        self._metrics_history = deque(
-            maxlen=self._calculate_history_maxlen(
-                self._metrics_history_window_seconds,
-                metrics_interval,
-                cap=1800,
-            )
-        )
-        self._metrics_history_lock = Lock()
-        self._latest_snapshot: Optional[Dict[str, object]] = None
-        self._snapshot_updated_at: float = 0.0
-        self._snapshot_lock = Lock()
-        snapshot_interval = float(self._settings.sse_stream_interval_seconds)
-        self._container_history_window_seconds = 300.0
-        self._container_history = deque(
-            maxlen=self._calculate_history_maxlen(
-                self._container_history_window_seconds,
-                snapshot_interval,
-                cap=1200,
-            )
-        )
-        self._container_history_lock = Lock()
+        self._telemetry = RotationTelemetry(settings)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -118,17 +91,6 @@ class RotationService:
             Thread(target=self._snapshot_loop, daemon=True).start()
             self._threads_started = True
 
-    def _update_snapshot_cache(self, snapshot: Dict[str, object]) -> None:
-        with self._snapshot_lock:
-            self._latest_snapshot = snapshot
-            self._snapshot_updated_at = time.time()
-
-    def _get_snapshot_cache(self) -> tuple[Optional[Dict[str, object]], float]:
-        with self._snapshot_lock:
-            cached = deepcopy(self._latest_snapshot) if self._latest_snapshot else None
-            updated = self._snapshot_updated_at
-        return cached, updated
-
     def _log_stats_error(
         self, name: str, message: str, *, now: Optional[float] = None
     ) -> None:
@@ -137,234 +99,6 @@ class RotationService:
         if current - last >= 60:
             self._logger.log(message)
             self._stats_error_last_logged[name] = current
-
-    def _compute_cpu_percent(self, stats: Dict[str, object]) -> Optional[float]:
-        cpu_stats = stats.get("cpu_stats")
-        precpu_stats = stats.get("precpu_stats")
-        if not isinstance(cpu_stats, dict) or not isinstance(precpu_stats, dict):
-            return None
-
-        cpu_usage = cpu_stats.get("cpu_usage")
-        pre_cpu_usage = precpu_stats.get("cpu_usage")
-        system_cpu = cpu_stats.get("system_cpu_usage")
-        pre_system_cpu = precpu_stats.get("system_cpu_usage")
-
-        if (
-            not isinstance(cpu_usage, dict)
-            or not isinstance(pre_cpu_usage, dict)
-            or not isinstance(system_cpu, (int, float))
-            or not isinstance(pre_system_cpu, (int, float))
-        ):
-            return None
-
-        total_usage = cpu_usage.get("total_usage")
-        pre_total_usage = pre_cpu_usage.get("total_usage")
-        if not isinstance(total_usage, (int, float)) or not isinstance(
-            pre_total_usage, (int, float)
-        ):
-            return None
-
-        cpu_delta = total_usage - pre_total_usage
-        system_delta = system_cpu - pre_system_cpu
-
-        if cpu_delta <= 0 or system_delta <= 0:
-            return None
-
-        online_cpus = cpu_stats.get("online_cpus")
-        if not isinstance(online_cpus, (int, float)) or online_cpus <= 0:
-            per_cpu_usage = cpu_usage.get("percpu_usage")
-            if isinstance(per_cpu_usage, list) and per_cpu_usage:
-                online_cpus = len(per_cpu_usage)
-            else:
-                online_cpus = 1
-
-        percent = (cpu_delta / system_delta) * float(online_cpus) * 100.0
-        return max(0.0, percent)
-
-    def _collect_metrics(
-        self,
-        running_containers: list[str],
-        stats_map: Optional[Dict[str, Optional[Dict[str, object]]]] = None,
-    ) -> Optional[Dict[str, object]]:
-        if not running_containers:
-            now = time.time()
-            self._previous_net_snapshot = {
-                "timestamp": now,
-                "rx": 0.0,
-                "tx": 0.0,
-            }
-            return {
-                "timestamp": int(now * 1000),
-                "cpu": {"usage": 0.0},
-                "memory": {"used": 0, "total": 0},
-                "net_io": {"rx_rate": 0.0, "tx_rate": 0.0},
-            }
-
-        now = time.time()
-        cpu_samples: list[float] = []
-        total_memory_used = 0.0
-        total_memory_limit = 0.0
-        total_rx = 0.0
-        total_tx = 0.0
-
-        for name in running_containers:
-            stats: Optional[Dict[str, object]] = None
-            if stats_map is not None:
-                stats = stats_map.get(name)
-            if stats is None:
-                stats = self._docker.get_container_stats(name)
-            if not stats:
-                self._log_stats_error(
-                    name, f"[METRICS] Stats unavailable for container {name}", now=now
-                )
-                continue
-
-            self._stats_error_last_logged.pop(name, None)
-
-            cpu_percent = self._compute_cpu_percent(stats)
-            if cpu_percent is not None:
-                cpu_samples.append(cpu_percent)
-
-            mem_stats = stats.get("memory_stats")
-            if isinstance(mem_stats, dict):
-                usage = mem_stats.get("usage")
-                limit = mem_stats.get("limit")
-                cache = (
-                    mem_stats.get("stats", {}).get("cache")
-                    if isinstance(mem_stats.get("stats"), dict)
-                    else 0
-                )
-                if isinstance(usage, (int, float)):
-                    used_value = float(usage)
-                    if isinstance(cache, (int, float)) and cache > 0:
-                        used_value = max(0.0, used_value - float(cache))
-                    total_memory_used += used_value
-                if isinstance(limit, (int, float)) and limit > 0:
-                    total_memory_limit += float(limit)
-
-            networks = stats.get("networks")
-            if isinstance(networks, dict):
-                for data in networks.values():
-                    if not isinstance(data, dict):
-                        continue
-                    rx = data.get("rx_bytes")
-                    tx = data.get("tx_bytes")
-                    if isinstance(rx, (int, float)):
-                        total_rx += float(rx)
-                    if isinstance(tx, (int, float)):
-                        total_tx += float(tx)
-
-        metrics: Dict[str, object] = {"timestamp": int(now * 1000)}
-
-        cpu_payload: Optional[Dict[str, float]] = None
-        if cpu_samples:
-            avg_cpu = sum(cpu_samples) / len(cpu_samples)
-            cpu_payload = {"usage": round(avg_cpu, 2)}
-
-        memory_payload: Optional[Dict[str, int]] = None
-        if total_memory_limit > 0:
-            memory_payload = {
-                "used": int(total_memory_used),
-                "total": int(total_memory_limit),
-            }
-
-        prev_snapshot = self._previous_net_snapshot
-        rx_rate = tx_rate = None
-        if prev_snapshot and isinstance(prev_snapshot, dict):
-            prev_time = prev_snapshot.get("timestamp")
-            prev_rx = prev_snapshot.get("rx")
-            prev_tx = prev_snapshot.get("tx")
-            if (
-                isinstance(prev_time, (int, float))
-                and now > prev_time
-                and isinstance(prev_rx, (int, float))
-                and isinstance(prev_tx, (int, float))
-            ):
-                elapsed = now - prev_time
-                rx_rate = (total_rx - prev_rx) / elapsed
-                tx_rate = (total_tx - prev_tx) / elapsed
-
-        self._previous_net_snapshot = {
-            "timestamp": now,
-            "rx": total_rx,
-            "tx": total_tx,
-        }
-
-        net_payload: Optional[Dict[str, float]] = None
-        if isinstance(rx_rate, (int, float)) or isinstance(tx_rate, (int, float)):
-            net_payload = {}
-            if isinstance(rx_rate, (int, float)):
-                net_payload["rx_rate"] = max(0.0, float(rx_rate))
-            if isinstance(tx_rate, (int, float)):
-                net_payload["tx_rate"] = max(0.0, float(tx_rate))
-
-        if cpu_payload is not None:
-            metrics["cpu"] = cpu_payload
-        if memory_payload is not None:
-            metrics["memory"] = memory_payload
-        if net_payload:
-            metrics["net_io"] = net_payload
-
-        return metrics if len(metrics) > 1 else None
-
-    # ------------------------------------------------------------------
-    def _calculate_history_maxlen(
-        self, window_seconds: float, interval_seconds: float, *, cap: int
-    ) -> int:
-        interval = max(0.05, float(interval_seconds))
-        estimate = int(math.ceil(window_seconds / interval))
-        return max(1, min(estimate + 2, cap))
-
-    def _append_metrics_history(self, metrics: Optional[Dict[str, object]]) -> None:
-        if not metrics:
-            return
-
-        timestamp = metrics.get("timestamp")
-        if not isinstance(timestamp, (int, float)):
-            timestamp = int(time.time() * 1000)
-        sample: Dict[str, object] = {"timestamp": int(timestamp)}
-
-        for key in ("cpu", "memory", "net_io"):
-            value = metrics.get(key)
-            if isinstance(value, dict) and value:
-                sample[key] = deepcopy(value)
-
-        with self._metrics_history_lock:
-            self._metrics_history.append(sample)
-
-    def _get_metrics_history(self) -> list[Dict[str, object]]:
-        with self._metrics_history_lock:
-            return [deepcopy(entry) for entry in self._metrics_history]
-
-    def _append_container_history(
-        self, timestamp_ms: int, containers: Dict[str, Dict[str, object]]
-    ) -> None:
-        sanitized: Dict[str, Dict[str, Optional[str]]] = {}
-        for name, info in containers.items():
-            state = info.get("state")
-            health = info.get("health")
-            state_value = (
-                state
-                if isinstance(state, str)
-                else (str(state) if state is not None else None)
-            )
-            health_value = (
-                health
-                if isinstance(health, str)
-                else (str(health) if health is not None else None)
-            )
-            sanitized[name] = {"state": state_value, "health": health_value}
-
-        if not sanitized:
-            return
-
-        sample = {"timestamp": int(timestamp_ms), "containers": sanitized}
-        with self._container_history_lock:
-            self._container_history.append(sample)
-
-    def _get_container_history(self) -> list[Dict[str, object]]:
-        with self._container_history_lock:
-            return [deepcopy(entry) for entry in self._container_history]
 
     # ------------------------------------------------------------------
     def _orchestrator_loop(self) -> None:
@@ -750,12 +484,24 @@ class RotationService:
                                     now=time.time(),
                                 )
 
-                metrics = self._collect_metrics(running_containers, stats_map)
+                def stats_lookup(name: str) -> Optional[Dict[str, object]]:
+                    stats = stats_map.get(name)
+                    if stats:
+                        self._stats_error_last_logged.pop(name, None)
+                        return stats
+                    self._log_stats_error(
+                        name,
+                        f"[METRICS] Stats unavailable for container {name}",
+                        now=time.time(),
+                    )
+                    return None
+
+                metrics = self._telemetry.build_metrics(
+                    running_containers, stats_lookup
+                )
                 if metrics:
-                    self._append_metrics_history(metrics)
-                with self._metrics_lock:
-                    self._latest_metrics = metrics
-                    self._metrics_updated_at = time.time()
+                    self._telemetry.append_metrics_history(metrics)
+                self._telemetry.store_latest_metrics(metrics)
             except Exception as exc:
                 self._logger.log(f"[METRICS LOOP ERROR] {exc}")
 
@@ -772,9 +518,7 @@ class RotationService:
     def _get_latest_metrics(
         self, running_containers: List[str]
     ) -> Optional[Dict[str, object]]:
-        with self._metrics_lock:
-            cached_metrics = self._latest_metrics
-            cached_timestamp = self._metrics_updated_at
+        cached_metrics, cached_timestamp = self._telemetry.get_cached_metrics()
 
         if cached_metrics is not None and cached_timestamp:
             age = time.time() - cached_timestamp
@@ -783,12 +527,30 @@ class RotationService:
             if age <= freshness_window:
                 return cached_metrics
 
-        metrics = self._collect_metrics(running_containers)
+        def live_stats(name: str) -> Optional[Dict[str, object]]:
+            try:
+                stats = self._docker.get_container_stats(name)
+            except Exception as exc:
+                self._log_stats_error(
+                    name,
+                    f"[METRICS] Stats retrieval failed for {name}: {exc}",
+                    now=time.time(),
+                )
+                return None
+            if stats:
+                self._stats_error_last_logged.pop(name, None)
+                return stats
+            self._log_stats_error(
+                name,
+                f"[METRICS] Stats unavailable for container {name}",
+                now=time.time(),
+            )
+            return None
+
+        metrics = self._telemetry.build_metrics(running_containers, live_stats)
         if metrics:
-            self._append_metrics_history(metrics)
-        with self._metrics_lock:
-            self._latest_metrics = metrics
-            self._metrics_updated_at = time.time()
+            self._telemetry.append_metrics_history(metrics)
+        self._telemetry.store_latest_metrics(metrics)
         return metrics
 
     # ------------------------------------------------------------------
@@ -962,9 +724,9 @@ class RotationService:
         eta = self.next_rotation_eta
         metrics = self._get_latest_metrics(running_containers)
         timestamp_ms = int(now.timestamp() * 1000)
-        self._append_container_history(timestamp_ms, containers)
-        metrics_history = self._get_metrics_history()
-        container_history = self._get_container_history()
+        self._telemetry.append_container_history(timestamp_ms, containers)
+        metrics_history = self._telemetry.get_metrics_history()
+        container_history = self._telemetry.get_container_history()
         snapshot: Dict[str, object] = {
             "containers": containers,
             "rotation_count": self.rotation_count,
@@ -992,7 +754,7 @@ class RotationService:
             loop_start = time.perf_counter()
             try:
                 snapshot = self.build_stream_snapshot()
-                self._update_snapshot_cache(snapshot)
+                self._telemetry.update_snapshot_cache(snapshot)
             except (DockerProxyError, DockerProxyNotFound) as exc:
                 self._logger.log(
                     f"[STREAM WARN] Snapshot refresh failed due to Docker error: {exc}"
@@ -1010,20 +772,20 @@ class RotationService:
     def get_latest_snapshot(self) -> Dict[str, object]:
         interval = max(float(self._settings.sse_stream_interval_seconds), 0.1)
         stale_threshold = interval * 2
-        cached, updated = self._get_snapshot_cache()
+        cached, updated = self._telemetry.get_snapshot_cache()
         now = time.time()
         if cached and now - updated <= stale_threshold:
             return cached
 
         try:
             snapshot = self.build_stream_snapshot()
-            self._update_snapshot_cache(snapshot)
+            self._telemetry.update_snapshot_cache(snapshot)
             return deepcopy(snapshot)
         except (DockerProxyError, DockerProxyNotFound) as exc:
             self._logger.log(
                 f"[STREAM WARN] Snapshot rebuild failed due to Docker error: {exc}"
             )
-            cached, _ = self._get_snapshot_cache()
+            cached, _ = self._telemetry.get_snapshot_cache()
             if cached:
                 return cached
             return {}
@@ -1032,7 +794,7 @@ class RotationService:
                 f"[STREAM ERROR] Unexpected snapshot rebuild failure: {exc}\n"
                 f"{traceback.format_exc()}"
             )
-            cached, _ = self._get_snapshot_cache()
+            cached, _ = self._telemetry.get_snapshot_cache()
             if cached:
                 return cached
             return {}

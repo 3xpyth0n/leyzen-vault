@@ -6,6 +6,41 @@ which regenerates configuration artifacts before delegating to Docker Compose. F
 
 ---
 
+## Quick Start
+
+1. **Clone and prepare the repository:**
+
+   ```bash
+   git clone https://github.com/3xpyth0n/leyzen-vault.git
+   cd leyzen-vault
+   cp env.template .env
+   ```
+
+2. **Configure `.env`:** update secrets and select a plugin before issuing lifecycle commands.
+   - `VAULT_SERVICE` — service plugin to deploy (`filebrowser`, `paperless`, or any installed plugin).
+   - `VAULT_WEB_REPLICAS` — number of web containers created for the plugin.
+   - `VAULT_WEB_PORT` — optional override for the plugin’s internal HTTP port.
+   - `VAULT_WEB_HEALTHCHECK_PATH` (alias `VAULT_HEALTH_PATH`) — optional path for HAProxy health checks (defaults to the plugin’s value).
+   - `VAULT_WEB_HEALTHCHECK_HOST` — optional host header for HAProxy health checks when backends enforce allowlists.
+   - Credentials (`VAULT_USER`, `VAULT_PASS`, `VAULT_SECRET_KEY`, etc.) and Docker proxy settings as documented in [`env.template`](../env.template).
+
+3. **Run lifecycle commands via `service.sh`:** the helper script is the only supported interface. It rebuilds the Compose manifest and HAProxy configuration before executing the requested action.
+
+   ```bash
+   ./service.sh build     # Build images for the orchestrator, plugins, and supporting services
+   ./service.sh start     # Generate configs and launch the stack
+   ./service.sh restart   # Regenerate configs, then cycle containers
+   ./service.sh stop      # Stop containers and clean up resources (volumes persist)
+   ```
+
+   Avoid manual `docker compose` or Python builder commands; bypassing `service.sh` will leave configuration artifacts inconsistent with your `.env` selections.
+
+4. **Access the dashboard:** browse to `http://localhost:8080/orchestrator` and sign in with the credentials stored in `.env`.
+
+> 💡 **HTTP testing reminder:** when running without TLS, set `VAULT_SESSION_COOKIE_SECURE=false` so browsers send the session cookie over plain HTTP.
+
+---
+
 ## Core Principles
 
 - **Always use `service.sh`.** Direct Docker commands or manual execution of the Compose builder are unsupported and may produce

@@ -77,7 +77,7 @@ def build_base_services(
         "networks": ["control-net"],
     }
 
-    pythonpath_entries = ["/app", "/vault_plugins"]
+    pythonpath_entries = ["/app", "/vault_plugins", "/leyzen_common"]
     extra_pythonpath = env.get("PYTHONPATH", "").strip()
     if extra_pythonpath:
         for entry in extra_pythonpath.split(":"):
@@ -86,7 +86,8 @@ def build_base_services(
                 pythonpath_entries.append(token)
 
     # Preserve order while removing duplicates so the orchestrator always has
-    # access to its source tree and the external plugin directory.
+    # access to its source tree, the external plugin directory, and shared
+    # helper modules.
     deduped_pythonpath: list[str] = []
     seen_pythonpath: set[str] = set()
     for entry in pythonpath_entries:
@@ -114,6 +115,7 @@ def build_base_services(
         "volumes": [
             "./orchestrator:/app:ro",
             "./vault_plugins:/vault_plugins:ro",
+            "./leyzen_common:/leyzen_common:ro",
             "orchestrator-logs:/app/logs",
         ],
         "depends_on": orchestrator_depends,

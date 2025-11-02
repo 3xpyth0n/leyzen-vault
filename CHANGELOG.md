@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The Leyzen Vault project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Introduced a shared `leyzen_common.env` module centralizing the `.env` reader and container-name parser helpers for consistent reuse across all services.
+- Implemented a dedicated `RotationTelemetry` helper responsible for metrics computation, historical data tracking, and cached snapshot management.
+- Expanded the CI workflow to install runtime dependencies, lint with **Ruff**, and run **pytest** for automated regression coverage.
+
+### Changed
+
+- Updated the Compose builder, orchestrator configuration loader, and plugin registry to import shared helpers from `leyzen_common.env` instead of maintaining local copies.
+- Refactored `RotationService` to delegate metrics collection and snapshot handling to the new `RotationTelemetry` helper while preserving rotation logic and Docker interactions.
+
+---
+
 This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).
 
 ## [1.0.0] - 2025-11-01

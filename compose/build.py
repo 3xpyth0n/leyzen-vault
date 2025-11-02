@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import json
 import os
-import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -20,51 +21,20 @@ from compose.haproxy_config import (
     render_haproxy_config,
     resolve_backend_port,
 )
+from leyzen_common.env import parse_container_names, read_env_file
 from vault_plugins import VaultServicePlugin
 from vault_plugins.registry import get_active_plugin
 
 OUTPUT_FILE = Path("docker-compose.yml")
 
 
-def _read_env_file(path: Path) -> dict[str, str]:
-    data: dict[str, str] = {}
-    if not path.exists():
-        return data
-
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        data[key] = value
-    return data
-
-
 def load_environment() -> dict[str, str]:
     """Merge .env values with the current environment."""
 
     env_path = Path(".env")
-    env: dict[str, str] = _read_env_file(env_path)
+    env: dict[str, str] = read_env_file(env_path)
     env.update(os.environ)
     return env
-
-
-def _parse_container_names(value: str) -> list[str]:
-    names: list[str] = []
-    seen: set[str] = set()
-    for token in re.split(r"[,\s]+", value):
-        entry = token.strip()
-        if not entry or entry in seen:
-            continue
-        names.append(entry)
-        seen.add(entry)
-    return names
 
 
 def resolve_web_containers(
@@ -72,7 +42,7 @@ def resolve_web_containers(
 ) -> tuple[list[str], str]:
     env_value = env.get("VAULT_WEB_CONTAINERS", "").strip()
     if env_value:
-        names = _parse_container_names(env_value)
+        names = parse_container_names(env_value)
         if names:
             return names, env_value
 
