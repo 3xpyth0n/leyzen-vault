@@ -13,8 +13,23 @@ log() {
 log "Fixing ownership on /config, /database, /srv if needed..."
 if [ "$(id -u)" -eq 0 ]; then
   chown -R filebrowser:filebrowser /config /database /srv 2>/dev/null || true
-  # Re-drop privileges to the filebrowser user
-  exec su-exec filebrowser "$0" "$@"
+
+  can_drop_privileges=true
+  for dir in /config /database /srv; do
+    tmp_path="$dir/.filebrowser-priv-check-$$"
+    if ! su-exec filebrowser sh -c 'tmp="$1"; touch "$tmp" 2>/dev/null && rm -f "$tmp" 2>/dev/null' sh "$tmp_path"; then
+      log "Unable to confirm write access to $dir as 'filebrowser'; continuing as root."
+      can_drop_privileges=false
+      break
+    fi
+  done
+
+  if [ "$can_drop_privileges" = true ]; then
+    # Re-drop privileges to the filebrowser user
+    exec su-exec filebrowser "$0" "$@"
+  fi
+
+  log "Running Filebrowser entrypoint as root due to mounted volume permissions."
 fi
 # -----------------------------------------------------------
 
@@ -68,7 +83,15 @@ ensure_writable_dir /srv
 
 if [ ! -e "$CONFIG_PATH" ]; then
   log "Initializing Filebrowser configuration at $CONFIG_PATH."
-  filebrowser_cli config init >/dev/null
+  if ! init_output=$(filebrowser_cli config init 2>&1); then
+    if printf '%s\n' "$init_output" | grep -Fq "/database/filebrowser.db already exists"; then
+      log "Detected existing database while creating config; proceeding without re-initializing."
+    else
+      log "Failed to initialize Filebrowser configuration."
+      printf '%s\n' "$init_output" >&2
+      exit 1
+    fi
+  fi
 fi
 
 ensure_admin_account() {

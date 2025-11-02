@@ -51,6 +51,7 @@ if [[ "$choice" =~ ^[Yy]$ ]]; then
     echo "📦 Installing to /usr/local/bin..."
     sudo cp "$OUTPUT_BIN" /usr/local/bin/leyzenctl
     sudo chmod +x /usr/local/bin/leyzenctl
+    sudo leyzenctl completion bash | sudo tee /etc/bash_completion.d/leyzenctl > /dev/null
     echo "✅ Installed globally. You can now run it with: leyzenctl --help"
 else
     echo "ℹ️  Skipped global install. Use it locally via:"

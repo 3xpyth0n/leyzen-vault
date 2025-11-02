@@ -24,6 +24,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Modified the entrypoint to dynamically import the orchestrator configuration module after resolving the package path,
   ensuring it runs correctly in both CI and container environments.
 - Preserved defensive error handling and static-analysis hints for ConfigurationError.
+- Relaxed Filebrowser entrypoint privilege dropping so the container keeps running when mounted volumes cannot be written by
+  the service user, aiding recovery on hosts with restrictive permissions.
+- Resolved a regression in the Filebrowser entrypoint privilege probe that triggered `tmp: parameter not set` errors while
+  checking mounted volume write access.
+- Handled pre-existing Filebrowser databases during configuration initialization so restarts no longer loop when only the
+  settings file is absent.
 
 ### Documentation
 
