@@ -13,8 +13,17 @@ import (
 const commandTimeout = 10 * time.Minute
 
 // RunCompose executes `docker compose` with the provided arguments and streams the output.
-func RunCompose(args ...string) error {
-	fullArgs := append([]string{"compose"}, args...)
+func RunCompose(envFile string, args ...string) error {
+	resolvedEnv, err := ResolveEnvFilePath(envFile)
+	if err != nil {
+		return err
+	}
+
+	fullArgs := []string{"compose"}
+	if resolvedEnv != "" {
+		fullArgs = append(fullArgs, "--env-file", resolvedEnv)
+	}
+	fullArgs = append(fullArgs, args...)
 	return runStreaming(fullArgs)
 }
 

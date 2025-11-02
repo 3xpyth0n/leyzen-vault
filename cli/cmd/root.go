@@ -18,7 +18,11 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags()
+	defaultEnv := ".env"
+	if override := os.Getenv("LEYZEN_ENV_FILE"); override != "" {
+		defaultEnv = override
+	}
+	rootCmd.PersistentFlags().StringVar(&envFile, "env-file", defaultEnv, "Path to the environment file to use")
 }
 
 func Execute() {
@@ -29,5 +33,8 @@ func Execute() {
 }
 
 func EnvFilePath() string {
+	if envFile == "" {
+		return ".env"
+	}
 	return envFile
 }

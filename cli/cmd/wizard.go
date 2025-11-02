@@ -80,8 +80,8 @@ func init() {
 			if err := envFile.Write(); err != nil {
 				return err
 			}
-			if err := internal.RunBuildScript(); err != nil {
-    			fmt.Println("⚠️ Failed to rebuild configuration:", err)
+			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
+				fmt.Println("⚠️ Failed to rebuild configuration:", err)
 			}
 			color.HiGreen("Configuration saved to %s", envFile.Path)
 			return nil
