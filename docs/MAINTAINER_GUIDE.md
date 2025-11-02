@@ -9,7 +9,7 @@ coordinating the roadmap. It complements the [Operations Guide](OPERATIONS.md) f
 ## Issue Triage
 
 - **First response** — Aim to acknowledge new issues within two business days. Thank the reporter and confirm key details
-  (`./service.sh` commands run, plugin in use, logs, etc.).
+  (`./leyzenctl` commands run, plugin in use, logs, etc.).
 - **Labeling** — Apply labels for type (`bug`, `feature`, `documentation`), component (`plugin`, `builder`, `orchestrator`), and
   priority (`P0`–`P2`). Use `needs-info` when reproduction steps or logs are missing.
 - **Duplication** — Link related issues and close duplicates with a pointer to the canonical thread.
@@ -26,7 +26,7 @@ concepts that are not yet actionable.
 1. **Sanity checks** — Confirm the author followed the branch workflow from [CONTRIBUTING.md](../CONTRIBUTING.md) and included the
    testing evidence requested in the pull request template.
 2. **Scope** — Ensure the change aligns with the repository roadmap and that documentation updates accompany behavioral changes.
-3. **Testing** — Reproduce the author's steps when feasible: run `./service.sh build`, `./service.sh start`, and inspect generated
+3. **Testing** — Reproduce the author's steps when feasible: run `./leyzenctl build`, `./leyzenctl start`, and inspect generated
    artifacts relevant to the change.
 4. **Style and security** — Watch for deviations from coding standards, missing type hints, or changes that bypass security
    mechanisms described in [`orchestrator/SECURITY.md`](../orchestrator/SECURITY.md).

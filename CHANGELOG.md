@@ -12,6 +12,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Introduced a shared `leyzen_common.env` module centralizing the `.env` reader and container-name parser helpers for consistent reuse across all services.
 - Implemented a dedicated `RotationTelemetry` helper responsible for metrics computation, historical data tracking, and cached snapshot management.
 - Expanded the CI workflow to install runtime dependencies, lint with **Ruff**, and run **pytest** for automated regression coverage.
+- Added the Go-based `leyzenctl` CLI for Docker stack lifecycle and environment configuration management, replacing the legacy shell helper.
 
 ### Changed
 
@@ -35,7 +36,7 @@ This is the first public release of Leyzen Vault under the Business Source Licen
 - Modular plugin architecture with reference Filebrowser and Paperless integrations under `vault_plugins/`.
 - Dynamic Docker Compose manifest builder that assembles plugin-defined services alongside the base stack.
 - Automatic HAProxy configuration rendering aligned with plugin routing rules and health checks.
-- Centralized `service.sh` CLI orchestrating build, deploy, restart, and shutdown workflows.
+- Centralized `leyzenctl` CLI orchestrating build, deploy, restart, and shutdown workflows.
 - Security hardening for the orchestrator, including CSP enforcement, CSRF protections, and rate-limited reporting endpoints.
 - Observability dashboards and logging pipelines surfaced through the orchestrator UI.
 

@@ -9,7 +9,7 @@ you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 1. **Fork** `leyzen-vault` on GitHub and clone your fork locally.
 2. **Create a topic branch** from `main` that describes your change, for example `feature/plugin-s3-backend`.
 3. **Commit regularly** following the message guidance below.
-4. **Test everything** through the project CLI (`./service.sh`) before you open a pull request.
+4. **Test everything** through the project CLI (`./leyzenctl`) before you open a pull request.
 5. **Open a pull request** from your forked branch back to `main` and request review.
 
 Keeping each branch scoped to a single improvement helps reviewers merge your work quickly.
@@ -18,7 +18,7 @@ Keeping each branch scoped to a single improvement helps reviewers merge your wo
 
 - Follow the installation prerequisites listed in the [README](README.md).
 - Copy `env.template` to `.env` and supply the secrets requested in the file.
-- Use `./service.sh` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
+- Use `./leyzenctl` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
   manual invocations of the Compose builder are unsupported and may leave the generated artifacts inconsistent.
 - Review the [Operations Guide](docs/OPERATIONS.md) for day-to-day usage tips and the
   [Technical Guide](docs/TECHNICAL_GUIDE.md) for implementation details.
@@ -27,8 +27,8 @@ Keeping each branch scoped to a single improvement helps reviewers merge your wo
 
 Before submitting a pull request:
 
-- Run `./service.sh build` to regenerate images and assets.
-- Run `./service.sh start` (or `./service.sh restart` for an existing environment) to rebuild the Compose and HAProxy
+- Run `./leyzenctl build` to regenerate images and assets.
+- Run `./leyzenctl start` (or `./leyzenctl restart` for an existing environment) to rebuild the Compose and HAProxy
   configurations and verify the stack boots without errors.
 - Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
   routing, or environment handling.
@@ -44,7 +44,7 @@ We follow a lightweight format to keep history readable:
 - A body of up to four lines that answers:
   1. **Context** — why the change is needed.
   2. **Change** — what was done.
-  3. **Testing** — which `./service.sh` actions or other checks were run.
+  3. **Testing** — which `./leyzenctl` actions or other checks were run.
   4. **Impact** — anything reviewers or operators should watch for.
 
 Example:
@@ -53,7 +53,7 @@ Example:
 Refine plugin bootstrap logging
 
 Describe plugin resolution failures in the CLI output.
-Ran ./service.sh build and ./service.sh start locally.
+Ran ./leyzenctl build and ./leyzenctl start locally.
 Expect clearer troubleshooting with no config changes.
 ```
 
@@ -74,7 +74,7 @@ Reviewers rely on this information to prioritize and merge contributions.
 Search the [issue tracker](https://github.com/3xpyth0n/leyzen-vault/issues) before filing a new report. If no existing issue
 matches, open a new one using the appropriate template and include:
 
-- Clear reproduction steps, including the `./service.sh` commands you executed.
+- Clear reproduction steps, including the `./leyzenctl` commands you executed.
 - Expected versus actual results.
 - Relevant logs, screenshots, or generated artifacts.
 
@@ -85,4 +85,4 @@ Security issues should be reported privately following the [Security Policy](SEC
 - [Developer Guide](docs/DEVELOPER_GUIDE.md) — writing and testing plugins.
 - [Maintainer Guide](docs/MAINTAINER_GUIDE.md) — triage, reviews, and releases.
 - [Technical Guide](docs/TECHNICAL_GUIDE.md) — architecture and runtime internals.
-- [Operations Guide](docs/OPERATIONS.md) — operating the stack with `service.sh`.
+- [Operations Guide](docs/OPERATIONS.md) — operating the stack with `leyzenctl`.

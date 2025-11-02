@@ -96,7 +96,7 @@ system is designed to host many more services as the plugin catalog grows.
 
 ## Prerequisites 🛠️
 
-Before launching the `service.sh` script, ensure your development environment includes the following dependencies:
+Before launching the `leyzenctl` script, ensure your development environment includes the following dependencies:
 
 - **Docker** with the **Docker Compose v2** plugin (`docker compose`). The ecosystem dynamically generates manifests and
   relies on Compose to start the services.
@@ -109,14 +109,14 @@ On other platforms, follow the official installation instructions for each proje
 
 ## Quick Start 🏁
 
-Leyzen Vault ships with a single entry point: [`service.sh`](service.sh) regenerates Docker Compose and HAProxy artifacts
+Leyzen Vault ships with a single entry point: [`leyzenctl`](leyzenctl) regenerates Docker Compose and HAProxy artifacts
 before invoking lifecycle actions. Follow the [Operations Guide](docs/OPERATIONS.md#quick-start) for the canonical quick-start
 checklist, `.env` configuration guidance, and the full catalogue of supported commands.
 
 In brief:
 
 - Copy `env.template` to `.env`, adjust credentials, and choose the plugin to deploy.
-- Run `./service.sh start` to launch the stack, then sign in at `http://localhost:8080/orchestrator`.
+- Run `./leyzenctl start` to launch the stack, then sign in at `http://localhost:8080/orchestrator`.
 
 ---
 
@@ -156,7 +156,7 @@ defines a handful of class attributes alongside two key methods:
 Plugins can override `setup(env)` to resolve environment-driven settings (for example replica counts or health checks) before
 building their Compose fragments.
 
-The registry is automatically discovered at runtime. When `VAULT_SERVICE` references a plugin, `service.sh` invokes the builder to
+The registry is automatically discovered at runtime. When `VAULT_SERVICE` references a plugin, `leyzenctl` invokes the builder to
 render:
 
 1. `docker-compose.yml` — the merged Compose manifest combining the base stack with the plugin.
