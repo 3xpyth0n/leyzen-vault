@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +15,11 @@ const commandTimeout = 10 * time.Minute
 
 // RunCompose executes `docker compose` with the provided arguments and streams the output.
 func RunCompose(envFile string, args ...string) error {
+	return RunComposeWithWriter(os.Stdout, os.Stderr, envFile, args...)
+}
+
+// RunComposeWithWriter executes `docker compose` with the provided arguments, streaming output to the supplied writers.
+func RunComposeWithWriter(stdout, stderr io.Writer, envFile string, args ...string) error {
 	resolvedEnv, err := ResolveEnvFilePath(envFile)
 	if err != nil {
 		return err
@@ -24,7 +30,7 @@ func RunCompose(envFile string, args ...string) error {
 		fullArgs = append(fullArgs, "--env-file", resolvedEnv)
 	}
 	fullArgs = append(fullArgs, args...)
-	return runStreaming(fullArgs)
+	return runStreaming(stdout, stderr, fullArgs)
 }
 
 // DockerPS executes `docker ps` with the provided arguments and returns its output.
@@ -48,7 +54,7 @@ func DockerPS(args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-func runStreaming(args []string) error {
+func runStreaming(stdout, stderr io.Writer, args []string) error {
 	if err := ensureBinaryAvailable("docker"); err != nil {
 		return err
 	}
@@ -57,8 +63,8 @@ func runStreaming(args []string) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker %s: %w", strings.Join(args, " "), err)

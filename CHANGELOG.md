@@ -13,11 +13,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Implemented a dedicated `RotationTelemetry` helper responsible for metrics computation, historical data tracking, and cached snapshot management.
 - Expanded the CI workflow to install runtime dependencies, lint with **Ruff**, and run **pytest** for automated regression coverage.
 - Added the Go-based `leyzenctl` CLI for Docker stack lifecycle and environment configuration management, replacing the legacy shell helper.
+- Added a Bubbletea- and Lipgloss-powered interactive dashboard to `leyzenctl` when no subcommand is supplied, surfacing live container status, logs, and lifecycle controls.
 
 ### Changed
 
 - Updated the Compose builder, orchestrator configuration loader, and plugin registry to import shared helpers from `leyzen_common.env` instead of maintaining local copies.
 - Refactored `RotationService` to delegate metrics collection and snapshot handling to the new `RotationTelemetry` helper while preserving rotation logic and Docker interactions.
+- Default `leyzenctl` execution now launches the interactive TUI while a new `--no-ui` flag preserves headless scripting behaviour for CI and automation use-cases.
 
 ### Fixed
 

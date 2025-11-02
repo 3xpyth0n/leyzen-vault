@@ -6,14 +6,23 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+
+	"leyzenctl/internal/ui"
 )
 
 var (
 	envFile string
+	noUI    bool
 	rootCmd = &cobra.Command{
 		Use:   "leyzenctl",
 		Short: "Leyzen Vault management CLI",
 		Long:  color.HiCyanString("Leyzenctl orchestrates the Leyzen Vault Docker stack and configuration."),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if noUI {
+				return cmd.Help()
+			}
+			return ui.StartApp(cmd.Context(), EnvFilePath())
+		},
 	}
 )
 
@@ -23,6 +32,7 @@ func init() {
 		defaultEnv = override
 	}
 	rootCmd.PersistentFlags().StringVar(&envFile, "env-file", defaultEnv, "Path to the environment file to use")
+	rootCmd.PersistentFlags().BoolVar(&noUI, "no-ui", false, "Disable the interactive dashboard and always run in CLI mode")
 }
 
 func Execute() {
