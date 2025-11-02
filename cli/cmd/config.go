@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -35,27 +36,54 @@ func init() {
 				return nil
 			}
 
+			// Collect and sort keys
 			keys := make([]string, 0, len(pairs))
-			for key := range pairs {
-				keys = append(keys, key)
+			for k := range pairs {
+				keys = append(keys, k)
 			}
 			sort.Strings(keys)
 
-			maxKey := 0
-			for _, key := range keys {
-				if len(key) > maxKey {
-					maxKey = len(key)
+			// Compute max visible lengths (raw text, no ANSI)
+			maxKey := utf8.RuneCountInString("KEY")
+			maxVal := utf8.RuneCountInString("VALUE")
+			for _, k := range keys {
+				if l := utf8.RuneCountInString(k); l > maxKey {
+					maxKey = l
+				}
+				if l := utf8.RuneCountInString(pairs[k]); l > maxVal {
+					maxVal = l
 				}
 			}
 
-			header := fmt.Sprintf("%-*s %s", maxKey, color.HiBlueString("KEY"), color.HiBlueString("VALUE"))
-			fmt.Println(header)
-			fmt.Println(strings.Repeat("-", len(header)))
+			// One-space padding on each side inside cells
+			keyWidth := maxKey + 2   // visible width of key cell content (including internal spaces)
+			valWidth := maxVal + 2   // visible width of value cell content (including internal spaces)
 
-			for _, key := range keys {
-				value := pairs[key]
-				fmt.Printf("%-*s %s\n", maxKey, color.HiGreenString(key), value)
+			// Frame lines
+			topBorder := "╭" + strings.Repeat("─", keyWidth) + "┬" + strings.Repeat("─", valWidth) + "╮"
+			midBorder := "├" + strings.Repeat("─", keyWidth) + "┼" + strings.Repeat("─", valWidth) + "┤"
+			botBorder := "╰" + strings.Repeat("─", keyWidth) + "┴" + strings.Repeat("─", valWidth) + "╯"
+
+			// Print header row (headers colored but width computed from raw)
+			fmt.Println(topBorder)
+			fmt.Print("│")
+			fmt.Print(padCell("KEY", keyWidth, color.HiBlueString("KEY")))
+			fmt.Print("│")
+			fmt.Print(padCell("VALUE", valWidth, color.HiBlueString("VALUE")))
+			fmt.Println("│")
+			fmt.Println(midBorder)
+
+			// Print data rows (keys colored, values plain)
+			for _, k := range keys {
+				v := pairs[k]
+				fmt.Print("│")
+				fmt.Print(padCell(k, keyWidth, color.HiGreenString(k)))
+				fmt.Print("│")
+				fmt.Print(padCell(v, valWidth, v))
+				fmt.Println("│")
 			}
+
+			fmt.Println(botBorder)
 			return nil
 		},
 	}
@@ -81,9 +109,11 @@ func init() {
 			if err := envFile.Write(); err != nil {
 				return err
 			}
-			if err := internal.RunBuildScript(); err != nil {
-    			fmt.Println("⚠️ Failed to rebuild configuration:", err)
+
+			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
+				fmt.Println("⚠️ Failed to rebuild configuration:", err)
 			}
+
 			color.HiGreen("%s updated", key)
 			return nil
 		},
@@ -91,3 +121,13 @@ func init() {
 
 	configCmd.AddCommand(listCmd, setCmd)
 }
+
+func padCell(raw string, visibleWidth int, colored string) string {
+	rawLen := utf8.RuneCountInString(raw)
+	used := 1 + rawLen // 1 leading space + content visible length
+	if used < visibleWidth {
+		return " " + colored + strings.Repeat(" ", visibleWidth-used)
+	}
+	return " " + colored
+}
+

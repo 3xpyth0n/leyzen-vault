@@ -120,3 +120,18 @@ func (f *EnvFile) Write() error {
 	}
 	return nil
 }
+
+// ResolveEnvFilePath returns an absolute path for the provided env file, defaulting to .env when empty.
+func ResolveEnvFilePath(path string) (string, error) {
+	cleaned := strings.TrimSpace(path)
+	if cleaned == "" {
+		cleaned = ".env"
+	}
+
+	resolved, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("resolve env file path: %w", err)
+	}
+
+	return resolved, nil
+}

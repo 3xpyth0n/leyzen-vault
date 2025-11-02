@@ -12,11 +12,8 @@ func init() {
 		Use:   "stop",
 		Short: "Stop the Leyzen Vault Docker stack",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := internal.RunBuildScript(); err != nil {
-				return err
-			}
 			color.HiCyan("Stopping Docker stack...")
-			return internal.RunCompose("down")
+			return internal.RunCompose(EnvFilePath(), "down", "--remove-orphans")
 		},
 	}
 

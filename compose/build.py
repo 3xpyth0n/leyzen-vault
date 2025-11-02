@@ -31,7 +31,14 @@ OUTPUT_FILE = Path("docker-compose.yml")
 def load_environment() -> dict[str, str]:
     """Merge .env values with the current environment."""
 
-    env_path = Path(".env")
+    override = os.environ.get("LEYZEN_ENV_FILE", ".env").strip()
+    if override:
+        env_path = Path(override).expanduser()
+        if not env_path.is_absolute():
+            env_path = (ROOT_DIR / env_path).resolve()
+    else:
+        env_path = (ROOT_DIR / ".env").resolve()
+
     env: dict[str, str] = read_env_file(env_path)
     env.update(os.environ)
     return env
@@ -218,6 +225,17 @@ def main() -> None:
         web_containers=web_containers,
         web_container_string=web_container_string,
     )
+
+    override_env_file = os.environ.get("LEYZEN_ENV_FILE")
+    if override_env_file:
+        override_path = Path(override_env_file).expanduser().resolve()
+        # pour garder la lisibilité dans le compose, on n’écrit que le nom du fichier
+        short_name = override_path.name
+        print(f"[compose] Overriding env_file entries with: {short_name}")
+        for svc_name, svc_def in manifest.get("services", {}).items():
+            if "env_file" in svc_def:
+                svc_def["env_file"] = [short_name]
+
     write_manifest(manifest, OUTPUT_FILE)
     print(f"[compose] Wrote {OUTPUT_FILE}\n")
 

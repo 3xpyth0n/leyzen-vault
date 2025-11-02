@@ -30,6 +30,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checking mounted volume write access.
 - Handled pre-existing Filebrowser databases during configuration initialization so restarts no longer loop when only the
   settings file is absent.
+- Ensured `leyzenctl --env-file` propagates the selected environment file to both `compose/build.py` and subsequent Docker
+  Compose invocations so alternate `.env` files stay in sync with generated assets.
 
 ### Documentation
 

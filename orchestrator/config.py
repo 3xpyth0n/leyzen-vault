@@ -110,6 +110,16 @@ def _parse_bool(value: Optional[str], *, default: bool) -> bool:
 def load_settings() -> Settings:
     """Load orchestrator settings from environment variables."""
 
+    from leyzen_common.env import read_env_file
+
+    env_override = os.environ.get("LEYZEN_ENV_FILE")
+    if env_override:
+        env_path = Path(env_override).expanduser().resolve()
+        env_values = read_env_file(env_path)
+        for key, val in env_values.items():
+            os.environ[key] = val
+        print(f"[orchestrator] Loaded environment override from {env_path}")
+
     _ensure_required_variables(
         ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"]
     )

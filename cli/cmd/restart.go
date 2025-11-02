@@ -12,14 +12,14 @@ func init() {
 		Use:   "restart",
 		Short: "Restart the Leyzen Vault Docker stack",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := internal.RunBuildScript(); err != nil {
-				return err
-			}
 			color.HiCyan("Restarting Docker stack...")
-			if err := internal.RunCompose("down"); err != nil {
+			if err := internal.RunCompose(EnvFilePath(), "down", "--remove-orphans"); err != nil {
 				return err
 			}
-			return internal.RunCompose("up", "-d", "--remove-orphans")
+			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
+				return err
+			}
+			return internal.RunCompose(EnvFilePath(), "up", "-d", "--remove-orphans")
 		},
 	}
 
