@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,11 @@ func FormatKeyValue(key, value string) string {
 
 // RunBuildScript executes the Python compose/build.py script to rebuild HAProxy and Compose configuration.
 func RunBuildScript(envFile string) error {
+	return RunBuildScriptWithWriter(os.Stdout, os.Stderr, envFile)
+}
+
+// RunBuildScriptWithWriter executes the Python compose/build.py script streaming output to the provided writers.
+func RunBuildScriptWithWriter(stdout, stderr io.Writer, envFile string) error {
 	projectRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -50,15 +56,15 @@ func RunBuildScript(envFile string) error {
 	}
 
 	cmd := exec.Command("python3", scriptPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	cmd.Env = append(os.Environ(), fmt.Sprintf("LEYZEN_ENV_FILE=%s", resolvedEnv))
 
-	fmt.Println("🔄 Rebuilding Docker Compose and HAProxy configuration...")
+	fmt.Fprintln(stdout, "🔄 Rebuilding Docker Compose and HAProxy configuration...")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build.py failed: %w", err)
 	}
 
-	fmt.Println("✅ Configuration rebuild completed.")
+	fmt.Fprintln(stdout, "✅ Configuration rebuild completed.")
 	return nil
 }
