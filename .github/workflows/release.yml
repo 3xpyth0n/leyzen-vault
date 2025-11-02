@@ -1,0 +1,53 @@
+name: 📦 Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # Runs whenever a semantic version tag is pushed, e.g. v1.0.0
+
+permissions:
+  contents: write # Needed to publish the release
+  pull-requests: read
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Read changelog section
+        id: changelog
+        run: |
+          VERSION=${{ env.VERSION }}
+          # Extracts the section between "## [x.y.z]" and the next "## "
+          awk "/## \\[${VERSION#v}\\]/,/^## /" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md || true
+
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "❌ No matching section found in CHANGELOG.md for version ${VERSION#v}"
+            echo "Make sure CHANGELOG.md contains a section like: ## [${VERSION#v}]"
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Leyzen Vault ${{ env.VERSION }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          files: |
+            LICENSE
+            CHANGELOG.md
+            README.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

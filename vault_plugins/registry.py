@@ -10,29 +10,10 @@ from pathlib import Path
 from typing import Dict, Mapping, MutableMapping, Type
 
 import vault_plugins
+from leyzen_common.env import read_env_file
 from . import VaultServicePlugin
 
 _PLUGIN_CACHE: Dict[str, Type[VaultServicePlugin]] | None = None
-
-
-def _read_env_file(path: Path) -> dict[str, str]:
-    data: dict[str, str] = {}
-    if not path.exists():
-        return data
-
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        data[key] = value
-    return data
 
 
 def discover_plugins() -> Dict[str, Type[VaultServicePlugin]]:
@@ -67,7 +48,7 @@ def get_active_plugin(env: Mapping[str, str] | None = None) -> VaultServicePlugi
 
     env_mapping: MutableMapping[str, str] = {}
     env_path = Path(".env")
-    env_mapping.update(_read_env_file(env_path))
+    env_mapping.update(read_env_file(env_path))
 
     if env is None:
         env_mapping.update(os.environ)

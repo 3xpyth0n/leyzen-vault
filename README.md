@@ -109,41 +109,14 @@ On other platforms, follow the official installation instructions for each proje
 
 ## Quick Start 🏁
 
-1. **Clone and prepare the repository:**
+Leyzen Vault ships with a single entry point: [`service.sh`](service.sh) regenerates Docker Compose and HAProxy artifacts
+before invoking lifecycle actions. Follow the [Operations Guide](docs/OPERATIONS.md#quick-start) for the canonical quick-start
+checklist, `.env` configuration guidance, and the full catalogue of supported commands.
 
-   ```bash
-   git clone https://github.com/3xpyth0n/leyzen-vault.git
-   cd leyzen-vault
-   cp env.template .env
-   ```
+In brief:
 
-2. **Configure `.env`:** set secrets and select a plugin.
-   - `VAULT_SERVICE` — service plugin to deploy (`filebrowser`, `paperless`, or any installed plugin).
-   - `VAULT_WEB_REPLICAS` — number of web containers created for the plugin.
-   - `VAULT_WEB_PORT` — optional override for the plugin’s internal HTTP port.
-   - `VAULT_WEB_HEALTHCHECK_PATH` (alias `VAULT_HEALTH_PATH`) — optional path for HAProxy health checks (defaults to the
-     plugin’s value).
-   - `VAULT_WEB_HEALTHCHECK_HOST` — optional host header for HAProxy health checks when backends enforce allowlists.
-   - Credentials (`VAULT_USER`, `VAULT_PASS`, `VAULT_SECRET_KEY`, etc.) and Docker proxy settings as documented in
-     [`env.template`](env.template).
-
-3. **Operate exclusively through `service.sh`:** the helper script is the only supported interface. It rebuilds the Compose
-   manifest and HAProxy configuration before executing the requested action.
-
-   ```bash
-   ./service.sh build     # Build images for the orchestrator, plugins, and supporting services
-   ./service.sh start     # Generate configs and launch the stack
-   ./service.sh restart   # Regenerate configs, then cycle containers
-   ./service.sh stop      # Stop containers and clean up resources (volumes persist)
-   ```
-
-   Avoid manual `docker compose` or Python builder commands; bypassing `service.sh` will leave configuration artifacts
-   inconsistent with your `.env` selections.
-
-4. **Access the dashboard:** browse to `http://localhost:8080/orchestrator` and sign in with the credentials stored in `.env`.
-
-> 💡 **HTTP testing reminder:** when running without TLS, set `VAULT_SESSION_COOKIE_SECURE=false` so browsers send the session
-> cookie over plain HTTP.
+- Copy `env.template` to `.env`, adjust credentials, and choose the plugin to deploy.
+- Run `./service.sh start` to launch the stack, then sign in at `http://localhost:8080/orchestrator`.
 
 ---
 

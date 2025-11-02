@@ -12,7 +12,6 @@ from typing import Deque, Dict
 from flask import (
     Blueprint,
     Response,
-    abort,
     current_app,
     jsonify,
     render_template,
