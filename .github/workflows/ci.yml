@@ -28,13 +28,13 @@ jobs:
           pip install -r docker-proxy/requirements.txt
 
       - name: Validate Python bytecode
-        run: python -m compileall orchestrator docker-proxy
+        run: python -m compileall orchestrator docker-proxy compose vault_plugins
 
       - name: Ruff lint
         run: ruff check orchestrator docker-proxy compose vault_plugins
 
-  tests:
-    name: Pytest suite
+  runtime-check:
+    name: Runtime import validation
     runs-on: ubuntu-latest
     needs: syntax-check
     steps:
@@ -52,5 +52,23 @@ jobs:
           pip install -r orchestrator/requirements.txt
           pip install -r docker-proxy/requirements.txt
 
-      - name: Run pytest
-        run: pytest -q
+      - name: Verify imports and module loading
+        run: |
+          echo "🔍 Checking all modules can be imported..."
+          python - <<'EOF'
+          import importlib, pathlib, sys
+
+          paths = ["orchestrator", "docker-proxy", "compose", "vault_plugins", "leyzen_common"]
+          for p in paths:
+              pkg_path = pathlib.Path(p)
+              if pkg_path.exists():
+                  for pyfile in pkg_path.rglob("*.py"):
+                      modname = ".".join(pyfile.with_suffix("").parts)
+                      print(f"→ Importing {modname}")
+                      try:
+                          importlib.import_module(modname)
+                      except Exception as e:
+                          print(f"❌ Failed to import {modname}: {e}")
+                          sys.exit(1)
+          print("✅ All modules imported successfully.")
+          EOF

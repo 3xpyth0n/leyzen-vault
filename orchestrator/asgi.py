@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uvicorn.middleware.wsgi import WSGIMiddleware
 
-from app import app as flask_app
+from orchestrator.app import app as flask_app
 
 
 def create_app() -> WSGIMiddleware:
