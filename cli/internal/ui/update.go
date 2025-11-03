@@ -46,14 +46,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(fetchStatusesCmd(), scheduleStatusRefresh())
 	case tea.KeyMsg:
-		// Always allow 'q' to quit, even in the wizard
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
-			return m, tea.Quit
+		// Handle CTRL+C with confirmation
+		if msg.String() == "ctrl+c" {
+			if m.quitConfirm {
+				// Confirmed, quit
+				return m, tea.Quit
+			}
+			// First press: ask for confirmation
+			m.quitConfirm = true
+			return m, nil
 		}
+		// 'q' is now used in the wizard for editing, don't quit with it
 		// If we're in the wizard, don't go through handleKey which intercepts keys
 		if m.viewState == ViewWizard && len(m.wizardFields) > 0 {
+			// Cancel confirmation if user presses any key
+			if m.quitConfirm {
+				m.quitConfirm = false
+			}
 			return m.handleWizardKey(msg)
 		}
+		// Cancel confirmation if user presses any key (except CTRL+C)
+		if m.quitConfirm && msg.String() != "ctrl+c" {
+			m.quitConfirm = false
+		}
+		
 		// If we're in the config view, let the viewport handle scroll keys
 		if m.viewState == ViewConfig {
 			keyStr := msg.String()
@@ -161,9 +177,20 @@ func (m *Model) handleStatus(msg statusMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Cancel confirmation if user presses any key (except CTRL+C which is handled in Update)
+	if m.quitConfirm {
+		m.quitConfirm = false
+	}
+	
 	switch msg.String() {
-	case "ctrl+c", "q":
-		return m, tea.Quit
+	case "ctrl+c":
+		if m.quitConfirm {
+			// Confirmed, quit
+			return m, tea.Quit
+		}
+		// First press: ask for confirmation
+		m.quitConfirm = true
+		return m, nil
 	case "esc":
 		// Return to dashboard from any view
 		if m.viewState == ViewLogs || m.viewState == ViewConfig || m.viewState == ViewWizard {

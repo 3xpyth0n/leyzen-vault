@@ -29,7 +29,6 @@ func init() {
 				{Key: "VAULT_WEB_REPLICAS", Message: "Number of Vault replicas"},
 				{Key: "VAULT_PASS", Message: "Orchestrator admin password", Password: true},
 				{Key: "VAULT_ROTATION_INTERVAL", Message: "Rotation interval (seconds)"},
-				{Key: "VAULT_DOCKER_NETWORK", Message: "Docker network"},
 			}
 
 			responses := make(map[string]string)

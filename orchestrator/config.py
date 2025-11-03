@@ -117,15 +117,6 @@ def load_settings() -> Settings:
     for key, val in env_values.items():
         os.environ[key] = val
 
-    env_file_used = os.environ.get("LEYZEN_ENV_FILE", "").strip()
-    if env_file_used:
-        env_path = Path(env_file_used).expanduser()
-        if not env_path.is_absolute():
-            env_path = (root_dir / env_path).resolve()
-        else:
-            env_path = env_path.resolve()
-        print(f"[orchestrator] Loaded environment override from {env_path}")
-
     _ensure_required_variables(
         ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"]
     )
