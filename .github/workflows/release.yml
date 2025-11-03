@@ -29,7 +29,7 @@ jobs:
         run: |
           VERSION=${{ env.VERSION }}
           # Extracts the section between "## [x.y.z]" and the next "## "
-          awk "/## \\[${VERSION#v}\\]/,/^## /" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md || true
+          awk "/^## \\[${VERSION#v}\\]/ {flag=1; next} /^## / {flag=0} flag" CHANGELOG.md > RELEASE_NOTES.md
 
           if [ ! -s RELEASE_NOTES.md ]; then
             echo "❌ No matching section found in CHANGELOG.md for version ${VERSION#v}"
