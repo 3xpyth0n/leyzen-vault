@@ -7,6 +7,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-11-03
+
 ### Added
 
 - Introduced a shared `leyzen_common.env` module centralizing the `.env` reader and container-name parser helpers for consistent reuse across all services.
