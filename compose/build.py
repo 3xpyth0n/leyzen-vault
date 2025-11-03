@@ -21,7 +21,7 @@ from compose.haproxy_config import (
     render_haproxy_config,
     resolve_backend_port,
 )
-from leyzen_common.env import parse_container_names, read_env_file
+from leyzen_common.env import load_env_with_override, parse_container_names
 from vault_plugins import VaultServicePlugin
 from vault_plugins.registry import get_active_plugin
 
@@ -31,15 +31,7 @@ OUTPUT_FILE = Path("docker-compose.yml")
 def load_environment() -> dict[str, str]:
     """Merge .env values with the current environment."""
 
-    override = os.environ.get("LEYZEN_ENV_FILE", ".env").strip()
-    if override:
-        env_path = Path(override).expanduser()
-        if not env_path.is_absolute():
-            env_path = (ROOT_DIR / env_path).resolve()
-    else:
-        env_path = (ROOT_DIR / ".env").resolve()
-
-    env: dict[str, str] = read_env_file(env_path)
+    env: dict[str, str] = load_env_with_override(ROOT_DIR)
     env.update(os.environ)
     return env
 

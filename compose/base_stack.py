@@ -55,16 +55,10 @@ def build_base_services(
         "restart": "unless-stopped",
         "env_file": [".env"],
         "environment": {
-            "DOCKER_PROXY_TOKEN": env.get(
-                "DOCKER_PROXY_TOKEN",
-                "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
-            ),
-            "DOCKER_PROXY_TIMEOUT": env.get(
-                "DOCKER_PROXY_TIMEOUT", "${DOCKER_PROXY_TIMEOUT:-30}"
-            ),
-            "LOG_LEVEL": env.get(
-                "DOCKER_PROXY_LOG_LEVEL", "${DOCKER_PROXY_LOG_LEVEL:-INFO}"
-            ),
+            # Always use environment variable references to avoid hardcoding secrets
+            "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
+            "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
+            "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
             "VAULT_WEB_CONTAINERS": web_container_string,
         },
         "healthcheck": {

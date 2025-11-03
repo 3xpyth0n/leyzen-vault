@@ -1,15 +1,39 @@
+from __future__ import annotations
+
+import hmac
 import logging
 import os
-import sys
-import hmac
 import re
+import sys
 from typing import Dict, FrozenSet, Iterable, Optional, Pattern, Tuple
 
 from flask import Flask, Response, jsonify, request
 import httpx
 from werkzeug.exceptions import Forbidden, Unauthorized
 
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+# Import shared environment parsing utilities
+# Note: This assumes leyzen_common is available in the Python path
+# Fallback implementation exists below in case leyzen_common is unavailable
+# (should not happen in container, but included for robustness)
+try:
+    from leyzen_common.env import parse_container_names
+except ImportError:
+    # Fallback if leyzen_common is not available (should not happen in container)
+    def parse_container_names(raw_value):  # type: ignore
+        if not raw_value:
+            return []
+        tokens = re.split(r"[,\s]+", str(raw_value))
+        names = []
+        seen = set()
+        for token in tokens:
+            entry = token.strip()
+            if entry and entry not in seen:
+                seen.add(entry)
+                names.append(entry)
+        return names
+
+
+LOG_LEVEL = os.environ.get("DOCKER_PROXY_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -47,16 +71,12 @@ ALLOWED_ENDPOINTS: Tuple[Tuple[str, Pattern[str]], ...] = (
 )
 
 
-def _parse_container_tokens(raw: str) -> FrozenSet[str]:
-    tokens = set()
-    for part in re.split(r"[,\s]+", raw):
-        name = part.strip()
-        if name:
-            tokens.add(name)
-    return frozenset(tokens)
-
-
 def _load_allowed_containers() -> FrozenSet[str]:
+    """Load allowed container names from environment variable.
+
+    Uses the shared parse_container_names utility and converts to FrozenSet
+    for efficient membership testing.
+    """
     raw = os.environ.get("VAULT_WEB_CONTAINERS")
     if not raw:
         logger.error(
@@ -64,11 +84,13 @@ def _load_allowed_containers() -> FrozenSet[str]:
         )
         raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
 
-    allowed = _parse_container_tokens(raw)
-    if not allowed:
+    names = parse_container_names(raw)
+    if not names:
         logger.error("Parsed VAULT_WEB_CONTAINERS is empty after tokenization")
         raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
 
+    # Convert to FrozenSet for efficient membership testing
+    allowed = frozenset(names)
     logger.info("Loaded %d allowed container identifiers", len(allowed))
     return allowed
 
@@ -220,13 +242,8 @@ def proxy(path: str) -> Response:
             503,
         )
 
-    logger.debug("TRACE 1: entering proxy()")
     _validate_token()
-    logger.debug("TRACE 2: token validated")
     normalized_path = request.path.lstrip("/")
-    logger.debug(
-        f"TRACE 3: normalized_path = {normalized_path!r}, method = {request.method}"
-    )
 
     container_name: Optional[str] = None
     for allowed_method, pattern in ALLOWED_ENDPOINTS:

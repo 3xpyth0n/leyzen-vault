@@ -31,14 +31,9 @@ class FilebrowserPlugin(VaultServicePlugin):
             "image": "leyzen/filebrowser:latest",
             "env_file": [".env"],
             "environment": {
-                "FILEBROWSER_ADMIN_USER": env.get(
-                    "FILEBROWSER_ADMIN_USER",
-                    "${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}",
-                ),
-                "FILEBROWSER_ADMIN_PASSWORD": env.get(
-                    "FILEBROWSER_ADMIN_PASSWORD",
-                    "${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}",
-                ),
+                # Always use environment variable references to avoid hardcoding secrets
+                "FILEBROWSER_ADMIN_USER": "${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}",
+                "FILEBROWSER_ADMIN_PASSWORD": "${FILEBROWSER_ADMIN_PASSWORD:?Set FILEBROWSER_ADMIN_PASSWORD in .env}",
             },
             "restart": "on-failure",
             "healthcheck": {

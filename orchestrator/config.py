@@ -13,7 +13,7 @@ from vault_plugins.registry import get_active_plugin
 import pytz
 from werkzeug.security import generate_password_hash
 
-from leyzen_common.env import parse_container_names
+from leyzen_common.env import load_env_with_override, parse_container_names
 
 
 class ConfigurationError(EnvironmentError):
@@ -110,14 +110,20 @@ def _parse_bool(value: Optional[str], *, default: bool) -> bool:
 def load_settings() -> Settings:
     """Load orchestrator settings from environment variables."""
 
-    from leyzen_common.env import read_env_file
+    base_dir = Path(__file__).resolve().parent
+    root_dir = base_dir.parent
 
-    env_override = os.environ.get("LEYZEN_ENV_FILE")
-    if env_override:
-        env_path = Path(env_override).expanduser().resolve()
-        env_values = read_env_file(env_path)
-        for key, val in env_values.items():
-            os.environ[key] = val
+    env_values = load_env_with_override(root_dir)
+    for key, val in env_values.items():
+        os.environ[key] = val
+
+    env_file_used = os.environ.get("LEYZEN_ENV_FILE", "").strip()
+    if env_file_used:
+        env_path = Path(env_file_used).expanduser()
+        if not env_path.is_absolute():
+            env_path = (root_dir / env_path).resolve()
+        else:
+            env_path = env_path.resolve()
         print(f"[orchestrator] Loaded environment override from {env_path}")
 
     _ensure_required_variables(
@@ -156,11 +162,11 @@ def load_settings() -> Settings:
     except ValueError:
         proxy_trust_count = 1
 
-    rotation_raw = os.environ.get("VAULT_ROTATION_INTERVAL", "90").strip('"')
+    rotation_raw = os.environ.get("VAULT_ROTATION_INTERVAL", "120").strip('"')
     try:
         rotation_interval = max(1, int(rotation_raw))
     except ValueError:
-        rotation_interval = 90
+        rotation_interval = 120
 
     base_dir = Path(__file__).resolve().parent
     html_dir = base_dir
