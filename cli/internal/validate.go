@@ -9,11 +9,11 @@ import (
 type valueValidator func(string) (string, error)
 
 var keyValidators = map[string]valueValidator{
-	"VAULT_PLUGIN":                validateNonEmpty,
-	"VAULT_REPLICAS":              validatePositiveInt,
-	"VAULT_ORCHESTRATOR_PASSWORD": validatePassword,
-	"VAULT_ROTATION_INTERVAL":     validatePositiveInt,
-	"VAULT_DOCKER_NETWORK":        validateNonEmpty,
+	"VAULT_SERVICE":       validateNonEmpty,
+	"VAULT_WEB_REPLICAS":  validatePositiveInt,
+	"VAULT_PASS":          validatePassword,
+	"VAULT_ROTATION_INTERVAL": validatePositiveInt,
+	"VAULT_DOCKER_NETWORK":     validateNonEmpty,
 }
 
 // ValidateEnvValue validates and sanitizes a value for the given key.

@@ -63,9 +63,9 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).
-
 ## [1.0.0] - 2025-11-01
+
+This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).
 
 ### Added
 

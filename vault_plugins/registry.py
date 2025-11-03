@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Mapping, MutableMapping, Type
 
 import vault_plugins
-from leyzen_common.env import read_env_file
+from leyzen_common.env import load_env_with_override
 from . import VaultServicePlugin
 
 _PLUGIN_CACHE: Dict[str, Type[VaultServicePlugin]] | None = None
@@ -46,9 +46,11 @@ def discover_plugins() -> Dict[str, Type[VaultServicePlugin]]:
 def get_active_plugin(env: Mapping[str, str] | None = None) -> VaultServicePlugin:
     """Instantiate and return the active plugin based on configuration."""
 
+    # Determine root directory (two levels up from vault_plugins/)
+    root_dir = Path(__file__).resolve().parent.parent
+
     env_mapping: MutableMapping[str, str] = {}
-    env_path = Path(".env")
-    env_mapping.update(read_env_file(env_path))
+    env_mapping.update(load_env_with_override(root_dir))
 
     if env is None:
         env_mapping.update(os.environ)

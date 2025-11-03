@@ -25,10 +25,10 @@ func init() {
 				Message  string
 				Password bool
 			}{
-				{Key: "VAULT_PLUGIN", Message: "Vault plugin identifier"},
-				{Key: "VAULT_REPLICAS", Message: "Number of Vault replicas"},
-				{Key: "VAULT_ORCHESTRATOR_PASSWORD", Message: "Orchestrator admin password", Password: true},
-				{Key: "VAULT_ROTATION_INTERVAL", Message: "Rotation interval (minutes)"},
+				{Key: "VAULT_SERVICE", Message: "Vault plugin identifier"},
+				{Key: "VAULT_WEB_REPLICAS", Message: "Number of Vault replicas"},
+				{Key: "VAULT_PASS", Message: "Orchestrator admin password", Password: true},
+				{Key: "VAULT_ROTATION_INTERVAL", Message: "Rotation interval (seconds)"},
 				{Key: "VAULT_DOCKER_NETWORK", Message: "Docker network"},
 			}
 

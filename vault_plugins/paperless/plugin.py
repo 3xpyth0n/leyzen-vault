@@ -35,10 +35,8 @@ class PaperlessPlugin(VaultServicePlugin):
             "environment": {
                 "POSTGRES_DB": env.get("PAPERLESS_DBNAME", "paperless"),
                 "POSTGRES_USER": env.get("PAPERLESS_DBUSER", "paperless"),
-                "POSTGRES_PASSWORD": env.get(
-                    "PAPERLESS_DBPASS",
-                    "${PAPERLESS_DBPASS:?Set PAPERLESS_DBPASS in .env}",
-                ),
+                # Always use environment variable references to avoid hardcoding secrets
+                "POSTGRES_PASSWORD": "${PAPERLESS_DBPASS:?Set PAPERLESS_DBPASS in .env}",
             },
             "volumes": ["paperless-postgres:/var/lib/postgresql/data"],
             "healthcheck": {
@@ -76,14 +74,9 @@ class PaperlessPlugin(VaultServicePlugin):
             "PAPERLESS_DBHOST": env.get("PAPERLESS_DBHOST", "paperless_postgres"),
             "PAPERLESS_DBNAME": env.get("PAPERLESS_DBNAME", "paperless"),
             "PAPERLESS_DBUSER": env.get("PAPERLESS_DBUSER", "paperless"),
-            "PAPERLESS_DBPASS": env.get(
-                "PAPERLESS_DBPASS",
-                "${PAPERLESS_DBPASS:?Set PAPERLESS_DBPASS in .env}",
-            ),
-            "PAPERLESS_SECRET_KEY": env.get(
-                "PAPERLESS_SECRET_KEY",
-                "${PAPERLESS_SECRET_KEY:?Set PAPERLESS_SECRET_KEY in .env}",
-            ),
+            # Always use environment variable references to avoid hardcoding secrets
+            "PAPERLESS_DBPASS": "${PAPERLESS_DBPASS:?Set PAPERLESS_DBPASS in .env}",
+            "PAPERLESS_SECRET_KEY": "${PAPERLESS_SECRET_KEY:?Set PAPERLESS_SECRET_KEY in .env}",
             "PAPERLESS_TIME_ZONE": env.get("TIMEZONE", "UTC"),
             "PAPERLESS_URL": env.get("PAPERLESS_URL", "http://localhost:8080"),
         }

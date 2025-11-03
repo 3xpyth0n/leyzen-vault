@@ -32,7 +32,7 @@ Before submitting a pull request:
   configurations and verify the stack boots without errors.
 - Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
   routing, or environment handling.
-- Add or update documentation in `docs/` when behavior or workflows change.
+- Update relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki) when behavior or workflows change.
 
 If automated tests or additional checks become available, include their output in your pull request description.
 

@@ -36,5 +36,5 @@ We will keep you informed of our progress and coordinate disclosure once a fix o
 
 ## Additional Reading
 
-For runtime hardening details, see [`orchestrator/SECURITY.md`](orchestrator/SECURITY.md). Operational practices and CLI usage
+For runtime hardening details, see [`orchestrator/SECURITY_RUNTIME.md`](orchestrator/SECURITY_RUNTIME.md). Operational practices and CLI usage
 are documented in the [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) and [`leyzenctl`](https://github.com/3xpyth0n/leyzen-vault/wiki/leyzenctl) wiki pages.

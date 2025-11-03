@@ -15,8 +15,7 @@ checks we expect before shipping changes.
   HTTP service.
 - `filebrowser/` — Dockerfile and entrypoint used to run the upstream Filebrowser
   binary with the correct defaults for the demo.
-- `docs/` — Additional operational notes.
-- `leyzenctl` — Deployment helper.
+- `leyzenctl` — Deployment helper (Go CLI binary compiled by `install.sh`).
 
 ## Python guidelines (`orchestrator/`, `docker-proxy/`)
 
@@ -95,8 +94,8 @@ checks we expect before shipping changes.
 
 ## Documentation & operational notes
 
-- Update `README.md` for user-facing changes and `docs/TECHNICAL_GUIDE.md` for
-  operational or security adjustments.
+- Update `README.md` for user-facing changes. For operational or security
+  adjustments, update the relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki).
 - Security-sensitive tweaks (auth flow, captcha, CSP reporting) should include a
   short rationale in commit messages or doc updates.
 
