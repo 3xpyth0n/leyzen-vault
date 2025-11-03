@@ -9,9 +9,10 @@ import signal
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Type, cast
 
 from flask import Flask
+
+from leyzen_common.exceptions import ConfigurationError
 
 
 # Ensure the repository root (which houses the dynamically loaded plugin
@@ -50,21 +51,6 @@ def _load_orchestrator_package() -> ModuleType:
 
 orchestrator_pkg = _load_orchestrator_package()
 create_app = orchestrator_pkg.create_app
-
-try:
-    config_module = importlib.import_module(f"{orchestrator_pkg.__name__}.config")
-except ModuleNotFoundError as exc:  # pragma: no cover - defensive guard
-    raise RuntimeError("Unable to import orchestrator configuration module") from exc
-
-try:
-    ConfigurationError = getattr(config_module, "ConfigurationError")
-except AttributeError as exc:  # pragma: no cover - defensive guard
-    raise RuntimeError("ConfigurationError type is unavailable") from exc
-
-if TYPE_CHECKING:  # pragma: no cover - help static analyzers understand the type
-    from orchestrator.config import ConfigurationError as _ConfigurationError
-
-    ConfigurationError = cast(Type[_ConfigurationError], ConfigurationError)
 
 
 def _register_runtime_hooks(flask_app: Flask) -> None:

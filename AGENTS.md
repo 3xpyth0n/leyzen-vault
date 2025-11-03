@@ -44,6 +44,12 @@ checks we expect before shipping changes.
 - **Unit boundaries**: Keep background threads, SSE streaming, and rotation
   mechanics inside `RotationService`. Blueprints should remain thin adapters
   between Flask routes and service methods.
+- **Environment file parsing**: The codebase maintains separate `.env` parsers in
+  Python (`leyzen_common/env.py`) and Go (`cli/internal/env.go`) for linguistic
+  reasons. Both implementations must stay synchronized to avoid configuration
+  inconsistencies. When modifying parsing logic, update both implementations and
+  consider adding cross-language compatibility tests. See `leyzen_common/env.py`
+  for detailed notes on the duplication.
 
 ## Flask blueprints & templates (`orchestrator/blueprints`, `orchestrator/templates`)
 
