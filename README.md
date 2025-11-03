@@ -10,6 +10,12 @@
 
 Leyzen Vault automates ephemeral container rotation across pluggable workloads. A hardened Flask orchestrator coordinates Docker lifecycle operations through an allowlisted proxy, while HAProxy front-ends every request with strict security headers. The system demonstrates how moving-target defense principles can be applied to real-world stacks without sacrificing observability or operator experience.
 
+## Author
+
+**Saad Idrissi** — a French cybersecurity student passionate about secure systems, automation, and digital defense.
+He created **Leyzen Vault** as a personal initiative to explore advanced moving-target defense concepts and practical infrastructure hardening.
+🌐 [portfolio.leyzen.com](https://portfolio.leyzen.com)
+
 ## Feature Highlights
 
 - **Dynamic stack composition** – `leyzenctl` regenerates Docker Compose and HAProxy artifacts on every lifecycle command so configuration always reflects the active plugin.

@@ -61,6 +61,8 @@ func (r *Runner) Run(action ActionType) (<-chan actionProgressMsg, error) {
 			err = r.stop(writer)
 		case ActionBuild:
 			err = r.build(writer)
+		case ActionWizard:
+			err = r.wizard(writer)
 		default:
 			err = fmt.Errorf("unknown action %s", action)
 		}
@@ -106,6 +108,24 @@ func (r *Runner) build(writer *actionWriter) error {
 	return internal.RunBuildScriptWithWriter(writer, writer, r.envFile)
 }
 
+func (r *Runner) wizard(writer *actionWriter) error {
+	// Le wizard est maintenant géré directement dans le TUI via ViewWizard
+	// Cette fonction ne devrait plus être appelée, mais on la garde pour compatibilité
+	writer.emit("⚠️  Wizard should be initiated from dashboard (press 'w')")
+	return fmt.Errorf("wizard not available as action - use dashboard")
+}
+
+func fetchConfigListCmd(envFile string) tea.Cmd {
+	return func() tea.Msg {
+		// Initialize from template if file is empty
+		pairs, err := internal.InitializeEnvFromTemplate(envFile)
+		if err != nil {
+			return configListMsg{err: err}
+		}
+		return configListMsg{pairs: pairs}
+	}
+}
+
 type actionWriter struct {
 	action ActionType
 	stream chan<- actionProgressMsg
@@ -140,7 +160,26 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 		}
 
 		line := strings.TrimSpace(strings.TrimSuffix(data[:idx], "\r"))
+		// Nettoyer la ligne des caractères de contrôle
+		line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+		
+		// Ignorer les lignes vides ou les caractères isolés problématiques
 		if line != "" {
+			// Filtrer les caractères isolés qui sont probablement des artefacts
+			if len(line) == 1 {
+				// Autoriser seulement les caractères spéciaux valides
+				validSingleChars := map[string]bool{
+					"[": true,
+					"]": true,
+					"(": true,
+					")": true,
+				}
+				if !validSingleChars[line] {
+					// Ignorer les caractères isolés comme "C", "B", etc.
+					data = data[idx+1:]
+					continue
+				}
+			}
 			w.stream <- actionProgressMsg{Action: w.action, Line: line}
 		}
 		data = data[idx+1:]

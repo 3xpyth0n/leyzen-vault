@@ -14,12 +14,25 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Expanded the CI workflow to install runtime dependencies, lint with **Ruff**, and run **pytest** for automated regression coverage.
 - Added the Go-based `leyzenctl` CLI for Docker stack lifecycle and environment configuration management, replacing the legacy shell helper.
 - Added a Bubbletea- and Lipgloss-powered interactive dashboard to `leyzenctl` when no subcommand is supplied, surfacing live container status, logs, and lifecycle controls.
+- Implemented comprehensive view navigation system with `ViewState` enum supporting distinct views: Dashboard, Logs, Action, Config, and Wizard.
+- Added interactive configuration wizard fully integrated into TUI with dynamic text input fields supporting all environment variables.
+- Added dedicated Config view (`c` key) displaying all environment variables organized by logical categories (Vault, Docker Proxy, Filebrowser, Paperless, CSP, Proxy, General).
+- Added password visibility toggle in Config view (Space key) to reveal/hide sensitive values (passwords, secrets, tokens, keys).
+- Added scrollable viewport for Config view enabling navigation through long lists of variables with arrow keys and page up/down.
+- Implemented automatic return to dashboard after action completion with ephemeral success messages.
+- Added wizard navigation with one-field-per-page interface using Previous (`←`) and Next (`→`) arrow keys, with progress indicator.
+- Added automatic initialization from `env.template` when `.env` file is empty, copying all template variables to enable immediate configuration.
+- Added context-sensitive footer hints that update based on current view (Dashboard, Logs, Config, Wizard).
 
 ### Changed
 
 - Updated the Compose builder, orchestrator configuration loader, and plugin registry to import shared helpers from `leyzen_common.env` instead of maintaining local copies.
 - Refactored `RotationService` to delegate metrics collection and snapshot handling to the new `RotationTelemetry` helper while preserving rotation logic and Docker interactions.
 - Default `leyzenctl` execution now launches the interactive TUI while a new `--no-ui` flag preserves headless scripting behaviour for CI and automation use-cases.
+- Refactored TUI architecture to use explicit view state transitions with `switchTo*()` methods ensuring clean state management between views.
+- Wizard now dynamically loads all environment variables from `.env` file instead of hardcoded fields, supporting unlimited variable configuration.
+- Made all wizard fields optional (removed 8-character minimum password requirement) allowing flexible configuration for optional values.
+- Enhanced log filtering to remove control characters and malformed artifacts preventing display issues on dashboard.
 
 ### Fixed
 
@@ -34,6 +47,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   settings file is absent.
 - Ensured `leyzenctl --env-file` propagates the selected environment file to both `compose/build.py` and subsequent Docker
   Compose invocations so alternate `.env` files stay in sync with generated assets.
+- Fixed logs and action output polluting dashboard after returning from wizard or action views through comprehensive state cleanup.
+- Fixed scroll functionality in Config view by ensuring viewport correctly receives scroll key events (arrow keys, page up/down, home/end).
+- Fixed wizard hints appearing on dashboard after wizard completion by explicitly setting footer context on view transitions.
+- Fixed state persistence issues when switching between views by implementing proper cleanup of logs, viewport content, and wizard state.
+- Fixed rebuild script output appearing in TUI after wizard save by capturing output to silent buffer.
 
 ### Documentation
 

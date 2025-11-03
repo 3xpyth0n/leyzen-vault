@@ -135,3 +135,73 @@ func ResolveEnvFilePath(path string) (string, error) {
 
 	return resolved, nil
 }
+
+// LoadEnvTemplate loads variables from env.template file located in the project root.
+// It finds env.template by looking for it relative to the provided env file path.
+func LoadEnvTemplate(envFilePath string) (map[string]string, error) {
+	// Resolve the env file path to get its directory
+	resolvedEnvPath, err := ResolveEnvFilePath(envFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve env file path: %w", err)
+	}
+
+	envDir := filepath.Dir(resolvedEnvPath)
+	
+	// Try to find env.template in the same directory or parent directory
+	templatePath := filepath.Join(envDir, "env.template")
+	
+	// If not found, try parent directory (project root)
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		parentTemplatePath := filepath.Join(filepath.Dir(envDir), "env.template")
+		if _, err := os.Stat(parentTemplatePath); os.IsNotExist(err) {
+			// Template not found anywhere, return empty map
+			return make(map[string]string), nil
+		}
+		templatePath = parentTemplatePath
+	}
+
+	// Try to load the template
+	templateFile, err := LoadEnvFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("load env template: %w", err)
+	}
+
+	return templateFile.Pairs(), nil
+}
+
+// InitializeEnvFromTemplate initializes an empty env file with variables from env.template.
+// Returns the merged variables.
+func InitializeEnvFromTemplate(envFilePath string) (map[string]string, error) {
+	// Load current env file
+	envFile, err := LoadEnvFile(envFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("load env file: %w", err)
+	}
+
+	// Check if file is empty (no key-value pairs)
+	if len(envFile.Pairs()) == 0 {
+		// Load template
+		templatePairs, err := LoadEnvTemplate(envFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("load template: %w", err)
+		}
+
+		// If template has variables, copy them to env file
+		if len(templatePairs) > 0 {
+			// Copy all template variables to env file
+			for key, value := range templatePairs {
+				envFile.Set(key, value)
+			}
+
+			// Save the initialized file
+			if err := envFile.Write(); err != nil {
+				return nil, fmt.Errorf("write initialized env file: %w", err)
+			}
+		}
+
+		return envFile.Pairs(), nil
+	}
+
+	// File already has variables, return them
+	return envFile.Pairs(), nil
+}
