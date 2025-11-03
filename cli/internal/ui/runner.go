@@ -109,8 +109,8 @@ func (r *Runner) build(writer *actionWriter) error {
 }
 
 func (r *Runner) wizard(writer *actionWriter) error {
-	// Le wizard est maintenant géré directement dans le TUI via ViewWizard
-	// Cette fonction ne devrait plus être appelée, mais on la garde pour compatibilité
+	// The wizard is now handled directly in the TUI via ViewWizard
+	// This function should no longer be called, but we keep it for compatibility
 	writer.emit("⚠️  Wizard should be initiated from dashboard (press 'w')")
 	return fmt.Errorf("wizard not available as action - use dashboard")
 }
@@ -160,14 +160,14 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 		}
 
 		line := strings.TrimSpace(strings.TrimSuffix(data[:idx], "\r"))
-		// Nettoyer la ligne des caractères de contrôle
+		// Clean the line of control characters
 		line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
 		
-		// Ignorer les lignes vides ou les caractères isolés problématiques
+		// Ignore empty lines or problematic isolated characters
 		if line != "" {
-			// Filtrer les caractères isolés qui sont probablement des artefacts
+			// Filter isolated characters that are likely artifacts
 			if len(line) == 1 {
-				// Autoriser seulement les caractères spéciaux valides
+				// Allow only valid special characters
 				validSingleChars := map[string]bool{
 					"[": true,
 					"]": true,
@@ -175,7 +175,7 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 					")": true,
 				}
 				if !validSingleChars[line] {
-					// Ignorer les caractères isolés comme "C", "B", etc.
+					// Ignore isolated characters like "C", "B", etc.
 					data = data[idx+1:]
 					continue
 				}

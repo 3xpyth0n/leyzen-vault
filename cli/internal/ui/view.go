@@ -30,17 +30,17 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderDashboard() string {
-	// S'assurer qu'on est vraiment sur le dashboard et nettoyer si nécessaire
+	// Ensure we're really on the dashboard and clean up if necessary
 	if m.viewState != ViewDashboard {
-		// Protection : si on appelle renderDashboard mais qu'on n'est pas sur le dashboard,
-		// on ne devrait pas arriver ici, mais on force le nettoyage
+		// Protection: if we call renderDashboard but we're not on the dashboard,
+		// we shouldn't get here, but force cleanup anyway
 		m.viewState = ViewDashboard
 	}
 	
 	header := m.renderHeader()
 	status := m.renderStatusPanel()
 	
-	// Message de succès temporaire
+	// Temporary success message
 	successMsg := ""
 	if m.successMessage != "" {
 		successMsg = m.renderSuccessMessage()
@@ -53,8 +53,8 @@ func (m *Model) renderDashboard() string {
 		help = m.renderHints()
 	}
 	
-	// TOUJOURS utiliser "dashboard" comme contexte pour le footer
-	// Forcer explicitement le contexte dashboard pour éviter les hints du wizard
+	// ALWAYS use "dashboard" as context for the footer
+	// Explicitly force dashboard context to avoid wizard hints
 	footer := m.renderFooter("dashboard")
 
 	var parts []string
@@ -91,7 +91,7 @@ func (m *Model) renderActionView() string {
 func (m *Model) renderConfigView() string {
 	header := m.renderHeader()
 	
-	// S'assurer que le viewport est dimensionné
+	// Ensure the viewport is sized
 	if m.viewport.Height == 0 && m.height > 0 {
 		viewportHeight := m.height - 10
 		if viewportHeight < 6 {
@@ -104,25 +104,25 @@ func (m *Model) renderConfigView() string {
 		m.viewport.Height = viewportHeight
 	}
 	
-	// Construire le contenu complet de la config
+	// Build the complete config content
 	configContent := m.buildConfigContent()
 	
-	// Préserver l'offset Y actuel avant de mettre à jour le contenu
+	// Preserve current Y offset before updating content
 	currentYOffset := m.viewport.YOffset
 	
-	// Mettre à jour le viewport avec le contenu
+	// Update the viewport with the content
 	m.viewport.SetContent(configContent)
 	
-	// Restaurer l'offset Y pour préserver la position de scroll
+	// Restore Y offset to preserve scroll position
 	m.viewport.SetYOffset(currentYOffset)
 	
-	// S'assurer que le viewport est synchronisé
+	// Ensure the viewport is synchronized
 	m.viewport.Width = m.width - 6
 	if m.viewport.Width < 20 {
 		m.viewport.Width = 20
 	}
 	
-	// Rendre le viewport dans le pane
+	// Render the viewport in the pane
 	config := m.theme.Pane.Render(m.viewport.View())
 	
 	footer := m.renderFooter("config")
@@ -141,10 +141,10 @@ func (m *Model) buildConfigContent() string {
 	rows = append(rows, m.theme.Accent.Render(header))
 	rows = append(rows, strings.Repeat("─", 80))
 
-	// Organiser les variables par catégorie
+	// Organize variables by category
 	categorized := m.categorizeConfigPairs(m.configPairs)
 	
-	// Ordre des catégories
+	// Category order
 	categoryOrder := []string{
 		"Vault",
 		"Docker Proxy",
@@ -157,16 +157,16 @@ func (m *Model) buildConfigContent() string {
 
 	hasPasswords := false
 	
-	// Afficher chaque catégorie
+	// Display each category
 	for _, category := range categoryOrder {
 		if vars, ok := categorized[category]; ok && len(vars) > 0 {
-			// Titre de catégorie
-			if len(rows) > 2 { // S'il y a déjà du contenu, ajouter un espace
+			// Category title
+			if len(rows) > 2 { // If there's already content, add a space
 				rows = append(rows, "")
 			}
 			rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("── %s ──", category)))
 			
-			// Variables de cette catégorie
+			// Variables in this category
 			for _, key := range vars {
 				value := m.configPairs[key]
 				isPassword := strings.Contains(strings.ToLower(key), "password") || 
@@ -179,9 +179,9 @@ func (m *Model) buildConfigContent() string {
 					hasPasswords = true
 				}
 				
-				// Masquer les valeurs sensibles (mots de passe) sauf si demandé
+				// Hide sensitive values (passwords) unless requested
 				if isPassword && !isVisible {
-					// Afficher avec un indicateur qu'on peut appuyer dessus
+					// Display with an indicator that it can be clicked
 					maskedValue := strings.Repeat("•", len(value))
 					if len(value) == 0 {
 						maskedValue = "(empty)"
@@ -195,7 +195,7 @@ func (m *Model) buildConfigContent() string {
 		}
 	}
 	
-	// Ajouter une ligne d'aide pour les mots de passe
+	// Add a help line for passwords
 	if hasPasswords {
 		rows = append(rows, "")
 		rows = append(rows, m.theme.Subtitle.Render("Press SPACE to toggle password visibility"))
@@ -205,16 +205,16 @@ func (m *Model) buildConfigContent() string {
 }
 
 func (m *Model) renderConfigPanel() string {
-	// Cette fonction n'est plus utilisée, le contenu est construit via buildConfigContent
-	// et affiché via le viewport dans renderConfigView
+	// This function is no longer used, content is built via buildConfigContent
+	// and displayed via the viewport in renderConfigView
 	return ""
 }
 
-// categorizeConfigPairs organise les variables par catégorie logique
+// categorizeConfigPairs organizes variables by logical category
 func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]string {
 	categories := make(map[string][]string)
 	
-	// Ordre logique des clés par catégorie (USER avant PASSWORD, etc.)
+	// Logical order of keys by category (USER before PASSWORD, etc.)
 	vaultOrder := map[string]int{
 		"VAULT_SERVICE":              0,
 		"VAULT_USER":                 1,
@@ -248,13 +248,13 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		"PROXY_TRUST_COUNT": 0,
 	}
 	
-	// Collecter toutes les clés
+	// Collect all keys
 	allKeys := make([]string, 0, len(pairs))
 	for k := range pairs {
 		allKeys = append(allKeys, k)
 	}
 	
-	// Catégoriser chaque clé
+	// Categorize each key
 	for _, key := range allKeys {
 		category := ""
 		
@@ -281,11 +281,11 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		categories[category] = append(categories[category], key)
 	}
 	
-	// Trier chaque catégorie selon l'ordre défini
+	// Sort each category according to the defined order
 	for category, keys := range categories {
 		var orderMap map[string]int
 		
-		// Déterminer la map d'ordre selon la catégorie
+		// Determine the order map according to the category
 		if category == "Vault" {
 			orderMap = vaultOrder
 		} else if category == "Docker Proxy" {
@@ -303,7 +303,7 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		}
 		
 		if orderMap != nil {
-			// Trier selon l'ordre défini, puis alphabétiquement pour les autres
+			// Sort according to defined order, then alphabetically for others
 			sort.Slice(keys, func(i, j int) bool {
 				orderI, hasOrderI := orderMap[keys[i]]
 				orderJ, hasOrderJ := orderMap[keys[j]]
@@ -312,16 +312,16 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 					return orderI < orderJ
 				}
 				if hasOrderI {
-					return true // i a un ordre, i vient avant
+					return true // i has an order, i comes before
 				}
 				if hasOrderJ {
-					return false // j a un ordre, j vient avant
+					return false // j has an order, j comes before
 				}
-				// Les deux n'ont pas d'ordre, trier alphabétiquement
+				// Both have no order, sort alphabetically
 				return keys[i] < keys[j]
 			})
 		} else {
-			// Pour General, trier alphabétiquement
+			// For General, sort alphabetically
 			sort.Strings(keys)
 		}
 		
@@ -347,15 +347,15 @@ func (m *Model) renderWizardPanel() string {
 
 	var rows []string
 	
-	// Titre
+	// Title
 	rows = append(rows, m.theme.Accent.Render("Interactive Configuration Wizard"))
 	
-	// Progression (ex: "Variable 1 sur 10")
-	progress := fmt.Sprintf("Variable %d sur %d", m.wizardIndex+1, len(m.wizardFields))
+	// Progress (e.g., "Variable 1 of 10")
+	progress := fmt.Sprintf("Variable %d of %d", m.wizardIndex+1, len(m.wizardFields))
 	rows = append(rows, m.theme.Subtitle.Render(progress))
 	rows = append(rows, "")
 	
-	// Afficher UN SEUL champ à la fois
+	// Display ONE field at a time
 	field := m.wizardFields[m.wizardIndex]
 	label := field.Key
 	if field.IsPassword {
@@ -366,7 +366,7 @@ func (m *Model) renderWizardPanel() string {
 	rows = append(rows, labelText)
 	rows = append(rows, "")
 	
-	// Input field avec focus
+	// Input field with focus
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("81")).
@@ -377,7 +377,7 @@ func (m *Model) renderWizardPanel() string {
 	rows = append(rows, inputStyle.Render(inputView))
 	rows = append(rows, "")
 	
-	// Message d'aide
+	// Help message
 	if field.IsPassword {
 		rows = append(rows, m.theme.Subtitle.Render("This is a password field. Your input will be hidden."))
 		rows = append(rows, "")
@@ -391,75 +391,75 @@ func (m *Model) renderWizardPanel() string {
 		rows = append(rows, "")
 	}
 	
-	// Boutons de navigation et d'action
+	// Navigation and action buttons
 	rows = append(rows, "")
 	rows = append(rows, strings.Repeat("─", 60))
 	rows = append(rows, "")
 	
-	// Bouton Précédent (gauche)
-	prevDisabled := m.wizardIndex == 0
-	var prevButton string
-	if prevDisabled {
-		prevButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238")).
-			Render("← Précédent")
-	} else {
-		prevButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("81")).
+		// Previous button (left)
+		prevDisabled := m.wizardIndex == 0
+		var prevButton string
+		if prevDisabled {
+			prevButton = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("238")).
+				Padding(0, 2).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("238")).
+				Render("← Previous")
+		} else {
+			prevButton = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("81")).
+				Bold(true).
+				Padding(0, 2).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("81")).
+				Render("← Previous (←)")
+		}
+		
+		// Next button (right)
+		nextDisabled := m.wizardIndex >= len(m.wizardFields)-1
+		var nextButton string
+		if nextDisabled {
+			nextButton = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("238")).
+				Padding(0, 2).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("238")).
+				Render("Next → (→)")
+		} else {
+			nextButton = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("81")).
+				Bold(true).
+				Padding(0, 2).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("81")).
+				Render("Next → (→)")
+		}
+		
+		// Save button
+		saveButton := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("42")).
 			Bold(true).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("81")).
-			Render("← Précédent (←)")
-	}
-	
-	// Bouton Suivant (droite)
-	nextDisabled := m.wizardIndex >= len(m.wizardFields)-1
-	var nextButton string
-	if nextDisabled {
-		nextButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238")).
-			Render("Suivant → (→)")
-	} else {
-		nextButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("81")).
+			BorderForeground(lipgloss.Color("42")).
+			Render("✓ Save (Ctrl+S)")
+		
+		// Cancel button
+		cancelButton := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
 			Bold(true).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("81")).
-			Render("Suivant → (→)")
-	}
-	
-	// Bouton Sauvegarder
-	saveButton := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("42")).
-		Bold(true).
-		Padding(0, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("42")).
-		Render("✓ Sauvegarder (Ctrl+S)")
-	
-	// Bouton Annuler
-	cancelButton := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Bold(true).
-		Padding(0, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Render("✗ Annuler (Esc)")
-	
-	// Première ligne : Précédent et Suivant
-	navButtons := lipgloss.JoinHorizontal(lipgloss.Left, prevButton, "  ", nextButton)
-	rows = append(rows, navButtons)
-	rows = append(rows, "")
-	
-	// Deuxième ligne : Sauvegarder et Annuler
+			BorderForeground(lipgloss.Color("240")).
+			Render("✗ Cancel (Esc)")
+		
+		// First line: Previous and Next
+		navButtons := lipgloss.JoinHorizontal(lipgloss.Left, prevButton, "  ", nextButton)
+		rows = append(rows, navButtons)
+		rows = append(rows, "")
+		
+		// Second line: Save and Cancel
 	actionButtons := lipgloss.JoinHorizontal(lipgloss.Left, saveButton, "  ", cancelButton)
 	rows = append(rows, actionButtons)
 	
@@ -511,7 +511,7 @@ func (m *Model) formatStatus(status ContainerStatus) string {
 }
 
 func (m *Model) renderLogPanel() string {
-	// Ne pas afficher de logs si on est sur le dashboard (ne devrait jamais arriver)
+	// Don't display logs if we're on the dashboard (should never happen)
 	if m.viewState == ViewDashboard {
 		return m.theme.Pane.Render("No activity yet. Use r to restart or s to stop the stack.")
 	}
@@ -553,11 +553,11 @@ func (m *Model) renderFooter(context string) string {
 		}
 	case "wizard":
 		hints = []string{
-			fmt.Sprintf("%s Précédent", m.theme.HelpKey.Render("←")),
-			fmt.Sprintf("%s Suivant", m.theme.HelpKey.Render("→")),
-			fmt.Sprintf("%s Sauvegarder", m.theme.HelpKey.Render("Ctrl+S")),
-			fmt.Sprintf("%s Annuler", m.theme.HelpKey.Render("Esc")),
-			fmt.Sprintf("%s Quitter", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Previous", m.theme.HelpKey.Render("←")),
+			fmt.Sprintf("%s Next", m.theme.HelpKey.Render("→")),
+			fmt.Sprintf("%s Save", m.theme.HelpKey.Render("Ctrl+S")),
+			fmt.Sprintf("%s Cancel", m.theme.HelpKey.Render("Esc")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
 		}
 	case "logs":
 		hints = []string{
@@ -582,8 +582,8 @@ func (m *Model) renderFooter(context string) string {
 }
 
 func (m *Model) renderHints() string {
-	// Les hints sont maintenant dans le footer, cette méthode peut être simplifiée ou supprimée
-	// On la garde pour la compatibilité avec renderHelp() qui l'utilise encore
+	// Hints are now in the footer, this method can be simplified or removed
+	// We keep it for compatibility with renderHelp() which still uses it
 	return ""
 }
 

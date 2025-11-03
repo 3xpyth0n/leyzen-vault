@@ -17,33 +17,33 @@ var keyValidators = map[string]valueValidator{
 }
 
 // ValidateEnvValue validates and sanitizes a value for the given key.
-// Les valeurs vides sont maintenant permises (champs optionnels).
+// Empty values are now allowed (optional fields).
 func ValidateEnvValue(key, value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
-	// Si une validation spécifique existe pour cette clé, l'utiliser
+	// If a specific validation exists for this key, use it
 	if validator, ok := keyValidators[key]; ok {
-		// Si la valeur est vide et qu'on a un validator, permettre quand même (champ optionnel)
+		// If the value is empty and we have a validator, still allow it (optional field)
 		if trimmed == "" {
-			return "", nil // Valeur vide permise
+			return "", nil // Empty value allowed
 		}
 		return validator(trimmed)
 	}
-	// Sinon, juste trimmer - valeurs vides permises
+	// Otherwise, just trim - empty values allowed
 	return trimmed, nil
 }
 
 func validateNonEmpty(value string) (string, error) {
-	// Permettre les valeurs vides (champs optionnels)
+	// Allow empty values (optional fields)
 	return strings.TrimSpace(value), nil
 }
 
 func validatePositiveInt(value string) (string, error) {
-	// Permettre les valeurs vides (champs optionnels)
+	// Allow empty values (optional fields)
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", nil
 	}
-	// Si une valeur est fournie, elle doit être un entier positif
+	// If a value is provided, it must be a positive integer
 	n, err := strconv.Atoi(trimmed)
 	if err != nil || n < 1 {
 		return "", fmt.Errorf("value must be a positive integer")
@@ -52,7 +52,7 @@ func validatePositiveInt(value string) (string, error) {
 }
 
 func validatePassword(value string) (string, error) {
-	// Pas de limite de longueur - laisser l'utilisateur choisir
+	// No length limit - let the user choose
 	return strings.TrimSpace(value), nil
 }
 
