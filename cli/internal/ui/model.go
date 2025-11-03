@@ -75,9 +75,9 @@ type WizardField struct {
 	envFile         string
 	statuses        []ContainerStatus
 	logs            []string
-	logsBuffer      []string // Buffer pour conserver les logs lors du retour au dashboard
-	configPairs     map[string]string // Pour stocker les paires de configuration
-	configShowPasswords map[string]bool // Pour afficher/masquer les mots de passe dans la vue config
+	logsBuffer      []string // Buffer to preserve logs when returning to dashboard
+	configPairs     map[string]string // To store configuration pairs
+	configShowPasswords map[string]bool // To display/hide passwords in the config view
 	viewport        viewport.Model
 	spinner         spinner.Model
 	width           int
@@ -148,21 +148,21 @@ func (m *Model) appendLog(line string) {
 		return
 	}
 	
-	// NE PAS ajouter de logs si on est sur le dashboard (ils ne doivent pas s'afficher)
+	// DO NOT add logs if we're on the dashboard (they should not be displayed)
 	if m.viewState == ViewDashboard {
 		return
 	}
 	
-	// Nettoyer la ligne : supprimer les caractères de contrôle et les espaces en début/fin
+	// Clean the line: remove control characters and leading/trailing spaces
 	line = strings.TrimSpace(line)
-	// Filtrer les lignes vides après nettoyage
+	// Filter empty lines after cleaning
 	if line == "" {
 		return
 	}
-	// Filtrer les lignes avec seulement un caractère isolé (artefacts de formatage)
-	// Sauf si c'est un caractère spécial valide
+	// Filter lines with only an isolated character (formatting artifacts)
+	// Unless it's a valid special character
 	if len(line) == 1 {
-		// Autoriser seulement certains caractères spéciaux valides
+		// Allow only certain valid special characters
 		validSingleChars := map[string]bool{
 			"[": true,
 			"]": true,
@@ -170,13 +170,13 @@ func (m *Model) appendLog(line string) {
 			")": true,
 		}
 		if !validSingleChars[line] {
-			// Ignorer les caractères isolés comme "C", "B", etc.
+			// Ignore isolated characters like "C", "B", etc.
 			return
 		}
 	}
 	
-	// Filtrer les lignes qui commencent par un caractère isolé suivi d'un saut de ligne
-	// (ex: "C\n" ou "B\n")
+	// Filter lines that start with an isolated character followed by a newline
+	// (e.g., "C\n" or "B\n")
 	if len(line) > 1 && (line[0] == 'C' || line[0] == 'B') && line[1] == '\n' {
 		return
 	}
@@ -186,7 +186,7 @@ func (m *Model) appendLog(line string) {
 		diff := len(m.logs) - logBufferLimit
 		m.logs = m.logs[diff:]
 	}
-	// Ne mettre à jour le viewport que si on est dans une vue qui affiche les logs
+	// Only update viewport if we're in a view that displays logs
 	if m.viewState == ViewLogs || m.viewState == ViewAction {
 		m.viewport.SetContent(strings.Join(m.logs, "\n"))
 		m.viewport.GotoBottom()
@@ -194,22 +194,22 @@ func (m *Model) appendLog(line string) {
 }
 
 func (m *Model) switchToDashboard() {
-	// Sauvegarder les logs actuels dans le buffer si on vient d'une vue avec logs
+	// Save current logs in buffer if coming from a view with logs
 	if m.viewState == ViewLogs || m.viewState == ViewAction {
 		m.logsBuffer = make([]string, len(m.logs))
 		copy(m.logsBuffer, m.logs)
 	}
 	
-	// Si on vient du wizard, nettoyer complètement l'état
+	// If coming from wizard, completely clean up state
 	if m.viewState == ViewWizard {
-		// Réinitialiser les champs du wizard pour éviter les restes d'affichage
+		// Reset wizard fields to avoid display remnants
 		m.wizardFields = nil
 		m.wizardIndex = 0
 		m.wizardError = ""
 	}
 	
-	// NETTOYER COMPLÈTEMENT : logs, viewport, action
-	// Les logs ne doivent pas s'afficher sur le dashboard
+	// COMPLETELY CLEAN: logs, viewport, action
+	// Logs should not be displayed on the dashboard
 	m.logs = nil
 	m.viewport.SetContent("")
 	m.viewport.GotoTop()
@@ -217,24 +217,24 @@ func (m *Model) switchToDashboard() {
 	m.action = ActionNone
 	m.actionStream = nil
 	
-	// Changer l'état APRÈS le nettoyage
+	// Change state AFTER cleanup
 	m.viewState = ViewDashboard
 }
 
 func (m *Model) switchToLogs() {
-	// Restaurer les logs depuis le buffer si nécessaire
+	// Restore logs from buffer if necessary
 	if len(m.logsBuffer) > 0 {
 		m.logs = make([]string, len(m.logsBuffer))
 		copy(m.logs, m.logsBuffer)
 		m.viewport.SetContent(strings.Join(m.logs, "\n"))
 		m.viewport.GotoBottom()
 	} else if len(m.logs) > 0 {
-		// Si pas de buffer mais qu'on a des logs, les afficher
+		// If no buffer but we have logs, display them
 		m.viewport.SetContent(strings.Join(m.logs, "\n"))
 		m.viewport.GotoBottom()
 	}
 	m.viewState = ViewLogs
-	// Recalculer la taille du viewport pour cette vue
+	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 8
 		if viewportHeight < 6 {
@@ -250,7 +250,7 @@ func (m *Model) switchToLogs() {
 
 func (m *Model) switchToAction() {
 	m.viewState = ViewAction
-	// Recalculer la taille du viewport pour cette vue
+	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 8
 		if viewportHeight < 6 {
@@ -266,7 +266,7 @@ func (m *Model) switchToAction() {
 
 func (m *Model) switchToConfig() {
 	m.viewState = ViewConfig
-	// Initialiser la taille du viewport config si la fenêtre est déjà dimensionnée
+	// Initialize config viewport size if window is already sized
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 10
 		if viewportHeight < 6 {
@@ -277,21 +277,21 @@ func (m *Model) switchToConfig() {
 			m.viewport.Width = 20
 		}
 		m.viewport.Height = viewportHeight
-		// Réinitialiser le scroll en haut
+		// Reset scroll to top
 		m.viewport.SetYOffset(0)
 	}
 }
 
 func (m *Model) initWizard(existing map[string]string) {
-	// Charger TOUTES les variables du .env
-	// Si existing est vide, le wizard affichera un message
-	// Détecter automatiquement les mots de passe (contenant "password" ou "secret")
+	// Load ALL variables from .env
+	// If existing is empty, wizard will display a message
+	// Automatically detect passwords (containing "password" or "secret")
 	keys := make([]string, 0, len(existing))
 	for k := range existing {
 		keys = append(keys, k)
 	}
 	
-	// Trier les clés pour un affichage cohérent
+	// Sort keys for consistent display
 	sort.Strings(keys)
 	
 	m.wizardFields = make([]WizardField, len(keys))
@@ -304,13 +304,13 @@ func (m *Model) initWizard(existing map[string]string) {
 		
 		ti := textinput.New()
 		ti.Placeholder = fmt.Sprintf("Value for %s", key)
-		ti.CharLimit = 512 // Augmenter la limite
+		ti.CharLimit = 512 // Increase the limit
 		ti.Width = 60
 		if isPassword {
 			ti.EchoMode = textinput.EchoPassword
 			ti.EchoCharacter = '•'
 		}
-		// Pré-remplir avec la valeur existante
+		// Pre-fill with existing value
 		if existingValue != "" {
 			ti.SetValue(existingValue)
 		}
@@ -324,7 +324,7 @@ func (m *Model) initWizard(existing map[string]string) {
 		}
 	}
 	
-	// Focus sur le premier champ et blur les autres
+	// Focus on first field and blur others
 	m.wizardIndex = 0
 	if len(m.wizardFields) > 0 {
 		for i := range m.wizardFields {

@@ -46,15 +46,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(fetchStatusesCmd(), scheduleStatusRefresh())
 	case tea.KeyMsg:
-		// Toujours permettre 'q' pour quitter, même dans le wizard
+		// Always allow 'q' to quit, even in the wizard
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// Si on est dans le wizard, ne pas passer par handleKey qui intercepte les touches
+		// If we're in the wizard, don't go through handleKey which intercepts keys
 		if m.viewState == ViewWizard && len(m.wizardFields) > 0 {
 			return m.handleWizardKey(msg)
 		}
-		// Si on est dans la vue config, laisser le viewport gérer les touches de scroll
+		// If we're in the config view, let the viewport handle scroll keys
 		if m.viewState == ViewConfig {
 			keyStr := msg.String()
 			if keyStr == "up" || keyStr == "down" || keyStr == "pgup" || keyStr == "pgdn" {
@@ -82,8 +82,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.configPairs = msg.pairs
-		// Si on vient du dashboard et qu'on n'a pas encore de wizard, on est peut-être en train de le lancer
-		// Initialiser le wizard si on n'en a pas encore
+		// If we're coming from the dashboard and don't have a wizard yet, we might be launching it
+		// Initialize the wizard if we don't have one yet
 		if m.viewState == ViewDashboard && len(m.wizardFields) == 0 {
 			m.initWizard(msg.pairs)
 		}
@@ -92,14 +92,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWizardSave(msg)
 	}
 
-	// Gérer le viewport seulement si on est dans une vue qui l'utilise
+	// Handle viewport only if we're in a view that uses it
 	if m.viewState == ViewLogs || m.viewState == ViewAction || m.viewState == ViewConfig {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
 	}
 	
-	// Gérer les messages non-clavier du wizard (déjà géré pour KeyMsg ci-dessus)
+	// Handle non-keyboard messages from the wizard (already handled for KeyMsg above)
 	if m.viewState == ViewWizard && len(m.wizardFields) > 0 {
 		if m.wizardIndex < len(m.wizardFields) {
 			var cmd tea.Cmd
@@ -116,20 +116,20 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.height = msg.Height
 	m.ready = true
 
-	// Calculer la hauteur du viewport selon la vue active
+	// Calculate viewport height according to the active view
 	var viewportHeight int
 	if m.viewState == ViewDashboard {
-		// Pas de viewport visible sur le dashboard
+		// No visible viewport on the dashboard
 		viewportHeight = 0
 	} else if m.viewState == ViewConfig {
-		// Pour la vue config, calculer l'espace disponible
-		// header + footer + padding du pane
+		// For the config view, calculate available space
+		// header + footer + pane padding
 		viewportHeight = m.height - 10
 		if viewportHeight < 6 {
 			viewportHeight = 6
 		}
 	} else {
-		// Pour les vues logs et action, calculer l'espace disponible
+		// For logs and action views, calculate available space
 		// header + footer + padding
 		viewportHeight = m.height - 8
 		if viewportHeight < 6 {
@@ -165,24 +165,24 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
-		// Retour au dashboard depuis n'importe quelle vue
+		// Return to dashboard from any view
 		if m.viewState == ViewLogs || m.viewState == ViewConfig || m.viewState == ViewWizard {
 			m.switchToDashboard()
 			return m, nil
 		}
-		// Si une action est en cours, on permet quand même de revenir au dashboard
-		// mais on continue d'afficher les logs en arrière-plan
+		// If an action is in progress, we still allow returning to the dashboard
+		// but we continue to display logs in the background
 		if m.viewState == ViewAction && !m.actionRunning {
 			m.switchToDashboard()
 			return m, nil
 		}
 		return m, nil
 	case "r":
-		// Rafraîchir la config si on est dans la vue config
+		// Refresh config if we're in the config view
 		if m.viewState == ViewConfig {
 			return m, fetchConfigListCmd(m.envFile)
 		}
-		// Sinon, redémarrer depuis le dashboard
+		// Otherwise, restart from the dashboard
 		if m.viewState == ViewDashboard {
 			return m.startAction(ActionRestart)
 		}
@@ -193,24 +193,24 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "l":
-		// Basculer vers la vue logs depuis le dashboard
+		// Switch to logs view from the dashboard
 		if m.viewState == ViewDashboard {
 			m.switchToLogs()
 			return m, nil
 		}
 		return m, nil
 	case "c":
-		// Afficher la configuration depuis le dashboard
+		// Display configuration from the dashboard
 		if m.viewState == ViewDashboard {
 			m.switchToConfig()
 			return m, fetchConfigListCmd(m.envFile)
 		}
 		return m, nil
 	case " ":
-		// Espace pour toggle l'affichage des mots de passe dans la vue config
+		// Space to toggle password display in the config view
 		if m.viewState == ViewConfig {
-			// Toggle TOUS les mots de passe, secrets, tokens
-			// Utiliser la même logique de détection que dans buildConfigContent
+			// Toggle ALL passwords, secrets, tokens
+			// Use the same detection logic as in buildConfigContent
 			for key := range m.configPairs {
 				keyLower := strings.ToLower(key)
 				if strings.Contains(keyLower, "password") || 
@@ -224,16 +224,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "w":
-		// Lancer le wizard depuis le dashboard
+		// Launch wizard from the dashboard
 		if m.viewState == ViewDashboard {
-			// Charger la config existante pour pré-remplir les champs
-			// Utiliser les valeurs déjà chargées ou charger si nécessaire
+			// Load existing config to pre-fill fields
+			// Use already loaded values or load if necessary
 			if len(m.configPairs) == 0 {
-				// Charger la config puis initialiser le wizard
+				// Load config then initialize wizard
 				return m, fetchConfigListCmd(m.envFile)
 			}
-			// Si on a déjà les valeurs, initialiser directement
-			// Mais s'il n'y a vraiment rien dans le .env, on devrait quand même permettre d'ajouter des variables
+			// If we already have values, initialize directly
+			// But if there's really nothing in .env, we should still allow adding variables
 			m.initWizard(m.configPairs)
 			return m, nil
 		}
@@ -254,7 +254,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "up", "down", "pgup", "pgdn", "home", "end":
-		// Navigation dans le viewport pour les vues logs/action/config
+		// Navigation in viewport for logs/action/config views
 		if m.viewState == ViewLogs || m.viewState == ViewAction || m.viewState == ViewConfig {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
@@ -306,10 +306,10 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 		m.action = ActionNone
 		m.actionStream = nil
 		
-		// Retour au dashboard après erreur
+		// Return to dashboard after error
 		m.switchToDashboard()
 		
-		// Pas de message de succès pour les erreurs
+		// No success message for errors
 		return m, fetchStatusesCmd()
 	}
 
@@ -320,16 +320,16 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 		m.action = ActionNone
 		m.actionStream = nil
 
-		// Afficher le message de succès et retourner au dashboard après un délai
+		// Display success message and return to dashboard after a delay
 		m.successMessage = fmt.Sprintf("%s completed successfully", actionName)
 		
-		// Programmer le retour au dashboard et la suppression du message de succès
+		// Schedule return to dashboard and success message removal
 		cmd := tea.Sequence(
 			fetchStatusesCmd(),
 			tea.Tick(successMessageDuration, func(time.Time) tea.Msg { return successTimeoutMsg{} }),
 		)
 		
-		// Retour automatique au dashboard après le succès
+		// Automatic return to dashboard after success
 		m.switchToDashboard()
 
 		if m.pendingRefresh {
@@ -346,14 +346,14 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	
 	switch key {
 	case "ctrl+s", "ctrl+S":
-		// Sauvegarder toutes les modifications
+		// Save all modifications
 		return m.saveWizard()
 	case "esc":
-		// Annuler et retourner au dashboard
+		// Cancel and return to dashboard
 		m.switchToDashboard()
 		return m, nil
 	case "right", "→":
-		// Passer au champ suivant (Suivant)
+		// Move to next field (Next)
 		if m.wizardIndex < len(m.wizardFields)-1 {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex++
@@ -365,7 +365,7 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "left", "←":
-		// Passer au champ précédent (Précédent)
+		// Move to previous field (Previous)
 		if m.wizardIndex > 0 {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex--
@@ -377,7 +377,7 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
-		// Enter : passer au champ suivant (comme "Suivant")
+		// Enter: move to next field (like "Next")
 		if m.wizardIndex < len(m.wizardFields)-1 {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex++
@@ -389,7 +389,7 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		// Toutes les autres touches (lettres, chiffres, etc.) : passer à l'input actif
+		// All other keys (letters, numbers, etc.): pass to active input
 		if m.wizardIndex < len(m.wizardFields) {
 			var cmd tea.Cmd
 			m.wizardFields[m.wizardIndex].Input, cmd = m.wizardFields[m.wizardIndex].Input.Update(msg)
@@ -405,17 +405,17 @@ func (m *Model) validateWizardField(index int, value string) error {
 	}
 	field := m.wizardFields[index]
 	
-	// Tous les champs sont optionnels - validation optionnelle seulement
-	// Si la valeur est vide, c'est OK
+	// All fields are optional - optional validation only
+	// If the value is empty, that's OK
 	if value == "" {
 		return nil
 	}
 	
-	// Si on a une valeur, valider (mais pas obligatoire)
+	// If we have a value, validate (but not required)
 	_, err := internal.ValidateEnvValue(field.Key, value)
 	if err != nil {
-		// Si la validation échoue, retourner l'erreur
-		// Mais seulement si on a une valeur (pas si vide)
+		// If validation fails, return the error
+		// But only if we have a value (not if empty)
 		return err
 	}
 	
@@ -423,7 +423,7 @@ func (m *Model) validateWizardField(index int, value string) error {
 }
 
 func (m *Model) saveWizard() (tea.Model, tea.Cmd) {
-	// Valider toutes les valeurs avant de sauvegarder (optionnel - juste avertir)
+	// Validate all values before saving (optional - just warn)
 	hasErrors := false
 	for i := range m.wizardFields {
 		value := m.wizardFields[i].Input.Value()
@@ -432,16 +432,16 @@ func (m *Model) saveWizard() (tea.Model, tea.Cmd) {
 			hasErrors = true
 			break
 		}
-		// Sauvegarder la valeur dans le champ
+		// Save the value in the field
 		m.wizardFields[i].Value = value
 	}
 	
 	if hasErrors {
-		// Ne pas sauvegarder si erreur
+		// Don't save if error
 		return m, nil
 	}
 	
-	// Pas d'erreur - sauvegarder
+	// No error - save
 	m.wizardError = ""
 	m.switchToAction()
 	m.action = ActionWizard
@@ -464,21 +464,21 @@ func saveWizardCmd(envFile string, fields []WizardField) tea.Cmd {
 }
 
 func saveWizard(envFile string, fields []WizardField) tea.Msg {
-	// Charger le fichier env
+	// Load the env file
 	envFileObj, err := internal.LoadEnvFile(envFile)
 	if err != nil {
 		return wizardSaveMsg{err: fmt.Errorf("failed to load env file: %w", err)}
 	}
 	
-	// Sauvegarder chaque champ (valeurs vides permises)
+	// Save each field (empty values allowed)
 	for _, field := range fields {
-		value := field.Value // Utiliser la valeur sauvegardée dans le champ
+		value := field.Value // Use the value saved in the field
 		
-		// Toutes les valeurs sont optionnelles
-		// Si la valeur est vide, on la sauvegarde quand même (peut être supprimée)
+		// All values are optional
+		// If the value is empty, we still save it (can be removed)
 		sanitized := strings.TrimSpace(value)
 		
-		// Si validation échoue mais valeur non vide, retourner erreur
+		// If validation fails but value is not empty, return error
 		if sanitized != "" {
 			validated, err := internal.ValidateEnvValue(field.Key, sanitized)
 			if err != nil {
@@ -487,20 +487,20 @@ func saveWizard(envFile string, fields []WizardField) tea.Msg {
 			sanitized = validated
 		}
 		
-		// Sauvegarder (même si vide)
+		// Save (even if empty)
 		envFileObj.Set(field.Key, sanitized)
 	}
 	
-	// Sauvegarder
+	// Save
 	if err := envFileObj.Write(); err != nil {
 		return wizardSaveMsg{err: fmt.Errorf("failed to write env file: %w", err)}
 	}
 	
-	// Rebuild - écrire dans un buffer silencieux pour ne pas polluer le TUI
-	// Les logs du rebuild ne doivent pas s'afficher sur le dashboard
+	// Rebuild - write to a silent buffer to avoid polluting the TUI
+	// Rebuild logs should not be displayed on the dashboard
 	var silentBuffer strings.Builder
 	if err := internal.RunBuildScriptWithWriter(&silentBuffer, &silentBuffer, envFile); err != nil {
-		// Retourner l'erreur mais ne pas afficher les logs
+		// Return the error but don't display logs
 		return wizardSaveMsg{err: fmt.Errorf("failed to rebuild: %w", err)}
 	}
 	
@@ -511,22 +511,22 @@ func (m *Model) handleWizardSave(msg wizardSaveMsg) (tea.Model, tea.Cmd) {
 	m.actionRunning = false
 	m.action = ActionNone
 	
-	// D'abord, retourner au dashboard pour nettoyer l'état
+	// First, return to dashboard to clean up state
 	m.switchToDashboard()
 	
 	if msg.err != nil {
-		// Pour les erreurs, on peut ajouter un message mais seulement si on n'est pas sur le dashboard
-		// Ici, on est déjà sur le dashboard, donc on ne fait rien avec les logs
+		// For errors, we can add a message but only if we're not on the dashboard
+		// Here, we're already on the dashboard, so we don't do anything with logs
 		m.successMessage = fmt.Sprintf("❌ Configuration save failed: %v", msg.err)
-		// Programmer la suppression du message d'erreur
+		// Schedule error message removal
 		cmd := tea.Tick(successMessageDuration, func(time.Time) tea.Msg { return successTimeoutMsg{} })
 		return m, cmd
 	}
 	
-	// Succès
+	// Success
 	m.successMessage = "Configuration saved successfully"
 	
-	// Rafraîchir la config
+	// Refresh config
 	cmd := tea.Sequence(
 		fetchConfigListCmd(m.envFile),
 		fetchStatusesCmd(),

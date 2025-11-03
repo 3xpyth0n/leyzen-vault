@@ -229,7 +229,7 @@ def main() -> None:
     override_env_file = os.environ.get("LEYZEN_ENV_FILE")
     if override_env_file:
         override_path = Path(override_env_file).expanduser().resolve()
-        # pour garder la lisibilité dans le compose, on n’écrit que le nom du fichier
+        # to keep readability in the compose, we only write the filename
         short_name = override_path.name
         print(f"[compose] Overriding env_file entries with: {short_name}")
         for svc_name, svc_def in manifest.get("services", {}).items():
