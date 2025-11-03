@@ -59,6 +59,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Consolidated the README and legacy guides to point at the GitHub Wiki `/wiki`.
 
+[1.1.0]: https://github.com/3xpyth0n/leyzen-vault/releases/tag/v1.1.0
+
 ---
 
 This is the first public release of Leyzen Vault under the Business Source License 1.1 (BSL 1.1).
