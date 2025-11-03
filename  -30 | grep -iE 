@@ -1,0 +1,75 @@
+ui: require CTRL+C confirmation to quit and remove unused VAULT_DOCKER_NETWORK
+- Replace 'q' key quit binding with CTRL+C requiring double-press confirmation
+- Add quit confirmation dialog visible across all views (dashboard, logs, config, wizard, action)
+- Implement quitConfirm state management with automatic cancellation on any non-CTRL+C keypress
+- Remove VAULT_DOCKER_NETWORK from wizard prompts and validators (unused configuration variable)
+- Update all footer hints and help messages to display CTRL+C instead of 'q' for quitting
+- Reset quit confirmation state on view transitions to prevent lingering prompts
+
+This change prevents accidental application exit when typing 'q' in the wizard
+input fields and provides a safety mechanism requiring explicit confirmation
+before quitting.
+
+fix: resolve naming inconsistencies and standardize environment loading
+- Standardize VAULT_* variables in Go CLI (PLUGIN→SERVICE, REPLICAS→WEB_REPLICAS, etc.)
+- Align VAULT_ROTATION_INTERVAL to 120s
+- Fix wizard time unit (minutes→seconds)
+- Standardize LOG_LEVEL → DOCKER_PROXY_LOG_LEVEL
+- Rename orchestrator/SECURITY.md → SECURITY_RUNTIME.md
+- Add load_env_with_override() and refactor environment loading
+- Improve Python guidelines compliance (imports, annotations)
+- Clean up debug logs and improve documentation
+
+Fixes 15 issues identified during technical audit.
+
+Update Release Workflow
+
+chore: Translate all remaining French comments and text to English
+Searched the entire repository and translated all occurrences to English across CLI and Compose modules.
+Updated UI files (view.go, update.go, model.go, runner.go) and validation logic, replacing wizard button text and inline comments.
+Verified that no French terms remain in the codebase.
+
+Update CHANGELOG.md
+
+chore(release): prepare v1.1.0 changelog and cleanup
+
+feat(tui): implement view navigation, interactive wizard, and config management
+- Add ViewState-based navigation with clean transitions and auto-return to dashboard.
+- Integrate interactive wizard with dynamic field loading and template initialization.
+- Add Config view with categorized variables, scrolling, and password toggle.
+
+feat: Add Bubbletea-based leyzenctl TUI dashboard with live controls
+- Added a Bubbletea and Lipgloss-powered leyzenctl dashboard featuring status polling, live log view, and keyboard-driven lifecycle actions for restart, start, stop, and rebuild.
+- Made the TUI the default root command with a --no-ui flag for headless mode.
+- Updated compose helpers to stream output to the interface and documented the new interactive workflow in the changelog.
+
+feat(env): propagate "--env-file" override into compose manifest generation
+The build system now updates all env_file entries with the selected environment file.
+Ensures Docker Compose reflects the correct variables during builds.
+Adds clear logging when a custom environment file is applied.
+
+fix: Improve Filebrowser entrypoint privilege handling and startup resilience
+- Relaxed privilege dropping to allow container startup when mounted volumes are unwritable, easing recovery on restrictive hosts.
+- Fixed a regression causing `tmp: parameter not set` errors during write-access checks.
+- Handled pre-existing databases gracefully so restarts no longer loop when only the settings file is missing.
+
+docs: migrate documentation to dedicated GitHub Wiki
+- Removed local technical and maintainer guides now centralized in the official wiki.
+- Updated README and SECURITY references to point toward the new documentation.
+- Cleaned obsolete developer and operations files from /docs and root.
+- Added changelog and contributor notes reflecting the wiki migration.
+
+Added read-only permission to the CI workflow
+
+feat: Replace service.sh with Cobra-based leyzenctl CLI and update docs
+- Introduced a full-featured leyzenctl CLI built with Cobra, including start, stop, restart, build, status, and configuration subcommands.
+- Added supporting modules for Docker control, environment handling, and validation.
+- Removed service.sh and updated all guides, templates, and policies to reference the new CLI.
+- Created LEYZENCTL.md and refreshed README, CONTRIBUTING, and CHANGELOG accordingly.
+
+fix: Dynamically import orchestrator configuration for CI and container compatibility
+- Modified the entrypoint to dynamically import the orchestrator configuration module after resolving the package path, ensuring it runs correctly in both CI and container environments.
+- Preserved defensive error handling and static-analysis hints for ConfigurationError.
+
+Update CI Python workflow #2
+

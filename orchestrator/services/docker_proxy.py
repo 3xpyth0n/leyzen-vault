@@ -8,16 +8,10 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import httpx
 
+from leyzen_common.exceptions import DockerProxyError, DockerProxyNotFound
+
 from ..config import Settings
 from .logging import FileLogger
-
-
-class DockerProxyError(RuntimeError):
-    """Base error for controlled Docker proxy failures."""
-
-
-class DockerProxyNotFound(DockerProxyError):
-    """Raised when a container is not present on the proxy side."""
 
 
 class DockerProxyClient:

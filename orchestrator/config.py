@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from vault_plugins.registry import get_active_plugin
-
 import pytz
 from werkzeug.security import generate_password_hash
 
 from leyzen_common.env import load_env_with_override, parse_container_names
-
-
-class ConfigurationError(EnvironmentError):
-    """Raised when required configuration values are missing or invalid."""
+from leyzen_common.exceptions import ConfigurationError
+from vault_plugins.registry import get_active_plugin
 
 
 @dataclass(frozen=True)
@@ -134,6 +131,9 @@ def load_settings() -> Settings:
             plugin = get_active_plugin(os.environ)
             web_containers = list(plugin.get_containers())
         except Exception as exc:  # pragma: no cover - defensive
+            logging.warning(
+                "Failed to determine web containers from plugin: %s", exc, exc_info=True
+            )
             raise ConfigurationError(
                 "Unable to determine web containers; set VAULT_WEB_CONTAINERS"
             ) from exc
@@ -159,7 +159,6 @@ def load_settings() -> Settings:
     except ValueError:
         rotation_interval = 120
 
-    base_dir = Path(__file__).resolve().parent
     html_dir = base_dir
     log_file = _determine_log_file(base_dir)
 
@@ -232,4 +231,4 @@ def load_settings() -> Settings:
     )
 
 
-__all__ = ["Settings", "load_settings", "ConfigurationError"]
+__all__ = ["Settings", "load_settings"]
