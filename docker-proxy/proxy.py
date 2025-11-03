@@ -11,31 +11,13 @@ from flask import Flask, Response, jsonify, request
 import httpx
 from werkzeug.exceptions import Forbidden, Unauthorized
 
-# Import shared environment parsing utilities
-# Note: This assumes leyzen_common is available in the Python path
-# Fallback implementation exists below in case leyzen_common is unavailable
-# (should not happen in container, but included for robustness)
-try:
-    from leyzen_common.env import parse_container_names
-except ImportError:
-    # Fallback if leyzen_common is not available (should not happen in container)
-    def parse_container_names(raw_value):  # type: ignore
-        if not raw_value:
-            return []
-        tokens = re.split(r"[,\s]+", str(raw_value))
-        names = []
-        seen = set()
-        for token in tokens:
-            entry = token.strip()
-            if entry and entry not in seen:
-                seen.add(entry)
-                names.append(entry)
-        return names
+from leyzen_common.env import parse_container_names
 
 
-LOG_LEVEL = os.environ.get("DOCKER_PROXY_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    level=getattr(
+        logging, os.environ.get("DOCKER_PROXY_LOG_LEVEL", "INFO").upper(), logging.INFO
+    ),
     format="%(asctime)s [%(levelname)s] %(message)s",
     stream=sys.stdout,
 )

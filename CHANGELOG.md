@@ -7,6 +7,21 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced 'q' key quit binding with CTRL+C requiring double-press confirmation to prevent accidental exits when typing in wizard fields.
+- Migrated orchestrator Docker proxy client from `requests` to `httpx` for consistency across HTTP libraries.
+- Updated all TUI footer hints and help messages to display CTRL+C instead of 'q' for quitting the application.
+
+### Fixed
+
+- Removed unused `VAULT_DOCKER_NETWORK` configuration variable from wizard prompts and validators.
+- Cleaned up redundant `LEYZEN_ENV_FILE` handling in orchestrator config after `load_env_with_override()` call.
+- Standardized on `DOCKER_PROXY_LOG_LEVEL` environment variable (removed fallback to `LOG_LEVEL`).
+- Removed inline fallback implementation of `parse_container_names` in docker-proxy to prevent code divergence.
+- Reorganized imports in `docker-proxy/proxy.py` to comply with AGENTS.md guidelines (stdlib → third-party → local).
+- Added warning comment to auto-generated `docker-compose.yml` and documented generation process in README.
+
 ## [1.1.0] - 2025-11-03
 
 ### Added

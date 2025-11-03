@@ -1,6 +1,6 @@
 Flask
 Flask-WTF
-requests
+httpx
 pytz
 Pillow
 uvicorn

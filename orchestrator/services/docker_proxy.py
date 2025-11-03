@@ -6,7 +6,7 @@ import time
 from threading import Lock
 from typing import Any, Callable, Dict, Optional, Tuple
 
-import requests
+import httpx
 
 from ..config import Settings
 from .logging import FileLogger
@@ -32,23 +32,26 @@ class DockerProxyClient:
         self.base_url = (base_url or "http://docker-proxy:2375").rstrip("/")
         self.token = token
         self.timeout = timeout
-        self._session = requests.Session()
+        self._client = httpx.Client(timeout=httpx.Timeout(timeout))
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
         headers = kwargs.pop("headers", {})
         if self.token:
             headers.setdefault("Authorization", f"Bearer {self.token}")
+        params = kwargs.pop("params", None)
         request_timeout = kwargs.pop("timeout", self.timeout)
+
         try:
-            response = self._session.request(
+            response = self._client.request(
                 method,
                 url,
                 timeout=request_timeout,
                 headers=headers,
+                params=params,
                 **kwargs,
             )
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             raise DockerProxyError(
                 f"Failed to reach docker proxy at {self.base_url}: {exc}"
             ) from exc
@@ -56,7 +59,7 @@ class DockerProxyClient:
         if response.status_code == 404:
             raise DockerProxyNotFound(f"Container not found for path {path}")
 
-        if not response.ok:
+        if not response.is_success:
             raise DockerProxyError(
                 f"Proxy error {response.status_code}: {response.text.strip()}"
             )

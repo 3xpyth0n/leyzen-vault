@@ -96,6 +96,7 @@ type WizardField struct {
 	wizardFields    []WizardField
 	wizardIndex     int
 	wizardError     string
+	quitConfirm     bool // Confirmation de sortie
 }
 
 func NewModel(envFile string, runner *Runner) *Model {
@@ -208,7 +209,7 @@ func (m *Model) switchToDashboard() {
 		m.wizardError = ""
 	}
 	
-	// COMPLETELY CLEAN: logs, viewport, action
+	// COMPLETELY CLEAN: logs, viewport, action, quit confirmation
 	// Logs should not be displayed on the dashboard
 	m.logs = nil
 	m.viewport.SetContent("")
@@ -216,6 +217,7 @@ func (m *Model) switchToDashboard() {
 	m.actionRunning = false
 	m.action = ActionNone
 	m.actionStream = nil
+	m.quitConfirm = false
 	
 	// Change state AFTER cleanup
 	m.viewState = ViewDashboard

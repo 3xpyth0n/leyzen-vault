@@ -46,6 +46,12 @@ func (m *Model) renderDashboard() string {
 		successMsg = m.renderSuccessMessage()
 	}
 	
+	// Quit confirmation message
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+	
 	help := ""
 	if m.helpVisible {
 		help = m.renderHelp()
@@ -62,6 +68,9 @@ func (m *Model) renderDashboard() string {
 	if successMsg != "" {
 		parts = append(parts, successMsg)
 	}
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
 	parts = append(parts, status)
 	parts = append(parts, help)
 	parts = append(parts, footer)
@@ -73,18 +82,46 @@ func (m *Model) renderDashboard() string {
 func (m *Model) renderLogsView() string {
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
+	
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+	
 	footer := m.renderFooter("logs")
 
-	layout := lipgloss.JoinVertical(lipgloss.Left, header, logs, footer)
+	var parts []string
+	parts = append(parts, header)
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
+	parts = append(parts, logs)
+	parts = append(parts, footer)
+
+	layout := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, layout)
 }
 
 func (m *Model) renderActionView() string {
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
+	
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+	
 	footer := m.renderFooter("action")
 
-	layout := lipgloss.JoinVertical(lipgloss.Left, header, logs, footer)
+	var parts []string
+	parts = append(parts, header)
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
+	parts = append(parts, logs)
+	parts = append(parts, footer)
+
+	layout := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, layout)
 }
 
@@ -125,9 +162,22 @@ func (m *Model) renderConfigView() string {
 	// Render the viewport in the pane
 	config := m.theme.Pane.Render(m.viewport.View())
 	
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+	
 	footer := m.renderFooter("config")
 
-	layout := lipgloss.JoinVertical(lipgloss.Left, header, config, footer)
+	var parts []string
+	parts = append(parts, header)
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
+	parts = append(parts, config)
+	parts = append(parts, footer)
+
+	layout := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, layout)
 }
 
@@ -334,9 +384,23 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 func (m *Model) renderWizardView() string {
 	header := m.renderHeader()
 	wizard := m.renderWizardPanel()
+	
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+	
 	footer := m.renderFooter("wizard")
 
-	layout := lipgloss.JoinVertical(lipgloss.Left, header, wizard, footer)
+	var parts []string
+	parts = append(parts, header)
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
+	parts = append(parts, wizard)
+	parts = append(parts, footer)
+
+	layout := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, layout)
 }
 
@@ -523,6 +587,17 @@ func (m *Model) renderLogPanel() string {
 	return m.theme.Pane.Render(content)
 }
 
+func (m *Model) renderQuitConfirmation() string {
+	message := fmt.Sprintf(
+		"⚠️  Quit application? Press %s to confirm, or any other key to cancel",
+		m.theme.HelpKey.Render("CTRL+C"),
+	)
+	return m.theme.WarningStatus.
+		Padding(0, 2).
+		MarginBottom(1).
+		Render(message)
+}
+
 func (m *Model) renderSuccessMessage() string {
 	return m.theme.SuccessStatus.Padding(0, 1).Render(fmt.Sprintf("✅ %s", m.successMessage))
 }
@@ -533,7 +608,7 @@ func (m *Model) renderFooter(context string) string {
 	switch context {
 	case "dashboard":
 		hints = []string{
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Start", m.theme.HelpKey.Render("a")),
 			fmt.Sprintf("%s Restart", m.theme.HelpKey.Render("r")),
 			fmt.Sprintf("%s Stop", m.theme.HelpKey.Render("s")),
@@ -546,7 +621,7 @@ func (m *Model) renderFooter(context string) string {
 	case "config":
 		hints = []string{
 			fmt.Sprintf("%s Back", m.theme.HelpKey.Render("Esc")),
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Refresh", m.theme.HelpKey.Render("r")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
 			fmt.Sprintf("%s Toggle passwords", m.theme.HelpKey.Render("Space")),
@@ -557,23 +632,23 @@ func (m *Model) renderFooter(context string) string {
 			fmt.Sprintf("%s Next", m.theme.HelpKey.Render("→")),
 			fmt.Sprintf("%s Save", m.theme.HelpKey.Render("Ctrl+S")),
 			fmt.Sprintf("%s Cancel", m.theme.HelpKey.Render("Esc")),
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 		}
 	case "logs":
 		hints = []string{
 			fmt.Sprintf("%s Back", m.theme.HelpKey.Render("Esc")),
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
 		}
 	case "action":
 		hints = []string{
 			fmt.Sprintf("%s Back (wait for completion)", m.theme.HelpKey.Render("Esc")),
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
 		}
 	default:
 		hints = []string{
-			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("q")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 		}
 	}
 	
@@ -589,7 +664,7 @@ func (m *Model) renderHints() string {
 
 func (m *Model) renderHelp() string {
 	rows := []string{
-		fmt.Sprintf("%s Quit the dashboard", m.theme.HelpKey.Render("q")),
+		fmt.Sprintf("%s Quit the dashboard (press twice to confirm)", m.theme.HelpKey.Render("Ctrl+C")),
 		fmt.Sprintf("%s Start the stack (docker compose up)", m.theme.HelpKey.Render("a")),
 		fmt.Sprintf("%s Restart the stack", m.theme.HelpKey.Render("r")),
 		fmt.Sprintf("%s Stop the stack", m.theme.HelpKey.Render("s")),
