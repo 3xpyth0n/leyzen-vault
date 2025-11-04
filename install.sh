@@ -7,7 +7,7 @@ set -e
 # ───────────────────────────────────────────────
 
 PROJECT_ROOT="$(dirname "$(realpath "$0")")"
-CLI_DIR="$PROJECT_ROOT/cli"
+CLI_DIR="$PROJECT_ROOT/tools/cli"
 OUTPUT_BIN="$PROJECT_ROOT/leyzenctl"
 
 echo "───────────────────────────────────────────────"

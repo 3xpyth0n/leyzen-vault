@@ -4,11 +4,13 @@ leyzenctl
 venv/
 *.log
 *.bak
-*test*
 __pycache__/
 node_modules/
 docker-compose.yml
-haproxy.cfg
+infra/haproxy/haproxy.cfg
+src/orchestrator/logs/
+
+*.pyc
 *.tmp
 *.swp
 *.swo
@@ -16,3 +18,9 @@ haproxy.cfg
 Thumbs.db
 .vscode/
 .idea/
+
+# Development
+.coverage
+htmlcov/
+.tox/
+.ruff_cache/
