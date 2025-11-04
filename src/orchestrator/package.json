@@ -11,6 +11,6 @@
   "license": "BSL-1.1",
   "description": "",
   "devDependencies": {
-    "tailwindcss": "^3.4.13"
+    "tailwindcss": "^4.1.16"
   }
 }
