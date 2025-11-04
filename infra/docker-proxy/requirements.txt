@@ -4,9 +4,44 @@
 #
 #    pip-compile --output-file=infra/docker-proxy/requirements.txt infra/docker-proxy/requirements.in
 #
+anyio==4.11.0
+    # via httpx
+blinker==1.9.0
+    # via flask
+certifi==2025.10.5
+    # via
+    #   httpcore
+    #   httpx
+click==8.3.0
+    # via
+    #   flask
+    #   uvicorn
 flask==3.1.2
-    # via -r docker-proxy/requirements.in
-httpx==0.27.0
-    # via -r docker-proxy/requirements.in
+    # via -r requirements.in
+h11==0.16.0
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via -r requirements.in
+idna==3.11
+    # via
+    #   anyio
+    #   httpx
+itsdangerous==2.2.0
+    # via flask
+jinja2==3.1.6
+    # via flask
+markupsafe==3.0.3
+    # via
+    #   flask
+    #   jinja2
+    #   werkzeug
+sniffio==1.3.1
+    # via anyio
 uvicorn==0.38.0
-    # via -r docker-proxy/requirements.in
+    # via -r requirements.in
+werkzeug==3.1.3
+    # via flask
