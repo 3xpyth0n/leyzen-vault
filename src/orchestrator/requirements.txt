@@ -4,28 +4,36 @@
 #
 #    pip-compile --output-file=src/orchestrator/requirements.txt src/orchestrator/requirements.in
 #
+anyio==4.11.0
+    # via httpx
 blinker==1.9.0
     # via flask
 certifi==2025.10.5
-    # via httpx
-charset-normalizer==3.4.4
-    # via httpx
+    # via
+    #   httpcore
+    #   httpx
 click==8.3.0
     # via
     #   flask
     #   uvicorn
 flask==3.1.2
     # via
-    #   -r orchestrator/requirements.in
+    #   -r requirements.in
     #   flask-wtf
 flask-wtf==1.2.2
-    # via -r orchestrator/requirements.in
+    # via -r requirements.in
 h11==0.16.0
-httpx==0.27.0
-    # via -r orchestrator/requirements.in
-    # via uvicorn
-idna==3.11
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==1.0.9
     # via httpx
+httpx==0.27.0
+    # via -r requirements.in
+idna==3.11
+    # via
+    #   anyio
+    #   httpx
 itsdangerous==2.2.0
     # via
     #   flask
@@ -38,10 +46,14 @@ markupsafe==3.0.3
     #   jinja2
     #   werkzeug
     #   wtforms
-pillow==11.0.0
-    # via -r orchestrator/requirements.in
+pillow==12.0.0
+    # via -r requirements.in
+sniffio==1.3.1
+    # via
+    #   anyio
+    #   httpx
 uvicorn==0.38.0
-    # via -r orchestrator/requirements.in
+    # via -r requirements.in
 werkzeug==3.1.3
     # via flask
 wtforms==3.2.1
