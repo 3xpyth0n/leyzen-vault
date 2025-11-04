@@ -92,11 +92,51 @@ jobs:
   secret-scan:
     name: Secret scanning
     runs-on: ubuntu-latest
+    env:
+      GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Ensure git repository is initialized
+        run: |
+          if [ ! -d .git ]; then
+            echo "Git repository not found. Checking possible locations..."
+            # Try to find .git in common act locations
+            if [ -d "/github/workspace/.git" ]; then
+              echo "Found .git in /github/workspace, copying..."
+              cp -r /github/workspace/.git .git || true
+            fi
+            # Try current directory's parent (where act might mount it)
+            if [ ! -d .git ] && [ -d "$(dirname $(pwd))/.git" ]; then
+              echo "Found .git in parent directory, copying..."
+              cp -r "$(dirname $(pwd))/.git" .git || true
+            fi
+            # For act: try to copy from the host path
+            if [ ! -d .git ] && [ -n "$GITHUB_WORKSPACE" ]; then
+              HOST_PATH="${GITHUB_WORKSPACE}"
+              if [ -d "${HOST_PATH}/.git" ]; then
+                echo "Found .git in GITHUB_WORKSPACE, copying..."
+                cp -r "${HOST_PATH}/.git" .git || true
+              fi
+            fi
+            # Last resort: initialize a new repo (will only work for basic checks)
+            if [ ! -d .git ]; then
+              echo "Warning: Could not find .git, initializing new repository..."
+              echo "This may limit TruffleHog's ability to scan commit history."
+              git init
+              git config user.name "act"
+              git config user.email "act@localhost"
+              git add .
+              git commit -m "Initial commit for act" || true
+              git branch -M main || true
+            fi
+          fi
+          # Verify git is working
+          git status || echo "Warning: git status failed"
+          git log --oneline -1 || echo "Warning: git log failed"
 
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@main
