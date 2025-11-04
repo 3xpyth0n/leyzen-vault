@@ -10,7 +10,9 @@ import (
 
 func (m *Model) View() string {
 	if !m.ready {
-		return m.theme.Title.Render(" Loading Leyzenctl dashboard...")
+		return m.theme.Title.Render(" Loading Leyzenctl dashboard...\n") +
+			m.theme.Subtitle.Render(" Loading configuration...\n") +
+			m.theme.Subtitle.Render(" Connecting to Docker...")
 	}
 
 	switch m.viewState {
@@ -187,6 +189,24 @@ func (m *Model) buildConfigContent() string {
 	}
 
 	var rows []string
+	
+	// Show password toggle hint at the top
+	hasPasswords := false
+	for key := range m.configPairs {
+		keyLower := strings.ToLower(key)
+		if strings.Contains(keyLower, "password") ||
+			strings.Contains(keyLower, "secret") ||
+			strings.Contains(keyLower, "pass") ||
+			strings.Contains(keyLower, "token") {
+			hasPasswords = true
+			break
+		}
+	}
+	if hasPasswords {
+		rows = append(rows, m.theme.Subtitle.Render("💡 Press SPACE to toggle password visibility"))
+		rows = append(rows, "")
+	}
+	
 	header := fmt.Sprintf("%-32s  %s", "KEY", "VALUE")
 	rows = append(rows, m.theme.Accent.Render(header))
 	rows = append(rows, strings.Repeat("─", 80))
@@ -204,8 +224,6 @@ func (m *Model) buildConfigContent() string {
 		"Proxy",
 		"General",
 	}
-
-	hasPasswords := false
 
 	// Display each category
 	for _, category := range categoryOrder {
@@ -243,12 +261,6 @@ func (m *Model) buildConfigContent() string {
 				rows = append(rows, fmt.Sprintf("%-32s  %s", m.theme.Accent.Render(key), value))
 			}
 		}
-	}
-
-	// Add a help line for passwords
-	if hasPasswords {
-		rows = append(rows, "")
-		rows = append(rows, m.theme.Subtitle.Render("Press SPACE to toggle password visibility"))
 	}
 
 	return strings.Join(rows, "\n")
@@ -438,6 +450,12 @@ func (m *Model) renderWizardPanel() string {
 
 	labelText := m.theme.Accent.Bold(true).Render(fmt.Sprintf("%s:", label))
 	rows = append(rows, labelText)
+	
+	// Add helpful hint based on field name
+	hint := m.getWizardHint(field.Key)
+	if hint != "" {
+		rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("💡 %s", hint)))
+	}
 	rows = append(rows, "")
 
 	// Input field with focus
@@ -475,11 +493,11 @@ func (m *Model) renderWizardPanel() string {
 	var prevButton string
 	if prevDisabled {
 		prevButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
+			Foreground(lipgloss.Color("240")).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238")).
-			Render("← Previous")
+			BorderForeground(lipgloss.Color("240")).
+			Render("← Previous (disabled)")
 	} else {
 		prevButton = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("81")).
@@ -495,11 +513,11 @@ func (m *Model) renderWizardPanel() string {
 	var nextButton string
 	if nextDisabled {
 		nextButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
+			Foreground(lipgloss.Color("240")).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238")).
-			Render("Next → (→)")
+			BorderForeground(lipgloss.Color("240")).
+			Render("Next → (disabled)")
 	} else {
 		nextButton = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("81")).
@@ -557,7 +575,7 @@ func (m *Model) renderHeader() string {
 
 func (m *Model) renderStatusPanel() string {
 	if len(m.statuses) == 0 {
-		return m.theme.Pane.Render("No containers running yet. Trigger a start to launch the stack.")
+		return m.theme.Pane.Render("No containers running. Press 'a' to start the stack or 'w' to configure.")
 	}
 
 	var rows []string
@@ -599,7 +617,7 @@ func (m *Model) renderLogPanel() string {
 
 func (m *Model) renderQuitConfirmation() string {
 	message := fmt.Sprintf(
-		"⚠️  Quit application? Press %s to confirm, or any other key to cancel",
+		"⚠️  Quit application? Press %s again to confirm quit, or any other key to cancel",
 		m.theme.HelpKey.Render("CTRL+C"),
 	)
 	return m.theme.WarningStatus.
@@ -674,14 +692,42 @@ func (m *Model) renderHints() string {
 
 func (m *Model) renderHelp() string {
 	rows := []string{
+		m.theme.Accent.Render("Actions:"),
 		fmt.Sprintf("%s Quit the dashboard (press twice to confirm)", m.theme.HelpKey.Render("Ctrl+C")),
 		fmt.Sprintf("%s Start the stack (docker compose up)", m.theme.HelpKey.Render("a")),
 		fmt.Sprintf("%s Restart the stack", m.theme.HelpKey.Render("r")),
 		fmt.Sprintf("%s Stop the stack", m.theme.HelpKey.Render("s")),
 		fmt.Sprintf("%s Rebuild configuration", m.theme.HelpKey.Render("b")),
 		fmt.Sprintf("%s Toggle this help overlay", m.theme.HelpKey.Render("?")),
-		fmt.Sprintf("%s Scroll logs", m.theme.HelpKey.Render("↑/↓")),
+		"",
+		m.theme.Accent.Render("Navigation:"),
+		fmt.Sprintf("%s Return to dashboard", m.theme.HelpKey.Render("Esc")),
+		fmt.Sprintf("%s View logs", m.theme.HelpKey.Render("l")),
+		fmt.Sprintf("%s View configuration", m.theme.HelpKey.Render("c")),
+		fmt.Sprintf("%s Run wizard", m.theme.HelpKey.Render("w")),
+		fmt.Sprintf("%s Scroll logs/config", m.theme.HelpKey.Render("↑/↓")),
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return lipgloss.NewStyle().MarginTop(1).Render(m.theme.Pane.Render(content))
+}
+
+// getWizardHint returns a helpful hint for a configuration field
+func (m *Model) getWizardHint(key string) string {
+	hints := map[string]string{
+		"VAULT_USER":                  "Username for Vault authentication",
+		"VAULT_PASS":                  "Password for Vault authentication",
+		"VAULT_SECRET_KEY":            "Secret key used for encryption",
+		"VAULT_ROTATION_INTERVAL":     "Time in seconds between container rotations",
+		"VAULT_WEB_REPLICAS":         "Number of web container replicas",
+		"DOCKER_PROXY_URL":           "URL of the Docker proxy service",
+		"DOCKER_PROXY_TOKEN":         "Authentication token for Docker proxy",
+		"FILEBROWSER_ADMIN_USER":     "Admin username for Filebrowser",
+		"FILEBROWSER_ADMIN_PASSWORD": "Admin password for Filebrowser",
+		"PAPERLESS_URL":              "URL of the Paperless service",
+		"PAPERLESS_DBPASS":           "Database password for Paperless",
+	}
+	if hint, ok := hints[key]; ok {
+		return hint
+	}
+	return ""
 }

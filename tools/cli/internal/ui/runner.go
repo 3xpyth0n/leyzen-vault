@@ -81,7 +81,7 @@ func (r *Runner) Run(action ActionType) (<-chan actionProgressMsg, error) {
 }
 
 func (r *Runner) restart(writer *actionWriter) error {
-	writer.emit("🔄 Restarting Leyzen Vault...")
+	writer.emit("🔄 [RESTART] Restarting Leyzen Vault...")
 	if err := r.stop(writer); err != nil {
 		return err
 	}
@@ -95,12 +95,12 @@ func (r *Runner) restart(writer *actionWriter) error {
 }
 
 func (r *Runner) start(writer *actionWriter) error {
-	writer.emit("▶ docker compose up -d --remove-orphans")
+	writer.emit("▶ [START] Starting Docker stack...")
 	return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--remove-orphans")
 }
 
 func (r *Runner) stop(writer *actionWriter) error {
-	writer.emit("⏹ docker compose down --remove-orphans")
+	writer.emit("⏹ [STOP] Stopping Docker stack...")
 	return internal.RunComposeWithWriter(writer, writer, r.envFile, "down", "--remove-orphans")
 }
 
@@ -108,7 +108,7 @@ func (r *Runner) build(writer *actionWriter) error {
 	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
 		return err
 	}
-	writer.emit("🔨 Rebuilding Docker stack...")
+	writer.emit("🔨 [BUILD] Rebuilding Docker stack...")
 	return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--build", "--remove-orphans")
 }
 

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -13,10 +15,14 @@ func init() {
 		Short: "Start the Leyzen Vault Docker stack",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
-				return err
+				return fmt.Errorf("failed to build configuration: %w", err)
 			}
 			color.HiCyan("Starting Docker stack...")
-			return internal.RunCompose(EnvFilePath(), "up", "-d", "--remove-orphans")
+			if err := internal.RunCompose(EnvFilePath(), "up", "-d", "--remove-orphans"); err != nil {
+				return fmt.Errorf("failed to start stack: %w", err)
+			}
+			color.HiGreen("✓ Successfully started Docker stack")
+			return nil
 		},
 	}
 

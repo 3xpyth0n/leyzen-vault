@@ -45,7 +45,7 @@ const (
 const (
 	statusRefreshInterval  = 500 * time.Millisecond
 	logBufferLimit         = 400
-	successMessageDuration = 3 * time.Second
+	successMessageDuration = 5 * time.Second
 )
 
 type Theme struct {

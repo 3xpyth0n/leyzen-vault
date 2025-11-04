@@ -54,9 +54,9 @@ func init() {
 			)
 
 			fmt.Printf("%s  %s  %s\n",
-				strings.Repeat("-", nameWidth),
-				strings.Repeat("-", statusWidth),
-				strings.Repeat("-", len(ageHeader)),
+				strings.Repeat("─", nameWidth),
+				strings.Repeat("─", statusWidth),
+				strings.Repeat("─", len(ageHeader)),
 			)
 
 			// rows

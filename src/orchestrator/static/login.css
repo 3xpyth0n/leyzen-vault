@@ -60,10 +60,12 @@ body {
     box-shadow 0.2s;
 }
 
-.login-container input:focus {
+.login-container input:focus,
+.login-container input:focus-visible {
   border-color: #58a6ff;
   box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.3);
-  outline: none;
+  outline: 2px solid rgba(56, 139, 253, 0.5);
+  outline-offset: 2px;
 }
 
 .password-input-wrapper {
@@ -140,13 +142,28 @@ body {
     transform 0.1s;
 }
 
-.login-container button[type="submit"]:hover {
+.login-container button[type="submit"]:hover:not(:disabled) {
   background: #2ea043;
   transform: translateY(-2px);
 }
 
-.login-container button[type="submit"]:active {
-  transform: translateY(0);
+.login-container button[type="submit"]:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.login-container button[type="submit"]:disabled .btn-text {
+  display: none;
+}
+
+.login-container button[type="submit"]:disabled .btn-spinner {
+  display: inline-block;
+}
+
+.login-container button[type="submit"]:focus-visible {
+  outline: 3px solid rgba(56, 139, 253, 0.5);
+  outline-offset: 2px;
 }
 
 .captcha-display {
@@ -246,6 +263,24 @@ body.captcha-overlay-open {
   margin-bottom: 20px;
   text-align: center;
   font-weight: 500;
+}
+
+.btn-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.btn-spinner.hidden {
+  display: none;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 500px) {

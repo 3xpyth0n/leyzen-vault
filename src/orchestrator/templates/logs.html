@@ -25,6 +25,7 @@
                 placeholder="Search logs..."
                 aria-label="Search logs"
               />
+              <div id="searchResults" class="search-results"></div>
             </div>
 
             <button
@@ -32,7 +33,8 @@
               class="btn"
               title="Reload logs (scroll to bottom)"
             >
-              Refresh
+              <span class="btn-text">Refresh</span>
+              <span class="btn-spinner hidden">⏳</span>
             </button>
 
             <div class="periods" role="tablist" aria-label="Period filters">
@@ -86,7 +88,10 @@
             role="status"
             aria-live="polite"
           >
-            No Logs
+            <p>No logs available.</p>
+            <p class="empty-state-hint">
+              Try adjusting the time period or check the system status.
+            </p>
           </div>
         </div>
       </div>

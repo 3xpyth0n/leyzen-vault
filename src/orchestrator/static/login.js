@@ -107,9 +107,26 @@
     const overlayImage = overlay
       ? overlay.querySelector("[data-captcha-overlay-image]")
       : null;
+    const loginForm = document.querySelector("form[method='post']");
+    const submitButton = document.getElementById("login-submit-btn");
+    const btnText = submitButton?.querySelector(".btn-text");
+    const btnSpinner = submitButton?.querySelector(".btn-spinner");
 
     if (captchaImage) {
       captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
+    }
+
+    // Handle form submission with loading state
+    if (loginForm && submitButton) {
+      loginForm.addEventListener("submit", function (event) {
+        if (submitButton.disabled) {
+          event.preventDefault();
+          return;
+        }
+        submitButton.disabled = true;
+        if (btnText) btnText.classList.add("hidden");
+        if (btnSpinner) btnSpinner.classList.remove("hidden");
+      });
     }
 
     if (refreshButton && captchaImage) {

@@ -12,6 +12,11 @@
       name="sse-throttle-ms"
       content="{{ sse_stream_interval_ms|tojson }}"
     />
+    <meta
+      id="initial-dashboard-state"
+      name="initial-dashboard-state"
+      content="{{ initial_snapshot|tojson|e }}"
+    />
     <title>Vault Orchestrator — Dashboard</title>
     <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
@@ -31,15 +36,21 @@
       src="/orchestrator/static/js/vendor/chartjs-plugin-streaming.min.js"
       defer
     ></script>
-    <script id="initial-dashboard-state" type="application/json">
-      {{ initial_snapshot|tojson }}
-    </script>
     <script
       type="module"
       src="/orchestrator/static/js/dashboard.js?v={{ asset_version }}"
     ></script>
   </head>
   <body>
+    <!-- Animated background bubbles -->
+    <div class="background-bubbles" aria-hidden="true">
+      <div class="bubble bubble-1"></div>
+      <div class="bubble bubble-2"></div>
+      <div class="bubble bubble-3"></div>
+      <div class="bubble bubble-4"></div>
+      <div class="bubble bubble-5"></div>
+    </div>
+
     <div id="app">
       <header class="dashboard-header">
         <div class="brand">
@@ -56,7 +67,10 @@
           <div class="rotation-summary">
             <div class="summary-label">Rotations</div>
             <div id="rotation-count" class="summary-value">0</div>
-            <div id="api-status" class="summary-sub">Last API update: —</div>
+            <div id="api-status" class="summary-sub">
+              <span class="api-status-indicator"></span>
+              Last API update: —
+            </div>
           </div>
 
           <div id="controls" class="controls">
@@ -64,6 +78,7 @@
               id="btn-start"
               class="control-btn start touch-target"
               title="Start rotation"
+              aria-label="Start rotation"
             >
               <svg
                 fill="none"
@@ -80,6 +95,7 @@
               id="btn-stop"
               class="control-btn stop touch-target"
               title="Pause rotation"
+              aria-label="Pause rotation"
             >
               <svg
                 fill="none"
@@ -96,6 +112,7 @@
               id="btn-rotate"
               class="control-btn rotate touch-target"
               title="Rotate to the next container"
+              aria-label="Rotate to the next container"
             >
               <svg
                 fill="none"
@@ -115,6 +132,7 @@
               id="btn-kill"
               class="control-btn kill touch-target"
               title="Kill all containers"
+              aria-label="Kill all containers"
             >
               <svg
                 fill="none"
@@ -133,16 +151,28 @@
       </header>
 
       <section class="summary-grid stack-panels">
-        <article class="stat-card">
+        <article
+          class="stat-card"
+          title="Current rotation status: Active means containers are rotating automatically"
+        >
           <div class="stat-label">Rotation status</div>
           <div class="stat-primary">
             <span id="rotation-state-dot" class="state-dot"></span>
             <span id="rotation-state">Active</span>
           </div>
-          <div class="stat-sub" id="next-rotation">Next in: --</div>
+          <div
+            class="stat-sub"
+            id="next-rotation"
+            title="Time until the next container rotation"
+          >
+            Next in: --
+          </div>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card"
+          title="Number of containers that are healthy and serving traffic"
+        >
           <div class="stat-label">Healthy containers</div>
           <div class="stat-primary">
             <span id="healthy-count">0</span>
@@ -155,13 +185,19 @@
           </div>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card"
+          title="Average time containers stay healthy before rotation"
+        >
           <div class="stat-label">Average uptime</div>
           <div class="stat-primary" id="avg-uptime">0s</div>
           <div class="stat-sub">Tracked <span id="total-uptime">0s</span></div>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card"
+          title="When the last container rotation occurred"
+        >
           <div class="stat-label">Last rotation</div>
           <div class="stat-primary" id="last-rotation">—</div>
           <div class="stat-sub" id="last-rotation-ago">Awaiting data</div>
@@ -399,6 +435,31 @@
           </a>
         </div>
       </footer>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div
+      id="confirmationModal"
+      class="modal-overlay"
+      aria-hidden="true"
+      role="dialog"
+      aria-labelledby="modal-title"
+    >
+      <div class="modal-container">
+        <div class="modal-content">
+          <div class="modal-icon" id="modalIcon">⚠️</div>
+          <h2 id="modalTitle" class="modal-title">Confirm Action</h2>
+          <p id="modalMessage" class="modal-message"></p>
+          <div class="modal-buttons">
+            <button id="modalCancel" class="modal-btn modal-btn-cancel">
+              Cancel
+            </button>
+            <button id="modalConfirm" class="modal-btn modal-btn-confirm">
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </body>
 </html>

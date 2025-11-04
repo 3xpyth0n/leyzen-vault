@@ -10,6 +10,9 @@ const autoSwitch = document.getElementById("autoSwitch");
 const linesMeta = document.getElementById("linesMeta");
 const searchInput = document.getElementById("searchInput");
 const emptyState = document.getElementById("emptyState");
+const searchResults = document.getElementById("searchResults");
+const btnText = refreshBtn?.querySelector(".btn-text");
+const btnSpinner = refreshBtn?.querySelector(".btn-spinner");
 
 // State
 let allLogs = pre && pre.textContent ? pre.textContent : "";
@@ -84,6 +87,18 @@ function displayLogs(scrollBottom = false) {
     filtered = filtered.filter((line) => line.toLowerCase().includes(needle));
   }
 
+  // Update search results counter
+  if (searchResults) {
+    if (searchTerm) {
+      const totalMatches = filtered.length;
+      searchResults.textContent = `${totalMatches} match${totalMatches !== 1 ? "es" : ""} found`;
+      searchResults.classList.remove("hidden");
+    } else {
+      searchResults.textContent = "";
+      searchResults.classList.add("hidden");
+    }
+  }
+
   if (filtered.length === 0) {
     pre.textContent = "";
     emptyState.classList.add("is-visible");
@@ -109,6 +124,14 @@ function displayLogs(scrollBottom = false) {
 async function fetchLogs(scrollBottom = false) {
   if (isFetching) return;
   isFetching = true;
+
+  // Show loading state
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    if (btnText) btnText.classList.add("hidden");
+    if (btnSpinner) btnSpinner.classList.remove("hidden");
+  }
+
   try {
     const resp = await fetch("/orchestrator/logs/raw", {
       cache: "no-store",
@@ -127,6 +150,12 @@ async function fetchLogs(scrollBottom = false) {
     console.error("Failed to fetch logs:", err);
   } finally {
     isFetching = false;
+    // Hide loading state
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      if (btnText) btnText.classList.remove("hidden");
+      if (btnSpinner) btnSpinner.classList.add("hidden");
+    }
   }
 }
 

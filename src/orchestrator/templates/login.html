@@ -12,7 +12,7 @@
     <div class="login-container">
       <h1>Login - Orchestrator</h1>
       {% if error %}
-      <div class="error">{{ error }}</div>
+      <div class="error">Authentication failed: {{ error }}</div>
       {% endif %}
       <form method="post" action="/orchestrator/login">
         <input
@@ -92,7 +92,7 @@
           </div>
         </div>
         <div class="form-group">
-          <label for="captcha">Captcha</label>
+          <label for="captcha">Security code</label>
           <div class="captcha-display">
             <img
               src="{{ url_for('auth.captcha_image') }}?nonce={{ captcha_nonce }}"
@@ -107,6 +107,7 @@
               class="captcha-refresh"
               data-captcha-target="captcha"
               aria-label="Reload captcha"
+              title="Refresh security code image"
             >
               &#8635;
             </button>
@@ -115,7 +116,7 @@
             type="text"
             id="captcha"
             name="captcha"
-            placeholder="Enter the characters"
+            placeholder="Enter code from image"
             autocomplete="off"
             inputmode="latin-prose"
             pattern="[A-Za-z0-9]{4,10}"
@@ -123,7 +124,10 @@
             required
           />
         </div>
-        <button type="submit">Log In</button>
+        <button type="submit" id="login-submit-btn">
+          <span class="btn-text">Log In</span>
+          <span class="btn-spinner hidden">⏳</span>
+        </button>
       </form>
     </div>
     <div class="captcha-overlay" aria-hidden="true" data-captcha-overlay>

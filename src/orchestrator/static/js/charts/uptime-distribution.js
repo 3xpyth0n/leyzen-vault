@@ -13,6 +13,15 @@ export class UptimeDistributionChart extends BaseChart {
         backgroundColor: "transparent",
         tooltip: {
           trigger: "item",
+          position: function (point, params, dom, rect, size) {
+            // Si on survole la légende, afficher le tooltip au-dessus
+            if (params.componentType === "legend") {
+              return [point[0], point[1] - size.contentSize[1] - 10];
+            }
+            // Sinon, afficher au-dessus du point
+            return [point[0], point[1] - size.contentSize[1] - 10];
+          },
+          confine: true,
           formatter: (params) => {
             if (!params) return "";
             const value = Number(params.value || 0);
@@ -20,14 +29,22 @@ export class UptimeDistributionChart extends BaseChart {
           },
         },
         legend: {
-          bottom: 0,
+          bottom: 8,
+          itemGap: 16,
           textStyle: { color: "#cbd5f5", fontSize: 11 },
+        },
+        grid: {
+          bottom: 80,
+          left: 0,
+          right: 0,
+          top: 0,
         },
         series: [
           {
             name: "Uptime",
             type: "pie",
-            radius: ["55%", "75%"],
+            radius: ["40%", "60%"],
+            center: ["50%", "40%"],
             avoidLabelOverlap: true,
             itemStyle: {
               borderRadius: 8,

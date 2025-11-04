@@ -131,7 +131,9 @@ footer {
 
 .search {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  position: relative;
+  align-items: flex-start;
 }
 
 .search-input {
@@ -150,10 +152,25 @@ footer {
   color: var(--muted);
 }
 
-.search-input:focus {
+.search-input:focus,
+.search-input:focus-visible {
   outline: none;
   border-color: rgba(255, 255, 255, 0.18);
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted-2);
+  padding: 4px 8px;
+}
+
+.search-results.hidden {
+  display: none;
 }
 
 /* Buttons */
@@ -184,6 +201,14 @@ footer {
   transform: none;
 }
 
+.btn:disabled .btn-text {
+  display: none;
+}
+
+.btn:disabled .btn-spinner {
+  display: inline-block;
+}
+
 /* Period filter buttons */
 .periods {
   display: flex;
@@ -207,7 +232,13 @@ footer {
   background: linear-gradient(90deg, var(--accent1), var(--accent2));
   color: #04121a;
   box-shadow: 0 8px 30px rgba(45, 212, 191, 0.08);
-  border: none;
+  border: 2px solid rgba(45, 212, 191, 0.3);
+  font-weight: 700;
+}
+
+.period-btn:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.5);
+  outline-offset: 2px;
 }
 
 /* Custom range inputs */
@@ -342,14 +373,40 @@ footer {
   position: absolute;
   inset: 0;
   display: none;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--muted-2);
   font-size: 1rem;
   text-align: center;
   pointer-events: none;
+  gap: 0.5rem;
 }
 
 .empty-state.is-visible {
   display: flex;
+}
+
+.empty-state-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.btn-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.btn-spinner.hidden {
+  display: none;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -93,12 +93,12 @@ function readNumberMeta(name) {
 }
 
 function readInitialSnapshot() {
-  const script = document.getElementById("initial-dashboard-state");
-  if (!script) return null;
-  const text = script.textContent || "";
-  if (!text.trim()) return null;
+  const meta = document.getElementById("initial-dashboard-state");
+  if (!meta) return null;
+  const snapshotData = meta.content;
+  if (!snapshotData) return null;
   try {
-    return JSON.parse(text);
+    return JSON.parse(snapshotData);
   } catch (err) {
     console.warn("Failed to parse initial dashboard snapshot", err);
     return null;
@@ -214,10 +214,104 @@ function autoFadeStatus() {
 document.getElementById("btn-start").onclick = () => sendControl("start");
 document.getElementById("btn-stop").onclick = () => sendControl("stop");
 document.getElementById("btn-rotate").onclick = () => sendControl("rotate");
-document.getElementById("btn-kill").onclick = () => {
-  if (confirm("⚠️  Are you sure you want to stop all the containers?")) {
-    sendControl("kill");
+// Confirmation Modal Functions
+function showConfirmationModal(options) {
+  const modal = document.getElementById("confirmationModal");
+  const iconEl = document.getElementById("modalIcon");
+  const titleEl = document.getElementById("modalTitle");
+  const messageEl = document.getElementById("modalMessage");
+  const cancelBtn = document.getElementById("modalCancel");
+  const confirmBtn = document.getElementById("modalConfirm");
+
+  if (
+    !modal ||
+    !iconEl ||
+    !titleEl ||
+    !messageEl ||
+    !cancelBtn ||
+    !confirmBtn
+  ) {
+    // Fallback to native confirm if modal elements not found
+    const confirmed = confirm(options.message || "Are you sure?");
+    if (confirmed && options.onConfirm) {
+      options.onConfirm();
+    }
+    return;
   }
+
+  iconEl.textContent = options.icon || "⚠️";
+  titleEl.textContent = options.title || "Confirm Action";
+  messageEl.textContent =
+    options.message || "Are you sure you want to proceed?";
+  confirmBtn.textContent = options.confirmText || "Confirm";
+
+  // Apply different styles based on action type
+  if (options.dangerous) {
+    confirmBtn.className = "modal-btn modal-btn-confirm modal-btn-danger";
+  } else {
+    confirmBtn.className = "modal-btn modal-btn-confirm modal-btn-primary";
+  }
+
+  // Remove existing listeners
+  const newCancelBtn = cancelBtn.cloneNode(true);
+  const newConfirmBtn = confirmBtn.cloneNode(true);
+  cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+  confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+  // Add new listeners
+  newCancelBtn.addEventListener("click", hideConfirmationModal);
+  newConfirmBtn.addEventListener("click", () => {
+    hideConfirmationModal();
+    if (options.onConfirm) {
+      options.onConfirm();
+    }
+  });
+
+  // Close on backdrop click (one-time handler)
+  const backdropHandler = (e) => {
+    if (e.target === modal) {
+      hideConfirmationModal();
+      modal.removeEventListener("click", backdropHandler);
+    }
+  };
+  modal.addEventListener("click", backdropHandler);
+
+  // Show modal
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+
+  // Focus on cancel button for accessibility
+  setTimeout(() => newCancelBtn.focus(), 100);
+
+  // Close on Escape key
+  const escapeHandler = (e) => {
+    if (e.key === "Escape") {
+      hideConfirmationModal();
+      document.removeEventListener("keydown", escapeHandler);
+      modal.removeEventListener("click", backdropHandler);
+    }
+  };
+  document.addEventListener("keydown", escapeHandler);
+}
+
+function hideConfirmationModal() {
+  const modal = document.getElementById("confirmationModal");
+  if (modal) {
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+  }
+}
+
+document.getElementById("btn-kill").onclick = () => {
+  showConfirmationModal({
+    icon: "⚠️",
+    title: "Kill All Containers",
+    message:
+      "Are you sure you want to kill all containers?\n\nThis will immediately stop all running containers. This action cannot be undone.",
+    confirmText: "Kill",
+    dangerous: true,
+    onConfirm: () => sendControl("kill"),
+  });
 };
 
 function refreshRotationState() {
@@ -239,26 +333,26 @@ function updateControlButtons() {
 
   if (orchestratorRunning) {
     btnStart.disabled = true;
-    btnStart.style.opacity = "0.5";
+    btnStart.classList.add("disabled");
     btnStop.disabled = false;
-    btnStop.style.opacity = "1";
+    btnStop.classList.remove("disabled");
     if (btnRotate) {
       btnRotate.disabled = false;
-      btnRotate.style.opacity = "1";
+      btnRotate.classList.remove("disabled");
     }
     btnKill.disabled = true;
-    btnKill.style.opacity = "0.5";
+    btnKill.classList.add("disabled");
   } else {
     btnStart.disabled = false;
-    btnStart.style.opacity = "1";
+    btnStart.classList.remove("disabled");
     btnStop.disabled = true;
-    btnStop.style.opacity = "0.5";
+    btnStop.classList.add("disabled");
     if (btnRotate) {
       btnRotate.disabled = true;
-      btnRotate.style.opacity = "0.5";
+      btnRotate.classList.add("disabled");
     }
     btnKill.disabled = false;
-    btnKill.style.opacity = "1";
+    btnKill.classList.remove("disabled");
   }
   refreshRotationState();
 }
@@ -317,6 +411,17 @@ function safeSetText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
 }
+function updateApiStatusIndicator(isOnline) {
+  const indicator = document.querySelector(".api-status-indicator");
+  if (!indicator) return;
+  indicator.classList.remove("online", "offline");
+  if (isOnline) {
+    indicator.classList.add("online");
+  } else {
+    indicator.classList.add("offline");
+  }
+}
+
 function safeSetHTML(id, html) {
   const el = document.getElementById(id);
   if (el) el.innerHTML = html;
@@ -627,6 +732,7 @@ function createStateWaveDataset(target) {
     borderJoinStyle: "round",
     cubicInterpolationMode: "monotone",
     tension: 0.35,
+    clip: true,
     segment: {
       borderColor: (ctx) =>
         resolveStateWaveSegmentColor(
@@ -778,8 +884,8 @@ const stateWaveBandsPlugin = {
 const stateWaveGlowPlugin = {
   id: "stateWaveGlow",
   afterDatasetsDraw(chart, args, options) {
-    const { ctx } = chart;
-    if (!ctx) return;
+    const { ctx, chartArea } = chart;
+    if (!ctx || !chartArea) return;
 
     const metasets =
       typeof chart.getSortedVisibleDatasetMetas === "function"
@@ -789,6 +895,15 @@ const stateWaveGlowPlugin = {
     if (!metasets?.length) return;
 
     ctx.save();
+    // Clipping pour respecter les limites du chartArea
+    ctx.beginPath();
+    ctx.rect(
+      chartArea.left,
+      chartArea.top,
+      chartArea.right - chartArea.left,
+      chartArea.bottom - chartArea.top,
+    );
+    ctx.clip();
     ctx.globalCompositeOperation = "lighter";
 
     metasets.forEach((meta) => {
@@ -953,8 +1068,9 @@ function initStateWaveChart(initialSnapshot = null) {
       maintainAspectRatio: false,
       parsing: false,
       normalized: true,
+      clip: true,
       layout: {
-        padding: { top: 12, right: 16, bottom: 12, left: 8 },
+        padding: { top: 12, right: 16, bottom: 12, left: 24 },
       },
       interaction: {
         mode: "nearest",
@@ -1035,17 +1151,22 @@ function initStateWaveChart(initialSnapshot = null) {
               flushStateWaveQueues(chartInstance);
             },
           },
+          offset: false,
+          bounds: "data",
           grid: {
             color: "rgba(148,163,184,0.12)",
             lineWidth: 0.75,
+            drawOnChartArea: false,
           },
           border: {
             color: "rgba(148,163,184,0.25)",
+            display: true,
           },
           ticks: {
             color: "#94a3b8",
             maxRotation: 0,
             autoSkip: true,
+            padding: 8,
             callback(value) {
               const chartInstance = this.chart;
               const scale = chartInstance?.scales?.x;
@@ -1066,6 +1187,8 @@ function initStateWaveChart(initialSnapshot = null) {
         y: {
           min: STATE_WAVE_Y_MIN,
           max: STATE_WAVE_Y_MAX,
+          offset: false,
+          bounds: "ticks",
           ticks: {
             stepSize: 1,
             padding: 6,
@@ -1078,9 +1201,11 @@ function initStateWaveChart(initialSnapshot = null) {
           grid: {
             color: "rgba(148,163,184,0.14)",
             lineWidth: 0.75,
+            drawOnChartArea: false,
           },
           border: {
             color: "rgba(148,163,184,0.25)",
+            display: true,
           },
         },
       },
@@ -1322,6 +1447,27 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
   });
 }
 
+// Track scroll state to prevent animation issues during scroll
+let isScrolling = false;
+let scrollTimeout = null;
+
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "scroll",
+    () => {
+      isScrolling = true;
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+      scrollTimeout = setTimeout(() => {
+        isScrolling = false;
+        scrollTimeout = null;
+      }, 150);
+    },
+    { passive: true },
+  );
+}
+
 function renderStateWaveHealthyUptime(summary) {
   const listEl = document.getElementById("state-wave-health-list");
   const emptyEl = document.getElementById("state-wave-health-empty");
@@ -1334,19 +1480,28 @@ function renderStateWaveHealthyUptime(summary) {
   const existingItems = new Map();
   const previousRects = new Map();
 
-  Array.from(listEl.children).forEach((child) => {
-    const label =
-      child.dataset.container ||
-      child.querySelector?.(".state-wave-health-label")?.textContent ||
-      "";
+  // Only capture previous positions if not scrolling
+  if (!isScrolling) {
+    Array.from(listEl.children).forEach((child) => {
+      const label =
+        child.dataset.container ||
+        child.querySelector?.(".state-wave-health-label")?.textContent ||
+        "";
 
-    if (!label) {
-      return;
-    }
+      if (!label) {
+        return;
+      }
 
-    existingItems.set(label, child);
-    previousRects.set(label, child.getBoundingClientRect());
-  });
+      existingItems.set(label, child);
+      // Use offsetTop/offsetLeft relative to parent instead of getBoundingClientRect
+      const parentRect = listEl.getBoundingClientRect();
+      const childRect = child.getBoundingClientRect();
+      previousRects.set(label, {
+        left: childRect.left - parentRect.left,
+        top: childRect.top - parentRect.top,
+      });
+    });
+  }
 
   entries.sort((a, b) => {
     if (a.isHealthy !== b.isHealthy) {
@@ -1417,21 +1572,47 @@ function renderStateWaveHealthyUptime(summary) {
   listEl.innerHTML = "";
   listEl.appendChild(fragment);
 
+  // Skip animation if scrolling
+  if (isScrolling) {
+    const hasEntries = entries.length > 0;
+    listEl.style.display = hasEntries ? "" : "none";
+    if (emptyEl) {
+      emptyEl.style.display = hasEntries ? "none" : "";
+    }
+    return;
+  }
+
   const animate = () => {
+    // Double-check scroll state before animating
+    if (isScrolling) {
+      return;
+    }
+
+    const parentRect = listEl.getBoundingClientRect();
+
     nextItems.forEach((item, key) => {
       const previousRect = previousRects.get(key);
       const currentRect = item.getBoundingClientRect();
 
       if (previousRect) {
-        const deltaX = previousRect.left - currentRect.left;
-        const deltaY = previousRect.top - currentRect.top;
+        // Calculate relative positions within parent container
+        const currentRelLeft = currentRect.left - parentRect.left;
+        const currentRelTop = currentRect.top - parentRect.top;
+        const deltaX = previousRect.left - currentRelLeft;
+        const deltaY = previousRect.top - currentRelTop;
 
         if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
           item.style.transition = "none";
           item.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
           requestAnimationFrame(() => {
-            item.style.transition = "";
-            item.style.transform = "";
+            if (!isScrolling) {
+              item.style.transition = "";
+              item.style.transform = "";
+            } else {
+              // Reset immediately if scrolling started during animation
+              item.style.transition = "none";
+              item.style.transform = "";
+            }
           });
         }
       } else {
@@ -1439,9 +1620,16 @@ function renderStateWaveHealthyUptime(summary) {
         item.style.opacity = "0";
         item.style.transform = "translate3d(0, 12px, 0)";
         requestAnimationFrame(() => {
-          item.style.transition = "";
-          item.style.opacity = "";
-          item.style.transform = "";
+          if (!isScrolling) {
+            item.style.transition = "";
+            item.style.opacity = "";
+            item.style.transform = "";
+          } else {
+            // Reset immediately if scrolling started during animation
+            item.style.transition = "none";
+            item.style.opacity = "";
+            item.style.transform = "";
+          }
         });
       }
     });
@@ -1697,10 +1885,11 @@ function updateDashboardFromData(json) {
 
     safeSetHTML(
       "api-status",
-      `Last API update: <span class="api-online">${new Date(
+      `<span class="api-status-indicator"></span>Last API update: <span class="api-online">${new Date(
         lastSuccessfulFetch,
       ).toLocaleTimeString()}</span>`,
     );
+    updateApiStatusIndicator(true);
 
     const containers = json.containers || {};
     updateMetricCharts(json.metrics || null);
@@ -1810,12 +1999,13 @@ function updateDashboardFromData(json) {
     if (failCount >= MAX_FAILS) {
       safeSetHTML(
         "api-status",
-        `<span class="api-offline">API offline (last: ${
+        `<span class="api-status-indicator"></span><span class="api-offline">API offline (last: ${
           lastSuccessfulFetch
             ? new Date(lastSuccessfulFetch).toLocaleTimeString()
             : "never"
         })</span>`,
       );
+      updateApiStatusIndicator(false);
     } else {
       safeSetText(
         "api-status",
@@ -1838,8 +2028,9 @@ function setupSse() {
   hasReceivedData = false;
   safeSetHTML(
     "api-status",
-    `<span class="api-offline">Connecting to stream…</span>`,
+    `<span class="api-status-indicator"></span><span class="api-offline">Connecting to stream…</span>`,
   );
+  updateApiStatusIndicator(false);
 
   sseClient = new SSEClient(
     [
@@ -1855,15 +2046,20 @@ function setupSse() {
   sseClient.subscribe("connection-open", () => {
     safeSetHTML(
       "api-status",
-      `<span class="api-online">Connected to live stream</span>`,
+      `<span class="api-status-indicator"></span><span class="api-online">Connected to live stream</span>`,
     );
+    updateApiStatusIndicator(true);
   });
 
   sseClient.subscribe("connection-reconnecting", () => {
     const message = hasReceivedData
       ? "Reconnecting to stream…"
       : "Connecting to stream…";
-    safeSetHTML("api-status", `<span class="api-offline">${message}</span>`);
+    safeSetHTML(
+      "api-status",
+      `<span class="api-status-indicator"></span><span class="api-offline">${message}</span>`,
+    );
+    updateApiStatusIndicator(false);
   });
 
   sseClient.subscribe("connection-error", (event) => {
@@ -1874,8 +2070,9 @@ function setupSse() {
     hasReceivedData = false;
     safeSetHTML(
       "api-status",
-      `<span class="api-offline">Connection lost, retrying…</span>`,
+      `<span class="api-status-indicator"></span><span class="api-offline">Connection lost, retrying…</span>`,
     );
+    updateApiStatusIndicator(false);
   });
 
   sseClient.subscribe("snapshot", (event) => {
@@ -2031,6 +2228,28 @@ if (initialSnapshot) {
 }
 
 setupSse();
+
+// Handle logout confirmation
+document.addEventListener("DOMContentLoaded", () => {
+  const logoutForm = document.querySelector(".logout-form");
+  const logoutButton = logoutForm?.querySelector(".logout-button");
+
+  if (logoutForm && logoutButton) {
+    logoutForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      showConfirmationModal({
+        icon: "🚪",
+        title: "Logout",
+        message: "Are you sure you want to logout?",
+        confirmText: "Logout",
+        dangerous: false,
+        onConfirm: () => {
+          logoutForm.submit();
+        },
+      });
+    });
+  }
+});
 
 window.addEventListener("beforeunload", () => {
   detachSparklineHandlers.forEach((fn) => {

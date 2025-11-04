@@ -16,7 +16,8 @@ var (
 	rootCmd = &cobra.Command{
 		Use:   "leyzenctl",
 		Short: "Leyzen Vault management CLI",
-		Long:  color.HiCyanString("Leyzenctl orchestrates the Leyzen Vault Docker stack and configuration."),
+		Long:  color.HiCyanString("Leyzenctl orchestrates the Leyzen Vault Docker stack and configuration.\n\n") +
+			"Run 'leyzenctl' without arguments to launch the interactive dashboard, or use subcommands like 'start', 'stop', 'status'.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if noUI {
 				return cmd.Help()
