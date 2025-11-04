@@ -66,6 +66,65 @@ body {
   outline: none;
 }
 
+.password-input-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.password-input-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-35%);
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transition:
+    opacity 0.2s,
+    color 0.2s;
+  z-index: 1;
+}
+
+.password-toggle:hover {
+  opacity: 1;
+  color: #c9d1d9;
+}
+
+.password-toggle:active {
+  opacity: 0.8;
+}
+
+.password-toggle-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.password-toggle-icon--show {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--hide {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--show {
+  display: block;
+}
+
 .login-container button[type="submit"] {
   width: 100%;
   padding: 14px;

@@ -152,4 +152,33 @@
       });
     }
   });
+
+  const passwordToggle = document.querySelector("[data-password-toggle]");
+  const passwordInput = document.getElementById("password");
+
+  if (passwordToggle && passwordInput) {
+    const showIcon = passwordToggle.querySelector(
+      ".password-toggle-icon--show",
+    );
+    const hideIcon = passwordToggle.querySelector(
+      ".password-toggle-icon--hide",
+    );
+
+    if (showIcon && hideIcon) {
+      passwordToggle.addEventListener("click", function (event) {
+        event.preventDefault();
+        const isPassword = passwordInput.type === "password";
+
+        if (isPassword) {
+          passwordInput.type = "text";
+          passwordToggle.setAttribute("aria-label", "Hide password");
+          passwordToggle.classList.add("is-visible");
+        } else {
+          passwordInput.type = "password";
+          passwordToggle.setAttribute("aria-label", "Show password");
+          passwordToggle.classList.remove("is-visible");
+        }
+      });
+    }
+  }
 })();
