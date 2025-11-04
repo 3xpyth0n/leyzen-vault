@@ -28,6 +28,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r src/orchestrator/requirements.txt
           pip install -r infra/docker-proxy/requirements.txt
+          pip install ruff
 
       - name: Validate Python bytecode
         run: python -m compileall src/orchestrator infra/docker-proxy src/compose src/vault_plugins
@@ -142,8 +143,8 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          base: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'pull_request' && github.event.pull_request.base.sha || '') }}
+          head: ${{ github.event_name == 'push' && github.event.after || (github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'HEAD') }}
 
   runtime-check:
     name: Runtime import validation
