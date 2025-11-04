@@ -1,0 +1,5 @@
+Flask
+Flask-WTF
+httpx
+Pillow
+uvicorn

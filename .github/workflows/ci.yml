@@ -26,14 +26,84 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r orchestrator/requirements.txt
-          pip install -r docker-proxy/requirements.txt
+          pip install -r src/orchestrator/requirements.txt
+          pip install -r infra/docker-proxy/requirements.txt
 
       - name: Validate Python bytecode
-        run: python -m compileall orchestrator docker-proxy compose vault_plugins
+        run: python -m compileall src/orchestrator infra/docker-proxy src/compose src/vault_plugins
 
       - name: Ruff lint
-        run: ruff check orchestrator docker-proxy compose vault_plugins
+        run: ruff check --select F401 src/orchestrator infra/docker-proxy src/compose src/vault_plugins
+
+      - name: Check requirements version consistency
+        run: |
+          echo "🔍 Checking requirements.txt version consistency..."
+          python - <<'EOF'
+          import re
+          from pathlib import Path
+
+          # Common dependencies that should have identical versions
+          COMMON_DEPS = ["flask", "httpx", "uvicorn"]
+
+          def extract_version(package_name: str, requirements_file: Path) -> str | None:
+              """Extract version for a package from requirements.txt."""
+              if not requirements_file.exists():
+                  return None
+              pattern = re.compile(rf"^{re.escape(package_name)}==([^#\s]+)", re.MULTILINE)
+              with open(requirements_file) as f:
+                  content = f.read()
+                  match = pattern.search(content)
+                  return match.group(1) if match else None
+
+          orchestrator_req = Path("src/orchestrator/requirements.txt")
+          docker_proxy_req = Path("infra/docker-proxy/requirements.txt")
+
+          inconsistencies = []
+          for dep in COMMON_DEPS:
+              orch_ver = extract_version(dep, orchestrator_req)
+              proxy_ver = extract_version(dep, docker_proxy_req)
+              if orch_ver and proxy_ver and orch_ver != proxy_ver:
+                  inconsistencies.append(f"{dep}: orchestrator={orch_ver}, docker-proxy={proxy_ver}")
+
+          if inconsistencies:
+              print("❌ Version inconsistencies found:")
+              for inc in inconsistencies:
+                  print(f"  - {inc}")
+              exit(1)
+          else:
+              print("✅ All common dependencies have consistent versions.")
+          EOF
+
+  shellcheck:
+    name: Shell script linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: "."
+          format: gcc
+          severity: error
+          shell: bash
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
 
   runtime-check:
     name: Runtime import validation
@@ -51,26 +121,70 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r orchestrator/requirements.txt
-          pip install -r docker-proxy/requirements.txt
+          pip install -r src/orchestrator/requirements.txt
+          pip install -r infra/docker-proxy/requirements.txt
 
       - name: Verify imports and module loading
         run: |
           echo "🔍 Checking all modules can be imported..."
           python - <<'EOF'
-          import importlib, pathlib, sys
+          import importlib
+          import importlib.util
+          import pathlib
+          import sys
 
-          paths = ["orchestrator", "docker-proxy", "compose", "vault_plugins", "leyzen_common"]
+          # Add src/ to PYTHONPATH to enable imports like 'from common.constants import ...'
+          src_dir = pathlib.Path("src")
+          if src_dir.exists():
+              src_path = str(src_dir.resolve())
+              if src_path not in sys.path:
+                  sys.path.insert(0, src_path)
+
+          # Add repo root to PYTHONPATH to enable imports from infra/ modules
+          repo_root = pathlib.Path(".").resolve()
+          repo_root_str = str(repo_root)
+          if repo_root_str not in sys.path:
+              sys.path.insert(0, repo_root_str)
+
+          paths = ["src/orchestrator", "infra/docker-proxy", "src/compose", "src/vault_plugins", "src/common"]
           for p in paths:
               pkg_path = pathlib.Path(p)
               if pkg_path.exists():
                   for pyfile in pkg_path.rglob("*.py"):
-                      modname = ".".join(pyfile.with_suffix("").parts)
-                      print(f"→ Importing {modname}")
-                      try:
-                          importlib.import_module(modname)
-                      except Exception as e:
-                          print(f"❌ Failed to import {modname}: {e}")
-                          sys.exit(1)
+                      parts = pyfile.with_suffix("").parts
+                      
+                      # Check if this is a module that can't be imported normally (e.g., has hyphens)
+                      # For modules in infra/docker-proxy, use spec_from_file_location
+                      if parts[0] == "infra" and "docker-proxy" in parts:
+                          # Use importlib.util for modules with hyphens in path
+                          print(f"→ Loading {pyfile}")
+                          try:
+                              spec = importlib.util.spec_from_file_location("_temp_module", pyfile)
+                              if spec is None or spec.loader is None:
+                                  print(f"❌ Failed to create spec for {pyfile}")
+                                  sys.exit(1)
+                              module = importlib.util.module_from_spec(spec)
+                              spec.loader.exec_module(module)
+                          except Exception as e:
+                              print(f"❌ Failed to load {pyfile}: {e}")
+                              sys.exit(1)
+                      elif parts[0] == "src":
+                          # Remove 'src' prefix: src/orchestrator/__init__.py -> orchestrator.__init__
+                          modname = ".".join(parts[1:])
+                          print(f"→ Importing {modname}")
+                          try:
+                              importlib.import_module(modname)
+                          except Exception as e:
+                              print(f"❌ Failed to import {modname}: {e}")
+                              sys.exit(1)
+                      else:
+                          # Fallback: try to import with full path
+                          modname = ".".join(parts)
+                          print(f"→ Importing {modname}")
+                          try:
+                              importlib.import_module(modname)
+                          except Exception as e:
+                              print(f"❌ Failed to import {modname}: {e}")
+                              sys.exit(1)
           print("✅ All modules imported successfully.")
           EOF
