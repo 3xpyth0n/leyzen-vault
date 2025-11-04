@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"sort"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,11 +23,11 @@ type ContainerStatus struct {
 type ActionType string
 
 const (
-	ActionNone      ActionType = ""
-	ActionRestart   ActionType = "restart"
-	ActionStart     ActionType = "start"
-	ActionStop      ActionType = "stop"
-	ActionBuild     ActionType = "build"
+	ActionNone       ActionType = ""
+	ActionRestart    ActionType = "restart"
+	ActionStart      ActionType = "start"
+	ActionStop       ActionType = "stop"
+	ActionBuild      ActionType = "build"
 	ActionConfigList ActionType = "config-list"
 	ActionWizard     ActionType = "wizard"
 )
@@ -43,8 +43,8 @@ const (
 )
 
 const (
-	statusRefreshInterval = 5 * time.Second
-	logBufferLimit        = 400
+	statusRefreshInterval  = 500 * time.Millisecond
+	logBufferLimit         = 400
 	successMessageDuration = 3 * time.Second
 )
 
@@ -64,39 +64,39 @@ type Theme struct {
 }
 
 type WizardField struct {
-	Key       string
-	Message   string
-	Value     string
+	Key        string
+	Message    string
+	Value      string
 	IsPassword bool
-	Input     textinput.Model
+	Input      textinput.Model
 }
 
-	type Model struct {
-	envFile         string
-	statuses        []ContainerStatus
-	logs            []string
-	logsBuffer      []string // Buffer to preserve logs when returning to dashboard
-	configPairs     map[string]string // To store configuration pairs
-	configShowPasswords map[string]bool // To display/hide passwords in the config view
-	viewport        viewport.Model
-	spinner         spinner.Model
-	width           int
-	height          int
-	helpVisible     bool
-	action          ActionType
-	actionRunning   bool
-	actionStream    <-chan actionProgressMsg
-	runner          *Runner
-	theme           Theme
-	ready           bool
-	pendingRefresh  bool
-	viewState       ViewState
-	successMessage  string
-	successTimer    *time.Timer
-	wizardFields    []WizardField
-	wizardIndex     int
-	wizardError     string
-	quitConfirm     bool // Confirmation de sortie
+type Model struct {
+	envFile             string
+	statuses            []ContainerStatus
+	logs                []string
+	logsBuffer          []string          // Buffer to preserve logs when returning to dashboard
+	configPairs         map[string]string // To store configuration pairs
+	configShowPasswords map[string]bool   // To display/hide passwords in the config view
+	viewport            viewport.Model
+	spinner             spinner.Model
+	width               int
+	height              int
+	helpVisible         bool
+	action              ActionType
+	actionRunning       bool
+	actionStream        <-chan actionProgressMsg
+	runner              *Runner
+	theme               Theme
+	ready               bool
+	pendingRefresh      bool
+	viewState           ViewState
+	successMessage      string
+	successTimer        *time.Timer
+	wizardFields        []WizardField
+	wizardIndex         int
+	wizardError         string
+	quitConfirm         bool // Confirmation de sortie
 }
 
 func NewModel(envFile string, runner *Runner) *Model {
@@ -123,13 +123,13 @@ func NewModel(envFile string, runner *Runner) *Model {
 	}
 
 	return &Model{
-		envFile:            envFile,
-		runner:             runner,
-		spinner:            sp,
-		viewport:           vp,
-		theme:              theme,
-		viewState:          ViewDashboard,
-		configPairs:        make(map[string]string),
+		envFile:             envFile,
+		runner:              runner,
+		spinner:             sp,
+		viewport:            vp,
+		theme:               theme,
+		viewState:           ViewDashboard,
+		configPairs:         make(map[string]string),
 		configShowPasswords: make(map[string]bool),
 	}
 }
@@ -148,12 +148,12 @@ func (m *Model) appendLog(line string) {
 	if line == "" {
 		return
 	}
-	
+
 	// DO NOT add logs if we're on the dashboard (they should not be displayed)
 	if m.viewState == ViewDashboard {
 		return
 	}
-	
+
 	// Clean the line: remove control characters and leading/trailing spaces
 	line = strings.TrimSpace(line)
 	// Filter empty lines after cleaning
@@ -175,13 +175,13 @@ func (m *Model) appendLog(line string) {
 			return
 		}
 	}
-	
+
 	// Filter lines that start with an isolated character followed by a newline
 	// (e.g., "C\n" or "B\n")
 	if len(line) > 1 && (line[0] == 'C' || line[0] == 'B') && line[1] == '\n' {
 		return
 	}
-	
+
 	m.logs = append(m.logs, line)
 	if len(m.logs) > logBufferLimit {
 		diff := len(m.logs) - logBufferLimit
@@ -200,7 +200,7 @@ func (m *Model) switchToDashboard() {
 		m.logsBuffer = make([]string, len(m.logs))
 		copy(m.logsBuffer, m.logs)
 	}
-	
+
 	// If coming from wizard, completely clean up state
 	if m.viewState == ViewWizard {
 		// Reset wizard fields to avoid display remnants
@@ -208,7 +208,7 @@ func (m *Model) switchToDashboard() {
 		m.wizardIndex = 0
 		m.wizardError = ""
 	}
-	
+
 	// COMPLETELY CLEAN: logs, viewport, action, quit confirmation
 	// Logs should not be displayed on the dashboard
 	m.logs = nil
@@ -218,7 +218,7 @@ func (m *Model) switchToDashboard() {
 	m.action = ActionNone
 	m.actionStream = nil
 	m.quitConfirm = false
-	
+
 	// Change state AFTER cleanup
 	m.viewState = ViewDashboard
 }
@@ -292,18 +292,18 @@ func (m *Model) initWizard(existing map[string]string) {
 	for k := range existing {
 		keys = append(keys, k)
 	}
-	
+
 	// Sort keys for consistent display
 	sort.Strings(keys)
-	
+
 	m.wizardFields = make([]WizardField, len(keys))
 	for i, key := range keys {
 		existingValue := existing[key]
-		isPassword := strings.Contains(strings.ToLower(key), "password") || 
-		             strings.Contains(strings.ToLower(key), "secret") ||
-		             strings.Contains(strings.ToLower(key), "token") ||
-		             strings.Contains(strings.ToLower(key), "key")
-		
+		isPassword := strings.Contains(strings.ToLower(key), "password") ||
+			strings.Contains(strings.ToLower(key), "secret") ||
+			strings.Contains(strings.ToLower(key), "token") ||
+			strings.Contains(strings.ToLower(key), "key")
+
 		ti := textinput.New()
 		ti.Placeholder = fmt.Sprintf("Value for %s", key)
 		ti.CharLimit = 512 // Increase the limit
@@ -316,7 +316,7 @@ func (m *Model) initWizard(existing map[string]string) {
 		if existingValue != "" {
 			ti.SetValue(existingValue)
 		}
-		
+
 		m.wizardFields[i] = WizardField{
 			Key:        key,
 			Message:    key,
@@ -325,7 +325,7 @@ func (m *Model) initWizard(existing map[string]string) {
 			Input:      ti,
 		}
 	}
-	
+
 	// Focus on first field and blur others
 	m.wizardIndex = 0
 	if len(m.wizardFields) > 0 {

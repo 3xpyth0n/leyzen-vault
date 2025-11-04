@@ -46,7 +46,7 @@ echo "   $OUTPUT_BIN"
 echo
 
 # Step 3. Optional global install
-read -p "Would you like to install leyzenctl globally (requires sudo)? [y/N] " choice
+read -r -p "Would you like to install leyzenctl globally (requires sudo)? [y/N] " choice
 if [[ "$choice" =~ ^[Yy]$ ]]; then
     echo "📦 Installing to /usr/local/bin..."
     sudo cp "$OUTPUT_BIN" /usr/local/bin/leyzenctl

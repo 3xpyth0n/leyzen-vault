@@ -9,12 +9,14 @@ import os
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, cast
 
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: These calculations are necessary before we can import common.constants
+# Note: This local calculation is ONLY needed for the initial bootstrap before
+# common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
+# The calculation is necessary to avoid circular import dependencies.
 _SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
@@ -24,7 +26,12 @@ from common.path_setup import bootstrap_entry_point
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
-from compose.base_stack import BASE_NETWORKS, BASE_VOLUMES, build_base_services
+from compose.base_stack import (
+    BASE_NETWORKS,
+    BASE_VOLUMES,
+    build_base_services,
+    validate_ssl_certificates,
+)
 from compose.haproxy_config import render_haproxy_config, resolve_backend_port
 from common.constants import HAPROXY_CONFIG_PATH, REPO_ROOT
 from common.env import load_env_with_override, parse_container_names
@@ -66,9 +73,15 @@ def build_compose_manifest(
         active_plugin = plugin
         active_plugin.setup(env)
     plugin_data = active_plugin.build_compose(env)
-    plugin_services = OrderedDict(plugin_data.get("services", {}))
-    plugin_volumes = OrderedDict(plugin_data.get("volumes", {}))
-    plugin_networks = OrderedDict(plugin_data.get("networks", {}))
+    plugin_services = OrderedDict(
+        cast(Mapping[str, object], plugin_data.get("services", {}))
+    )
+    plugin_volumes = OrderedDict(
+        cast(Mapping[str, object], plugin_data.get("volumes", {}))
+    )
+    plugin_networks = OrderedDict(
+        cast(Mapping[str, object], plugin_data.get("networks", {}))
+    )
 
     if web_containers is None or web_container_string is None:
         web_containers, web_container_string = resolve_web_containers(
@@ -80,24 +93,24 @@ def build_compose_manifest(
     services: OrderedDict[str, dict] = OrderedDict()
     for dependency in active_plugin.dependencies:
         if dependency in plugin_services and dependency not in services:
-            services[dependency] = plugin_services[dependency]
+            services[dependency] = cast(dict, plugin_services[dependency])
 
     for name, definition in plugin_services.items():
         if name not in services:
-            services[name] = definition
+            services[name] = cast(dict, definition)
 
     for name, definition in base_services.items():
         services[name] = definition
 
-    volumes: OrderedDict[str, dict] = OrderedDict()
+    volumes: OrderedDict[str, dict[str, object]] = OrderedDict()
     for collection in (plugin_volumes, BASE_VOLUMES):
         for name, definition in collection.items():
-            volumes[name] = definition
+            volumes[name] = cast(dict[str, object], definition)
 
-    networks: OrderedDict[str, dict] = OrderedDict()
+    networks: OrderedDict[str, dict[str, object]] = OrderedDict()
     for collection in (plugin_networks, BASE_NETWORKS):
         for name, definition in collection.items():
-            networks[name] = definition
+            networks[name] = cast(dict[str, object], definition)
 
     manifest: OrderedDict[str, object] = OrderedDict()
     manifest["services"] = services
@@ -202,7 +215,68 @@ def main() -> None:
         )
     web_containers, web_container_string = resolve_web_containers(env, plugin)
     backend_port = resolve_backend_port(env, plugin)
-    haproxy_config = render_haproxy_config(plugin, web_containers, backend_port)
+
+    # Read HTTPS configuration from environment
+    enable_https_raw = env.get("VAULT_ENABLE_HTTPS", "").strip().lower()
+    enable_https = enable_https_raw in ("true", "1", "yes", "on")
+    ssl_cert_path = env.get("VAULT_SSL_CERT_PATH", "").strip() or None
+    ssl_key_path = env.get("VAULT_SSL_KEY_PATH", "").strip() or None
+
+    # Read HTTP and HTTPS port configuration
+    http_port_raw = env.get("VAULT_HTTP_PORT", "").strip()
+    https_port_raw = env.get("VAULT_HTTPS_PORT", "").strip()
+    try:
+        http_port = int(http_port_raw) if http_port_raw else 8080
+        http_port = max(1, min(65535, http_port))
+    except ValueError:
+        http_port = 8080
+    try:
+        https_port = int(https_port_raw) if https_port_raw else 8443
+        https_port = max(1, min(65535, https_port))
+    except ValueError:
+        https_port = 8443
+
+    print(f"[haproxy] HTTP port: {http_port}:80")
+    if enable_https:
+        print(f"[haproxy] HTTPS port: {https_port}:443")
+
+    # Validate SSL certificates if HTTPS is enabled
+    if enable_https:
+        is_valid, warnings = validate_ssl_certificates(
+            enable_https, ssl_cert_path, ssl_key_path, REPO_ROOT
+        )
+        if not is_valid:
+            print("\n[warning] HTTPS is enabled but certificate validation failed:")
+            for warning in warnings:
+                print(f"         {warning}")
+            print("         HAProxy will start but HTTPS may not work correctly.\n")
+        else:
+            print("[haproxy] HTTPS: enabled")
+            if ssl_cert_path:
+                print(f"[haproxy] SSL certificate: {ssl_cert_path}")
+            if ssl_key_path:
+                print(f"[haproxy] SSL key: {ssl_key_path}")
+    else:
+        print("[haproxy] HTTPS: disabled")
+
+    # Prepare container paths for SSL certificates (these are the paths inside the container)
+    ssl_cert_path_container: str | None = None
+    ssl_key_path_container: str | None = None
+    if enable_https and ssl_cert_path:
+        # Use the container path where the certificate will be mounted
+        ssl_cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
+        if ssl_key_path:
+            ssl_key_path_container = "/usr/local/etc/haproxy/ssl/key.pem"
+
+    # Generate HAProxy configuration with HTTPS support
+    haproxy_config = render_haproxy_config(
+        plugin,
+        web_containers,
+        backend_port,
+        enable_https=enable_https,
+        ssl_cert_path=ssl_cert_path_container,
+        ssl_key_path=ssl_key_path_container,
+    )
     HAPROXY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     HAPROXY_CONFIG_PATH.write_text(haproxy_config)
     backend_summary = ", ".join(f"{name}:{backend_port}" for name in web_containers)
@@ -218,16 +292,6 @@ def main() -> None:
         web_containers=web_containers,
         web_container_string=web_container_string,
     )
-
-    override_env_file = os.environ.get("LEYZEN_ENV_FILE")
-    if override_env_file:
-        override_path = Path(override_env_file).expanduser().resolve()
-        # to keep readability in the compose, we only write the filename
-        short_name = override_path.name
-        print(f"[compose] Overriding env_file entries with: {short_name}")
-        for svc_name, svc_def in manifest.get("services", {}).items():
-            if "env_file" in svc_def:
-                svc_def["env_file"] = [short_name]
 
     write_manifest(manifest, OUTPUT_FILE)
     print(f"[compose] Wrote {OUTPUT_FILE}\n")

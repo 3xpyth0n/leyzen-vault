@@ -147,7 +147,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # These paths are calculated relative to the repository root to ensure they work
 # regardless of the current working directory when the module is imported.
 SRC_DIR = REPO_ROOT / "src"
-ORCHESTRATOR_DIR = SRC_DIR / "orchestrator"
+
+# Detect if we're running in a Docker container where /app is mounted
+# (the orchestrator code is mounted at /app in the container)
+_docker_app_path = Path("/app")
+if _docker_app_path.exists() and (_docker_app_path / "templates").exists():
+    # Running in Docker container: use /app as ORCHESTRATOR_DIR
+    ORCHESTRATOR_DIR = _docker_app_path
+else:
+    # Local development: use calculated path relative to repository root
+    ORCHESTRATOR_DIR = SRC_DIR / "orchestrator"
+
 DOCKER_PROXY_DIR = REPO_ROOT / "infra" / "docker-proxy"
 
 # HAProxy configuration

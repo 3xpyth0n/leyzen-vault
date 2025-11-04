@@ -227,12 +227,15 @@ class DockerProxyService:
         else:
             payload, timestamp = cached
 
+        def _cache_update_wrapper(data: dict[str, Any]) -> None:
+            self._store_cache(name, data)
+
         return ProxyContainer(
             self.client,
             name,
             payload,
             payload_timestamp=timestamp,
-            cache_update=lambda data: self._store_cache(name, data),
+            cache_update=_cache_update_wrapper,
             cache_invalidate=lambda: self.invalidate_container_cache(name),
         )
 

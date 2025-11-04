@@ -87,6 +87,20 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check for deprecated CSP variables
+	deprecatedCSPVars := map[string]string{
+		"CSP_REPORT_MAX_SIZE":   "VAULT_CSP_REPORT_MAX_SIZE",
+		"CSP_REPORT_RATE_LIMIT": "VAULT_CSP_REPORT_RATE_LIMIT",
+	}
+	for deprecatedVar, replacementVar := range deprecatedCSPVars {
+		if _, exists := envVars[deprecatedVar]; exists {
+			warnings = append(warnings, fmt.Sprintf(
+				"Deprecated variable '%s' is used. Please migrate to '%s'. Support for '%s' will be removed in a future major version.",
+				deprecatedVar, replacementVar, deprecatedVar,
+			))
+		}
+	}
+
 	// Print results
 	if len(errors) > 0 {
 		fmt.Println("❌ Validation failed with errors:")
@@ -139,7 +153,7 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Skip comments and empty lines
 		if strings.HasPrefix(line, "#") || line == "" {
 			// Check if we're entering a required section
@@ -156,20 +170,20 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 		match := varPattern.FindStringSubmatch(line)
 		if len(match) > 1 {
 			varName := match[1]
-			isOptional := strings.Contains(line, "# Optional") || strings.Contains(line, "⚠️ Advanced") || 
-			             strings.HasPrefix(line, "#") && inRequiredSection == false
-			
+			isOptional := strings.Contains(line, "# Optional") || strings.Contains(line, "⚠️ Advanced") ||
+				strings.HasPrefix(line, "#") && inRequiredSection == false
+
 			vars[varName] = varInfo{optional: isOptional}
-			
+
 			if inRequiredSection || requiredPattern.MatchString(line) {
 				required = append(required, varName)
 			}
-			
+
 			if secretPattern.MatchString(varName) || inSecretSection {
 				secrets = append(secrets, varName)
 			}
 		}
-		
+
 		inRequiredSection = false
 		inSecretSection = false
 	}
@@ -179,10 +193,22 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 	for _, v := range required {
 		requiredSet[v] = true
 	}
-	
-	// VAULT_USER is required (breaking change in 1.1.0)
-	if !requiredSet["VAULT_USER"] {
-		required = append(required, "VAULT_USER")
+
+	// Synchronize with Python validation in src/orchestrator/config.py::_ensure_required_variables()
+	// These variables are required at runtime and must be present and non-empty.
+	// When modifying this list, update the Python implementation to match.
+	explicitRequired := []string{
+		"VAULT_USER",
+		"VAULT_PASS",
+		"VAULT_SECRET_KEY",
+		"DOCKER_PROXY_TOKEN",
+	}
+
+	for _, v := range explicitRequired {
+		if !requiredSet[v] {
+			required = append(required, v)
+			requiredSet[v] = true
+		}
 	}
 
 	return vars, required, secrets, nil
@@ -199,7 +225,7 @@ func parseEnv(path string) (map[string]string, error) {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Skip comments and empty lines
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue

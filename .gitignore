@@ -20,7 +20,7 @@ Thumbs.db
 .idea/
 
 # Development
+*cache*
 .coverage
 htmlcov/
 .tox/
-.ruff_cache/

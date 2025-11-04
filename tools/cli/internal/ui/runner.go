@@ -105,7 +105,11 @@ func (r *Runner) stop(writer *actionWriter) error {
 }
 
 func (r *Runner) build(writer *actionWriter) error {
-	return internal.RunBuildScriptWithWriter(writer, writer, r.envFile)
+	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
+		return err
+	}
+	writer.emit("🔨 Rebuilding Docker stack...")
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--build", "--remove-orphans")
 }
 
 func (r *Runner) wizard(writer *actionWriter) error {
@@ -162,7 +166,7 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 		line := strings.TrimSpace(strings.TrimSuffix(data[:idx], "\r"))
 		// Clean the line of control characters
 		line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
-		
+
 		// Ignore empty lines or problematic isolated characters
 		if line != "" {
 			// Filter isolated characters that are likely artifacts

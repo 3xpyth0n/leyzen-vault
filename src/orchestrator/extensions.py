@@ -1,6 +1,6 @@
 """Application extensions."""
 
-from flask_wtf import CSRFProtect
+from flask_wtf import CSRFProtect  # type: ignore[import-not-found]
 
 csrf = CSRFProtect()
 

@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 # Enable pipefail when supported so failures in pipelines surface immediately.
+# Note: set -o pipefail is not POSIX, but we gracefully handle shells that don't
+# support it by redirecting stderr to /dev/null. This ensures compatibility
+# across different /bin/sh implementations while enabling the feature when available.
+# shellcheck disable=SC3040
 if set -o pipefail 2>/dev/null; then
   :
 fi
@@ -17,6 +21,10 @@ if [ "$(id -u)" -eq 0 ]; then
   can_drop_privileges=true
   for dir in /config /database /srv; do
     tmp_path="$dir/.filebrowser-priv-check-$$"
+    # Note: Single quotes in the sh -c command are intentional to prevent
+    # variable expansion in the current shell context. The $1 is expanded by
+    # the inner sh process when it receives "$tmp_path" as its argument.
+    # shellcheck disable=SC2016
     if ! su-exec filebrowser sh -c 'tmp="$1"; touch "$tmp" 2>/dev/null && rm -f "$tmp" 2>/dev/null' sh "$tmp_path"; then
       log "Unable to confirm write access to $dir as 'filebrowser'; continuing as root."
       can_drop_privileges=false

@@ -8,27 +8,34 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from uvicorn.middleware.wsgi import WSGIMiddleware
+from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
 
-# Bootstrap minimal to enable importing common.constants
+# Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_SRC_DIR = _REPO_ROOT / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+# Note: This local calculation is ONLY needed for the initial bootstrap before
+# common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
+# In Docker, /common is mounted as a volume, so we check that first.
+_COMMON_DIR = Path("/common")
+if _COMMON_DIR.exists() and _COMMON_DIR.is_dir():
+    # Docker environment: use the mounted /common volume
+    # Add / to sys.path so that 'common' can be imported as a package
+    root_path = str(_COMMON_DIR.parent)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+else:
+    # Local development: calculate path relative to this file
+    _SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
+    if str(_SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(_SRC_DIR))
 
-from common.path_setup import bootstrap_entry_point
+from common.path_setup import bootstrap_entry_point  # noqa: E402
 
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
 # Now we can import from common.constants - use centralized values for consistency
-from common.constants import DOCKER_PROXY_DIR, REPO_ROOT, SRC_DIR
-
-# Reassign to use centralized constants (bootstrap already done, these are just for consistency)
-_REPO_ROOT = REPO_ROOT
-_SRC_DIR = SRC_DIR
+from common.constants import DOCKER_PROXY_DIR  # noqa: E402
 
 
 def _load_proxy_module() -> ModuleType:

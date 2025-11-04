@@ -8,24 +8,35 @@ import sys
 from pathlib import Path
 from typing import FrozenSet, Iterable, Pattern
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, make_response, request
 import httpx
 from werkzeug.exceptions import Forbidden, Unauthorized
 
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: These calculations are necessary before we can import common.constants
-_SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+# Note: This local calculation is ONLY needed for the initial bootstrap before
+# common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
+# In Docker, /common is mounted as a volume, so we check that first.
+_COMMON_DIR = Path("/common")
+if _COMMON_DIR.exists() and _COMMON_DIR.is_dir():
+    # Docker environment: use the mounted /common volume
+    # Add / to sys.path so that 'common' can be imported as a package
+    root_path = str(_COMMON_DIR.parent)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+else:
+    # Local development: calculate path relative to this file
+    _SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
+    if str(_SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(_SRC_DIR))
 
-from common.path_setup import bootstrap_entry_point
+from common.path_setup import bootstrap_entry_point  # noqa: E402
 
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
-from common.constants import (
+from common.constants import (  # noqa: E402
     DOCKER_PROXY_PORT_DEFAULT,
     DOCKER_SOCKET_PATH_DEFAULT,
 )
@@ -33,7 +44,7 @@ from common.constants import (
 # IMPORTANT: Always use parse_container_names from common.env
 # DO NOT reimplement this function inline (see CHANGELOG.md v1.1.0)
 # This ensures consistent parsing behavior across all services.
-from common.env import parse_container_names
+from common.env import parse_container_names  # noqa: E402
 
 
 logging.basicConfig(
@@ -250,10 +261,7 @@ def proxy(path: str) -> Response:
     try:
         _ensure_configured()
     except RuntimeError as error:
-        return (
-            jsonify({"error": str(error)}),
-            503,
-        )
+        return make_response(jsonify({"error": str(error)}), 503)
 
     _validate_token()
     normalized_path = request.path.lstrip("/")
@@ -299,30 +307,32 @@ def proxy(path: str) -> Response:
             method=request.method,
             url=upstream_path,
             headers=headers,
-            params=params,
+            params=params,  # type: ignore[arg-type]
             content=content,
         )
         upstream_response = proxy_client.send(prepared_request, stream=True)
     except httpx.RequestError as exc:
         logger.error("Failed to reach docker socket: %s", exc)
-        return jsonify({"error": "Docker socket unreachable"}), 502
+        return make_response(jsonify({"error": "Docker socket unreachable"}), 502)
 
     excluded_headers = {"content-length"}
-    headers = [
+    response_headers = [
         (key, value)
         for key, value in upstream_response.headers.items()
         if key.lower() not in excluded_headers
     ]
 
     if request.method == "HEAD":
-        response = Response(status=upstream_response.status_code, headers=headers)
+        response = Response(
+            status=upstream_response.status_code, headers=response_headers
+        )
         upstream_response.close()
         return response
 
     return Response(
         _stream_response(upstream_response),
         status=upstream_response.status_code,
-        headers=headers,
+        headers=response_headers,
     )
 
 
@@ -336,4 +346,8 @@ else:
 
 
 if __name__ == "__main__":
+    # nosec B104: Binding to 0.0.0.0 is intentional and safe in Docker containers.
+    # The docker-proxy runs in an isolated Docker network (control-net) and is only
+    # accessible internally by the orchestrator via bearer token authentication.
+    # External access is not exposed by Docker Compose configuration.
     app.run(host="0.0.0.0", port=DOCKER_PROXY_PORT_DEFAULT)

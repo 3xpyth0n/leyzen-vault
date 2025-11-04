@@ -3,16 +3,115 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from pathlib import Path
 from typing import Mapping, Sequence
 
-BASE_VOLUMES = OrderedDict((("orchestrator-logs", {}),))
+from common.constants import REPO_ROOT
+from common.env import resolve_env_file_name
 
-BASE_NETWORKS = OrderedDict(
+BASE_VOLUMES: OrderedDict[str, dict[str, object]] = OrderedDict(
+    (("orchestrator-logs", {}),)
+)
+
+BASE_NETWORKS: OrderedDict[str, dict[str, object]] = OrderedDict(
     (
         ("vault-net", {"driver": "bridge"}),
         ("control-net", {"driver": "bridge"}),
     )
 )
+
+
+def _parse_port(
+    env: Mapping[str, str],
+    key: str,
+    default: int,
+    min_value: int = 1,
+    max_value: int = 65535,
+) -> int:
+    """Parse a port number from environment variable with validation.
+
+    Args:
+        env: Dictionary containing environment variables.
+        key: Environment variable name.
+        default: Default value if variable is missing or invalid.
+        min_value: Minimum allowed port value (default: 1).
+        max_value: Maximum allowed port value (default: 65535).
+
+    Returns:
+        Parsed port number, clamped to valid range, or default if parsing fails.
+    """
+    raw_value = env.get(key, "").strip()
+    if not raw_value:
+        return default
+    try:
+        port = int(raw_value)
+        port = max(min_value, min(max_value, port))
+        return port
+    except ValueError:
+        return default
+
+
+def validate_ssl_certificates(
+    enable_https: bool,
+    cert_path: str | None,
+    key_path: str | None,
+    root_dir: Path = REPO_ROOT,
+) -> tuple[bool, list[str]]:
+    """Validate SSL certificate files exist if HTTPS is enabled.
+
+    Args:
+        enable_https: Whether HTTPS is enabled.
+        cert_path: Path to SSL certificate file (can be absolute or relative to root_dir).
+        key_path: Path to SSL key file (optional, can be absolute or relative to root_dir).
+        root_dir: Root directory for resolving relative paths.
+
+    Returns:
+        Tuple of (is_valid, list_of_warnings). is_valid is True if validation passes,
+        False if HTTPS is enabled but certificates are missing or invalid.
+        warnings contains human-readable warning messages.
+    """
+    if not enable_https:
+        return True, []
+
+    warnings: list[str] = []
+
+    if not cert_path or not cert_path.strip():
+        warnings.append("VAULT_ENABLE_HTTPS=true but VAULT_SSL_CERT_PATH is not set")
+        return False, warnings
+
+    cert_path_str = cert_path.strip()
+    cert_file = Path(cert_path_str)
+    if not cert_file.is_absolute():
+        cert_file = (root_dir / cert_path_str).resolve()
+    else:
+        cert_file = cert_file.resolve()
+
+    if not cert_file.exists():
+        warnings.append(f"SSL certificate file not found: {cert_file}")
+        return False, warnings
+
+    if not cert_file.is_file():
+        warnings.append(f"SSL certificate path is not a file: {cert_file}")
+        return False, warnings
+
+    # If key_path is provided, validate it too
+    if key_path and key_path.strip():
+        key_path_str = key_path.strip()
+        key_file = Path(key_path_str)
+        if not key_file.is_absolute():
+            key_file = (root_dir / key_path_str).resolve()
+        else:
+            key_file = key_file.resolve()
+
+        if not key_file.exists():
+            warnings.append(f"SSL key file not found: {key_file}")
+            return False, warnings
+
+        if not key_file.is_file():
+            warnings.append(f"SSL key path is not a file: {key_file}")
+            return False, warnings
+
+    return True, warnings
 
 
 def build_base_services(
@@ -22,20 +121,85 @@ def build_base_services(
 ) -> OrderedDict[str, dict]:
     """Return the base services for the Leyzen stack."""
 
+    # Resolve the environment file name to use in docker-compose.yml
+    env_file_name = resolve_env_file_name(REPO_ROOT)
+
     orchestrator_depends = OrderedDict(
         (container, {"condition": "service_started"}) for container in web_containers
     )
     orchestrator_depends["docker-proxy"] = {"condition": "service_healthy"}
 
+    # Read HTTPS configuration from environment
+    enable_https_raw = env.get("VAULT_ENABLE_HTTPS", "").strip().lower()
+    enable_https = enable_https_raw in ("true", "1", "yes", "on")
+    ssl_cert_path = env.get("VAULT_SSL_CERT_PATH", "").strip() or None
+    ssl_key_path = env.get("VAULT_SSL_KEY_PATH", "").strip() or None
+
+    # Build HAProxy volumes (always include base config files)
+    haproxy_volumes = [
+        "./infra/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro",
+        "./infra/haproxy/404.http:/usr/local/etc/haproxy/404.http:ro",
+        "./infra/haproxy/503.http:/usr/local/etc/haproxy/503.http:ro",
+    ]
+
+    # Parse HTTP and HTTPS port configuration from environment
+    http_port = _parse_port(env, "VAULT_HTTP_PORT", default=8080)
+    https_port = _parse_port(env, "VAULT_HTTPS_PORT", default=8443)
+
+    # Build HAProxy ports (always include HTTP port)
+    haproxy_ports = [f"{http_port}:80"]
+
+    # Add SSL certificate volumes and HTTPS port if HTTPS is enabled
+    if enable_https and ssl_cert_path:
+        # Resolve certificate paths for validation and Docker Compose
+        cert_path_input = ssl_cert_path.strip()
+        cert_path_host = Path(cert_path_input)
+        if not cert_path_host.is_absolute():
+            cert_path_host = (REPO_ROOT / cert_path_host).resolve()
+        else:
+            cert_path_host = cert_path_host.resolve()
+
+        # Convert to relative path from repo root for Docker Compose consistency
+        # If path is outside repo root, use absolute path
+        try:
+            cert_path_rel = cert_path_host.relative_to(REPO_ROOT)
+            cert_path_docker = f"./{cert_path_rel}"
+        except ValueError:
+            # Path is outside repo root, use absolute path
+            cert_path_docker = str(cert_path_host)
+
+        # Mount certificate in container (use a standard location)
+        cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
+        haproxy_volumes.append(f"{cert_path_docker}:{cert_path_container}:ro")
+
+        # If key is provided separately, mount it too
+        if ssl_key_path:
+            key_path_input = ssl_key_path.strip()
+            key_path_host = Path(key_path_input)
+            if not key_path_host.is_absolute():
+                key_path_host = (REPO_ROOT / key_path_host).resolve()
+            else:
+                key_path_host = key_path_host.resolve()
+
+            # Convert to relative path from repo root for Docker Compose consistency
+            try:
+                key_path_rel = key_path_host.relative_to(REPO_ROOT)
+                key_path_docker = f"./{key_path_rel}"
+            except ValueError:
+                # Path is outside repo root, use absolute path
+                key_path_docker = str(key_path_host)
+
+            key_path_container = "/usr/local/etc/haproxy/ssl/key.pem"
+            haproxy_volumes.append(f"{key_path_docker}:{key_path_container}:ro")
+
+        # Add HTTPS port (use configured port or default 8443:443)
+        haproxy_ports.append(f"{https_port}:443")
+
     haproxy = {
         "image": "haproxy:2.8-alpine",
         "container_name": "haproxy",
-        "volumes": [
-            "./infra/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro",
-            "./infra/haproxy/404.http:/usr/local/etc/haproxy/404.http:ro",
-            "./infra/haproxy/503.http:/usr/local/etc/haproxy/503.http:ro",
-        ],
-        "ports": ["8080:80"],
+        "volumes": haproxy_volumes,
+        "ports": haproxy_ports,
         "restart": "on-failure",
         "healthcheck": {
             "test": [
@@ -47,28 +211,6 @@ def build_base_services(
             "retries": 5,
         },
         "networks": ["vault-net"],
-    }
-
-    docker_proxy = {
-        "build": {"context": "./infra/docker-proxy"},
-        "container_name": "docker-proxy",
-        "restart": "unless-stopped",
-        "env_file": [".env"],
-        "environment": {
-            # Always use environment variable references to avoid hardcoding secrets
-            "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
-            "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
-            "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
-            "VAULT_WEB_CONTAINERS": web_container_string,
-        },
-        "healthcheck": {
-            "test": ["CMD-SHELL", "curl -f http://localhost:2375/healthz || exit 1"],
-            "interval": "1s",
-            "timeout": "10s",
-            "retries": 10,
-        },
-        "volumes": ["/var/run/docker.sock:/var/run/docker.sock:ro"],
-        "networks": ["control-net"],
     }
 
     pythonpath_entries = ["/app", "/vault_plugins", "/common"]
@@ -90,6 +232,32 @@ def build_base_services(
             seen_pythonpath.add(entry)
     pythonpath = ":".join(deduped_pythonpath)
 
+    docker_proxy = {
+        "build": {"context": "./infra/docker-proxy"},
+        "container_name": "docker-proxy",
+        "restart": "unless-stopped",
+        "env_file": [env_file_name],
+        "environment": {
+            # Always use environment variable references to avoid hardcoding secrets
+            "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
+            "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
+            "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
+            "VAULT_WEB_CONTAINERS": web_container_string,
+            "PYTHONPATH": pythonpath,
+        },
+        "healthcheck": {
+            "test": ["CMD-SHELL", "curl -f http://localhost:2375/healthz || exit 1"],
+            "interval": "1s",
+            "timeout": "10s",
+            "retries": 10,
+        },
+        "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock:ro",
+            "./src/common:/common:ro",
+        ],
+        "networks": ["control-net"],
+    }
+
     orchestrator = {
         "build": {"context": "./src/orchestrator"},
         "container_name": "orchestrator",
@@ -100,7 +268,7 @@ def build_base_services(
             "timeout": "5s",
             "retries": 10,
         },
-        "env_file": [".env"],
+        "env_file": [env_file_name],
         "environment": {
             "VAULT_ORCHESTRATOR_LOG_DIR": "/app/logs",
             "VAULT_WEB_CONTAINERS": web_container_string,
@@ -125,4 +293,9 @@ def build_base_services(
     )
 
 
-__all__ = ["BASE_VOLUMES", "BASE_NETWORKS", "build_base_services"]
+__all__ = [
+    "BASE_VOLUMES",
+    "BASE_NETWORKS",
+    "build_base_services",
+    "validate_ssl_certificates",
+]

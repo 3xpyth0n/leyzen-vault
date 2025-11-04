@@ -34,25 +34,29 @@ type EnvFile struct {
 // - Quote handling: Both strip matching single and double quotes from values
 //   - Go: Checks if first and last characters are matching quotes (" or ')
 //   - Python: `value[0] == value[-1] and value[0] in {'"', "'"}`
+//
 // - Comment handling: Both ignore lines starting with #
 //   - Go: `strings.HasPrefix(trimmed, "#")`
 //   - Python: `line.startswith("#")`
+//
 // - Empty lines: Both are ignored
 //   - Go: `trimmed == ""`
 //   - Python: `if not line`
+//
 // - Whitespace: Both trim keys and values
 //   - Go: `strings.TrimSpace(key)`, `strings.TrimSpace(value)`
 //   - Python: `key.strip()`, `value.strip()`
+//
 // - Key-value separation: Both split on first `=` only
 //   - Go: `strings.Index(line, "=")` then split
 //   - Python: `line.split("=", 1)`
 //
 // Synchronization rules:
-// 1. When modifying parsing logic in this file, update the Python implementation in
-//    src/common/env.py::read_env_file() to match
-// 2. When modifying parsing logic in Python, update this Go implementation to match
-// 3. Test both implementations with the same .env file to verify compatibility
-// 4. Document any intentional differences in behavior
+//  1. When modifying parsing logic in this file, update the Python implementation in
+//     src/common/env.py::read_env_file() to match
+//  2. When modifying parsing logic in Python, update this Go implementation to match
+//  3. Test both implementations with the same .env file to verify compatibility
+//  4. Document any intentional differences in behavior
 //
 // This duplication is necessary for linguistic reasons (Python services vs Go CLI)
 // but both implementations must stay synchronized to avoid configuration inconsistencies.
@@ -220,10 +224,10 @@ func LoadEnvTemplate(envFilePath string) (map[string]string, error) {
 	}
 
 	envDir := filepath.Dir(resolvedEnvPath)
-	
+
 	// Try to find env.template in the same directory or parent directory
 	templatePath := filepath.Join(envDir, "env.template")
-	
+
 	// If not found, try parent directory (project root)
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		parentTemplatePath := filepath.Join(filepath.Dir(envDir), "env.template")

@@ -36,29 +36,29 @@ func (m *Model) renderDashboard() string {
 		// we shouldn't get here, but force cleanup anyway
 		m.viewState = ViewDashboard
 	}
-	
+
 	header := m.renderHeader()
 	status := m.renderStatusPanel()
-	
+
 	// Temporary success message
 	successMsg := ""
 	if m.successMessage != "" {
 		successMsg = m.renderSuccessMessage()
 	}
-	
+
 	// Quit confirmation message
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
 	}
-	
+
 	help := ""
 	if m.helpVisible {
 		help = m.renderHelp()
 	} else {
 		help = m.renderHints()
 	}
-	
+
 	// ALWAYS use "dashboard" as context for the footer
 	// Explicitly force dashboard context to avoid wizard hints
 	footer := m.renderFooter("dashboard")
@@ -82,12 +82,12 @@ func (m *Model) renderDashboard() string {
 func (m *Model) renderLogsView() string {
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
-	
+
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
 	}
-	
+
 	footer := m.renderFooter("logs")
 
 	var parts []string
@@ -105,12 +105,12 @@ func (m *Model) renderLogsView() string {
 func (m *Model) renderActionView() string {
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
-	
+
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
 	}
-	
+
 	footer := m.renderFooter("action")
 
 	var parts []string
@@ -127,7 +127,7 @@ func (m *Model) renderActionView() string {
 
 func (m *Model) renderConfigView() string {
 	header := m.renderHeader()
-	
+
 	// Ensure the viewport is sized
 	if m.viewport.Height == 0 && m.height > 0 {
 		viewportHeight := m.height - 10
@@ -140,33 +140,33 @@ func (m *Model) renderConfigView() string {
 		}
 		m.viewport.Height = viewportHeight
 	}
-	
+
 	// Build the complete config content
 	configContent := m.buildConfigContent()
-	
+
 	// Preserve current Y offset before updating content
 	currentYOffset := m.viewport.YOffset
-	
+
 	// Update the viewport with the content
 	m.viewport.SetContent(configContent)
-	
+
 	// Restore Y offset to preserve scroll position
 	m.viewport.SetYOffset(currentYOffset)
-	
+
 	// Ensure the viewport is synchronized
 	m.viewport.Width = m.width - 6
 	if m.viewport.Width < 20 {
 		m.viewport.Width = 20
 	}
-	
+
 	// Render the viewport in the pane
 	config := m.theme.Pane.Render(m.viewport.View())
-	
+
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
 	}
-	
+
 	footer := m.renderFooter("config")
 
 	var parts []string
@@ -193,7 +193,7 @@ func (m *Model) buildConfigContent() string {
 
 	// Organize variables by category
 	categorized := m.categorizeConfigPairs(m.configPairs)
-	
+
 	// Category order
 	categoryOrder := []string{
 		"Vault",
@@ -206,7 +206,7 @@ func (m *Model) buildConfigContent() string {
 	}
 
 	hasPasswords := false
-	
+
 	// Display each category
 	for _, category := range categoryOrder {
 		if vars, ok := categorized[category]; ok && len(vars) > 0 {
@@ -215,20 +215,20 @@ func (m *Model) buildConfigContent() string {
 				rows = append(rows, "")
 			}
 			rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("── %s ──", category)))
-			
+
 			// Variables in this category
 			for _, key := range vars {
 				value := m.configPairs[key]
-				isPassword := strings.Contains(strings.ToLower(key), "password") || 
-				              strings.Contains(strings.ToLower(key), "secret") ||
-				              strings.Contains(strings.ToLower(key), "pass") ||
-				              strings.Contains(strings.ToLower(key), "token")
+				isPassword := strings.Contains(strings.ToLower(key), "password") ||
+					strings.Contains(strings.ToLower(key), "secret") ||
+					strings.Contains(strings.ToLower(key), "pass") ||
+					strings.Contains(strings.ToLower(key), "token")
 				isVisible := m.configShowPasswords[key]
-				
+
 				if isPassword {
 					hasPasswords = true
 				}
-				
+
 				// Hide sensitive values (passwords) unless requested
 				if isPassword && !isVisible {
 					// Display with an indicator that it can be clicked
@@ -244,7 +244,7 @@ func (m *Model) buildConfigContent() string {
 			}
 		}
 	}
-	
+
 	// Add a help line for passwords
 	if hasPasswords {
 		rows = append(rows, "")
@@ -263,26 +263,26 @@ func (m *Model) renderConfigPanel() string {
 // categorizeConfigPairs organizes variables by logical category
 func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]string {
 	categories := make(map[string][]string)
-	
+
 	// Logical order of keys by category (USER before PASSWORD, etc.)
 	vaultOrder := map[string]int{
-		"VAULT_SERVICE":              0,
-		"VAULT_USER":                 1,
-		"VAULT_PASS":                 2,
-		"VAULT_SECRET_KEY":           3,
-		"VAULT_ROTATION_INTERVAL":    4,
-		"VAULT_WEB_REPLICAS":         5,
+		"VAULT_SERVICE":               0,
+		"VAULT_USER":                  1,
+		"VAULT_PASS":                  2,
+		"VAULT_SECRET_KEY":            3,
+		"VAULT_ROTATION_INTERVAL":     4,
+		"VAULT_WEB_REPLICAS":          5,
 		"VAULT_SESSION_COOKIE_SECURE": 6,
 	}
 	dockerProxyOrder := map[string]int{
-		"DOCKER_PROXY_URL":      0,
-		"DOCKER_PROXY_TOKEN":    1,
-		"DOCKER_PROXY_TIMEOUT":  2,
+		"DOCKER_PROXY_URL":       0,
+		"DOCKER_PROXY_TOKEN":     1,
+		"DOCKER_PROXY_TIMEOUT":   2,
 		"DOCKER_PROXY_LOG_LEVEL": 3,
 	}
 	filebrowserOrder := map[string]int{
 		"FILEBROWSER_VERSION":        0,
-		"FILEBROWSER_ADMIN_USER":    1,
+		"FILEBROWSER_ADMIN_USER":     1,
 		"FILEBROWSER_ADMIN_PASSWORD": 2,
 	}
 	paperlessOrder := map[string]int{
@@ -296,54 +296,55 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		// Deprecated keys: These are kept for backward compatibility with old .env files
 		// that may still use the old naming convention (without VAULT_ prefix).
 		// New configurations should use VAULT_CSP_REPORT_MAX_SIZE and VAULT_CSP_REPORT_RATE_LIMIT.
-		// TODO: Remove these deprecated keys in a future major version after ensuring
-		//       all deployments have migrated to the VAULT_ prefixed versions.
+		// TODO: Remove these deprecated keys in a future major version (e.g., v2.0.0) after ensuring
+		//       all deployments have migrated to the VAULT_ prefixed versions. This is a breaking
+		//       change that should be tracked in CHANGELOG.md when implemented.
 		"CSP_REPORT_MAX_SIZE":   0, // Deprecated: use VAULT_CSP_REPORT_MAX_SIZE
 		"CSP_REPORT_RATE_LIMIT": 1, // Deprecated: use VAULT_CSP_REPORT_RATE_LIMIT
 	}
 	proxyOrder := map[string]int{
 		"PROXY_TRUST_COUNT": 0,
 	}
-	
+
 	// Collect all keys
 	allKeys := make([]string, 0, len(pairs))
 	for k := range pairs {
 		allKeys = append(allKeys, k)
 	}
-	
+
 	// Categorize each key
 	for _, key := range allKeys {
 		category := ""
-		
+
 		if strings.HasPrefix(key, "VAULT_") {
 			category = "Vault"
 		} else if strings.HasPrefix(key, "DOCKER_PROXY_") {
 			category = "Docker Proxy"
-		                } else if strings.HasPrefix(key, "FILEBROWSER_") {
-                        category = "Filebrowser"
-                } else if strings.HasPrefix(key, "PAPERLESS_") {
-                        category = "Paperless"
-                } else if strings.HasPrefix(key, "VAULT_CSP_") {
-                        category = "CSP"
-                } else if strings.HasPrefix(key, "CSP_") {
-                        category = "CSP"
-                } else if strings.HasPrefix(key, "PROXY_") {
-                        category = "Proxy"
+		} else if strings.HasPrefix(key, "FILEBROWSER_") {
+			category = "Filebrowser"
+		} else if strings.HasPrefix(key, "PAPERLESS_") {
+			category = "Paperless"
+		} else if strings.HasPrefix(key, "VAULT_CSP_") {
+			category = "CSP"
+		} else if strings.HasPrefix(key, "CSP_") {
+			category = "CSP"
+		} else if strings.HasPrefix(key, "PROXY_") {
+			category = "Proxy"
 		} else {
 			category = "General"
 		}
-		
+
 		if categories[category] == nil {
 			categories[category] = make([]string, 0)
 		}
-		
+
 		categories[category] = append(categories[category], key)
 	}
-	
+
 	// Sort each category according to the defined order
 	for category, keys := range categories {
 		var orderMap map[string]int
-		
+
 		// Determine the order map according to the category
 		if category == "Vault" {
 			orderMap = vaultOrder
@@ -360,13 +361,13 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		} else {
 			orderMap = nil
 		}
-		
+
 		if orderMap != nil {
 			// Sort according to defined order, then alphabetically for others
 			sort.Slice(keys, func(i, j int) bool {
 				orderI, hasOrderI := orderMap[keys[i]]
 				orderJ, hasOrderJ := orderMap[keys[j]]
-				
+
 				if hasOrderI && hasOrderJ {
 					return orderI < orderJ
 				}
@@ -383,22 +384,22 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 			// For General, sort alphabetically
 			sort.Strings(keys)
 		}
-		
+
 		categories[category] = keys
 	}
-	
+
 	return categories
 }
 
 func (m *Model) renderWizardView() string {
 	header := m.renderHeader()
 	wizard := m.renderWizardPanel()
-	
+
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
 	}
-	
+
 	footer := m.renderFooter("wizard")
 
 	var parts []string
@@ -419,123 +420,123 @@ func (m *Model) renderWizardPanel() string {
 	}
 
 	var rows []string
-	
+
 	// Title
 	rows = append(rows, m.theme.Accent.Render("Interactive Configuration Wizard"))
-	
+
 	// Progress (e.g., "Variable 1 of 10")
 	progress := fmt.Sprintf("Variable %d of %d", m.wizardIndex+1, len(m.wizardFields))
 	rows = append(rows, m.theme.Subtitle.Render(progress))
 	rows = append(rows, "")
-	
+
 	// Display ONE field at a time
 	field := m.wizardFields[m.wizardIndex]
 	label := field.Key
 	if field.IsPassword {
 		label += " (password, hidden)"
 	}
-	
+
 	labelText := m.theme.Accent.Bold(true).Render(fmt.Sprintf("%s:", label))
 	rows = append(rows, labelText)
 	rows = append(rows, "")
-	
+
 	// Input field with focus
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("81")).
 		Padding(0, 1).
 		Width(60)
-	
+
 	inputView := field.Input.View()
 	rows = append(rows, inputStyle.Render(inputView))
 	rows = append(rows, "")
-	
+
 	// Help message
 	if field.IsPassword {
 		rows = append(rows, m.theme.Subtitle.Render("This is a password field. Your input will be hidden."))
 		rows = append(rows, "")
 	}
-	
+
 	rows = append(rows, m.theme.Subtitle.Render("All fields are optional. Leave empty to keep existing value."))
 	rows = append(rows, "")
-	
+
 	if m.wizardError != "" {
 		rows = append(rows, m.theme.ErrorStatus.Render("❌ "+m.wizardError))
 		rows = append(rows, "")
 	}
-	
+
 	// Navigation and action buttons
 	rows = append(rows, "")
 	rows = append(rows, strings.Repeat("─", 60))
 	rows = append(rows, "")
-	
-		// Previous button (left)
-		prevDisabled := m.wizardIndex == 0
-		var prevButton string
-		if prevDisabled {
-			prevButton = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("238")).
-				Padding(0, 2).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("238")).
-				Render("← Previous")
-		} else {
-			prevButton = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("81")).
-				Bold(true).
-				Padding(0, 2).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("81")).
-				Render("← Previous (←)")
-		}
-		
-		// Next button (right)
-		nextDisabled := m.wizardIndex >= len(m.wizardFields)-1
-		var nextButton string
-		if nextDisabled {
-			nextButton = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("238")).
-				Padding(0, 2).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("238")).
-				Render("Next → (→)")
-		} else {
-			nextButton = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("81")).
-				Bold(true).
-				Padding(0, 2).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("81")).
-				Render("Next → (→)")
-		}
-		
-		// Save button
-		saveButton := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")).
+
+	// Previous button (left)
+	prevDisabled := m.wizardIndex == 0
+	var prevButton string
+	if prevDisabled {
+		prevButton = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("238")).
+			Padding(0, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("238")).
+			Render("← Previous")
+	} else {
+		prevButton = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("81")).
 			Bold(true).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("42")).
-			Render("✓ Save (Ctrl+S)")
-		
-		// Cancel button
-		cancelButton := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
+			BorderForeground(lipgloss.Color("81")).
+			Render("← Previous (←)")
+	}
+
+	// Next button (right)
+	nextDisabled := m.wizardIndex >= len(m.wizardFields)-1
+	var nextButton string
+	if nextDisabled {
+		nextButton = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("238")).
+			Padding(0, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("238")).
+			Render("Next → (→)")
+	} else {
+		nextButton = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("81")).
 			Bold(true).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Render("✗ Cancel (Esc)")
-		
-		// First line: Previous and Next
-		navButtons := lipgloss.JoinHorizontal(lipgloss.Left, prevButton, "  ", nextButton)
-		rows = append(rows, navButtons)
-		rows = append(rows, "")
-		
-		// Second line: Save and Cancel
+			BorderForeground(lipgloss.Color("81")).
+			Render("Next → (→)")
+	}
+
+	// Save button
+	saveButton := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("42")).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("42")).
+		Render("✓ Save (Ctrl+S)")
+
+	// Cancel button
+	cancelButton := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Render("✗ Cancel (Esc)")
+
+	// First line: Previous and Next
+	navButtons := lipgloss.JoinHorizontal(lipgloss.Left, prevButton, "  ", nextButton)
+	rows = append(rows, navButtons)
+	rows = append(rows, "")
+
+	// Second line: Save and Cancel
 	actionButtons := lipgloss.JoinHorizontal(lipgloss.Left, saveButton, "  ", cancelButton)
 	rows = append(rows, actionButtons)
-	
+
 	return m.theme.Pane.Render(strings.Join(rows, "\n"))
 }
 
@@ -588,7 +589,7 @@ func (m *Model) renderLogPanel() string {
 	if m.viewState == ViewDashboard {
 		return m.theme.Pane.Render("No activity yet. Use r to restart or s to stop the stack.")
 	}
-	
+
 	content := m.viewport.View()
 	if strings.TrimSpace(content) == "" {
 		content = "No activity yet. Use r to restart or s to stop the stack."
@@ -613,7 +614,7 @@ func (m *Model) renderSuccessMessage() string {
 
 func (m *Model) renderFooter(context string) string {
 	var hints []string
-	
+
 	switch context {
 	case "dashboard":
 		hints = []string{
@@ -660,7 +661,7 @@ func (m *Model) renderFooter(context string) string {
 			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 		}
 	}
-	
+
 	separator := m.theme.HelpDesc.Render(" • ")
 	return m.theme.Footer.Render(strings.Join(hints, separator))
 }

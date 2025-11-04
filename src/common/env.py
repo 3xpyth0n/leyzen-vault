@@ -98,6 +98,42 @@ def parse_container_names(raw_value: str | Iterable[str] | None) -> list[str]:
     return names
 
 
+def resolve_env_file_name(root_dir: Path | None = None) -> str:
+    """Resolve the environment file name for use in docker-compose.yml.
+
+    This function determines the filename (not full path) of the environment file
+    to use in docker-compose.yml's env_file entries. It follows the same logic
+    as load_env_with_override() but returns only the filename.
+
+    Behavior:
+    - If LEYZEN_ENV_FILE is set and non-empty, return its filename
+    - Otherwise, return ".env"
+
+    Args:
+        root_dir: Root directory for resolving relative paths.
+                  If None, uses current working directory.
+
+    Returns:
+        Filename of the environment file (e.g., ".env" or "custom.env")
+    """
+    if root_dir is None:
+        root_dir = Path.cwd()
+
+    env_override = os.environ.get("LEYZEN_ENV_FILE", "").strip()
+
+    if env_override:
+        # Use the override file's name
+        env_path = Path(env_override).expanduser()
+        if not env_path.is_absolute():
+            env_path = (root_dir / env_path).resolve()
+        else:
+            env_path = env_path.resolve()
+        return env_path.name
+    else:
+        # Default to .env
+        return ".env"
+
+
 def load_env_with_override(root_dir: Path | None = None) -> dict[str, str]:
     """Load environment file with standardized LEYZEN_ENV_FILE override logic.
 

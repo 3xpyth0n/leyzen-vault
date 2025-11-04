@@ -57,8 +57,8 @@ func init() {
 			}
 
 			// One-space padding on each side inside cells
-			keyWidth := maxKey + 2   // visible width of key cell content (including internal spaces)
-			valWidth := maxVal + 2   // visible width of value cell content (including internal spaces)
+			keyWidth := maxKey + 2 // visible width of key cell content (including internal spaces)
+			valWidth := maxVal + 2 // visible width of value cell content (including internal spaces)
 
 			// Frame lines
 			topBorder := "╭" + strings.Repeat("─", keyWidth) + "┬" + strings.Repeat("─", valWidth) + "╮"
@@ -131,4 +131,3 @@ func padCell(raw string, visibleWidth int, colored string) string {
 	}
 	return " " + colored
 }
-

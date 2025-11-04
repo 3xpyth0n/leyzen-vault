@@ -27,7 +27,7 @@ from flask import (
 )
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont  # type: ignore[import-not-found]
 except (
     ModuleNotFoundError
 ) as exc:  # pragma: no cover - fallback path for optional dependency
@@ -78,7 +78,10 @@ def _generate_captcha_text(length: int) -> str:
 
 
 def _random_color(min_value: int = 0, max_value: int = 255) -> tuple[int, int, int]:
-    return tuple(random.randint(min_value, max_value) for _ in range(3))
+    r = random.randint(min_value, max_value)
+    g = random.randint(min_value, max_value)
+    b = random.randint(min_value, max_value)
+    return (r, g, b)
 
 
 def _load_captcha_font(size: int = CAPTCHA_FONT_SIZE) -> ImageFont.ImageFont:
@@ -191,9 +194,8 @@ def _build_svg_captcha(text: str, width: int, height: int) -> tuple[bytes, str]:
     svg_content = "".join(svg_lines).encode("utf-8")
     global _svg_warning_emitted
     if _PIL_IMPORT_ERROR is not None and not _svg_warning_emitted:
-        _logger().warning(
-            "Pillow not available, serving SVG captcha fallback. Install Pillow to restore PNG captcha rendering: %s",
-            _PIL_IMPORT_ERROR,
+        _logger().log(
+            f"Pillow not available, serving SVG captcha fallback. Install Pillow to restore PNG captcha rendering: {_PIL_IMPORT_ERROR}"
         )
         _svg_warning_emitted = True
     return svg_content, "image/svg+xml"

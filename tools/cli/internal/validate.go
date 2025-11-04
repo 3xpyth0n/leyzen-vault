@@ -14,12 +14,12 @@ const (
 type valueValidator func(string) (string, error)
 
 var keyValidators = map[string]valueValidator{
-	"VAULT_SERVICE":          validateNonEmpty,
-	"VAULT_WEB_REPLICAS":     validatePositiveInt,
-	"VAULT_PASS":             validatePassword,
+	"VAULT_SERVICE":           validateNonEmpty,
+	"VAULT_WEB_REPLICAS":      validatePositiveInt,
+	"VAULT_PASS":              validatePassword,
 	"VAULT_ROTATION_INTERVAL": validatePositiveInt,
-	"VAULT_SECRET_KEY":       validateSecretLength,
-	"DOCKER_PROXY_TOKEN":     validateSecretLength,
+	"VAULT_SECRET_KEY":        validateSecretLength,
+	"DOCKER_PROXY_TOKEN":      validateSecretLength,
 }
 
 // ValidateEnvValue validates and sanitizes a value for the given key.

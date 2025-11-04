@@ -17,14 +17,16 @@ def resolve_backend_port(env: Mapping[str, str], plugin: VaultServicePlugin) -> 
         except ValueError:
             port = None
         else:
-            if 1 <= port <= 65535:
+            if port is not None and 1 <= port <= 65535:
                 return port
     plugin_port = getattr(plugin, "web_port", 80)
     try:
         port = int(plugin_port)
     except (TypeError, ValueError):
         return 80
-    return port if 1 <= port <= 65535 else 80
+    if port is not None and 1 <= port <= 65535:
+        return port
+    return 80
 
 
 def _format_backend_servers(containers: Sequence[str], port: int) -> list[str]:
@@ -37,10 +39,29 @@ def _format_backend_servers(containers: Sequence[str], port: int) -> list[str]:
 
 
 def render_haproxy_config(
-    plugin: VaultServicePlugin, containers: Sequence[str], port: int
+    plugin: VaultServicePlugin,
+    containers: Sequence[str],
+    port: int,
+    *,
+    enable_https: bool = False,
+    ssl_cert_path: str | None = None,
+    ssl_key_path: str | None = None,
 ) -> str:
-    """Return the HAProxy configuration for the supplied plugin."""
+    """Return the HAProxy configuration for the supplied plugin.
 
+    Args:
+        plugin: The active vault service plugin.
+        containers: List of container names for the backend servers.
+        port: Backend port number.
+        enable_https: If True, enable HTTPS frontend on port 443.
+        ssl_cert_path: Path to SSL certificate file (PEM format, can be combined cert+key).
+                      Used only if enable_https is True.
+        ssl_key_path: Path to SSL private key file (if separate from cert).
+                      Used only if enable_https is True and cert is not combined.
+
+    Returns:
+        HAProxy configuration string.
+    """
     backend_name = f"{plugin.name}_backend"
     server_lines = _format_backend_servers(containers, port)
     healthcheck_path = plugin.backend_healthcheck_path
@@ -97,14 +118,48 @@ def render_haproxy_config(
         "",
         f"    default_backend {backend_name}",
         "",
-        f"backend {backend_name}",
-        "    balance roundrobin",
-        "    option http-server-close",
-        "    option forwardfor header X-Forwarded-For if-none",
-        "    default-server resolvers docker init-addr none check",
-        "    option httpchk",
-        http_check_line,
     ]
+
+    # Add HTTPS frontend if enabled
+    if enable_https and ssl_cert_path:
+        # Determine SSL bind configuration
+        # HAProxy supports PEM files with combined cert+key, or separate cert/key files
+        if ssl_key_path:
+            # Separate cert and key files
+            ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path} key {ssl_key_path}"
+        else:
+            # Combined PEM file (cert+key)
+            ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path}"
+
+        lines.extend(
+            [
+                "# HTTPS frontend - SSL/TLS termination",
+                "frontend https_front",
+                ssl_bind,
+                "    errorfiles myerrors",
+                "    http-response return status 404 errorfile /usr/local/etc/haproxy/404.http if { status 404 }",
+                "    http-request set-header X-Forwarded-Proto https",
+                '    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"',
+                "",
+                "    acl path_orchestrator path_beg /orchestrator",
+                "    use_backend orchestrator_backend if path_orchestrator",
+                "",
+                f"    default_backend {backend_name}",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            f"backend {backend_name}",
+            "    balance roundrobin",
+            "    option http-server-close",
+            "    option forwardfor header X-Forwarded-For if-none",
+            "    default-server resolvers docker init-addr none check",
+            "    option httpchk",
+            http_check_line,
+        ]
+    )
     lines.extend(server_lines)
     lines.extend(
         [

@@ -15,6 +15,9 @@ from pathlib import Path
 # - parent = common/
 # - parent.parent = src/
 # - parent.parent.parent = repo root
+# Note: We cannot import REPO_ROOT from common.constants here because this module
+# is used during bootstrap before common.constants can be imported. After bootstrap
+# completes, code should prefer using REPO_ROOT from common.constants for consistency.
 _REPO_ROOT_CACHE: Path | None = None
 
 
@@ -24,6 +27,15 @@ def _get_repo_root() -> Path:
     if _REPO_ROOT_CACHE is None:
         _REPO_ROOT_CACHE = Path(__file__).resolve().parent.parent.parent
     return _REPO_ROOT_CACHE
+
+
+def get_src_dir() -> Path:
+    """Get the src/ directory path, using the cached repository root.
+
+    This function can be used after path_setup has been imported to get
+    the src directory path without recalculating the repository root.
+    """
+    return _get_repo_root() / "src"
 
 
 def bootstrap_src_path() -> None:
@@ -141,4 +153,5 @@ __all__ = [
     "bootstrap_entry_point",
     "bootstrap_src_path",
     "setup_python_paths",
+    "get_src_dir",
 ]

@@ -15,17 +15,28 @@ from flask import Flask
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: These calculations are necessary before we can import common.constants
-_SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+# Note: This local calculation is ONLY needed for the initial bootstrap before
+# common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
+# In Docker, /common is mounted as a volume, so we check that first.
+_COMMON_DIR = Path("/common")
+if _COMMON_DIR.exists() and _COMMON_DIR.is_dir():
+    # Docker environment: use the mounted /common volume
+    # Add / to sys.path so that 'common' can be imported as a package
+    root_path = str(_COMMON_DIR.parent)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+else:
+    # Local development: calculate path relative to this file
+    _SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
+    if str(_SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(_SRC_DIR))
 
-from common.path_setup import bootstrap_entry_point
+from common.path_setup import bootstrap_entry_point  # noqa: E402
 
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
-from common.exceptions import ConfigurationError
+from common.exceptions import ConfigurationError  # noqa: E402
 
 
 def _load_orchestrator_package() -> ModuleType:
@@ -35,17 +46,26 @@ def _load_orchestrator_package() -> ModuleType:
         # When executed from the project root the package can be imported normally.
         return importlib.import_module("orchestrator")
     except ModuleNotFoundError:
-        # Use the shared ORCHESTRATOR_DIR constant from common.constants
-        from common.constants import ORCHESTRATOR_DIR
+        # Fallback: check if we're in Docker (code mounted at /app)
+        current_dir = Path(__file__).resolve().parent
+        init_py = current_dir / "__init__.py"
 
-        init_py = ORCHESTRATOR_DIR / "__init__.py"
-        if not init_py.exists():  # pragma: no cover - defensive guard
-            raise
+        if init_py.exists():
+            # Docker environment: use /app/__init__.py directly
+            orchestrator_dir = current_dir
+        else:
+            # Local development: use ORCHESTRATOR_DIR
+            from common.constants import ORCHESTRATOR_DIR
+
+            orchestrator_dir = ORCHESTRATOR_DIR
+            init_py = orchestrator_dir / "__init__.py"
+            if not init_py.exists():  # pragma: no cover - defensive guard
+                raise
 
         spec = importlib.util.spec_from_file_location(
             "orchestrator",
             init_py,
-            submodule_search_locations=[str(ORCHESTRATOR_DIR)],
+            submodule_search_locations=[str(orchestrator_dir)],
         )
         if spec is None or spec.loader is None:  # pragma: no cover - defensive guard
             raise
@@ -131,6 +151,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     settings = real_app.config["SETTINGS"]
+    # nosec B104: Binding to 0.0.0.0 is intentional and safe in Docker containers.
+    # The orchestrator runs in an isolated Docker network and is only accessible
+    # internally. External access is controlled by HAProxy which exposes only
+    # the configured ports with proper security headers.
     real_app.run(host="0.0.0.0", port=settings.orchestrator_port, debug=False)
 
 

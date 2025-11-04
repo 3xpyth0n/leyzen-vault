@@ -83,4 +83,3 @@ func init() {
 
 	rootCmd.AddCommand(statusCmd)
 }
-

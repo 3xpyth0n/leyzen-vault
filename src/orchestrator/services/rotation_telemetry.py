@@ -31,7 +31,7 @@ class RotationTelemetry:
             ROTATION_METRICS_MIN_INTERVAL, settings.sse_stream_interval_ms / 1000.0
         )
         self._metrics_history_window_seconds = TELEMETRY_METRICS_WINDOW_SECONDS
-        self._metrics_history = deque(
+        self._metrics_history: deque[dict[str, object]] = deque(
             maxlen=self._calculate_history_maxlen(
                 self._metrics_history_window_seconds,
                 metrics_interval,
@@ -51,7 +51,7 @@ class RotationTelemetry:
         self._snapshot_lock = Lock()
 
         self._container_history_window_seconds = TELEMETRY_CONTAINER_WINDOW_SECONDS
-        self._container_history = deque(
+        self._container_history: deque[dict[str, object]] = deque(
             maxlen=self._calculate_history_maxlen(
                 self._container_history_window_seconds,
                 snapshot_interval,

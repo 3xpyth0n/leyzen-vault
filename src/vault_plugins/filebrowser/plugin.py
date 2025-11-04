@@ -6,6 +6,8 @@ from collections import OrderedDict
 from copy import deepcopy
 from typing import Mapping
 
+from common.constants import REPO_ROOT
+from common.env import resolve_env_file_name
 from .. import VaultServicePlugin
 
 
@@ -18,6 +20,8 @@ class FilebrowserPlugin(VaultServicePlugin):
 
     def build_compose(self, env: Mapping[str, str]) -> Mapping[str, object]:
         self.setup(env)
+        # Resolve the environment file name to use in docker-compose.yml
+        env_file_name = resolve_env_file_name(REPO_ROOT)
         base_service = {
             "build": {
                 "context": "./infra/filebrowser",
@@ -28,7 +32,7 @@ class FilebrowserPlugin(VaultServicePlugin):
                 },
             },
             "image": "leyzen/filebrowser:latest",
-            "env_file": [".env"],
+            "env_file": [env_file_name],
             "environment": {
                 # Always use environment variable references to avoid hardcoding secrets
                 "FILEBROWSER_ADMIN_USER": "${FILEBROWSER_ADMIN_USER:?Set FILEBROWSER_ADMIN_USER in .env}",
@@ -59,7 +63,7 @@ class FilebrowserPlugin(VaultServicePlugin):
             service_def["container_name"] = container
             services[container] = service_def
 
-        volumes = OrderedDict(
+        volumes: OrderedDict[str, dict[str, object]] = OrderedDict(
             (
                 ("filebrowser-data", {}),
                 ("filebrowser-database", {}),

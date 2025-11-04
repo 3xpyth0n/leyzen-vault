@@ -1,5 +1,7 @@
 # Leyzen Vault Architecture
 
+**Note for developers**: This document provides detailed technical architecture documentation for developers and contributors. For a user-friendly overview, see the [GitHub Wiki Architecture page](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture).
+
 This document describes the high-level architecture of Leyzen Vault, including service components, startup order, container rotation flow, and inter-component communication.
 
 ## Overview
@@ -154,7 +156,7 @@ sequenceDiagram
 
 ### Rotation Details
 
-1. **Timing**: Rotation occurs at intervals defined by `VAULT_ROTATION_INTERVAL_SECONDS`
+1. **Timing**: Rotation occurs at intervals defined by `VAULT_ROTATION_INTERVAL`
 2. **Health Checks**: New containers must pass health checks before traffic is switched
 3. **Graceful Shutdown**: Old containers are stopped after a grace period
 4. **Metrics**: Rotation events and container statistics are logged and exposed via SSE

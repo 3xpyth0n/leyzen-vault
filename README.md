@@ -97,3 +97,13 @@ Source code is available under the Business Source License 1.1 (BSL 1.1). Commer
 - File bugs or feature requests in [GitHub Issues](https://github.com/3xpyth0n/leyzen-vault/issues).
 - Security reports should be submitted privately per [`docs/SECURITY.md`](docs/SECURITY.md).
 - For release history, consult [`CHANGELOG.md`](CHANGELOG.md).
+
+## Repository Structure
+
+The repository is organized as follows:
+
+- **`leyzen-vault/`** - Main Leyzen Vault project (core moving-target defense orchestrator)
+  - `src/` - Python source code (orchestrator, compose builder, plugins, common utilities)
+  - `infra/` - Infrastructure components (HAProxy config, Docker proxy, filebrowser entrypoint)
+  - `tools/cli/` - Go CLI source code (`leyzenctl`)
+  - `docs/` - Developer documentation and policies

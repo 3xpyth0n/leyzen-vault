@@ -13,6 +13,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Migrated orchestrator Docker proxy client from `requests` to `httpx` for consistency across HTTP libraries.
 - Updated all TUI footer hints and help messages to display CTRL+C instead of 'q' for quitting the application.
 
+### Added
+
+- Added deprecation warnings in `leyzenctl config validate` for deprecated CSP variables (`CSP_REPORT_MAX_SIZE`, `CSP_REPORT_RATE_LIMIT`). Users are advised to migrate to `VAULT_CSP_REPORT_MAX_SIZE` and `VAULT_CSP_REPORT_RATE_LIMIT`. Support for deprecated variables will be removed in a future major version.
+- Added optional HTTPS/SSL support for HAProxy through environment variables (`VAULT_ENABLE_HTTPS`, `VAULT_SSL_CERT_PATH`, `VAULT_SSL_KEY_PATH`). When enabled, HAProxy listens on port 443 (container) and terminates TLS before forwarding to backend services. Certificate files are validated at build time with warnings displayed if files are missing. Supports both combined PEM files (cert+key) and separate certificate/key files.
+- Added configurable HTTP and HTTPS port mapping for HAProxy via `VAULT_HTTP_PORT` and `VAULT_HTTPS_PORT` environment variables. Defaults to 8080 for HTTP and 8443 for HTTPS to avoid conflicts with standard ports, but can be customized to use standard ports (80/443) or any other valid port range (1-65535). Ports are validated and clamped to valid ranges during configuration generation.
+
 ### Fixed
 
 - Removed unused `VAULT_DOCKER_NETWORK` configuration variable from wizard prompts and validators.

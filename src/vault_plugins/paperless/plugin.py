@@ -6,6 +6,8 @@ from collections import OrderedDict
 from urllib.parse import urlparse
 from typing import Mapping
 
+from common.constants import REPO_ROOT
+from common.env import resolve_env_file_name
 from .. import VaultServicePlugin
 
 
@@ -27,6 +29,8 @@ class PaperlessPlugin(VaultServicePlugin):
 
     def build_compose(self, env: Mapping[str, str]) -> Mapping[str, object]:
         self.setup(env)
+        # Resolve the environment file name to use in docker-compose.yml
+        env_file_name = resolve_env_file_name(REPO_ROOT)
         postgres_service = {
             "image": env.get("PAPERLESS_POSTGRES_IMAGE", "postgres:15-alpine"),
             "container_name": "paperless_postgres",
@@ -85,7 +89,7 @@ class PaperlessPlugin(VaultServicePlugin):
                 "PAPERLESS_IMAGE", "ghcr.io/paperless-ngx/paperless-ngx:latest"
             ),
             "restart": "unless-stopped",
-            "env_file": [".env"],
+            "env_file": [env_file_name],
             "environment": paperless_env,
             "depends_on": {
                 "paperless_postgres": {"condition": "service_healthy"},
@@ -117,7 +121,7 @@ class PaperlessPlugin(VaultServicePlugin):
             service_def["container_name"] = name
             services[name] = service_def
 
-        volumes = OrderedDict(
+        volumes: OrderedDict[str, dict[str, object]] = OrderedDict(
             (
                 ("paperless-postgres", {}),
                 ("paperless-redis", {}),

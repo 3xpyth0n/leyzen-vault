@@ -148,17 +148,17 @@ class RotationService:
                     managed_containers.append(name)
 
             if proxy_error is not None:
-                now = time.monotonic()
-                if now >= next_wait_log_time:
+                monotonic_now = time.monotonic()
+                if monotonic_now >= next_wait_log_time:
                     self._logger.log(
                         "[WAIT] Docker proxy unavailable during rotation startup: "
                         f"{proxy_error}. Retrying in {retry_interval:.0f}s."
                     )
-                    next_wait_log_time = now + wait_log_interval
+                    next_wait_log_time = monotonic_now + wait_log_interval
 
                 delay = retry_interval
-                if now < next_wait_log_time:
-                    delay = min(delay, max(0.0, next_wait_log_time - now))
+                if monotonic_now < next_wait_log_time:
+                    delay = min(delay, max(0.0, next_wait_log_time - monotonic_now))
 
                 time.sleep(delay)
                 continue
@@ -213,14 +213,14 @@ class RotationService:
         self.last_rotation_time = datetime.now(self._settings.timezone)
         self._logger.log(f"Initial rotation: {active_name} active")
 
-        next_switch_time = datetime.now(self._settings.timezone) + timedelta(
+        next_switch_time: datetime = datetime.now(self._settings.timezone) + timedelta(
             seconds=interval
         )
         self.next_rotation_eta = interval
 
         while True:
             try:
-                now = datetime.now(self._settings.timezone)
+                now: datetime = datetime.now(self._settings.timezone)
 
                 # Synchronise with any manual rotation that may have happened
                 # since the previous loop iteration. Without this check the
@@ -264,6 +264,7 @@ class RotationService:
                     time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
                     continue
 
+                # next_switch_time is guaranteed to be set here (either from override or above)
                 remaining = (next_switch_time - now).total_seconds()
                 self.next_rotation_eta = max(0, int(remaining))
                 if now < next_switch_time:
@@ -438,12 +439,9 @@ class RotationService:
                         if not self.container_active_since.get(name):
                             self.container_active_since[name] = now
                     else:
-                        if self.container_active_since.get(name):
-                            elapsed = int(
-                                (
-                                    now - self.container_active_since[name]
-                                ).total_seconds()
-                            )
+                        active_since = self.container_active_since.get(name)
+                        if active_since is not None:
+                            elapsed = int((now - active_since).total_seconds())
                             self.container_total_active_seconds[name] = (
                                 self.container_total_active_seconds.get(name, 0)
                                 + elapsed

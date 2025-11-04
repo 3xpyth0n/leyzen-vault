@@ -83,6 +83,10 @@ checks we expect before shipping changes.
   3. Call `bootstrap_entry_point()` to configure all paths (idempotent)
   4. Then import other `common.*` or `vault_plugins.*` modules
 
+  **Note**: The repository uses `bootstrap_entry_point()` from `src/common/path_setup.py`
+  as the standard bootstrap pattern. This function encapsulates the complete bootstrap
+  sequence needed for entry points outside the `src/` directory.
+
   This pattern is used in `src/orchestrator/app.py`, `infra/docker-proxy/proxy.py`, and
   `src/compose/build.py`. See these files for reference implementations. The bootstrap is
   necessary because these entry points are not executed from the `src/` directory, so
