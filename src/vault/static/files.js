@@ -28,6 +28,13 @@ function formatDate(dateString) {
   }).format(date);
 }
 
+// Escape HTML to prevent XSS attacks
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Get file icon based on extension
 function getFileIcon(fileName) {
   const ext = fileName.split(".").pop()?.toLowerCase() || "";
@@ -98,11 +105,14 @@ function renderFiles(files) {
   }
 
   container.innerHTML = files
-    .map(
-      (file) => `
-            <div class="file-card" data-file-id="${file.file_id}">
+    .map((file) => {
+      // Escape user data to prevent XSS attacks
+      const escapedFileName = escapeHtml(file.original_name);
+      const escapedFileId = escapeHtml(file.file_id);
+      return `
+            <div class="file-card" data-file-id="${escapedFileId}">
                 <div class="file-icon">${getFileIcon(file.original_name)}</div>
-                <div class="file-name" title="${file.original_name}">${file.original_name}</div>
+                <div class="file-name" title="${escapedFileName}">${escapedFileName}</div>
                 <div class="file-meta">
                     ${formatFileSize(file.size)} • ${formatDate(file.created_at)}
                 </div>
@@ -110,19 +120,19 @@ function renderFiles(files) {
                     <span class="e2ee-badge">🔒 E2EE</span>
                 </div>
                 <div class="file-actions">
-                    <button class="file-action-btn" data-action="download" data-file-id="${file.file_id}" title="Download">
+                    <button class="file-action-btn" data-action="download" data-file-id="${escapedFileId}" title="Download">
                         ⬇️ Download
                     </button>
-                    <button class="file-action-btn" data-action="share" data-file-id="${file.file_id}" title="Share">
+                    <button class="file-action-btn" data-action="share" data-file-id="${escapedFileId}" title="Share">
                         🔗 Share
                     </button>
-                    <button class="file-action-btn" data-action="delete" data-file-id="${file.file_id}" title="Delete">
+                    <button class="file-action-btn" data-action="delete" data-file-id="${escapedFileId}" title="Delete">
                         🗑️ Delete
                     </button>
                 </div>
             </div>
-        `,
-    )
+        `;
+    })
     .join("");
 
   // Note: Event listeners are attached once in DOMContentLoaded

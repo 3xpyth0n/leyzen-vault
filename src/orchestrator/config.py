@@ -208,6 +208,51 @@ def _validate_secret_length(var_name: str, value: str, min_length: int = 12) -> 
         )
 
 
+def _validate_default_credentials(
+    username: str, password: str, env_values: dict[str, str]
+) -> None:
+    """Validate that credentials are not default values in production mode.
+
+    Args:
+        username: The username to validate
+        password: The password to validate
+        env_values: Dictionary containing environment variables
+
+    Raises:
+        ConfigurationError: If default credentials are detected in production mode
+    """
+    # Determine environment mode (default to production for security)
+    env_mode = env_values.get("LEYZEN_ENVIRONMENT", "prod").strip().lower()
+    is_production = env_mode in {"prod", "production", "1", "true"}
+
+    if not is_production:
+        # Allow default credentials in development mode
+        return
+
+    # Default credentials to reject
+    DEFAULT_USERNAME = "admin"
+    DEFAULT_PASSWORD = "admin"
+
+    errors = []
+    if username == DEFAULT_USERNAME:
+        errors.append(
+            f"ORCH_USER cannot be '{DEFAULT_USERNAME}' in production mode. "
+            "Set LEYZEN_ENVIRONMENT=dev for development, or change ORCH_USER to a non-default value."
+        )
+
+    if password == DEFAULT_PASSWORD:
+        errors.append(
+            f"ORCH_PASS cannot be '{DEFAULT_PASSWORD}' in production mode. "
+            "Set LEYZEN_ENVIRONMENT=dev for development, or change ORCH_PASS to a secure password "
+            "(generate with: openssl rand -base64 32)."
+        )
+
+    if errors:
+        raise ConfigurationError(
+            "Security validation failed:\n  " + "\n  ".join(errors)
+        )
+
+
 def load_settings() -> Settings:
     """Load orchestrator settings from environment variables.
 
@@ -262,6 +307,10 @@ def load_settings() -> Settings:
             "Set a non-default username in your .env file."
         )
     password = env_values.get("ORCH_PASS") or ""
+
+    # Validate that credentials are not default values in production
+    _validate_default_credentials(username, password, env_values)
+
     password_hash = generate_password_hash(password)
 
     proxy_trust_count = _parse_int_env_var(

@@ -895,7 +895,7 @@ const stateWaveGlowPlugin = {
     if (!metasets?.length) return;
 
     ctx.save();
-    // Clipping pour respecter les limites du chartArea
+    // Clipping to respect chartArea boundaries
     ctx.beginPath();
     ctx.rect(
       chartArea.left,

@@ -7,8 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"leyzenctl/internal"
+
+	"github.com/spf13/cobra"
 )
 
 var validateCmd = &cobra.Command{
@@ -87,20 +88,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for deprecated CSP variables
-	deprecatedCSPVars := map[string]string{
-		"CSP_REPORT_MAX_SIZE":   "VAULT_CSP_REPORT_MAX_SIZE",
-		"CSP_REPORT_RATE_LIMIT": "VAULT_CSP_REPORT_RATE_LIMIT",
-	}
-	for deprecatedVar, replacementVar := range deprecatedCSPVars {
-		if _, exists := envVars[deprecatedVar]; exists {
-			warnings = append(warnings, fmt.Sprintf(
-				"Deprecated variable '%s' is used. Please migrate to '%s'. Support for '%s' will be removed in a future major version.",
-				deprecatedVar, replacementVar, deprecatedVar,
-			))
-		}
-	}
-
 	// Print results
 	if len(errors) > 0 {
 		fmt.Println("❌ Validation failed with errors:")
@@ -139,76 +126,55 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 	}
 
 	vars := make(map[string]varInfo)
-	required := []string{}
 	secrets := []string{}
 
 	lines := strings.Split(string(content), "\n")
-	inRequiredSection := false
-	inSecretSection := false
 
-	// Regular expressions to extract variable names
-	varPattern := regexp.MustCompile(`^([A-Z_][A-Z0-9_]*)\s*=`)
-	requiredPattern := regexp.MustCompile(`REQUIRED`)
-	secretPattern := regexp.MustCompile(`VAULT_SECRET_KEY|DOCKER_PROXY_TOKEN`)
+	// Regular expressions to extract variable names (including commented lines)
+	// This pattern matches both commented (# VAR=value) and uncommented (VAR=value) lines
+	varPattern := regexp.MustCompile(`^#?\s*([A-Z_][A-Z0-9_]*)\s*=`)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// Skip comments and empty lines
-		if strings.HasPrefix(line, "#") || line == "" {
-			// Check if we're entering a required section
-			if strings.Contains(line, "REQUIRED") {
-				inRequiredSection = true
-			}
-			if secretPattern.MatchString(line) {
-				inSecretSection = true
-			}
+		// Skip empty lines only
+		if line == "" {
 			continue
 		}
 
-		// Extract variable name
+		// Extract variable name (works for both commented and uncommented lines)
 		match := varPattern.FindStringSubmatch(line)
 		if len(match) > 1 {
 			varName := match[1]
+			isCommented := strings.HasPrefix(line, "#")
+			// A variable is optional if:
+			// - It's explicitly marked as optional/advanced in comments
+			// - It's commented out (has a default value)
 			isOptional := strings.Contains(line, "# Optional") || strings.Contains(line, "⚠️ Advanced") ||
-				strings.HasPrefix(line, "#") && inRequiredSection == false
+				isCommented
 
 			vars[varName] = varInfo{optional: isOptional}
 
-			if inRequiredSection || requiredPattern.MatchString(line) {
-				required = append(required, varName)
-			}
-
-			if secretPattern.MatchString(varName) || inSecretSection {
+			// Only SECRET_KEY and DOCKER_PROXY_TOKEN are secrets, check explicitly
+			if varName == "SECRET_KEY" || varName == "DOCKER_PROXY_TOKEN" {
 				secrets = append(secrets, varName)
 			}
 		}
-
-		inRequiredSection = false
-		inSecretSection = false
 	}
 
-	// Explicitly add known required variables
-	requiredSet := make(map[string]bool)
-	for _, v := range required {
-		requiredSet[v] = true
-	}
-
-	// Synchronize with Python validation in src/orchestrator/config.py::_ensure_required_variables()
+	// Synchronize with Python validation in:
+	// - src/vault/config.py::load_settings() (requires VAULT_USER, VAULT_PASS, SECRET_KEY)
+	// - src/orchestrator/config.py::_ensure_required_variables() (requires ORCH_USER, ORCH_PASS, SECRET_KEY, DOCKER_PROXY_TOKEN)
 	// These variables are required at runtime and must be present and non-empty.
-	// When modifying this list, update the Python implementation to match.
-	explicitRequired := []string{
+	// When modifying this list, update the Python implementations to match.
+	// We only use this explicit list to avoid false positives from conditional "REQUIRED if ..." comments.
+	required := []string{
 		"VAULT_USER",
 		"VAULT_PASS",
-		"VAULT_SECRET_KEY",
+		"ORCH_USER",
+		"ORCH_PASS",
+		"SECRET_KEY",
 		"DOCKER_PROXY_TOKEN",
-	}
-
-	for _, v := range explicitRequired {
-		if !requiredSet[v] {
-			required = append(required, v)
-			requiredSet[v] = true
-		}
 	}
 
 	return vars, required, secrets, nil

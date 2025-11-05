@@ -7,6 +7,25 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Credentials validation**: Added `LEYZEN_ENVIRONMENT` variable to enforce rejection of default credentials (`admin/admin`) in production mode
+- **Rate limiting**: Fixed unlimited uploads for unknown IPs by applying conservative default limit (10 uploads/hour)
+- **XSS prevention**: Implemented HTML escaping for all user-supplied data in client-side JavaScript (`files.js`, `security.js`)
+- **Hardcoded secrets**: Removed all hardcoded secrets from fallback settings, now requires environment variables
+- **File upload validation**: Added strict filename validation with whitelist approach to prevent path traversal attacks
+- **Audit log rotation**: Implemented automatic cleanup of audit logs older than retention period (configurable via `VAULT_AUDIT_RETENTION_DAYS`, default: 90 days)
+- **CSP improvements**: Enhanced Content Security Policy with `require-trusted-types-for 'script'` and CSP violation reporting to orchestrator
+- **Configuration validation**: Added security checklist in `env.template` and validation script `tools/validate-env.py`
+
+### Fixed
+
+- Fixed CLI validation (`leyzenctl config validate`):
+  - Removed incorrect deprecation warning for CSP variables (`CSP_REPORT_MAX_SIZE` and `CSP_REPORT_RATE_LIMIT` which are the correct variables used in the code)
+  - Fixed required variable `VAULT_SECRET_KEY` → `SECRET_KEY` to match the actual Python code
+  - Added missing required variables `ORCH_USER` and `ORCH_PASS` for the orchestrator
+  - Fixed cryptographic secrets detection pattern to use `SECRET_KEY` instead of `VAULT_SECRET_KEY`
+
 ---
 
 ## [1.0.0] - 2025-11-05

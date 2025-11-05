@@ -37,6 +37,7 @@ class VaultSettings:
     session_cookie_secure: bool
     max_file_size_mb: int
     max_uploads_per_hour: int
+    audit_retention_days: int
 
 
 def _parse_int_env_var(
@@ -77,6 +78,51 @@ def _parse_bool(value: str | None, *, default: bool) -> bool:
     return default
 
 
+def _validate_default_credentials(
+    username: str, password: str, env_values: dict[str, str]
+) -> None:
+    """Validate that credentials are not default values in production mode.
+
+    Args:
+        username: The username to validate
+        password: The password to validate
+        env_values: Dictionary containing environment variables
+
+    Raises:
+        ConfigurationError: If default credentials are detected in production mode
+    """
+    # Determine environment mode (default to production for security)
+    env_mode = env_values.get("LEYZEN_ENVIRONMENT", "prod").strip().lower()
+    is_production = env_mode in {"prod", "production", "1", "true"}
+
+    if not is_production:
+        # Allow default credentials in development mode
+        return
+
+    # Default credentials to reject
+    DEFAULT_USERNAME = "admin"
+    DEFAULT_PASSWORD = "admin"
+
+    errors = []
+    if username == DEFAULT_USERNAME:
+        errors.append(
+            f"VAULT_USER cannot be '{DEFAULT_USERNAME}' in production mode. "
+            "Set LEYZEN_ENVIRONMENT=dev for development, or change VAULT_USER to a non-default value."
+        )
+
+    if password == DEFAULT_PASSWORD:
+        errors.append(
+            f"VAULT_PASS cannot be '{DEFAULT_PASSWORD}' in production mode. "
+            "Set LEYZEN_ENVIRONMENT=dev for development, or change VAULT_PASS to a secure password "
+            "(generate with: openssl rand -base64 32)."
+        )
+
+    if errors:
+        raise ConfigurationError(
+            "Security validation failed:\n  " + "\n  ".join(errors)
+        )
+
+
 def load_settings() -> VaultSettings:
     """Load settings from environment variables."""
     env_values = load_env_with_override()
@@ -92,6 +138,9 @@ def load_settings() -> VaultSettings:
     password = env_values.get("VAULT_PASS", "").strip()
     if not password:
         raise ConfigurationError("VAULT_PASS is required")
+
+    # Validate that credentials are not default values in production
+    _validate_default_credentials(username, password, env_values)
 
     # Generate password hash
     password_hash = generate_password_hash(password)
@@ -153,6 +202,11 @@ def load_settings() -> VaultSettings:
         "VAULT_MAX_UPLOADS_PER_HOUR", 50, env_values, min_value=1
     )
 
+    # Audit log retention in days (default: 90 days)
+    audit_retention_days = _parse_int_env_var(
+        "VAULT_AUDIT_RETENTION_DAYS", 90, env_values, min_value=1
+    )
+
     return VaultSettings(
         username=username,
         password_hash=password_hash,
@@ -166,6 +220,7 @@ def load_settings() -> VaultSettings:
         session_cookie_secure=session_cookie_secure,
         max_file_size_mb=max_file_size_mb,
         max_uploads_per_hour=max_uploads_per_hour,
+        audit_retention_days=audit_retention_days,
     )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -91,6 +92,24 @@ def upload_file():
         return jsonify({"error": "Empty filename"}), 400
 
     original_name = file.filename or "unnamed"
+
+    # Validate and normalize filename
+    is_valid, validation_error = FileStorage.validate_filename(original_name)
+    if not is_valid:
+        audit.log_action(
+            "upload",
+            user_ip,
+            {
+                "error": "invalid_filename",
+                "message": validation_error,
+                "filename": original_name,
+            },
+            False,
+        )
+        return jsonify({"error": validation_error or "Invalid filename"}), 400
+
+    # Normalize filename (collapse spaces)
+    original_name = re.sub(r"\s+", " ", original_name.strip())
 
     # Read encrypted file data
     encrypted_data = file.read()

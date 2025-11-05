@@ -260,6 +260,7 @@ def build_base_services(
     orchestrator = {
         "build": {"context": "./src/orchestrator"},
         "container_name": "orchestrator",
+        "image": "leyzen/orchestrator:latest",
         "restart": "on-failure",
         "healthcheck": {
             "test": ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"],

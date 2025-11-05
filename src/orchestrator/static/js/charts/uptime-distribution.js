@@ -14,11 +14,11 @@ export class UptimeDistributionChart extends BaseChart {
         tooltip: {
           trigger: "item",
           position: function (point, params, dom, rect, size) {
-            // Si on survole la légende, afficher le tooltip au-dessus
+            // If hovering over the legend, display tooltip above
             if (params.componentType === "legend") {
               return [point[0], point[1] - size.contentSize[1] - 10];
             }
-            // Sinon, afficher au-dessus du point
+            // Otherwise, display above the point
             return [point[0], point[1] - size.contentSize[1] - 10];
           },
           confine: true,

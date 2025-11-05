@@ -2,6 +2,13 @@
 
 let statsData = null;
 
+// Escape HTML to prevent XSS attacks
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return "0 B";
@@ -87,9 +94,11 @@ function renderActivityBreakdown(byAction) {
 
   container.innerHTML = Object.entries(byAction)
     .map(([action, count]) => {
+      // Escape user data to prevent XSS attacks
+      const escapedAction = escapeHtml(action);
       const label =
         actionLabels[action] ||
-        action.charAt(0).toUpperCase() + action.slice(1);
+        escapedAction.charAt(0).toUpperCase() + escapedAction.slice(1);
       return `
         <div class="activity-item">
           <span class="activity-label">${label}</span>
@@ -124,20 +133,31 @@ function renderAuditLogs(logs) {
       const successClass = log.success ? "log-success" : "log-error";
       const successText = log.success ? "✓" : "✗";
 
+      // Escape user data to prevent XSS attacks
+      const escapedAction = escapeHtml(log.action);
+      const escapedIp = escapeHtml(log.user_ip);
+      const escapedFileId = log.file_id
+        ? escapeHtml(log.file_id.substring(0, 8)) + "..."
+        : "";
+      const escapedDetails =
+        Object.keys(log.details).length > 0
+          ? escapeHtml(JSON.stringify(log.details))
+          : "";
+
       return `
         <div class="audit-log-item ${successClass}">
           <div class="log-icon">${icon}</div>
           <div class="log-content">
             <div class="log-header">
-              <span class="log-action">${log.action}</span>
+              <span class="log-action">${escapedAction}</span>
               <span class="log-status">${successText}</span>
               <span class="log-time">${formatDate(log.timestamp)}</span>
             </div>
             <div class="log-details">
-              <span class="log-ip">IP: ${log.user_ip}</span>
-              ${log.file_id ? `<span class="log-file-id">File: ${log.file_id.substring(0, 8)}...</span>` : ""}
+              <span class="log-ip">IP: ${escapedIp}</span>
+              ${escapedFileId ? `<span class="log-file-id">File: ${escapedFileId}</span>` : ""}
             </div>
-            ${Object.keys(log.details).length > 0 ? `<div class="log-extra">${JSON.stringify(log.details)}</div>` : ""}
+            ${escapedDetails ? `<div class="log-extra">${escapedDetails}</div>` : ""}
           </div>
         </div>
       `;

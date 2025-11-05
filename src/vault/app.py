@@ -42,19 +42,58 @@ def _create_fallback_settings() -> VaultSettings:
     cannot be loaded. It attempts to read the timezone from environment
     variables, falling back to UTC if not available or invalid.
 
+    ⚠️ WARNING: This fallback mode requires environment variables to be set.
+    Hardcoded secrets have been removed for security. This function should
+    NOT be used in production.
+
+    Raises:
+        ConfigurationError: If required environment variables are missing
+
     Returns:
-        VaultSettings with default development values
+        VaultSettings with values from environment variables
     """
+    import os
     from common.env import parse_timezone
+    from common.exceptions import ConfigurationError
 
     # Try to get timezone from environment even in fallback
     # Use allow_fallback=True to gracefully fall back to UTC on error
     fallback_timezone = parse_timezone(allow_fallback=True)
 
+    # Require environment variables - no hardcoded secrets
+    username = os.environ.get("VAULT_USER", "").strip()
+    if not username:
+        raise ConfigurationError(
+            "VAULT_USER is required. Fallback mode requires environment variables to be set. "
+            "This function should NOT be used in production."
+        )
+
+    password = os.environ.get("VAULT_PASS", "").strip()
+    if not password:
+        raise ConfigurationError(
+            "VAULT_PASS is required. Fallback mode requires environment variables to be set. "
+            "This function should NOT be used in production."
+        )
+
+    secret_key = os.environ.get("SECRET_KEY", "").strip()
+    if not secret_key:
+        raise ConfigurationError(
+            "SECRET_KEY is required (minimum 12 characters). Fallback mode requires environment variables to be set. "
+            "This function should NOT be used in production."
+        )
+
+    if len(secret_key) < 12:
+        raise ConfigurationError(
+            "SECRET_KEY must be at least 12 characters long. "
+            "Fallback mode requires environment variables to be set."
+        )
+
+    from werkzeug.security import generate_password_hash
+
     return VaultSettings(
-        username="admin",
-        password_hash="pbkdf2:sha256:600000$dev$dev",
-        secret_key="dev-secret-key",
+        username=username,
+        password_hash=generate_password_hash(password),
+        secret_key=secret_key,
         timezone=fallback_timezone,
         proxy_trust_count=1,
         captcha_length=6,
@@ -64,6 +103,7 @@ def _create_fallback_settings() -> VaultSettings:
         session_cookie_secure=False,
         max_file_size_mb=100,
         max_uploads_per_hour=50,
+        audit_retention_days=90,
     )
 
 
@@ -100,8 +140,10 @@ def create_app(
         app.config["LOGGER"] = logger
     except Exception as exc:
         # Fallback for development/testing
+        # Note: This fallback now requires environment variables to be set
+        # Hardcoded secrets have been removed for security
         fallback_settings = _create_fallback_settings()
-        app.config["SECRET_KEY"] = "dev-secret-key-change-in-production"
+        app.config["SECRET_KEY"] = fallback_settings.secret_key
         app.config.update(
             SESSION_COOKIE_HTTPONLY=True,
             SESSION_COOKIE_SAMESITE="Lax",
@@ -156,17 +198,25 @@ def create_app(
     try:
         settings = app.config.get("VAULT_SETTINGS")
         if settings:
-            audit_service = AuditService(audit_db_path, timezone=settings.timezone)
+            audit_service = AuditService(
+                audit_db_path,
+                timezone=settings.timezone,
+                retention_days=settings.audit_retention_days,
+            )
         else:
-            # Fallback: use UTC
+            # Fallback: use UTC and default retention
             from zoneinfo import ZoneInfo
 
-            audit_service = AuditService(audit_db_path, timezone=ZoneInfo("UTC"))
+            audit_service = AuditService(
+                audit_db_path, timezone=ZoneInfo("UTC"), retention_days=90
+            )
     except Exception:
-        # Fallback: use UTC
+        # Fallback: use UTC and default retention
         from zoneinfo import ZoneInfo
 
-        audit_service = AuditService(audit_db_path, timezone=ZoneInfo("UTC"))
+        audit_service = AuditService(
+            audit_db_path, timezone=ZoneInfo("UTC"), retention_days=90
+        )
 
     # Initialize share service
     share_db_path_env = env_values.get("VAULT_SHARES_DB_PATH")
@@ -209,6 +259,27 @@ def create_app(
     app.config["VAULT_SHARE"] = share_service
     app.config["VAULT_RATE_LIMITER"] = rate_limiter
 
+    # Start background thread for automatic audit log cleanup
+    def _audit_cleanup_worker() -> None:
+        """Background worker to periodically clean up old audit logs."""
+        import time
+        import logging
+
+        logger = logging.getLogger(__name__)
+        while True:
+            try:
+                time.sleep(3600)  # Run every hour
+                deleted_count = audit_service.cleanup_old_logs()
+                if deleted_count > 0:
+                    logger.info(f"Cleaned up {deleted_count} old audit log entries")
+            except Exception as e:
+                logger.error(f"Error during audit log cleanup: {e}", exc_info=True)
+
+    import threading
+
+    cleanup_thread = threading.Thread(target=_audit_cleanup_worker, daemon=True)
+    cleanup_thread.start()
+
     # Register blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(files_bp)
@@ -230,23 +301,54 @@ def create_app(
     def add_security_headers(response):
         """Add strict security headers including CSP."""
         import json
-        from flask import url_for
+        from flask import request
+        from common.constants import SESSION_MAX_AGE_SECONDS
 
-        # Content Security Policy - ultra strict
-        csp_policy = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self'; "
-            "img-src 'self' data: blob:; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self'; "
-            "object-src 'none'; "
-            "upgrade-insecure-requests"
-        )
-        response.headers.setdefault("Content-Security-Policy", csp_policy)
+        # Content Security Policy - enhanced with trusted types and reporting
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self'",
+            "img-src 'self' data: blob:",
+            "font-src 'self' https://fonts.gstatic.com",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "object-src 'none'",
+            "upgrade-insecure-requests",
+            "require-trusted-types-for 'script'",
+            "report-uri /orchestrator/csp-violation-report-endpoint",
+            "report-to vault-csp",
+        ]
+        csp_policy = "; ".join(csp_directives)
+
+        # Add or merge CSP policy
+        if existing_csp := response.headers.get("Content-Security-Policy"):
+            response.headers["Content-Security-Policy"] = (
+                f"{existing_csp}; {csp_policy}"
+            )
+        else:
+            response.headers["Content-Security-Policy"] = csp_policy
+
+        # Add Report-To header pointing to orchestrator CSP endpoint
+        # Use the same format as orchestrator for consistency
+        # Construct orchestrator URL from current request
+        try:
+            from flask import request
+
+            orchestrator_url = f"{request.scheme}://{request.host}/orchestrator/csp-violation-report-endpoint"
+        except Exception:
+            # Fallback: use relative URL if request context unavailable
+            orchestrator_url = "/orchestrator/csp-violation-report-endpoint"
+
+        report_to = {
+            "group": "vault-csp",
+            "max_age": SESSION_MAX_AGE_SECONDS,
+            "endpoints": [{"url": orchestrator_url}],
+        }
+
+        response.headers["Report-To"] = json.dumps(report_to)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")

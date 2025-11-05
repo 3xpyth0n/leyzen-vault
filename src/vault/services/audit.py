@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,16 +15,20 @@ from ..models import AuditLog
 class AuditService:
     """Service for logging and retrieving audit logs."""
 
-    def __init__(self, db_path: Path, timezone: ZoneInfo | None = None):
+    def __init__(
+        self, db_path: Path, timezone: ZoneInfo | None = None, retention_days: int = 90
+    ):
         """Initialize the audit service.
 
         Args:
             db_path: Path to the audit database file
             timezone: Timezone to use for timestamps. Defaults to UTC if not provided.
+            retention_days: Number of days to retain audit logs (default: 90)
         """
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.timezone = timezone or ZoneInfo("UTC")
+        self.retention_days = retention_days
         self._init_db()
 
     def _init_db(self) -> None:
@@ -174,6 +178,30 @@ class AuditService:
         logs = self.get_logs(limit=limit)
         with output_path.open("w", encoding="utf-8") as f:
             json.dump([log.to_dict() for log in logs], f, indent=2, ensure_ascii=False)
+
+    def cleanup_old_logs(self) -> int:
+        """Remove audit logs older than the retention period.
+
+        Returns:
+            Number of logs deleted
+        """
+        cutoff_date = datetime.now(self.timezone) - timedelta(days=self.retention_days)
+        cutoff_iso = cutoff_date.isoformat()
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                """
+                DELETE FROM audit_logs
+                WHERE timestamp < ?
+            """,
+                (cutoff_iso,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        finally:
+            conn.close()
 
 
 __all__ = ["AuditService"]
