@@ -22,14 +22,11 @@ checks we expect before shipping changes.
   requests to the Docker Engine socket.
 - `infra/haproxy/` — Static HAProxy configuration and error pages that front every
   HTTP service.
-- `infra/filebrowser/` — Dockerfile and entrypoint used to run the upstream Filebrowser
-  binary with the correct defaults for the demo.
+- `src/vault/` — Leyzen Vault secure file storage application with end-to-end encryption
 - `src/common/` — Shared Python modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
 - `src/compose/` — Python build scripts that generate `docker-compose.yml` and HAProxy
-  configuration from plugin definitions and environment variables.
-- `src/vault_plugins/` — Pluggable service definitions (filebrowser, paperless, etc.)
-  that define container configurations and rotation behavior.
+  configuration from environment variables.
 - `tools/cli/` — Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
@@ -75,13 +72,13 @@ checks we expect before shipping changes.
   (`env.py`, `exceptions.py`) used across services. In Docker containers, this
   directory is mounted as `/common` to match the import convention
   `from common.*`. Use `from common.*` imports consistently across all Python code.
-- **Python path bootstrap**: When importing `common.*` or `vault_plugins.*` modules from
+- **Python path bootstrap**: When importing `common.*` modules from
   entry points outside the `src/` directory, you must first bootstrap the Python path.
   The standard pattern is:
   1. Add `src/` to `sys.path` manually (this enables importing `common.path_setup`)
   2. Import `bootstrap_entry_point` from `common.path_setup`
   3. Call `bootstrap_entry_point()` to configure all paths (idempotent)
-  4. Then import other `common.*` or `vault_plugins.*` modules
+  4. Then import other `common.*` modules
 
   **Note**: The repository uses `bootstrap_entry_point()` from `src/common/path_setup.py`
   as the standard bootstrap pattern. This function encapsulates the complete bootstrap
@@ -90,7 +87,7 @@ checks we expect before shipping changes.
   This pattern is used in `src/orchestrator/app.py`, `infra/docker-proxy/proxy.py`, and
   `src/compose/build.py`. See these files for reference implementations. The bootstrap is
   necessary because these entry points are not executed from the `src/` directory, so
-  Python's default import resolution cannot find the `common` and `vault_plugins` modules.
+  Python's default import resolution cannot find the `common` modules.
 
   For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_python_paths()`
   directly if you need to configure paths before importing other modules.
@@ -140,10 +137,10 @@ Services must start in a specific order to ensure dependencies are available:
 2. **Control Plane Services**:
    - `docker-proxy` starts first (required by orchestrator for container lifecycle operations)
    - `orchestrator` starts second and connects to docker-proxy
-3. **Plugin Services**: Orchestrator manages plugin container startup after establishing control plane connectivity
+3. **Vault Services**: Orchestrator manages Vault container startup after establishing control plane connectivity
 4. **Front-end Layer**: `haproxy` starts last and connects to active containers via backend configuration
 
-The orchestrator reads `VAULT_WEB_CONTAINERS` from the environment and starts plugin containers up to the configured replica count, waiting for health checks to pass before marking them as ready.
+The orchestrator reads container names from the environment (injected by docker-compose via `build.py`). Container names are auto-generated from `WEB_REPLICAS` if not explicitly provided. The orchestrator starts Vault containers up to the configured replica count, waiting for health checks to pass before marking them as ready.
 
 See [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#service-startup-order) for detailed sequence diagrams and startup flow documentation.
 
@@ -154,7 +151,7 @@ See [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#service-startup-order) for detailed
   import time and validating headers in dedicated helpers.
 - HAProxy templates should preserve the security headers already in place.
   Update both the config and error-page snippets if you tweak status handling.
-- `infra/filebrowser/entrypoint.sh` is a thin wrapper; keep it POSIX sh compatible.
+- `infra/vault/entrypoint.sh` handles Vault container initialization; keep it POSIX sh compatible.
 
 ## Dockerfile Patterns
 
@@ -175,7 +172,7 @@ The orchestrator service uses a multi-stage Dockerfile because it requires build
 
 **Implementation**: `src/orchestrator/Dockerfile` uses a multi-stage build to compile Tailwind CSS before the final Python image. The `entrypoint.sh` script is copied explicitly via `COPY entrypoint.sh /app/entrypoint.sh` followed by `RUN chmod +x` to ensure it's executable regardless of source permissions. This pattern is suitable when build-time assets (like compiled CSS) need to be generated.
 
-### Single-Stage Builds (Docker Proxy, Filebrowser)
+### Single-Stage Builds (Docker Proxy, Vault)
 
 Minimal services like `docker-proxy` and infrastructure components use single-stage Dockerfiles because they have no build-time dependencies—they're pure Python applications that can run directly from source.
 
@@ -190,7 +187,7 @@ Minimal services like `docker-proxy` and infrastructure components use single-st
 
 - **`infra/docker-proxy/Dockerfile`**: Uses a single-stage build with explicit `COPY entrypoint.sh /entrypoint.sh` followed by `RUN chmod +x`. This ensures the entrypoint script is executable regardless of source permissions. This pattern is preferred for services that don't require multi-stage builds.
 
-- **`infra/filebrowser/Dockerfile`**: Uses a single-stage build with explicit COPY and chmod for the entrypoint, similar to docker-proxy. Additionally includes checksum verification for downloaded binaries. This pattern is suitable for services that download and install external binaries.
+- **`infra/vault/Dockerfile`**: Uses a single-stage build with explicit COPY and chmod for the entrypoint, similar to docker-proxy. This pattern is suitable for Python applications that run directly from source.
 
 ### Entrypoint Script Patterns
 
@@ -206,7 +203,7 @@ Entrypoint scripts handle container initialization and user privilege management
 
   This pattern is required when services need to access host resources (like Docker sockets) with varying permissions.
 
-- **`infra/filebrowser/entrypoint.sh`**: Thin wrapper for the upstream Filebrowser binary; keeps it POSIX sh compatible.
+- **`infra/vault/entrypoint.sh`**: Handles Vault container initialization and ensures proper permissions for data directories; keeps it POSIX sh compatible.
 
 **Best practices:**
 

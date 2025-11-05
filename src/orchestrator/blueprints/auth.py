@@ -38,8 +38,6 @@ else:  # pragma: no branch
 from werkzeug.security import check_password_hash
 
 from common.constants import (
-    CAPTCHA_IMAGE_HEIGHT_DEFAULT,
-    CAPTCHA_IMAGE_WIDTH_DEFAULT,
     CAPTCHA_LENGTH_DEFAULT,
     CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
     LOGIN_BLOCK_WINDOW_MINUTES,
@@ -98,8 +96,12 @@ def _load_captcha_font(size: int = CAPTCHA_FONT_SIZE) -> ImageFont.ImageFont:
 
 def _build_captcha_image(text: str) -> tuple[bytes, str]:
     settings = _settings()
-    width = getattr(settings, "captcha_image_width", CAPTCHA_IMAGE_WIDTH_DEFAULT)
-    height = getattr(settings, "captcha_image_height", CAPTCHA_IMAGE_HEIGHT_DEFAULT)
+    captcha_length = getattr(settings, "captcha_length", CAPTCHA_LENGTH_DEFAULT)
+    # Calculate dimensions based on CAPTCHA length
+    # Width: ~35px per character + padding
+    width = captcha_length * 35 + 20
+    # Height: fixed at 70px
+    height = 70
 
     if (
         Image is not None

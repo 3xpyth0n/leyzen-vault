@@ -11,7 +11,7 @@ Leyzen Vault is a modular moving-target defense orchestrator that automatically 
 - **HAProxy**: Reverse proxy and load balancer front-end
 - **Orchestrator**: Flask application managing container rotation and dashboard
 - **Docker Proxy**: Authenticated broker for Docker Engine API
-- **Plugins**: Service-specific integrations (Filebrowser, Paperless-ngx, etc.)
+- **Vault**: Secure file storage application with end-to-end encryption (E2EE)
 - **Base Infrastructure**: Docker networks and volumes
 
 ## Architecture Diagram
@@ -38,9 +38,9 @@ graph TB
     end
 
     subgraph "Application Layer"
-        Container1[Web Container 1<br/>Plugin Instance]
-        Container2[Web Container 2<br/>Plugin Instance]
-        ContainerN[Web Container N<br/>Plugin Instance]
+        Container1[Web Container 1<br/>Vault Instance]
+        Container2[Web Container 2<br/>Vault Instance]
+        ContainerN[Web Container N<br/>Vault Instance]
     end
 
     User -->|HTTP/HTTPS| HAProxy
@@ -77,7 +77,7 @@ sequenceDiagram
     participant Orchestrator
     participant DockerProxy
     participant DockerEngine
-    participant PluginContainers
+    participant VaultContainers
 
     Note over DockerEngine: 1. Base Infrastructure
     DockerEngine->>Networks: Create Docker networks
@@ -87,14 +87,14 @@ sequenceDiagram
     DockerEngine->>DockerProxy: Start docker-proxy container
     DockerEngine->>Orchestrator: Start orchestrator container
 
-    Note over PluginContainers: 3. Plugin Services
+    Note over VaultContainers: 3. Vault Services
     Orchestrator->>DockerProxy: Request container start
     DockerProxy->>DockerEngine: Authenticated API call
-    DockerEngine->>PluginContainers: Start plugin containers (replicas)
+    DockerEngine->>VaultContainers: Start Vault containers (replicas)
 
     Note over HAProxy: 4. Front-end Layer
     DockerEngine->>HAProxy: Start HAProxy container
-    HAProxy->>PluginContainers: Health check active containers
+    HAProxy->>VaultContainers: Health check active containers
 
     Note over User: 5. Ready
     HAProxy->>User: Service available on port 80/443
@@ -104,15 +104,16 @@ sequenceDiagram
 
 1. **Base Infrastructure** (Docker Compose)
    - Create Docker networks (`vault_network`)
-   - Create Docker volumes (plugin-specific volumes)
+   - Create Docker volumes (Vault-specific volumes)
 
 2. **Control Plane Services**
    - `docker-proxy` starts first (required by orchestrator)
    - `orchestrator` starts and connects to docker-proxy
 
-3. **Plugin Services** (Managed by orchestrator)
-   - Orchestrator reads `VAULT_WEB_CONTAINERS` from environment
-   - Starts plugin containers up to configured replica count
+3. **Vault Services** (Managed by orchestrator)
+   - Orchestrator reads container names from environment (injected by docker-compose)
+   - Container names are auto-generated from `WEB_REPLICAS` if not provided
+   - Starts Vault containers up to configured replica count
    - Waits for containers to be healthy
 
 4. **Front-end Layer**
@@ -156,7 +157,7 @@ sequenceDiagram
 
 ### Rotation Details
 
-1. **Timing**: Rotation occurs at intervals defined by `VAULT_ROTATION_INTERVAL`
+1. **Timing**: Rotation occurs at intervals defined by `ROTATION_INTERVAL`
 2. **Health Checks**: New containers must pass health checks before traffic is switched
 3. **Graceful Shutdown**: Old containers are stopped after a grace period
 4. **Metrics**: Rotation events and container statistics are logged and exposed via SSE
@@ -179,7 +180,7 @@ graph LR
     DockerProxy -->|Validated Request| DockerEngine[Docker Engine]
 ```
 
-### HAProxy ↔ Plugin Containers
+### HAProxy ↔ Vault Containers
 
 HAProxy acts as a reverse proxy and load balancer:
 
@@ -225,17 +226,6 @@ Container Stats → Docker Proxy → Orchestrator → Telemetry Service → SSE 
 - **Rate Limiting**: Dashboard authentication includes rate limiting
 - **Secret Rotation**: Secrets can be rotated without service downtime
 
-## Plugin Architecture
-
-Plugins extend Leyzen Vault with new service types:
-
-- **Base Class**: `VaultServicePlugin` in `src/vault_plugins/__init__.py`
-- **Configuration**: Each plugin defines Docker Compose fragments
-- **Replicas**: Plugin defines `min_replicas` (default enforced via `VAULT_WEB_REPLICAS`)
-- **Dependencies**: Plugins can declare service dependencies (e.g., PostgreSQL, Redis)
-
-See individual plugin documentation for service-specific details.
-
 ## Configuration Management
 
 Configuration is centralized via environment variables:
@@ -246,3 +236,36 @@ Configuration is centralized via environment variables:
 - **Secrets**: Cryptographic secrets must meet minimum length requirements
 
 For detailed configuration options, see `env.template` and `docs/SECURITY.md`.
+
+## Database Schema and Migrations
+
+Leyzen Vault uses SQLite databases for metadata storage (files, audit logs, share links). The current implementation stores timestamps as TEXT (ISO format strings) for simplicity and portability.
+
+### Schema Management Strategy
+
+**Current Approach**: Schema creation is handled through `CREATE TABLE IF NOT EXISTS` statements in each service's initialization code:
+
+- `FileDatabase._init_db()` - Creates `files` table
+- `AuditService._init_db()` - Creates `audit_logs` table
+- `ShareService._init_db()` - Creates `share_links` table
+
+**Migration Strategy**:
+
+- **No automatic migrations**: Schema changes require manual database updates
+- **Backward compatibility**: New fields are added with `IF NOT EXISTS` checks where possible
+- **Breaking changes**: Major schema changes require manual migration scripts or database recreation
+
+**Future Considerations**:
+
+- Consider adding Alembic or similar migration tool for production deployments
+- For now, schema changes are documented in CHANGELOG.md and require manual intervention
+- Development/testing environments can recreate databases by deleting `.db` files
+
+### Timestamp Storage
+
+Timestamps are stored as ISO format strings (TEXT) rather than native SQLite date/time types:
+
+- **Pros**: Timezone-aware, portable, human-readable
+- **Cons**: Less efficient for date-based queries, requires string comparison
+
+Indexes are created on timestamp columns to improve query performance despite TEXT storage.

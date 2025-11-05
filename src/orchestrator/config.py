@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from datetime import timedelta
@@ -15,15 +14,12 @@ from werkzeug.security import generate_password_hash
 
 from common.constants import (
     ALLOWED_URL_SCHEMES,
-    CAPTCHA_IMAGE_HEIGHT_DEFAULT,
-    CAPTCHA_IMAGE_WIDTH_DEFAULT,
     CAPTCHA_LENGTH_DEFAULT,
     CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
     CSP_REPORT_MAX_SIZE_DEFAULT,
     CSP_REPORT_RATE_LIMIT_DEFAULT,
     CSP_REPORT_RATE_WINDOW_SECONDS,
     ROTATION_INTERVAL_DEFAULT,
-    TIMEZONE_DEFAULT,
     DOCKER_PROXY_BASE_URL_DEFAULT,
     LOGIN_CSRF_TTL_SECONDS_DEFAULT,
     ORCHESTRATOR_DIR,
@@ -33,9 +29,8 @@ from common.constants import (
     SSE_INTERVAL_MS_DEFAULT,
     SSE_INTERVAL_MS_MINIMUM,
 )
-from common.env import load_env_with_override, parse_container_names
+from common.env import load_env_with_override, parse_container_names, parse_timezone
 from common.exceptions import ConfigurationError
-from vault_plugins.registry import get_active_plugin
 
 
 @dataclass(frozen=True)
@@ -53,8 +48,6 @@ class Settings:
     log_file: Path
     html_dir: Path
     secret_key: str
-    captcha_image_width: int
-    captcha_image_height: int
     captcha_length: int
     captcha_store_ttl: int
     login_csrf_ttl: int
@@ -123,7 +116,7 @@ def _parse_int_env_var(
 
 
 def _determine_log_file(base_dir: Path, env: dict[str, str]) -> Path:
-    override = env.get("VAULT_ORCHESTRATOR_LOG_DIR")
+    override = env.get("ORCH_LOG_DIR")
     if override:
         candidate = Path(override).expanduser().resolve()
     else:
@@ -134,7 +127,7 @@ def _determine_log_file(base_dir: Path, env: dict[str, str]) -> Path:
     except OSError:
         candidate = base_dir
 
-    filename = env.get("VAULT_ORCHESTRATOR_LOG_FILE", ORCHESTRATOR_LOG_FILE_DEFAULT)
+    filename = env.get("ORCH_LOG_FILE", ORCHESTRATOR_LOG_FILE_DEFAULT)
     log_path = candidate / filename
 
     try:
@@ -235,90 +228,70 @@ def load_settings() -> Settings:
     # These variables are required at runtime and must be present and non-empty.
     # When modifying this list, update the Go implementation to match.
     _ensure_required_variables(
-        ["VAULT_USER", "VAULT_PASS", "VAULT_SECRET_KEY", "DOCKER_PROXY_TOKEN"],
+        ["ORCH_USER", "ORCH_PASS", "SECRET_KEY", "DOCKER_PROXY_TOKEN"],
         env_values,
     )
 
-    timezone_name = env_values.get("VAULT_TIMEZONE", TIMEZONE_DEFAULT)
-    try:
-        timezone = ZoneInfo(timezone_name)
-    except Exception as exc:
-        raise ConfigurationError(f"Unknown timezone '{timezone_name}'") from exc
+    timezone = parse_timezone(env_values, allow_fallback=False)
 
-    raw_containers = env_values.get("VAULT_WEB_CONTAINERS")
+    raw_containers = os.environ.get("ORCH_WEB_CONTAINERS")
     web_containers = parse_container_names(raw_containers)
-    plugin = None
     if not web_containers:
+        # Default: generate vault_web1, vault_web2, vault_web3
+        replicas_raw = env_values.get("WEB_REPLICAS", "3").strip()
         try:
-            plugin = get_active_plugin(env_values)
-            web_containers = list(plugin.get_containers())
-        except Exception as exc:  # pragma: no cover - defensive
-            logging.warning(
-                "Failed to determine web containers from plugin: %s", exc, exc_info=True
-            )
-            raise ConfigurationError(
-                "Unable to determine web containers; set VAULT_WEB_CONTAINERS"
-            ) from exc
+            replicas = max(2, int(replicas_raw))  # Minimum 2 replicas
+        except ValueError:
+            replicas = 3
+        web_containers = [f"vault_web{i+1}" for i in range(replicas)]
 
     if not web_containers:
         raise ConfigurationError(
-            "No web containers configured; set VAULT_WEB_CONTAINERS or VAULT_SERVICE"
+            "No web containers configured; set WEB_REPLICAS (containers are auto-generated)"
         )
 
-    # Validate that the number of containers meets the plugin's minimum requirement
-    if plugin is None:
-        plugin = get_active_plugin(env_values)
-    if len(web_containers) < plugin.min_replicas:
+    if len(web_containers) < 2:
         raise ConfigurationError(
-            f"Plugin '{plugin.name}' requires minimum {plugin.min_replicas} replicas, "
-            f"got {len(web_containers)} containers: {', '.join(web_containers)}"
+            f"Leyzen Vault requires minimum 2 replicas for rotation, got {len(web_containers)} containers: {', '.join(web_containers)}"
         )
 
-    username = env_values.get("VAULT_USER", "")
+    username = env_values.get("ORCH_USER", "")
     if not username:
         raise ConfigurationError(
-            "VAULT_USER is required and cannot be empty. "
+            "ORCH_USER is required and cannot be empty. "
             "Set a non-default username in your .env file."
         )
-    password = env_values.get("VAULT_PASS") or ""
+    password = env_values.get("ORCH_PASS") or ""
     password_hash = generate_password_hash(password)
 
     proxy_trust_count = _parse_int_env_var(
-        "VAULT_PROXY_TRUST_COUNT", PROXY_TRUST_COUNT_DEFAULT, env_values, min_value=0
+        "PROXY_TRUST_COUNT", PROXY_TRUST_COUNT_DEFAULT, env_values, min_value=0
     )
 
     rotation_interval = _parse_int_env_var(
-        "VAULT_ROTATION_INTERVAL", ROTATION_INTERVAL_DEFAULT, env_values, min_value=1
+        "ROTATION_INTERVAL", ROTATION_INTERVAL_DEFAULT, env_values, min_value=1
     )
 
     html_dir = base_dir
     log_file = _determine_log_file(base_dir, env_values)
 
-    captcha_image_width = _parse_int_env_var(
-        "VAULT_CAPTCHA_IMAGE_WIDTH", CAPTCHA_IMAGE_WIDTH_DEFAULT, env_values
-    )
-
-    captcha_image_height = _parse_int_env_var(
-        "VAULT_CAPTCHA_IMAGE_HEIGHT", CAPTCHA_IMAGE_HEIGHT_DEFAULT, env_values
-    )
-
     captcha_length = _parse_int_env_var(
-        "VAULT_CAPTCHA_LENGTH", CAPTCHA_LENGTH_DEFAULT, env_values
+        "CAPTCHA_LENGTH", CAPTCHA_LENGTH_DEFAULT, env_values
     )
 
     captcha_store_ttl = _parse_int_env_var(
-        "VAULT_CAPTCHA_STORE_TTL_SECONDS", CAPTCHA_STORE_TTL_SECONDS_DEFAULT, env_values
+        "CAPTCHA_STORE_TTL_SECONDS", CAPTCHA_STORE_TTL_SECONDS_DEFAULT, env_values
     )
 
     login_csrf_ttl = _parse_int_env_var(
-        "VAULT_LOGIN_CSRF_TTL_SECONDS",
+        "LOGIN_CSRF_TTL_SECONDS",
         LOGIN_CSRF_TTL_SECONDS_DEFAULT,
         env_values,
         min_value=60,
     )
 
     csp_report_max_size = _parse_int_env_var(
-        "VAULT_CSP_REPORT_MAX_SIZE",
+        "CSP_REPORT_MAX_SIZE",
         CSP_REPORT_MAX_SIZE_DEFAULT,
         env_values,
         min_value=0,
@@ -326,7 +299,7 @@ def load_settings() -> Settings:
     )
 
     csp_report_rate_limit = _parse_int_env_var(
-        "VAULT_CSP_REPORT_RATE_LIMIT",
+        "CSP_REPORT_RATE_LIMIT",
         CSP_REPORT_RATE_LIMIT_DEFAULT,
         env_values,
         min_value=1,
@@ -344,22 +317,22 @@ def load_settings() -> Settings:
     docker_proxy_token = env_values.get("DOCKER_PROXY_TOKEN", "")
     _validate_secret_length("DOCKER_PROXY_TOKEN", docker_proxy_token)
 
-    secret_key = env_values.get("VAULT_SECRET_KEY", "")
-    _validate_secret_length("VAULT_SECRET_KEY", secret_key)
+    secret_key = env_values.get("SECRET_KEY", "")
+    _validate_secret_length("SECRET_KEY", secret_key)
 
     sse_stream_interval_ms = _parse_int_env_var(
-        "VAULT_ORCHESTRATOR_SSE_INTERVAL_MS",
+        "ORCH_SSE_INTERVAL_MS",
         SSE_INTERVAL_MS_DEFAULT,
         env_values,
         min_value=SSE_INTERVAL_MS_MINIMUM,
     )
 
     session_cookie_secure = _parse_bool(
-        env_values.get("VAULT_SESSION_COOKIE_SECURE"), default=True
+        env_values.get("SESSION_COOKIE_SECURE"), default=True
     )
 
     orchestrator_port = _parse_int_env_var(
-        "VAULT_ORCHESTRATOR_PORT",
+        "ORCH_PORT",
         ORCHESTRATOR_PORT_DEFAULT,
         env_values,
         min_value=1,
@@ -378,8 +351,6 @@ def load_settings() -> Settings:
         log_file=log_file,
         html_dir=html_dir,
         secret_key=secret_key,
-        captcha_image_width=captcha_image_width,
-        captcha_image_height=captcha_image_height,
         captcha_length=captcha_length,
         captcha_store_ttl=captcha_store_ttl,
         login_csrf_ttl=login_csrf_ttl,

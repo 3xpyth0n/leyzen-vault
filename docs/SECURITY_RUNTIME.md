@@ -17,7 +17,7 @@ service and highlights considerations for extending the stack safely.
   `load_settings()` function in `src/orchestrator/config.py`.
 
 - Application logs are written to a dedicated file whose location can be
-  overridden with `VAULT_ORCHESTRATOR_LOG_DIR`; the directory is created at startup
+  overridden with `ORCH_LOG_DIR`; the directory is created at startup
   so file permissions can be managed by deployment tooling. See `_determine_log_file()`
   and `load_settings()` in `src/orchestrator/config.py`.
 
@@ -44,7 +44,7 @@ service and highlights considerations for extending the stack safely.
 - Sessions are flagged `HttpOnly`, `SameSite=Lax`, and `Secure` by default to
   ensure cookies ride only over HTTPS; background workers are started lazily to
   limit exposure before the first authenticated request. Deployments that run
-  entirely on HTTP may toggle `VAULT_SESSION_COOKIE_SECURE` to `false`.
+  entirely on HTTP may toggle `SESSION_COOKIE_SECURE` to `false`.
   See `create_app()` in `src/orchestrator/__init__.py` and session configuration
   in `load_settings()`.
 
@@ -98,7 +98,7 @@ service and highlights considerations for extending the stack safely.
 ## Known gaps and future hardening
 
 - Session cookies default to `Secure`, but environments without TLS must
-  explicitly relax `VAULT_SESSION_COOKIE_SECURE`. Ensure proxies terminate HTTPS
+  explicitly relax `SESSION_COOKIE_SECURE`. Ensure proxies terminate HTTPS
   before disabling this protection.
 
 - The captcha store and login attempt tracker rely on in-memory globals, which

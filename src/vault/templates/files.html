@@ -1,0 +1,84 @@
+{% extends "base.html" %} {% block title %}File Explorer - Leyzen Vault{%
+endblock %} {% block content %}
+<div class="file-explorer">
+  <!-- Upload Section -->
+  <div class="vault-section">
+    <h2>Upload a file</h2>
+    <div class="upload-area" id="upload-area">
+      <div class="upload-icon">📁</div>
+      <p class="upload-text">Drag and drop your files here</p>
+      <p class="upload-subtext">or</p>
+      <label for="file-input" class="btn btn-file-select">
+        Choose a file
+      </label>
+      <input type="file" id="file-input" class="hidden" multiple />
+      <p class="upload-info">
+        <span class="e2ee-badge">🔒 E2EE</span>
+        Your files will be encrypted before being sent to the server
+      </p>
+    </div>
+    <div id="upload-status" class="status hidden"></div>
+    <div id="upload-progress" class="upload-progress hidden">
+      <div class="progress-bar-wrapper">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progress-percent">0%</span>
+        <span id="progress-speed"></span>
+        <span id="progress-time"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Files List -->
+  <div class="vault-section">
+    <div class="files-header">
+      <h2>My files</h2>
+      <div class="files-actions">
+        <select id="sort-select" class="search-input sort-select">
+          <option value="date-desc">Newest first</option>
+          <option value="date-asc">Oldest first</option>
+          <option value="name-asc">Name A-Z</option>
+          <option value="name-desc">Name Z-A</option>
+          <option value="size-asc">Size (smallest)</option>
+          <option value="size-desc">Size (largest)</option>
+        </select>
+        <input
+          type="search"
+          id="search-input"
+          placeholder="Search..."
+          class="search-input"
+        />
+      </div>
+    </div>
+    <div id="files-list" class="files-grid">
+      <div class="files-loading">Loading files...</div>
+    </div>
+  </div>
+
+  <!-- Share Modal -->
+  <div id="share-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Share link</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-warning">
+          ⚠️ The encryption key is in the URL. Only share this link with trusted
+          people.
+        </p>
+        <div class="share-url-wrapper">
+          <input type="text" id="share-url" readonly class="share-url-input" />
+          <button id="copy-share-btn" class="btn btn-primary">Copy</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop"></div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script src="/static/logout.js"></script>
+<script src="/static/vault.js"></script>
+<script src="/static/files.js"></script>
+{% endblock %}

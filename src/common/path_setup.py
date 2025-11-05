@@ -2,7 +2,7 @@
 
 This module centralizes the sys.path manipulation logic used across
 different entry points (orchestrator, docker-proxy, compose scripts) to
-ensure consistent import resolution for common modules and vault plugins.
+ensure consistent import resolution for common modules.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def bootstrap_src_path() -> None:
 
     This function performs the minimal bootstrap needed to import common.path_setup
     and other common modules from entry points that are not executed from the src/
-    directory. It should be called before any imports from common.* or vault_plugins.*
+    directory. It should be called before any imports from common.*
     modules.
 
     This function:
@@ -81,7 +81,7 @@ def bootstrap_src_path() -> None:
 
 
 def setup_python_paths() -> None:
-    """Configure sys.path to enable imports from common and vault_plugins.
+    """Configure sys.path to enable imports from common.
 
     This function:
     1. Adds the repository root to sys.path
@@ -89,7 +89,6 @@ def setup_python_paths() -> None:
 
     This enables imports like:
     - `from common.env import ...`
-    - `from vault_plugins.registry import ...`
     - `from compose.base_stack import ...`
 
     The function is idempotent: calling it multiple times has no additional effect.

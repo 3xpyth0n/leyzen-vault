@@ -5,8 +5,7 @@ operators seriously and appreciate responsible disclosures.
 
 ## Supported Versions
 
-The `main` branch and the most recent tagged release receive security patches. Older tags and forks may remain available
-for reference but do not receive fixes. When in doubt, upgrade to the latest release before requesting support.
+The `main` branch and tagged releases receive security patches. When in doubt, upgrade to the latest release before requesting support.
 
 ## Reporting a Vulnerability
 
@@ -60,14 +59,14 @@ The orchestrator dashboard password should be rotated periodically (recommended:
 
 **Impact:** Brief service interruption during restart. Existing sessions may be invalidated.
 
-#### VAULT_SECRET_KEY (Flask Session Encryption Key)
+#### SECRET_KEY (Flask Session Encryption Key)
 
 The Flask secret key is used for session encryption and CSRF token generation. Rotate this key quarterly (recommended: every 90 days).
 
 **Rotation procedure:**
 
 1. Generate a new secret key: `openssl rand -hex 32`
-2. Update `VAULT_SECRET_KEY` in your `.env` file
+2. Update `SECRET_KEY` in your `.env` file
 3. Restart the orchestrator: `./leyzenctl restart`
 4. Verify authentication still works
 
@@ -85,45 +84,6 @@ The token used to authenticate requests between the orchestrator and docker-prox
 4. Verify container operations still function correctly from the dashboard
 
 **Impact:** Brief interruption in container operations during restart. Ensure the orchestrator and docker-proxy restart in sequence to avoid authentication failures.
-
-### Plugin Secrets
-
-#### FILEBROWSER_ADMIN_PASSWORD
-
-The Filebrowser administrator password. Rotate this key quarterly (recommended: every 90 days).
-
-**Rotation procedure:**
-
-1. Update `FILEBROWSER_ADMIN_PASSWORD` in your `.env` file
-2. Restart the Filebrowser service: `./leyzenctl restart`
-3. The entrypoint script will automatically update the admin account password on startup
-
-**Impact:** Minimal - password is updated on next container restart. Existing Filebrowser sessions may need to re-authenticate.
-
-#### PAPERLESS_SECRET_KEY
-
-The Paperless cryptographic signing key. Rotate this key quarterly (recommended: every 90 days).
-
-**Rotation procedure:**
-
-1. Generate a new secret key: `openssl rand -hex 32`
-2. Update `PAPERLESS_SECRET_KEY` in your `.env` file
-3. Restart the Paperless service: `./leyzenctl restart`
-4. Verify Paperless web interface is accessible
-
-**Impact:** Existing Paperless sessions will be invalidated. Users will need to log in again.
-
-#### PAPERLESS_DBPASS
-
-The PostgreSQL database password for Paperless. Rotate this key semi-annually (recommended: every 180 days).
-
-**Rotation procedure:**
-
-1. Update `PAPERLESS_DBPASS` in your `.env` file
-2. Restart the Paperless stack: `./leyzenctl restart`
-3. The Paperless containers will reconnect with the new password
-
-**Impact:** Brief database connection interruption during restart.
 
 ### Rotation Best Practices
 

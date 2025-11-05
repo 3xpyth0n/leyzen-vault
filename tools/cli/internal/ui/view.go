@@ -216,13 +216,12 @@ func (m *Model) buildConfigContent() string {
 
 	// Category order
 	categoryOrder := []string{
-		"Vault",
-		"Docker Proxy",
-		"Filebrowser",
-		"Paperless",
-		"CSP",
-		"Proxy",
 		"General",
+		"Docker Proxy",
+		"Proxy",
+		"CSP",
+		"Vault",
+		"Orchestrator",
 	}
 
 	// Display each category
@@ -278,13 +277,11 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 
 	// Logical order of keys by category (USER before PASSWORD, etc.)
 	vaultOrder := map[string]int{
-		"VAULT_SERVICE":               0,
-		"VAULT_USER":                  1,
-		"VAULT_PASS":                  2,
-		"VAULT_SECRET_KEY":            3,
-		"VAULT_ROTATION_INTERVAL":     4,
-		"VAULT_WEB_REPLICAS":          5,
-		"VAULT_SESSION_COOKIE_SECURE": 6,
+		"VAULT_USER":                  0,
+		"VAULT_PASS":                  1,
+		"VAULT_MAX_FILE_SIZE_MB":      2,
+		"VAULT_MAX_UPLOADS_PER_HOUR":  3,
+		"VAULT_LOG_FILE":              4,
 	}
 	dockerProxyOrder := map[string]int{
 		"DOCKER_PROXY_URL":       0,
@@ -292,30 +289,36 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		"DOCKER_PROXY_TIMEOUT":   2,
 		"DOCKER_PROXY_LOG_LEVEL": 3,
 	}
-	filebrowserOrder := map[string]int{
-		"FILEBROWSER_VERSION":        0,
-		"FILEBROWSER_ADMIN_USER":     1,
-		"FILEBROWSER_ADMIN_PASSWORD": 2,
-	}
-	paperlessOrder := map[string]int{
-		"PAPERLESS_URL":        0,
-		"PAPERLESS_DBPASS":     1,
-		"PAPERLESS_SECRET_KEY": 2,
-	}
 	cspOrder := map[string]int{
-		"VAULT_CSP_REPORT_MAX_SIZE":   0,
-		"VAULT_CSP_REPORT_RATE_LIMIT": 1,
-		// Deprecated keys: These are kept for backward compatibility with old .env files
-		// that may still use the old naming convention (without VAULT_ prefix).
-		// New configurations should use VAULT_CSP_REPORT_MAX_SIZE and VAULT_CSP_REPORT_RATE_LIMIT.
-		// TODO: Remove these deprecated keys in a future major version (e.g., v2.0.0) after ensuring
-		//       all deployments have migrated to the VAULT_ prefixed versions. This is a breaking
-		//       change that should be tracked in CHANGELOG.md when implemented.
-		"CSP_REPORT_MAX_SIZE":   0, // Deprecated: use VAULT_CSP_REPORT_MAX_SIZE
-		"CSP_REPORT_RATE_LIMIT": 1, // Deprecated: use VAULT_CSP_REPORT_RATE_LIMIT
+		"CSP_REPORT_MAX_SIZE":   0,
+		"CSP_REPORT_RATE_LIMIT": 1,
 	}
 	proxyOrder := map[string]int{
 		"PROXY_TRUST_COUNT": 0,
+	}
+	orchestratorOrder := map[string]int{
+		"ORCH_USER":              0,
+		"ORCH_PASS":              1,
+		"WEB_REPLICAS":           2,
+		"ROTATION_INTERVAL":      3,
+		"ORCH_PORT":              4,
+		"ORCH_LOG_DIR":           5,
+		"ORCH_LOG_FILE":          6,
+		"ORCH_SSE_INTERVAL_MS":   7,
+	}
+	sharedOrder := map[string]int{
+		"SECRET_KEY":                 0,
+		"SESSION_COOKIE_SECURE":      1,
+		"CAPTCHA_LENGTH":             2,
+		"CAPTCHA_STORE_TTL_SECONDS":  3,
+		"LOGIN_CSRF_TTL_SECONDS":     4,
+	}
+	infrastructureOrder := map[string]int{
+		"HTTP_PORT":      0,
+		"HTTPS_PORT":     1,
+		"ENABLE_HTTPS":   2,
+		"SSL_CERT_PATH":  3,
+		"SSL_KEY_PATH":   4,
 	}
 
 	// Collect all keys
@@ -328,22 +331,28 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 	for _, key := range allKeys {
 		category := ""
 
-		if strings.HasPrefix(key, "VAULT_") {
+		if key == "TIMEZONE" {
+			category = "General"
+		} else if strings.HasPrefix(key, "VAULT_") {
 			category = "Vault"
+		} else if strings.HasPrefix(key, "ORCH_") {
+			category = "Orchestrator"
 		} else if strings.HasPrefix(key, "DOCKER_PROXY_") {
 			category = "Docker Proxy"
-		} else if strings.HasPrefix(key, "FILEBROWSER_") {
-			category = "Filebrowser"
-		} else if strings.HasPrefix(key, "PAPERLESS_") {
-			category = "Paperless"
-		} else if strings.HasPrefix(key, "VAULT_CSP_") {
-			category = "CSP"
 		} else if strings.HasPrefix(key, "CSP_") {
 			category = "CSP"
 		} else if strings.HasPrefix(key, "PROXY_") {
-			category = "Proxy"
+			category = "Shared"
+		} else if key == "SECRET_KEY" || key == "SESSION_COOKIE_SECURE" ||
+			strings.HasPrefix(key, "CAPTCHA_") || key == "LOGIN_CSRF_TTL_SECONDS" {
+			category = "Shared"
+		} else if key == "WEB_REPLICAS" || key == "ROTATION_INTERVAL" {
+			category = "Orchestrator"
+		} else if key == "HTTP_PORT" || key == "HTTPS_PORT" || key == "ENABLE_HTTPS" ||
+			key == "SSL_CERT_PATH" || key == "SSL_KEY_PATH" {
+			category = "Infrastructure"
 		} else {
-			category = "General"
+			category = "Other"
 		}
 
 		if categories[category] == nil {
@@ -362,14 +371,25 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 			orderMap = vaultOrder
 		} else if category == "Docker Proxy" {
 			orderMap = dockerProxyOrder
-		} else if category == "Filebrowser" {
-			orderMap = filebrowserOrder
-		} else if category == "Paperless" {
-			orderMap = paperlessOrder
 		} else if category == "CSP" {
 			orderMap = cspOrder
-		} else if category == "Proxy" {
+		} else if category == "Proxy" || category == "Shared" {
 			orderMap = proxyOrder
+			if category == "Shared" {
+				// Merge proxyOrder and sharedOrder for Shared category
+				mergedOrder := make(map[string]int)
+				for k, v := range proxyOrder {
+					mergedOrder[k] = v
+				}
+				for k, v := range sharedOrder {
+					mergedOrder[k] = v
+				}
+				orderMap = mergedOrder
+			}
+		} else if category == "Orchestrator" {
+			orderMap = orchestratorOrder
+		} else if category == "Infrastructure" {
+			orderMap = infrastructureOrder
 		} else {
 			orderMap = nil
 		}
@@ -393,7 +413,7 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 				return keys[i] < keys[j]
 			})
 		} else {
-			// For General, sort alphabetically
+			// For General and categories without specific order, sort alphabetically
 			sort.Strings(keys)
 		}
 
@@ -714,17 +734,19 @@ func (m *Model) renderHelp() string {
 // getWizardHint returns a helpful hint for a configuration field
 func (m *Model) getWizardHint(key string) string {
 	hints := map[string]string{
-		"VAULT_USER":                  "Username for Vault authentication",
-		"VAULT_PASS":                  "Password for Vault authentication",
-		"VAULT_SECRET_KEY":            "Secret key used for encryption",
-		"VAULT_ROTATION_INTERVAL":     "Time in seconds between container rotations",
-		"VAULT_WEB_REPLICAS":         "Number of web container replicas",
-		"DOCKER_PROXY_URL":           "URL of the Docker proxy service",
-		"DOCKER_PROXY_TOKEN":         "Authentication token for Docker proxy",
-		"FILEBROWSER_ADMIN_USER":     "Admin username for Filebrowser",
-		"FILEBROWSER_ADMIN_PASSWORD": "Admin password for Filebrowser",
-		"PAPERLESS_URL":              "URL of the Paperless service",
-		"PAPERLESS_DBPASS":           "Database password for Paperless",
+		"VAULT_USER":              "Username for Vault authentication",
+		"VAULT_PASS":              "Password for Vault authentication",
+		"SECRET_KEY":              "Secret key used for encryption (shared)",
+		"ROTATION_INTERVAL":       "Time in seconds between container rotations",
+		"WEB_REPLICAS":            "Number of web container replicas",
+		"DOCKER_PROXY_URL":        "URL of the Docker proxy service",
+		"DOCKER_PROXY_TOKEN":      "Authentication token for Docker proxy",
+		"ORCH_USER":               "Username for Orchestrator authentication",
+		"ORCH_PASS":               "Password for Orchestrator authentication",
+		"ORCH_PORT":               "Port for the orchestrator service",
+		"ORCH_LOG_DIR":            "Directory for orchestrator log files",
+		"ORCH_LOG_FILE":           "Filename for orchestrator log file",
+		"ORCH_SSE_INTERVAL_MS":    "SSE stream interval in milliseconds",
 	}
 	if hint, ok := hints[key]; ok {
 		return hint

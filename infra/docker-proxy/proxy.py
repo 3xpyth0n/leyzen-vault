@@ -42,7 +42,7 @@ from common.constants import (  # noqa: E402
 )
 
 # IMPORTANT: Always use parse_container_names from common.env
-# DO NOT reimplement this function inline (see CHANGELOG.md v1.1.0)
+# DO NOT reimplement this function inline.
 # This ensures consistent parsing behavior across all services.
 from common.env import parse_container_names  # noqa: E402
 
@@ -101,17 +101,17 @@ def _load_allowed_containers() -> FrozenSet[str]:
     Uses the shared parse_container_names utility and converts to FrozenSet
     for efficient membership testing.
     """
-    raw = os.environ.get("VAULT_WEB_CONTAINERS")
+    raw = os.environ.get("ORCH_WEB_CONTAINERS")
     if not raw:
         logger.error(
-            "VAULT_WEB_CONTAINERS must include at least one container identifier"
+            "ORCH_WEB_CONTAINERS must include at least one container identifier"
         )
-        raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
+        raise RuntimeError("ORCH_WEB_CONTAINERS must provide at least one container")
 
     names = parse_container_names(raw)
     if not names:
-        logger.error("Parsed VAULT_WEB_CONTAINERS is empty after tokenization")
-        raise RuntimeError("VAULT_WEB_CONTAINERS must provide at least one container")
+        logger.error("Parsed ORCH_WEB_CONTAINERS is empty after tokenization")
+        raise RuntimeError("ORCH_WEB_CONTAINERS must provide at least one container")
 
     # Convert to FrozenSet for efficient membership testing
     allowed = frozenset(names)
@@ -127,7 +127,7 @@ def _ensure_configured() -> None:
 
         raise RuntimeError(
             "Docker proxy is not configured; ensure DOCKER_PROXY_TOKEN and "
-            "VAULT_WEB_CONTAINERS are set."
+            "ORCH_WEB_CONTAINERS are set."
         )
 
 

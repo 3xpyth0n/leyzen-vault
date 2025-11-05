@@ -13,8 +13,6 @@ from pathlib import Path
 # src/orchestrator/config.py::load_settings().
 
 # CAPTCHA configuration defaults
-CAPTCHA_IMAGE_WIDTH_DEFAULT = 220
-CAPTCHA_IMAGE_HEIGHT_DEFAULT = 70
 CAPTCHA_LENGTH_DEFAULT = 6
 
 # TTL configuration defaults (in seconds)
@@ -168,8 +166,6 @@ HAPROXY_404_ERROR_PATH = REPO_ROOT / "infra/haproxy/404.http"
 HAPROXY_503_ERROR_PATH = REPO_ROOT / "infra/haproxy/503.http"
 
 __all__ = [
-    "CAPTCHA_IMAGE_WIDTH_DEFAULT",
-    "CAPTCHA_IMAGE_HEIGHT_DEFAULT",
     "CAPTCHA_LENGTH_DEFAULT",
     "MAX_LOGIN_ATTEMPTS",
     "LOGIN_BLOCK_WINDOW_MINUTES",

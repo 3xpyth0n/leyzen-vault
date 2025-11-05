@@ -332,8 +332,20 @@ class RotationService:
             next_name = managed_containers[next_index]
 
             released = self._docker.stop_container(
-                active_name, reason="releasing shared database for rotation"
+                active_name, reason="releasing for rotation"
             )
+
+            # Synchronize data to source before rotation
+            try:
+                from .sync_service import SyncService
+
+                sync_service = SyncService(self._settings, self._docker, self._logger)
+                sync_service.sync_container_data_to_source(active_name)
+            except Exception as exc:
+                self._logger.log(
+                    f"[WARNING] Failed to synchronize {active_name} before rotation: {exc}"
+                )
+
             elapsed = self.accumulate_and_clear_active(active_name)
             if elapsed > 0:
                 total_seconds = self.container_total_active_seconds.get(active_name, 0)

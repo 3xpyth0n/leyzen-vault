@@ -31,10 +31,10 @@ jobs:
           pip install ruff
 
       - name: Validate Python bytecode
-        run: python -m compileall src/orchestrator infra/docker-proxy src/compose src/vault_plugins
+        run: python -m compileall src/orchestrator infra/docker-proxy src/compose
 
       - name: Ruff lint
-        run: ruff check --select F401 src/orchestrator infra/docker-proxy src/compose src/vault_plugins
+        run: ruff check --select F401 src/orchestrator infra/docker-proxy src/compose
 
       - name: Check requirements version consistency
         run: |
@@ -187,7 +187,7 @@ jobs:
           if repo_root_str not in sys.path:
               sys.path.insert(0, repo_root_str)
 
-          paths = ["src/orchestrator", "infra/docker-proxy", "src/compose", "src/vault_plugins", "src/common"]
+          paths = ["src/orchestrator", "infra/docker-proxy", "src/compose", "src/common"]
           for p in paths:
               pkg_path = pathlib.Path(p)
               if pkg_path.exists():

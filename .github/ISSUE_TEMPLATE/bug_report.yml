@@ -13,8 +13,8 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: "Leyzen Vault version or commit, operating system, and plugin (from VAULT_SERVICE)."
-      placeholder: "v1.2.0 on Ubuntu 22.04, plugin=filebrowser"
+      description: "Leyzen Vault version or commit, operating system."
+      placeholder: "v1.2.0 on Ubuntu 22.04"
     validations:
       required: true
   - type: textarea
@@ -31,7 +31,7 @@ body:
       label: Steps to reproduce
       description: List the exact commands run (prefer `./leyzenctl` invocations) and configuration edits made.
       placeholder: |
-        1. Set VAULT_SERVICE=paperless in .env
+        1. Set VAULT_USER and VAULT_PASS in .env
         2. Run ./leyzenctl build
         3. Run ./leyzenctl start
     validations:

@@ -45,6 +45,10 @@ import os
 import re
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo
+
+from common.constants import TIMEZONE_DEFAULT
+from common.exceptions import ConfigurationError
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -165,3 +169,41 @@ def load_env_with_override(root_dir: Path | None = None) -> dict[str, str]:
         env_path = (root_dir / ".env").resolve()
 
     return read_env_file(env_path)
+
+
+def parse_timezone(
+    env: dict[str, str] | None = None, *, allow_fallback: bool = False
+) -> ZoneInfo:
+    """Parse timezone from environment variables with consistent fallback logic.
+
+    This function centralizes timezone parsing logic used across the codebase
+    to ensure consistent behavior. It reads TIMEZONE from the provided environment
+    dictionary or uses load_env_with_override() if not provided.
+
+    Args:
+        env: Optional dictionary of environment variables. If None, uses
+             load_env_with_override() to load from .env file.
+        allow_fallback: If True, falls back to UTC on invalid timezone instead
+                       of raising ConfigurationError. Defaults to False.
+
+    Returns:
+        ZoneInfo object for the parsed timezone.
+
+    Raises:
+        ConfigurationError: If timezone is invalid and allow_fallback is False.
+    """
+    if env is None:
+        env = load_env_with_override()
+
+    # Merge with os.environ to allow runtime overrides
+    env_values = env.copy()
+    env_values.update(os.environ)
+
+    timezone_name = env_values.get("TIMEZONE", TIMEZONE_DEFAULT).strip()
+
+    try:
+        return ZoneInfo(timezone_name)
+    except Exception as exc:
+        if allow_fallback:
+            return ZoneInfo(TIMEZONE_DEFAULT)
+        raise ConfigurationError(f"Unknown timezone '{timezone_name}'") from exc

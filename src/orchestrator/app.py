@@ -104,7 +104,7 @@ def _build_placeholder_app(error: ConfigurationError) -> Flask:
         message = (
             "Leyzen Vault orchestrator cannot start because required environment "
             "variables are missing. Set DOCKER_PROXY_TOKEN, VAULT_PASS, "
-            "VAULT_SECRET_KEY, and VAULT_USER before launching the service."
+            "SECRET_KEY, and VAULT_USER before launching the service."
         )
         return message, 500, {"Content-Type": "text/plain; charset=utf-8"}
 

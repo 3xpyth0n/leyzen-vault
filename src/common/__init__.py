@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from .constants import (
-    CAPTCHA_IMAGE_HEIGHT_DEFAULT,
-    CAPTCHA_IMAGE_WIDTH_DEFAULT,
     CAPTCHA_LENGTH_DEFAULT,
     MAX_LOGIN_ATTEMPTS,
 )
@@ -17,8 +15,6 @@ from .exceptions import (
 )
 
 __all__ = [
-    "CAPTCHA_IMAGE_HEIGHT_DEFAULT",
-    "CAPTCHA_IMAGE_WIDTH_DEFAULT",
     "CAPTCHA_LENGTH_DEFAULT",
     "MAX_LOGIN_ATTEMPTS",
     "parse_container_names",

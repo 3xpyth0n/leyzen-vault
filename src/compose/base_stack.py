@@ -1,4 +1,4 @@
-"""Base docker-compose stack shared by all plugins."""
+"""Base docker-compose stack for Leyzen Vault."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def validate_ssl_certificates(
     warnings: list[str] = []
 
     if not cert_path or not cert_path.strip():
-        warnings.append("VAULT_ENABLE_HTTPS=true but VAULT_SSL_CERT_PATH is not set")
+        warnings.append("ENABLE_HTTPS=true but SSL_CERT_PATH is not set")
         return False, warnings
 
     cert_path_str = cert_path.strip()
@@ -130,10 +130,10 @@ def build_base_services(
     orchestrator_depends["docker-proxy"] = {"condition": "service_healthy"}
 
     # Read HTTPS configuration from environment
-    enable_https_raw = env.get("VAULT_ENABLE_HTTPS", "").strip().lower()
+    enable_https_raw = env.get("ENABLE_HTTPS", "").strip().lower()
     enable_https = enable_https_raw in ("true", "1", "yes", "on")
-    ssl_cert_path = env.get("VAULT_SSL_CERT_PATH", "").strip() or None
-    ssl_key_path = env.get("VAULT_SSL_KEY_PATH", "").strip() or None
+    ssl_cert_path = env.get("SSL_CERT_PATH", "").strip() or None
+    ssl_key_path = env.get("SSL_KEY_PATH", "").strip() or None
 
     # Build HAProxy volumes (always include base config files)
     haproxy_volumes = [
@@ -143,8 +143,8 @@ def build_base_services(
     ]
 
     # Parse HTTP and HTTPS port configuration from environment
-    http_port = _parse_port(env, "VAULT_HTTP_PORT", default=8080)
-    https_port = _parse_port(env, "VAULT_HTTPS_PORT", default=8443)
+    http_port = _parse_port(env, "HTTP_PORT", default=8080)
+    https_port = _parse_port(env, "HTTPS_PORT", default=8443)
 
     # Build HAProxy ports (always include HTTP port)
     haproxy_ports = [f"{http_port}:80"]
@@ -213,7 +213,7 @@ def build_base_services(
         "networks": ["vault-net"],
     }
 
-    pythonpath_entries = ["/app", "/vault_plugins", "/common"]
+    pythonpath_entries = ["/app", "/common"]
     extra_pythonpath = env.get("PYTHONPATH", "").strip()
     if extra_pythonpath:
         for entry in extra_pythonpath.split(":"):
@@ -222,8 +222,7 @@ def build_base_services(
                 pythonpath_entries.append(token)
 
     # Preserve order while removing duplicates so the orchestrator always has
-    # access to its source tree, the external plugin directory, and shared
-    # helper modules.
+    # access to its source tree and shared helper modules.
     deduped_pythonpath: list[str] = []
     seen_pythonpath: set[str] = set()
     for entry in pythonpath_entries:
@@ -242,7 +241,7 @@ def build_base_services(
             "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
             "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
             "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
-            "VAULT_WEB_CONTAINERS": web_container_string,
+            "ORCH_WEB_CONTAINERS": web_container_string,
             "PYTHONPATH": pythonpath,
         },
         "healthcheck": {
@@ -270,13 +269,12 @@ def build_base_services(
         },
         "env_file": [env_file_name],
         "environment": {
-            "VAULT_ORCHESTRATOR_LOG_DIR": "/app/logs",
-            "VAULT_WEB_CONTAINERS": web_container_string,
+            "ORCH_LOG_DIR": "/app/logs",
+            "ORCH_WEB_CONTAINERS": web_container_string,
             "PYTHONPATH": pythonpath,
         },
         "volumes": [
             "./src/orchestrator:/app:ro",
-            "./src/vault_plugins:/vault_plugins:ro",
             "./src/common:/common:ro",
             "orchestrator-logs:/app/logs",
         ],

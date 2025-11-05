@@ -1,7 +1,8 @@
 # Leyzen Vault 🛰️
 
+**Version 1.0.0 (Initial Release)**
+
 [![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
 
@@ -9,7 +10,9 @@
 >
 > Licensed under the **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE) for details.
 
-Leyzen Vault automates ephemeral container rotation across pluggable workloads. A hardened Flask orchestrator coordinates Docker lifecycle operations through an allowlisted proxy, while HAProxy front-ends every request with strict security headers. The system demonstrates how moving-target defense principles can be applied to real-world stacks without sacrificing observability or operator experience.
+Leyzen Vault automates ephemeral container rotation for a secure file storage system. A hardened Flask orchestrator coordinates Docker lifecycle operations through an allowlisted proxy, while HAProxy front-ends every request with strict security headers. The system demonstrates how moving-target defense principles can be applied to real-world stacks without sacrificing observability or operator experience.
+
+**End-to-End Encryption (E2EE)**: Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded to the server. The server stores only encrypted data and never has access to encryption keys or decrypted content. Decryption happens entirely in the user's browser when downloading files. This ensures that even if the server is compromised, file contents remain protected.
 
 ## Author
 
@@ -19,10 +22,9 @@ He created **Leyzen Vault** as a personal initiative to explore advanced moving-
 
 ## Feature Highlights
 
-- **Dynamic stack composition** – `leyzenctl` regenerates Docker Compose and HAProxy artifacts on every lifecycle command so configuration always reflects the active plugin.
+- **Dynamic stack composition** – `leyzenctl` regenerates Docker Compose and HAProxy artifacts on every lifecycle command so configuration always reflects the current setup.
 - **Rotation-aware control plane** – The orchestrator promotes one healthy replica at a time, keeps rotation state auditable, and exposes SSE telemetry for dashboards and automations.
 - **Defense-in-depth defaults** – Captcha-backed authentication, CSP reporting, proxy trust limits, and bearer-token Docker access are enabled from the first boot.
-- **Extensible plugin model** – Service definitions live in Python packages under `src/vault_plugins/`, allowing new workloads to slot into the rotation loop with minimal boilerplate.
 
 ## Documentation
 
@@ -42,7 +44,7 @@ Primary user-facing and operational documentation is maintained in the [GitHub W
 - [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture)
 - [Security Model](https://github.com/3xpyth0n/leyzen-vault/wiki/Security-Model)
 - [`leyzenctl` CLI](https://github.com/3xpyth0n/leyzen-vault/wiki/leyzenctl)
-- [Plugins](https://github.com/3xpyth0n/leyzen-vault/wiki/Plugins)
+- [Vault](https://github.com/3xpyth0n/leyzen-vault/wiki/Vault)
 - [Telemetry](https://github.com/3xpyth0n/leyzen-vault/wiki/Telemetry)
 - [CI/CD](https://github.com/3xpyth0n/leyzen-vault/wiki/CI-CD)
 - [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide)
@@ -86,7 +88,7 @@ Security disclosures follow the process documented in [`docs/SECURITY.md`](docs/
 
 ## Contributing
 
-We welcome pull requests and plugin ideas! Start with the [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
+We welcome pull requests and feature ideas! Start with the [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
 
 ## License
 
@@ -103,7 +105,7 @@ Source code is available under the Business Source License 1.1 (BSL 1.1). Commer
 The repository is organized as follows:
 
 - **`leyzen-vault/`** - Main Leyzen Vault project (core moving-target defense orchestrator)
-  - `src/` - Python source code (orchestrator, compose builder, plugins, common utilities)
-  - `infra/` - Infrastructure components (HAProxy config, Docker proxy, filebrowser entrypoint)
+  - `src/` - Python source code (orchestrator, compose builder, vault application, common utilities)
+  - `infra/` - Infrastructure components (HAProxy config, Docker proxy, vault Dockerfile)
   - `tools/cli/` - Go CLI source code (`leyzenctl`)
   - `docs/` - Developer documentation and policies

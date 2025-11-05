@@ -25,10 +25,9 @@ func init() {
 				Message  string
 				Password bool
 			}{
-				{Key: "VAULT_SERVICE", Message: "Vault plugin identifier"},
-				{Key: "VAULT_WEB_REPLICAS", Message: "Number of Vault replicas"},
-				{Key: "VAULT_PASS", Message: "Orchestrator admin password", Password: true},
-				{Key: "VAULT_ROTATION_INTERVAL", Message: "Rotation interval (seconds)"},
+				{Key: "WEB_REPLICAS", Message: "Number of Vault replicas"},
+				{Key: "ORCH_PASS", Message: "Orchestrator admin password", Password: true},
+				{Key: "ROTATION_INTERVAL", Message: "Rotation interval (seconds)"},
 			}
 
 			responses := make(map[string]string)

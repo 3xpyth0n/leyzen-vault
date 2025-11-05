@@ -1,0 +1,66 @@
+{% extends "base.html" %} {% block title %}Security Dashboard - Leyzen Vault{%
+endblock %} {% block content %}
+<div class="security-dashboard">
+  <div class="vault-section">
+    <h2>Storage Statistics</h2>
+    <div id="storage-stats" class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Files</div>
+        <div class="stat-value" id="stat-total-files">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Size</div>
+        <div class="stat-value" id="stat-total-size">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Encrypted Size</div>
+        <div class="stat-value" id="stat-encrypted-size">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Average File Size</div>
+        <div class="stat-value" id="stat-avg-size">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vault-section">
+    <h2>Recent Activity (Last 7 Days)</h2>
+    <div id="activity-stats" class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Actions</div>
+        <div class="stat-value" id="stat-total-actions">-</div>
+      </div>
+      <div class="stat-card stat-success">
+        <div class="stat-label">Successful</div>
+        <div class="stat-value" id="stat-successful">-</div>
+      </div>
+      <div class="stat-card stat-error">
+        <div class="stat-label">Failed</div>
+        <div class="stat-value" id="stat-failed">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vault-section">
+    <h2>Activity by Type</h2>
+    <div id="activity-breakdown" class="activity-breakdown">
+      <div class="files-loading">Loading...</div>
+    </div>
+  </div>
+
+  <div class="vault-section">
+    <div class="files-header">
+      <h2>Recent Audit Logs</h2>
+      <div class="files-actions">
+        <button id="refresh-logs-btn" class="btn btn-secondary">Refresh</button>
+      </div>
+    </div>
+    <div id="audit-logs" class="audit-logs">
+      <div class="files-loading">Loading logs...</div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script src="/static/vault.js"></script>
+<script src="/static/security.js"></script>
+{% endblock %}

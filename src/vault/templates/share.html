@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.ico" />
+    <title>Download - Leyzen Vault</title>
+    <link rel="stylesheet" href="/static/vault.css" />
+  </head>
+  <body class="share-page">
+    <div class="login-container share-container">
+      <div class="login-header">
+        <h1>Leyzen Vault</h1>
+        <p>End-to-End Encryption</p>
+      </div>
+
+      <div class="share-content">
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+        <div class="share-info">
+          <p class="share-title">Secure file available</p>
+          <p class="share-description">
+            The file will be automatically decrypted in your browser
+          </p>
+          <span class="e2ee-badge">🔒 End-to-End Encrypted</span>
+        </div>
+
+        <button id="download-button" class="btn btn-primary btn-large">
+          Download and Decrypt
+        </button>
+
+        <div id="download-status" class="status hidden"></div>
+      </div>
+
+      <div class="share-footer">
+        <a href="/" class="share-link">← Back to explorer</a>
+      </div>
+    </div>
+
+    <script src="/static/vault.js"></script>
+    <script src="/static/download.js"></script>
+    <script>
+      // Pass template variables to JavaScript
+      window.SHARE_LINK_TOKEN = {% if link_token %}"{{ link_token }}"{% else %}null{% endif %};
+      window.SHARE_FILE_ID = {% if file_id %}"{{ file_id }}"{% else %}null{% endif %};
+    </script>
+  </body>
+</html>

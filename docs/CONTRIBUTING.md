@@ -7,7 +7,7 @@ you agree to follow the [Code of Conduct](docs/CODE_OF_CONDUCT.md).
 ## Workflow Overview
 
 1. **Fork** `leyzen-vault` on GitHub and clone your fork locally.
-2. **Create a topic branch** from `main` that describes your change, for example `feature/plugin-s3-backend`.
+2. **Create a topic branch** from `main` that describes your change, for example `feature/vault-enhancement`.
 3. **Commit regularly** following the message guidance below.
 4. **Verify everything** through the project CLI (`./leyzenctl`) before you open a pull request.
 5. **Open a pull request** from your forked branch back to `main` and request review.
@@ -64,8 +64,8 @@ Before submitting a pull request:
 - Run `./leyzenctl build` to regenerate images and assets.
 - Run `./leyzenctl start` (or `./leyzenctl restart` for an existing environment) to rebuild the Compose and HAProxy
   configurations and verify the stack boots without errors.
-- Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts plugins,
-  routing, or environment handling.
+- Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts
+  routing or environment handling.
 - Update relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki) when behavior or workflows change.
 
 ## Commit Message Convention
@@ -82,9 +82,9 @@ We follow a lightweight format to keep history readable:
 Example:
 
 ```
-Refine plugin bootstrap logging
+Refine Vault bootstrap logging
 
-Describe plugin resolution failures in the CLI output.
+Describe Vault initialization failures in the CLI output.
 Ran ./leyzenctl build and ./leyzenctl start locally.
 Expect clearer troubleshooting with no config changes.
 ```
@@ -114,7 +114,7 @@ Security issues should be reported privately following the [Security Policy](doc
 
 ## Additional Resources
 
-- [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) — writing plugins.
+- [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) — contributing to Leyzen Vault.
 - [Maintainer guidance](https://github.com/3xpyth0n/leyzen-vault/wiki/CI-CD) — triage, reviews, and releases.
 - [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) — runtime internals.
 - [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) — operating the stack with `leyzenctl`.

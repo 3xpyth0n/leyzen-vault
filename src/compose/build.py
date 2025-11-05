@@ -9,7 +9,7 @@ import os
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Mapping, cast
+from typing import Mapping
 
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
@@ -32,85 +32,124 @@ from compose.base_stack import (
     build_base_services,
     validate_ssl_certificates,
 )
-from compose.haproxy_config import render_haproxy_config, resolve_backend_port
+from compose.haproxy_config import render_haproxy_config_vault
 from common.constants import HAPROXY_CONFIG_PATH, REPO_ROOT
 from common.env import load_env_with_override, parse_container_names
-from vault_plugins import VaultServicePlugin
-from vault_plugins.registry import get_active_plugin
 
 OUTPUT_FILE = REPO_ROOT / "docker-compose.yml"
 
+VAULT_WEB_PORT = 80
+VAULT_MIN_REPLICAS = 2
 
-def resolve_web_containers(
-    env: Mapping[str, str], plugin: VaultServicePlugin
-) -> tuple[list[str], str]:
-    env_value = env.get("VAULT_WEB_CONTAINERS", "").strip()
+
+def resolve_web_containers(env: Mapping[str, str]) -> tuple[list[str], str]:
+    """Resolve web container names from environment."""
+    env_value = env.get("ORCH_WEB_CONTAINERS", "").strip()
     if env_value:
         names = parse_container_names(env_value)
         if names:
             return names, env_value
 
-    names = list(plugin.get_containers())
-    if not names:
-        raise RuntimeError(
-            "Active plugin returned no web containers; set VAULT_WEB_CONTAINERS manually"
-        )
+    # Default: generate vault_web1, vault_web2, vault_web3
+    replicas_raw = env.get("WEB_REPLICAS", "3").strip()
+    try:
+        replicas = max(VAULT_MIN_REPLICAS, int(replicas_raw))
+    except ValueError:
+        replicas = VAULT_MIN_REPLICAS
+
+    names = [f"vault_web{i+1}" for i in range(replicas)]
     return names, ",".join(names)
+
+
+def build_vault_services(
+    env: Mapping[str, str], web_containers: list[str]
+) -> OrderedDict[str, dict]:
+    """Build Vault service definitions."""
+    env_file_name = "env.template" if (REPO_ROOT / "env.template").exists() else ".env"
+    if (REPO_ROOT / ".env").exists():
+        env_file_name = ".env"
+
+    services: OrderedDict[str, dict] = OrderedDict()
+
+    for container_name in web_containers:
+        # Generate unique volume names for each container
+        volume_suffix = container_name.replace("vault_", "")
+
+        service_def = {
+            "build": {
+                "context": ".",
+                "dockerfile": "./infra/vault/Dockerfile",
+            },
+            "image": "leyzen/vault:latest",
+            "container_name": container_name,
+            "env_file": [env_file_name],
+            "restart": "on-failure",
+            "healthcheck": {
+                "test": ["CMD-SHELL", "curl -f http://localhost/healthz || exit 1"],
+                "interval": "1s",
+                "timeout": "5s",
+                "retries": 10,
+            },
+            "volumes": [
+                f"vault-data-{volume_suffix}:/data",
+                "vault-data-source:/data-source:ro",
+            ],
+            "depends_on": {
+                "haproxy": {"condition": "service_healthy"},
+                "docker-proxy": {"condition": "service_healthy"},
+            },
+            "networks": ["vault-net"],
+        }
+        services[container_name] = service_def
+
+    return services
+
+
+def build_vault_volumes(web_containers: list[str]) -> OrderedDict[str, dict]:
+    """Build volume definitions for Vault services."""
+    volumes: OrderedDict[str, dict] = OrderedDict()
+
+    # Source volume (read-only, shared)
+    volumes["vault-data-source"] = {}
+
+    # Unique volumes for each container
+    for container_name in web_containers:
+        volume_suffix = container_name.replace("vault_", "")
+        volumes[f"vault-data-{volume_suffix}"] = {}
+
+    return volumes
 
 
 def build_compose_manifest(
     env: Mapping[str, str],
-    plugin: VaultServicePlugin | None = None,
     *,
     web_containers: list[str] | None = None,
     web_container_string: str | None = None,
 ) -> OrderedDict[str, object]:
-    """Construct the docker-compose manifest for the active plugin."""
-
-    if plugin is None:
-        active_plugin = get_active_plugin(env)
-    else:
-        active_plugin = plugin
-        active_plugin.setup(env)
-    plugin_data = active_plugin.build_compose(env)
-    plugin_services = OrderedDict(
-        cast(Mapping[str, object], plugin_data.get("services", {}))
-    )
-    plugin_volumes = OrderedDict(
-        cast(Mapping[str, object], plugin_data.get("volumes", {}))
-    )
-    plugin_networks = OrderedDict(
-        cast(Mapping[str, object], plugin_data.get("networks", {}))
-    )
+    """Construct the docker-compose manifest for Leyzen Vault."""
 
     if web_containers is None or web_container_string is None:
-        web_containers, web_container_string = resolve_web_containers(
-            env, active_plugin
-        )
+        web_containers, web_container_string = resolve_web_containers(env)
 
     base_services = build_base_services(env, web_containers, web_container_string)
+    vault_services = build_vault_services(env, web_containers)
+    vault_volumes = build_vault_volumes(web_containers)
 
     services: OrderedDict[str, dict] = OrderedDict()
-    for dependency in active_plugin.dependencies:
-        if dependency in plugin_services and dependency not in services:
-            services[dependency] = cast(dict, plugin_services[dependency])
-
-    for name, definition in plugin_services.items():
-        if name not in services:
-            services[name] = cast(dict, definition)
-
+    # Add vault services first
+    for name, definition in vault_services.items():
+        services[name] = definition
+    # Then add base services (haproxy, docker-proxy, orchestrator)
     for name, definition in base_services.items():
         services[name] = definition
 
     volumes: OrderedDict[str, dict[str, object]] = OrderedDict()
-    for collection in (plugin_volumes, BASE_VOLUMES):
+    for collection in (vault_volumes, BASE_VOLUMES):
         for name, definition in collection.items():
-            volumes[name] = cast(dict[str, object], definition)
+            volumes[name] = dict(definition)
 
     networks: OrderedDict[str, dict[str, object]] = OrderedDict()
-    for collection in (plugin_networks, BASE_NETWORKS):
-        for name, definition in collection.items():
-            networks[name] = cast(dict[str, object], definition)
+    networks.update(BASE_NETWORKS)
 
     manifest: OrderedDict[str, object] = OrderedDict()
     manifest["services"] = services
@@ -190,41 +229,21 @@ def write_manifest(manifest: Mapping[str, object], path: Path = OUTPUT_FILE) -> 
 
 
 def main() -> None:
-    from common.constants import REPO_ROOT
-
     env: dict[str, str] = load_env_with_override(REPO_ROOT)
     env.update(os.environ)
 
-    try:
-        plugin = get_active_plugin(env)
-    except KeyError as e:
-        # Extract the invalid name from the message for clarity
-        raw_service = env.get("VAULT_SERVICE", "").strip() or "(none)"
-        print("\n[error] Invalid service selected in .env")
-        print(f"        VAULT_SERVICE = '{raw_service}' is not recognized.")
-        print(f"        {e}")
-        sys.exit(1)
-
-    print(f"[compose] Active service plugin: {plugin.name}")
-    replicas_raw = env.get("VAULT_WEB_REPLICAS", "").strip()
-    if replicas_raw:
-        print(f"[compose] Number of replicas chosen: {replicas_raw}")
-    else:
-        print(
-            f"[compose] Number of replicas chosen: {plugin.active_replicas} (default)"
-        )
-    web_containers, web_container_string = resolve_web_containers(env, plugin)
-    backend_port = resolve_backend_port(env, plugin)
+    web_containers, web_container_string = resolve_web_containers(env)
+    backend_port = VAULT_WEB_PORT
 
     # Read HTTPS configuration from environment
-    enable_https_raw = env.get("VAULT_ENABLE_HTTPS", "").strip().lower()
+    enable_https_raw = env.get("ENABLE_HTTPS", "").strip().lower()
     enable_https = enable_https_raw in ("true", "1", "yes", "on")
-    ssl_cert_path = env.get("VAULT_SSL_CERT_PATH", "").strip() or None
-    ssl_key_path = env.get("VAULT_SSL_KEY_PATH", "").strip() or None
+    ssl_cert_path = env.get("SSL_CERT_PATH", "").strip() or None
+    ssl_key_path = env.get("SSL_KEY_PATH", "").strip() or None
 
     # Read HTTP and HTTPS port configuration
-    http_port_raw = env.get("VAULT_HTTP_PORT", "").strip()
-    https_port_raw = env.get("VAULT_HTTPS_PORT", "").strip()
+    http_port_raw = env.get("HTTP_PORT", "").strip()
+    https_port_raw = env.get("HTTPS_PORT", "").strip()
     try:
         http_port = int(http_port_raw) if http_port_raw else 8080
         http_port = max(1, min(65535, http_port))
@@ -236,6 +255,8 @@ def main() -> None:
     except ValueError:
         https_port = 8443
 
+    print(f"[compose] Leyzen Vault service")
+    print(f"[compose] Number of replicas: {len(web_containers)}")
     print(f"[haproxy] HTTP port: {http_port}:80")
     if enable_https:
         print(f"[haproxy] HTTPS port: {https_port}:443")
@@ -259,18 +280,16 @@ def main() -> None:
     else:
         print("[haproxy] HTTPS: disabled")
 
-    # Prepare container paths for SSL certificates (these are the paths inside the container)
+    # Prepare container paths for SSL certificates
     ssl_cert_path_container: str | None = None
     ssl_key_path_container: str | None = None
     if enable_https and ssl_cert_path:
-        # Use the container path where the certificate will be mounted
         ssl_cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
         if ssl_key_path:
             ssl_key_path_container = "/usr/local/etc/haproxy/ssl/key.pem"
 
-    # Generate HAProxy configuration with HTTPS support
-    haproxy_config = render_haproxy_config(
-        plugin,
+    # Generate HAProxy configuration
+    haproxy_config = render_haproxy_config_vault(
         web_containers,
         backend_port,
         enable_https=enable_https,
@@ -281,14 +300,13 @@ def main() -> None:
     HAPROXY_CONFIG_PATH.write_text(haproxy_config)
     backend_summary = ", ".join(f"{name}:{backend_port}" for name in web_containers)
     print(
-        f"[haproxy] Generated config for plugin: {plugin.name} "
+        f"[haproxy] Generated config for Leyzen Vault "
         f"({len(web_containers)} replica{'s' if len(web_containers) != 1 else ''})"
     )
     if backend_summary:
         print(f"[haproxy] Backends: {backend_summary}")
     manifest = build_compose_manifest(
         env,
-        plugin,
         web_containers=web_containers,
         web_container_string=web_container_string,
     )
