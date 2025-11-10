@@ -7,6 +7,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **API Key Permissions**: Fixed security issue where admins could create API keys for any user, including super admins. Admins can now only create API keys for themselves, while super admins can create API keys for any user.
+
 ---
 
 ## [2.0.0] - 2025-11-10

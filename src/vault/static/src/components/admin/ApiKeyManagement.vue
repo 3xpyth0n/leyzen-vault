@@ -2,7 +2,7 @@
   <div class="api-key-management">
     <div class="section-header glass glass-card">
       <h2>API Key Management</h2>
-      <button @click="showCreateModal = true" class="btn btn-primary">
+      <button @click="openCreateModal" class="btn btn-primary">
         <span v-html="getIcon('plus', 16)"></span>
         Generate API Key
       </button>
@@ -76,9 +76,12 @@
           </button>
         </div>
         <form @submit.prevent="generateApiKey" class="modal-form">
-          <div class="form-group">
+          <div
+            v-if="currentUser?.global_role === 'superadmin'"
+            class="form-group"
+          >
             <label>User:</label>
-            <select v-model="apiKeyForm.userId" required class="form-select">
+            <select v-model="apiKeyForm.userId" class="form-select">
               <option value="">Select a user</option>
               <option v-for="user in users" :key="user.id" :value="user.id">
                 {{ user.email }}
@@ -181,7 +184,7 @@
 
 <script>
 import { ref, onMounted } from "vue";
-import { admin } from "../../services/api";
+import { admin, auth } from "../../services/api";
 import ConfirmationModal from "../ConfirmationModal.vue";
 import AlertModal from "../AlertModal.vue";
 
@@ -201,6 +204,7 @@ export default {
     const showKeyModal = ref(false);
     const generatedKey = ref(null);
     const copied = ref(false);
+    const currentUser = ref(null);
     const apiKeyForm = ref({
       userId: "",
       name: "",
@@ -275,11 +279,20 @@ export default {
     };
 
     const generateApiKey = async () => {
+      // For admins, ensure userId is set to current user
+      if (currentUser.value?.global_role === "admin") {
+        apiKeyForm.value.userId = currentUser.value.id;
+      }
+
+      // Validate required fields
       if (!apiKeyForm.value.userId || !apiKeyForm.value.name.trim()) {
         showAlert({
           type: "error",
           title: "Error",
-          message: "Please fill in all fields",
+          message:
+            currentUser.value?.global_role === "superadmin"
+              ? "Please select a user and fill in the name"
+              : "Please fill in the name",
         });
         return;
       }
@@ -370,6 +383,14 @@ export default {
       };
     };
 
+    const openCreateModal = () => {
+      // For admins, automatically set userId to current user
+      if (currentUser.value?.global_role === "admin") {
+        apiKeyForm.value.userId = currentUser.value.id;
+      }
+      showCreateModal.value = true;
+    };
+
     const closeKeyModal = () => {
       showKeyModal.value = false;
       generatedKey.value = null;
@@ -428,6 +449,11 @@ export default {
     };
 
     onMounted(async () => {
+      try {
+        currentUser.value = await auth.getCurrentUser();
+      } catch (err) {
+        console.error("Failed to load current user:", err);
+      }
       await loadUsers();
       await loadApiKeys();
     });
@@ -442,6 +468,7 @@ export default {
       showKeyModal,
       generatedKey,
       copied,
+      currentUser,
       apiKeyForm,
       showConfirmModal,
       confirmModalConfig,
@@ -454,6 +481,7 @@ export default {
       revokeApiKey,
       copyToClipboard,
       closeModal,
+      openCreateModal,
       closeKeyModal,
       showAlert,
       showConfirm,
@@ -649,7 +677,7 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0;
+  margin-bottom: 1.5rem;
   padding: 1.5rem 2rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   flex-shrink: 0;

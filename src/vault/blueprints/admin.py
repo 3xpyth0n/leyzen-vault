@@ -797,8 +797,18 @@ def create_api_key():
 
     Returns:
         JSON with API key object and plaintext key (shown only once)
+
+    Rules:
+        - Admin can only create API keys for themselves
+        - Admin cannot create API keys for superadmin or other admin users
+        - Superadmin can create API keys for any user
     """
     from vault.services.api_key_service import ApiKeyService
+    from vault.database.schema import User
+
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Authentication required"}), 401
 
     data = request.get_json()
     if not data:
@@ -811,6 +821,30 @@ def create_api_key():
         return jsonify({"error": "user_id is required"}), 400
     if not name:
         return jsonify({"error": "name is required"}), 400
+
+    # Get target user
+    target_user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    if not target_user:
+        return jsonify({"error": "User not found or inactive"}), 404
+
+    # Security checks based on current user's role
+    if current_user.global_role == GlobalRole.ADMIN:
+        # Admin restrictions
+        if user_id != current_user.id:
+            return (
+                jsonify({"error": "Admins can only create API keys for themselves"}),
+                403,
+            )
+
+        if target_user.global_role in (GlobalRole.SUPERADMIN, GlobalRole.ADMIN):
+            return (
+                jsonify(
+                    {
+                        "error": "Admins cannot create API keys for superadmin or admin users"
+                    }
+                ),
+                403,
+            )
 
     api_key_service = ApiKeyService()
 
