@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Register - Leyzen Vault</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/vault.css" />
+    <link rel="icon" type="image/png" href="/favicon.ico" />
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="login-container">
+        <div class="login-header">
+          <h1>Create Account</h1>
+          <p>Sign up for Leyzen Vault</p>
+        </div>
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %} {% if success %}
+        <div class="status success">{{ success }}</div>
+        {% endif %}
+        <form method="post" action="/register" class="login-form">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input
+              type="text"
+              id="username"
+              name="username"
+              placeholder="Choose a username"
+              autocomplete="username"
+              minlength="3"
+              maxlength="128"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="••••••"
+              autocomplete="new-password"
+              minlength="8"
+              maxlength="128"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input
+              type="password"
+              id="confirm_password"
+              name="confirm_password"
+              placeholder="••••••"
+              autocomplete="new-password"
+              minlength="8"
+              maxlength="128"
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-primary">Create Account</button>
+        </form>
+        <div class="login-footer">
+          <p>
+            Already have an account?
+            <a href="/login" class="share-link">Log in</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

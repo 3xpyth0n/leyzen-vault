@@ -116,6 +116,17 @@
       captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
     }
 
+    // Convert captcha input to uppercase automatically
+    if (captchaInput) {
+      captchaInput.addEventListener("input", function (event) {
+        const input = event.target;
+        const cursorPosition = input.selectionStart;
+        input.value = input.value.toUpperCase();
+        // Restore cursor position after converting to uppercase
+        input.setSelectionRange(cursorPosition, cursorPosition);
+      });
+    }
+
     // Handle form submission with loading state
     if (loginForm && submitButton) {
       loginForm.addEventListener("submit", function (event) {

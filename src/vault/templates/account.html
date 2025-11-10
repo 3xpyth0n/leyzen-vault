@@ -1,0 +1,83 @@
+{% extends "base.html" %} {% block title %}Account Settings - Leyzen Vault{%
+endblock %} {% block content %}
+<div class="account-page">
+  <div class="vault-section">
+    <h2>Account Settings</h2>
+
+    <!-- Account Information -->
+    <div class="account-section">
+      <h3>Account Information</h3>
+      <div id="account-info" class="account-info">
+        <div class="info-loading">Loading account information...</div>
+      </div>
+    </div>
+
+    <!-- Change Password -->
+    <div class="account-section">
+      <h3>Change Password</h3>
+      <form id="change-password-form" class="account-form">
+        <div class="form-group">
+          <label for="current-password">Current Password</label>
+          <input
+            type="password"
+            id="current-password"
+            name="current_password"
+            required
+            minlength="8"
+            autocomplete="current-password"
+          />
+        </div>
+        <div class="form-group">
+          <label for="new-password">New Password</label>
+          <input
+            type="password"
+            id="new-password"
+            name="new_password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="form-group">
+          <label for="confirm-password">Confirm New Password</label>
+          <input
+            type="password"
+            id="confirm-password"
+            name="confirm_password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          />
+        </div>
+        <div id="password-error" class="error-message hidden"></div>
+        <button type="submit" class="btn btn-primary">Change Password</button>
+      </form>
+    </div>
+
+    <!-- Delete Account -->
+    <div class="account-section account-section-danger">
+      <h3>Delete Account</h3>
+      <p class="danger-text">
+        This action cannot be undone. All your files and data will be
+        permanently deleted.
+      </p>
+      <form id="delete-account-form" class="account-form">
+        <div class="form-group">
+          <label for="delete-password">Enter your password to confirm</label>
+          <input
+            type="password"
+            id="delete-password"
+            name="password"
+            required
+            autocomplete="current-password"
+          />
+        </div>
+        <div id="delete-error" class="error-message hidden"></div>
+        <button type="submit" class="btn btn-danger">Delete Account</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script src="/static/account.js"></script>
+{% endblock %}

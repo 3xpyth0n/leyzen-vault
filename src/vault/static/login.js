@@ -58,43 +58,70 @@
     }
 
     const headers = { Accept: "application/json" };
-    if (loginCsrfInput && loginCsrfInput.value) {
-      headers["X-Login-CSRF"] = loginCsrfInput.value;
+    const csrfToken =
+      loginCsrfInput?.value ||
+      document.querySelector('input[name="login_csrf_token"]')?.value ||
+      document.querySelector("input[data-login-csrf]")?.value;
+
+    if (csrfToken) {
+      headers["X-Login-CSRF"] = csrfToken;
     }
 
-    fetch("/captcha-refresh", {
-      method: "POST",
-      credentials: "same-origin",
-      headers,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to refresh captcha");
-        }
-        return response.json();
+    // Retry logic for captcha refresh
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    function attemptRefresh() {
+      fetch("/api/auth/captcha-refresh", {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
       })
-      .then((data) => {
-        if (data && data.nonce && nonceInput) {
-          nonceInput.value = data.nonce;
-        }
-        if (data && data.image_url) {
-          image.dataset.baseUrl = data.image_url;
-          image.src = withCacheBuster(data.image_url);
-        } else {
-          const fallback = image.dataset.baseUrl || image.src;
-          image.src = withCacheBuster(fallback);
-        }
-        syncCaptchaOverlayImage(overlay, overlayImage, image);
-        if (captchaInput) {
-          captchaInput.value = "";
-          captchaInput.focus();
-        }
-      })
-      .catch(() => {
-        const fallback = image.dataset.baseUrl || image.src;
-        image.src = withCacheBuster(fallback);
-        syncCaptchaOverlayImage(overlay, overlayImage, image);
-      });
+        .then((response) => {
+          if (!response.ok) {
+            // If 400 and we haven't retried too many times, try again
+            if (response.status === 400 && retryCount < maxRetries) {
+              retryCount++;
+              // Wait a bit before retrying
+              setTimeout(attemptRefresh, 500);
+              return;
+            }
+            throw new Error("Failed to refresh captcha");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (!data) return; // Skip if retry was triggered
+
+          if (data && data.nonce && nonceInput) {
+            nonceInput.value = data.nonce;
+          }
+          if (data && data.image_url) {
+            image.dataset.baseUrl = data.image_url;
+            image.src = withCacheBuster(data.image_url);
+          } else {
+            const fallback = image.dataset.baseUrl || image.src;
+            image.src = withCacheBuster(fallback);
+          }
+          syncCaptchaOverlayImage(overlay, overlayImage, image);
+          if (captchaInput) {
+            captchaInput.value = "";
+            captchaInput.focus();
+          }
+          retryCount = 0; // Reset retry count on success
+        })
+        .catch((error) => {
+          console.error("Captcha refresh error:", error);
+          // Only fallback if we've exhausted retries
+          if (retryCount >= maxRetries) {
+            const fallback = image.dataset.baseUrl || image.src;
+            image.src = withCacheBuster(fallback);
+            syncCaptchaOverlayImage(overlay, overlayImage, image);
+          }
+        });
+    }
+
+    attemptRefresh();
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -114,6 +141,17 @@
 
     if (captchaImage) {
       captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
+    }
+
+    // Convert captcha input to uppercase automatically
+    if (captchaInput) {
+      captchaInput.addEventListener("input", function (event) {
+        const input = event.target;
+        const cursorPosition = input.selectionStart;
+        input.value = input.value.toUpperCase();
+        // Restore cursor position after converting to uppercase
+        input.setSelectionRange(cursorPosition, cursorPosition);
+      });
     }
 
     // Handle form submission with loading state

@@ -15,7 +15,7 @@ from .blueprints.dashboard import dashboard_bp
 from .config import Settings, load_settings
 from .extensions import csrf
 from .services.docker_proxy import DockerProxyService
-from .services.logging import FileLogger
+from common.services.logging import FileLogger
 from .services.rotation import RotationService
 
 

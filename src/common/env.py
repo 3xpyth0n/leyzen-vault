@@ -103,10 +103,10 @@ def parse_container_names(raw_value: str | Iterable[str] | None) -> list[str]:
 
 
 def resolve_env_file_name(root_dir: Path | None = None) -> str:
-    """Resolve the environment file name for use in docker-compose.yml.
+    """Resolve the environment file name for use in docker-generated.yml.
 
     This function determines the filename (not full path) of the environment file
-    to use in docker-compose.yml's env_file entries. It follows the same logic
+    to use in docker-generated.yml's env_file entries. It follows the same logic
     as load_env_with_override() but returns only the filename.
 
     Behavior:

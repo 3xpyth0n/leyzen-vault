@@ -3,69 +3,36 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from ..database.schema import AuditLogEntry, db
 from ..models import AuditLog
 
 
 class AuditService:
-    """Service for logging and retrieving audit logs."""
+    """Service for logging and retrieving audit logs using PostgreSQL."""
 
-    def __init__(
-        self, db_path: Path, timezone: ZoneInfo | None = None, retention_days: int = 90
-    ):
+    def __init__(self, timezone: ZoneInfo | None = None, retention_days: int = 90):
         """Initialize the audit service.
 
         Args:
-            db_path: Path to the audit database file
             timezone: Timezone to use for timestamps. Defaults to UTC if not provided.
             retention_days: Number of days to retain audit logs (default: 90)
         """
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.timezone = timezone or ZoneInfo("UTC")
         self.retention_days = retention_days
-        self._init_db()
 
     def _init_db(self) -> None:
-        """Initialize the audit log database schema."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    action TEXT NOT NULL,
-                    file_id TEXT,
-                    user_ip TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    details TEXT NOT NULL,
-                    success INTEGER NOT NULL
-                )
-            """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)
-            """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)
-            """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_audit_file_id ON audit_logs(file_id)
-            """
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        """Initialize the audit log database schema.
+
+        Note: The database schema is defined in database/schema.py as AuditLogEntry.
+        Tables are created automatically by SQLAlchemy via db.create_all().
+        """
+        # Schema is managed by SQLAlchemy - tables are created automatically
+        # This method is kept for backward compatibility but does nothing
+        pass
 
     def log_action(
         self,
@@ -75,26 +42,27 @@ class AuditService:
         success: bool,
         file_id: str | None = None,
     ) -> None:
-        """Log an action to the audit log."""
-        conn = sqlite3.connect(self.db_path)
+        """Log an action to the audit log using PostgreSQL."""
         try:
-            conn.execute(
-                """
-                INSERT INTO audit_logs (action, file_id, user_ip, timestamp, details, success)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    action,
-                    file_id,
-                    user_ip,
-                    datetime.now(self.timezone).isoformat(),
-                    json.dumps(details),
-                    1 if success else 0,
-                ),
+            # Create audit log entry in PostgreSQL
+            audit_entry = AuditLogEntry(
+                action=action,
+                file_id=file_id,
+                user_ip=user_ip,
+                timestamp=datetime.now(self.timezone),
+                details=json.dumps(details),
+                success=success,
             )
-            conn.commit()
-        finally:
-            conn.close()
+            db.session.add(audit_entry)
+            db.session.commit()
+        except Exception as e:
+            # Log error but don't fail the request
+            # Use Python logging instead of FileLogger to avoid circular dependency
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to log audit action: {e}")
+            db.session.rollback()
 
     def get_logs(
         self,
@@ -103,67 +71,54 @@ class AuditService:
         file_id: str | None = None,
         success: bool | None = None,
     ) -> list[AuditLog]:
-        """Retrieve audit logs with optional filters."""
-        conn = sqlite3.connect(self.db_path)
+        """Retrieve audit logs with optional filters from PostgreSQL."""
         try:
-            query = "SELECT action, file_id, user_ip, timestamp, details, success FROM audit_logs WHERE 1=1"
-            params: list[Any] = []
+            # Build query using SQLAlchemy
+            query = db.session.query(AuditLogEntry)
 
             if action:
-                query += " AND action = ?"
-                params.append(action)
+                query = query.filter(AuditLogEntry.action == action)
 
             if file_id:
-                query += " AND file_id = ?"
-                params.append(file_id)
+                query = query.filter(AuditLogEntry.file_id == file_id)
 
             if success is not None:
-                query += " AND success = ?"
-                params.append(1 if success else 0)
+                query = query.filter(AuditLogEntry.success == success)
 
-            query += " ORDER BY timestamp DESC LIMIT ?"
-            params.append(limit)
+            # Order by timestamp descending and limit results
+            query = query.order_by(AuditLogEntry.timestamp.desc()).limit(limit)
 
-            cursor = conn.execute(query, params)
+            # Execute query and convert to AuditLog objects
             results = []
-            for row in cursor.fetchall():
-                # Parse timestamp, handling both timezone-aware and naive formats
-                timestamp_str = row[3]
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                    # If timestamp is naive, assume it's UTC
-                    if timestamp.tzinfo is None:
-                        from datetime import timezone
-
-                        timestamp = timestamp.replace(tzinfo=timezone.utc)
-                except (ValueError, AttributeError) as exc:
-                    # Fallback: try parsing as simple ISO format
-                    try:
-                        timestamp = datetime.fromisoformat(
-                            timestamp_str.replace("Z", "+00:00")
-                        )
-                    except Exception:
-                        # If all parsing fails, use current time as fallback
-                        timestamp = datetime.now(self.timezone)
-
+            for entry in query.all():
                 results.append(
                     AuditLog(
-                        action=row[0],
-                        file_id=row[1],
-                        user_ip=row[2],
-                        timestamp=timestamp,
-                        details=json.loads(row[4]),
-                        success=bool(row[5]),
+                        action=entry.action,
+                        file_id=entry.file_id,
+                        user_ip=entry.user_ip,
+                        timestamp=entry.timestamp,
+                        details=json.loads(entry.details) if entry.details else {},
+                        success=entry.success,
                     )
                 )
             return results
-        finally:
-            conn.close()
+        except Exception as e:
+            # Log error and return empty list
+            import logging
 
-    def export_csv(self, output_path: Path, limit: int = 1000) -> None:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to retrieve audit logs: {e}")
+            return []
+
+    def export_csv(self, output_path: str | Path, limit: int = 1000) -> None:
         """Export audit logs to CSV format."""
+        from pathlib import Path
+
+        output_path_obj = (
+            Path(output_path) if isinstance(output_path, str) else output_path
+        )
         logs = self.get_logs(limit=limit)
-        with output_path.open("w", encoding="utf-8") as f:
+        with output_path_obj.open("w", encoding="utf-8") as f:
             f.write("action,file_id,user_ip,timestamp,success,details\n")
             for log in logs:
                 details_str = json.dumps(log.details).replace('"', '""')
@@ -173,10 +128,15 @@ class AuditService:
                     f'"{details_str}"\n'
                 )
 
-    def export_json(self, output_path: Path, limit: int = 1000) -> None:
+    def export_json(self, output_path: str | Path, limit: int = 1000) -> None:
         """Export audit logs to JSON format."""
+        from pathlib import Path
+
+        output_path_obj = (
+            Path(output_path) if isinstance(output_path, str) else output_path
+        )
         logs = self.get_logs(limit=limit)
-        with output_path.open("w", encoding="utf-8") as f:
+        with output_path_obj.open("w", encoding="utf-8") as f:
             json.dump([log.to_dict() for log in logs], f, indent=2, ensure_ascii=False)
 
     def cleanup_old_logs(self) -> int:
@@ -185,23 +145,27 @@ class AuditService:
         Returns:
             Number of logs deleted
         """
-        cutoff_date = datetime.now(self.timezone) - timedelta(days=self.retention_days)
-        cutoff_iso = cutoff_date.isoformat()
-
-        conn = sqlite3.connect(self.db_path)
         try:
-            cursor = conn.execute(
-                """
-                DELETE FROM audit_logs
-                WHERE timestamp < ?
-            """,
-                (cutoff_iso,),
+            cutoff_date = datetime.now(self.timezone) - timedelta(
+                days=self.retention_days
             )
-            deleted_count = cursor.rowcount
-            conn.commit()
+
+            # Delete old logs using SQLAlchemy
+            deleted_count = (
+                db.session.query(AuditLogEntry)
+                .filter(AuditLogEntry.timestamp < cutoff_date)
+                .delete(synchronize_session=False)
+            )
+            db.session.commit()
             return deleted_count
-        finally:
-            conn.close()
+        except Exception as e:
+            # Log error and return 0
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to cleanup old audit logs: {e}")
+            db.session.rollback()
+            return 0
 
 
 __all__ = ["AuditService"]

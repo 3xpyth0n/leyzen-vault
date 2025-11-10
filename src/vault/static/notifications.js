@@ -1,5 +1,40 @@
 /** @file notifications.js - Toast notification system for Leyzen Vault */
 
+// Helper function to safely set innerHTML with Trusted Types
+// Uses policies created in base.html before CSP enforcement
+function setInnerHTML(element, html) {
+  // Use the global policy created in base.html if available
+  if (window.notificationsHTMLPolicy) {
+    try {
+      element.innerHTML = window.notificationsHTMLPolicy.createHTML(html);
+      return;
+    } catch (e) {
+      // Fallback if policy fails
+      console.warn("Failed to use notificationsHTMLPolicy:", e);
+    }
+  }
+
+  // Fallback: if Trusted Types is required but policy doesn't exist, this will fail
+  // This should not happen if base.html script executed correctly
+  if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
+    try {
+      element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
+      return;
+    } catch (e) {
+      console.warn("Failed to use defaultPolicy:", e);
+    }
+  }
+
+  // Last resort fallback - this will fail if CSP requires Trusted Types
+  // but it's better than crashing silently
+  try {
+    element.innerHTML = html;
+  } catch (e) {
+    console.error("Failed to set innerHTML:", e);
+    throw e;
+  }
+}
+
 const NotificationType = {
   SUCCESS: "success",
   ERROR: "error",
@@ -37,11 +72,13 @@ class NotificationManager {
       info: "ℹ",
     };
 
-    toast.innerHTML = `
+    const toastHTML = `
       <span class="toast-icon">${icons[type] || icons.info}</span>
       <span class="toast-message">${this.escapeHtml(message)}</span>
       <button class="toast-close" aria-label="Close">&times;</button>
     `;
+
+    setInnerHTML(toast, toastHTML);
 
     this.container.appendChild(toast);
 

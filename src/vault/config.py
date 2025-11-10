@@ -8,8 +8,7 @@ from pathlib import Path
 
 from zoneinfo import ZoneInfo
 
-from werkzeug.security import check_password_hash, generate_password_hash
-
+from common.config_utils import parse_bool, parse_int_env_var, validate_secret_entropy
 from common.constants import (
     CAPTCHA_LENGTH_DEFAULT,
     CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
@@ -21,12 +20,64 @@ from common.env import load_env_with_override, parse_timezone
 from common.exceptions import ConfigurationError
 
 
+def get_postgres_url(env_values: dict[str, str]) -> str:
+    """Build PostgreSQL connection URL from environment variables.
+
+    This function performs the primary validation of POSTGRES_PASSWORD. It ensures
+    that the password is present and non-empty before constructing the connection URL.
+
+    Note on validation layers:
+    - Primary validation (this function): Application-level validation that raises
+      ConfigurationError with a clear error message if POSTGRES_PASSWORD is missing.
+      This is called when the Vault application starts and provides better error
+      messages for operators.
+    - Secondary validation (Docker Compose): Infrastructure-level validation in
+      src/compose/build.py that uses Docker Compose's ${VAR:?error} syntax to prevent
+      the PostgreSQL container from starting without a password. This fails fast at
+      container startup time.
+
+    Both validations are necessary:
+    1. Docker Compose validation prevents containers from starting with invalid config
+    2. Application validation provides better error messages and handles runtime changes
+
+    Args:
+        env_values: Dictionary containing environment variables
+
+    Returns:
+        PostgreSQL connection URL string
+
+    Raises:
+        ConfigurationError: If POSTGRES_PASSWORD is missing or empty
+    """
+    postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+    postgres_port = env_values.get("POSTGRES_PORT", "5432")
+    postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+    postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+    postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+    if not postgres_password:
+        raise ConfigurationError("POSTGRES_PASSWORD is required")
+
+    return f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+
+
+@dataclass(frozen=True)
+class SMTPConfig:
+    """SMTP configuration for email sending."""
+
+    host: str
+    port: int
+    user: str
+    password: str
+    use_tls: bool
+    from_email: str
+    from_name: str
+
+
 @dataclass(frozen=True)
 class VaultSettings:
     """Application settings for Leyzen Vault."""
 
-    username: str
-    password_hash: str
     secret_key: str
     timezone: ZoneInfo
     proxy_trust_count: int
@@ -38,148 +89,69 @@ class VaultSettings:
     max_file_size_mb: int
     max_uploads_per_hour: int
     audit_retention_days: int
-
-
-def _parse_int_env_var(
-    name: str,
-    default: int,
-    env: dict[str, str],
-    min_value: int | None = None,
-    max_value: int | None = None,
-) -> int:
-    """Parse an integer environment variable with optional min/max constraints."""
-    raw_value = env.get(name, str(default)).strip()
-    try:
-        value = int(raw_value)
-        if min_value is not None:
-            value = max(min_value, value)
-        if max_value is not None:
-            value = min(max_value, value)
-        return value
-    except ValueError:
-        return default
-
-
-_TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
-_FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
-
-
-def _parse_bool(value: str | None, *, default: bool) -> bool:
-    """Parse a boolean environment variable."""
-    if value is None:
-        return default
-
-    normalized = value.strip().lower()
-    if normalized in _TRUE_VALUES:
-        return True
-    if normalized in _FALSE_VALUES:
-        return False
-
-    return default
-
-
-def _validate_default_credentials(
-    username: str, password: str, env_values: dict[str, str]
-) -> None:
-    """Validate that credentials are not default values in production mode.
-
-    Args:
-        username: The username to validate
-        password: The password to validate
-        env_values: Dictionary containing environment variables
-
-    Raises:
-        ConfigurationError: If default credentials are detected in production mode
-    """
-    # Determine environment mode (default to production for security)
-    env_mode = env_values.get("LEYZEN_ENVIRONMENT", "prod").strip().lower()
-    is_production = env_mode in {"prod", "production", "1", "true"}
-
-    if not is_production:
-        # Allow default credentials in development mode
-        return
-
-    # Default credentials to reject
-    DEFAULT_USERNAME = "admin"
-    DEFAULT_PASSWORD = "admin"
-
-    errors = []
-    if username == DEFAULT_USERNAME:
-        errors.append(
-            f"VAULT_USER cannot be '{DEFAULT_USERNAME}' in production mode. "
-            "Set LEYZEN_ENVIRONMENT=dev for development, or change VAULT_USER to a non-default value."
-        )
-
-    if password == DEFAULT_PASSWORD:
-        errors.append(
-            f"VAULT_PASS cannot be '{DEFAULT_PASSWORD}' in production mode. "
-            "Set LEYZEN_ENVIRONMENT=dev for development, or change VAULT_PASS to a secure password "
-            "(generate with: openssl rand -base64 32)."
-        )
-
-    if errors:
-        raise ConfigurationError(
-            "Security validation failed:\n  " + "\n  ".join(errors)
-        )
+    smtp_config: SMTPConfig | None = None
+    allow_signup: bool = True
+    vault_url: str | None = None
+    email_verification_expiry_minutes: int = 10
+    max_total_size_mb: int | None = None
 
 
 def load_settings() -> VaultSettings:
-    """Load settings from environment variables."""
+    """Load settings from environment variables.
+
+    Use /setup on first run to create the superadmin account.
+    """
     env_values = load_env_with_override()
     # Merge with actual os.environ to allow runtime overrides
     env_values.update(os.environ)
 
-    # Username (required)
-    username = env_values.get("VAULT_USER", "").strip()
-    if not username:
-        raise ConfigurationError("VAULT_USER is required")
-
-    # Password (required)
-    password = env_values.get("VAULT_PASS", "").strip()
-    if not password:
-        raise ConfigurationError("VAULT_PASS is required")
-
-    # Validate that credentials are not default values in production
-    _validate_default_credentials(username, password, env_values)
-
-    # Generate password hash
-    password_hash = generate_password_hash(password)
-
     # Secret key (required)
     secret_key = env_values.get("SECRET_KEY", "").strip()
     if not secret_key:
-        raise ConfigurationError("SECRET_KEY is required (minimum 12 characters)")
+        raise ConfigurationError("SECRET_KEY is required (minimum 32 characters)")
 
-    if len(secret_key) < 12:
-        raise ConfigurationError("SECRET_KEY must be at least 12 characters long")
+    validate_secret_entropy(secret_key, min_length=32, secret_name="SECRET_KEY")
 
     # Timezone
     timezone = parse_timezone(env_values, allow_fallback=False)
 
     # Proxy trust count
-    proxy_trust_count = _parse_int_env_var(
+    proxy_trust_count = parse_int_env_var(
         "PROXY_TRUST_COUNT", PROXY_TRUST_COUNT_DEFAULT, env_values, min_value=0
     )
 
     # Captcha settings
-    captcha_length = _parse_int_env_var(
+    captcha_length = parse_int_env_var(
         "CAPTCHA_LENGTH", CAPTCHA_LENGTH_DEFAULT, env_values
     )
-    captcha_store_ttl = _parse_int_env_var(
+    captcha_store_ttl = parse_int_env_var(
         "CAPTCHA_STORE_TTL_SECONDS",
         CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
         env_values,
     )
-    login_csrf_ttl = _parse_int_env_var(
+    login_csrf_ttl = parse_int_env_var(
         "LOGIN_CSRF_TTL_SECONDS",
         LOGIN_CSRF_TTL_SECONDS_DEFAULT,
         env_values,
     )
 
     # Session cookie secure flag
-    session_cookie_secure = _parse_bool(
+    session_cookie_secure = parse_bool(
         env_values.get("SESSION_COOKIE_SECURE"), default=True
     )
+
+    # SECURITY: Validate session cookie security for HTTPS deployments
+    # If HTTPS is enabled (via ENABLE_HTTPS), SESSION_COOKIE_SECURE should be True
+    enable_https = parse_bool(env_values.get("ENABLE_HTTPS"), default=False)
+    if enable_https and not session_cookie_secure:
+        import warnings
+
+        warnings.warn(
+            "SECURITY WARNING: ENABLE_HTTPS is True but SESSION_COOKIE_SECURE is False. "
+            "Session cookies should be marked as Secure when using HTTPS. "
+            "Set SESSION_COOKIE_SECURE=true in your .env file.",
+            UserWarning,
+        )
 
     # Log file - use /data/vault.log by default
     log_file_env = env_values.get("VAULT_LOG_FILE", "/data/vault.log")
@@ -189,27 +161,82 @@ def load_settings() -> VaultSettings:
         if not log_file.exists():
             log_file.touch()
     except OSError:
-        # Fallback to a default location
-        log_file = Path("/tmp/vault.log")
+        # Fallback to tmpfs location (dev/shm is tmpfs by default)
+        log_file = Path("/dev/shm/vault.log")
 
     # Max file size in MB (default: 100MB)
-    max_file_size_mb = _parse_int_env_var(
+    max_file_size_mb = parse_int_env_var(
         "VAULT_MAX_FILE_SIZE_MB", 100, env_values, min_value=1, max_value=10240
     )
 
     # Max uploads per hour per IP (default: 50)
-    max_uploads_per_hour = _parse_int_env_var(
+    max_uploads_per_hour = parse_int_env_var(
         "VAULT_MAX_UPLOADS_PER_HOUR", 50, env_values, min_value=1
     )
 
     # Audit log retention in days (default: 90 days)
-    audit_retention_days = _parse_int_env_var(
+    audit_retention_days = parse_int_env_var(
         "VAULT_AUDIT_RETENTION_DAYS", 90, env_values, min_value=1
     )
 
+    # SMTP configuration (optional - required for email verification and invitations)
+    smtp_config = None
+    smtp_host = env_values.get("SMTP_HOST", "").strip()
+    if smtp_host:
+        smtp_port = parse_int_env_var(
+            "SMTP_PORT", 587, env_values, min_value=1, max_value=65535
+        )
+        smtp_user = env_values.get("SMTP_USER", "").strip()
+        smtp_password = env_values.get("SMTP_PASSWORD", "").strip()
+        smtp_use_tls = parse_bool(env_values.get("SMTP_USE_TLS"), default=True)
+        smtp_from_email = env_values.get("SMTP_FROM_EMAIL", "").strip()
+        smtp_from_name = env_values.get("SMTP_FROM_NAME", "Leyzen Vault").strip()
+
+        if not smtp_from_email:
+            smtp_from_email = smtp_user  # Fallback to SMTP_USER if FROM_EMAIL not set
+
+        if smtp_user and smtp_password and smtp_from_email:
+            smtp_config = SMTPConfig(
+                host=smtp_host,
+                port=smtp_port,
+                user=smtp_user,
+                password=smtp_password,
+                use_tls=smtp_use_tls,
+                from_email=smtp_from_email,
+                from_name=smtp_from_name,
+            )
+
+    # Allow signup (default: true)
+    allow_signup = parse_bool(env_values.get("ALLOW_SIGNUP"), default=True)
+
+    # Vault URL (optional - used for email links)
+    vault_url = env_values.get("VAULT_URL", "").strip()
+    if vault_url:
+        # Ensure URL ends without trailing slash for consistency
+        vault_url = vault_url.rstrip("/")
+    else:
+        vault_url = None
+
+    # Email verification expiry in minutes (default: 10 minutes)
+    email_verification_expiry_minutes = parse_int_env_var(
+        "EMAIL_VERIFICATION_EXPIRY_MINUTES", 10, env_values, min_value=1, max_value=1440
+    )
+
+    # Max total storage size in MB (optional - controls tmpfs size)
+    # If not set, uses actual disk size detected at runtime
+    max_total_size_mb = None
+    if "VAULT_MAX_TOTAL_SIZE_MB" in env_values:
+        max_total_size_mb_raw = env_values.get("VAULT_MAX_TOTAL_SIZE_MB", "").strip()
+        if max_total_size_mb_raw:
+            # Use a sentinel value to detect if parsing failed
+            # If the value is invalid, parse_int_env_var will return 0, which we'll ignore
+            parsed_value = parse_int_env_var(
+                "VAULT_MAX_TOTAL_SIZE_MB", 0, env_values, min_value=1
+            )
+            if parsed_value > 0:
+                max_total_size_mb = parsed_value
+
     return VaultSettings(
-        username=username,
-        password_hash=password_hash,
         secret_key=secret_key,
         timezone=timezone,
         proxy_trust_count=proxy_trust_count,
@@ -221,7 +248,38 @@ def load_settings() -> VaultSettings:
         max_file_size_mb=max_file_size_mb,
         max_uploads_per_hour=max_uploads_per_hour,
         audit_retention_days=audit_retention_days,
+        smtp_config=smtp_config,
+        allow_signup=allow_signup,
+        vault_url=vault_url,
+        email_verification_expiry_minutes=email_verification_expiry_minutes,
+        max_total_size_mb=max_total_size_mb,
     )
 
 
-__all__ = ["VaultSettings", "load_settings"]
+def is_setup_complete(app) -> bool:
+    """Check if setup is complete by verifying if at least one user exists in database.
+
+    Args:
+        app: Flask application with database initialized
+
+    Returns:
+        True if at least one user exists, False otherwise
+    """
+    try:
+        from vault.database.schema import User, db
+
+        with app.app_context():
+            user_count = db.session.query(User).count()
+            return user_count > 0
+    except Exception:
+        # If database is not initialized or error occurs, assume setup is not complete
+        return False
+
+
+__all__ = [
+    "VaultSettings",
+    "SMTPConfig",
+    "load_settings",
+    "get_postgres_url",
+    "is_setup_complete",
+]

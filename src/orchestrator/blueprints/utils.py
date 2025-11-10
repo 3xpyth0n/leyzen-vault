@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from functools import wraps
-from ipaddress import ip_address
 from typing import Callable, TypeVar
 
 from flask import current_app, redirect, request, session, url_for
 
+from common.utils import get_client_ip as _get_client_ip_base
 from ..config import Settings
 
 F = TypeVar("F", bound=Callable[..., object])
@@ -18,6 +18,18 @@ def _settings() -> Settings:
 
     This is the standard way to access settings across all blueprints.
     Use this function instead of accessing current_app.config["SETTINGS"] directly.
+
+    The Settings type is specific to the Orchestrator application and includes
+    settings like rotation intervals, Docker proxy configuration, and orchestrator-specific
+    security settings.
+
+    Returns:
+        Settings instance with all orchestrator application configuration
+
+    Note:
+        This function returns Settings, which is different from the VaultSettings
+        type used in the Vault application. See docs/AUTHENTICATION.md for details
+        on the differences between vault and orchestrator settings.
     """
     return current_app.config["SETTINGS"]
 
@@ -25,34 +37,24 @@ def _settings() -> Settings:
 def get_client_ip() -> str | None:
     """Extract the real client IP address from request headers.
 
+    This function wraps the common get_client_ip function to automatically use
+    the proxy_trust_count from Settings. This ensures that IP extraction respects
+    the configured proxy setup without requiring callers to pass the proxy_trust_count
+    parameter explicitly.
+
     Respects proxy trust count configuration to determine the correct
     IP address when behind a reverse proxy.
+
+    Returns:
+        Client IP address as string, or None if cannot be determined
+
+    Note:
+        This wrapper is necessary because the common get_client_ip function
+        requires proxy_trust_count to be passed explicitly, but we want to
+        automatically use the value from Settings for consistency.
     """
     settings = _settings()
-    proxy_trust_count = settings.proxy_trust_count
-
-    if proxy_trust_count > 0:
-        header_value = request.headers.get("X-Forwarded-For", "")
-        if header_value:
-            forwarded_ips = [ip.strip() for ip in header_value.split(",") if ip.strip()]
-            for candidate in forwarded_ips:
-                try:
-                    parsed = ip_address(candidate)
-                except ValueError:
-                    continue
-
-                if not (
-                    parsed.is_private
-                    or parsed.is_loopback
-                    or parsed.is_reserved
-                    or parsed.is_link_local
-                ):
-                    return candidate
-
-            if forwarded_ips:
-                return forwarded_ips[0]
-
-    return request.remote_addr
+    return _get_client_ip_base(proxy_trust_count=settings.proxy_trust_count)
 
 
 def login_required(view: F) -> F:

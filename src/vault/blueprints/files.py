@@ -4,37 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, render_template, request, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 
 from ..extensions import csrf
-from ..models import FileDatabase, FileMetadata
+from vault.middleware import get_current_user, jwt_required
+from ..models import FileMetadata
 from ..services.audit import AuditService
 from ..services.rate_limiter import RateLimiter
-from ..services.share_service import ShareService
+from ..services.share_link_service import ShareService
 from ..storage import FileStorage
-from .utils import get_client_ip, login_required
+from .utils import get_client_ip, get_current_user_id, login_required
 
 files_bp = Blueprint("files", __name__)
 
-
-@files_bp.route("/", strict_slashes=False)
-@login_required
-def index():
-    """Serve the main file explorer interface."""
-    return render_template("files.html")
+# All frontend routes are handled by Vue.js SPA
+# Only API routes remain here
 
 
 def _get_storage() -> FileStorage:
     """Get the file storage instance from Flask config."""
     return current_app.config["VAULT_STORAGE"]
-
-
-def _get_database() -> FileDatabase:
-    """Get the file database instance from Flask config."""
-    return current_app.config["VAULT_DATABASE"]
 
 
 def _get_audit() -> AuditService:
@@ -93,8 +85,10 @@ def upload_file():
 
     original_name = file.filename or "unnamed"
 
-    # Validate and normalize filename
-    is_valid, validation_error = FileStorage.validate_filename(original_name)
+    # Validate and normalize filename using common validation utility
+    from vault.utils.file_validation import validate_filename
+
+    is_valid, validation_error = validate_filename(original_name)
     if not is_valid:
         audit.log_action(
             "upload",
@@ -136,8 +130,6 @@ def upload_file():
                         {
                             "error": "file_too_large",
                             "filename": original_name,
-                            "size": original_size,
-                            "max_size": max_size_bytes,
                         },
                         False,
                     )
@@ -160,8 +152,6 @@ def upload_file():
                 {
                     "error": "encrypted_file_too_large",
                     "filename": original_name,
-                    "encrypted_size": len(encrypted_data),
-                    "max_size": max_size_bytes,
                 },
                 False,
             )
@@ -175,7 +165,6 @@ def upload_file():
             )
 
     storage = _get_storage()
-    database = _get_database()
 
     # Generate file ID
     file_id = storage.generate_file_id()
@@ -183,8 +172,20 @@ def upload_file():
     # Compute hash of encrypted data
     encrypted_hash = storage.compute_hash(encrypted_data)
 
-    # Save encrypted file
-    storage.save_file(file_id, encrypted_data)
+    # Save encrypted file with integrity verification
+    try:
+        storage.save_file(file_id, encrypted_data)
+    except IOError as e:
+        from .utils import safe_error_response
+
+        current_app.logger.error(f"Failed to save file {file_id}: {type(e).__name__}")
+        audit.log_action(
+            "upload",
+            user_ip,
+            {"error": "Storage error", "filename": original_name},
+            False,
+        )
+        return safe_error_response("internal_error", 500, str(e))
 
     # Get original size from request if provided, otherwise use encrypted size
     # Note: The client should send the original size in a header or form field
@@ -197,7 +198,50 @@ def upload_file():
     else:
         original_size = len(encrypted_data)  # Fallback
 
-    # Store metadata
+    # Get folder_id (parent_id) from form data if provided
+    parent_id = request.form.get("folder_id")
+    if parent_id == "":
+        parent_id = None
+
+    # Get vaultspace_id from form data (required)
+    vaultspace_id = request.form.get("vaultspace_id")
+    if not vaultspace_id:
+        audit.log_action(
+            "upload",
+            user_ip,
+            {"error": "vaultspace_id is required"},
+            False,
+        )
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    # Validate parent_id if provided (must be a folder)
+    if parent_id is not None:
+        from vault.database.schema import File, db
+
+        folder = (
+            db.session.query(File)
+            .filter_by(
+                id=parent_id, mime_type="application/x-directory", deleted_at=None
+            )
+            .first()
+        )
+        if folder is None:
+            audit.log_action(
+                "upload",
+                user_ip,
+                {"error": f"Folder {parent_id} not found"},
+                False,
+            )
+            return jsonify({"error": "Folder not found"}), 404
+
+    # Get optional metadata
+    mime_type = request.form.get("mime_type")
+    encrypted_tags = request.form.get("encrypted_tags")
+    encrypted_description = request.form.get("encrypted_description")
+
+    # Store metadata in PostgreSQL
+    from vault.database.schema import File, db
+
     settings = current_app.config.get("VAULT_SETTINGS")
     # Use timezone-aware datetime with configured timezone
     if settings:
@@ -205,17 +249,60 @@ def upload_file():
 
         current_time = datetime.now(settings.timezone)
     else:
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
-    metadata = FileMetadata(
-        file_id=file_id,
+    # Get current user ID
+    current_user_id = get_current_user_id()
+
+    # Check for duplicate names in the same folder
+    existing_file = (
+        db.session.query(File)
+        .filter_by(
+            vaultspace_id=vaultspace_id,
+            parent_id=parent_id,
+            original_name=original_name,
+        )
+        .filter(File.deleted_at.is_(None))
+        .first()
+    )
+    if existing_file:
+        audit.log_action(
+            "upload",
+            user_ip,
+            {
+                "error": "duplicate_filename",
+                "filename": original_name,
+                "folder_id": parent_id,
+            },
+            False,
+        )
+        return (
+            jsonify(
+                {
+                    "error": f"A file with the name '{original_name}' already exists in this folder"
+                }
+            ),
+            409,
+        )
+
+    # Create File object in PostgreSQL
+    file_obj = File(
+        id=file_id,
+        vaultspace_id=vaultspace_id,
+        parent_id=parent_id,
+        owner_user_id=current_user_id,
         original_name=original_name,
         size=original_size,
         encrypted_size=len(encrypted_data),
-        created_at=current_time,
         encrypted_hash=encrypted_hash,
+        encrypted_metadata=encrypted_description,  # Store description in metadata
+        storage_ref=file_id,  # Use file_id as storage_ref
+        mime_type=mime_type,
+        created_at=current_time,
+        updated_at=current_time,
     )
-    database.add_file(metadata)
+    db.session.add(file_obj)
+    db.session.commit()
 
     # Log successful upload
     audit.log_action(
@@ -232,196 +319,851 @@ def upload_file():
         file_id=file_id,
     )
 
+    # Trigger background synchronization to source volume
+    # This ensures the file is available on all containers immediately
+    # The sync happens in background and won't block the response
+    try:
+        from threading import Thread
+        from pathlib import Path
+
+        def sync_file_to_source(file_id: str) -> None:
+            """Synchronize a single file to source volume in background."""
+            try:
+                source_dir = Path("/data-source")
+                if not source_dir.exists():
+                    # Source directory doesn't exist, skip sync
+                    return
+
+                from ..services.sync_validation_service import SyncValidationService
+                import shutil
+                import tempfile
+                import os
+
+                # Initialize validation service
+                validation_service = SyncValidationService()
+                validation_service.load_whitelist()
+
+                # Source and target paths
+                source_file = storage.get_file_path(file_id)
+                target_files_dir = source_dir / "files"
+                target_file = target_files_dir / file_id
+
+                # Check if source file exists
+                if not source_file.exists():
+                    current_app.logger.warning(
+                        f"Source file not found for sync: {file_id}"
+                    )
+                    return
+
+                # Validate file before synchronizing
+                base_dir = storage.storage_dir / "files"
+                is_valid, error_msg = validation_service.is_file_legitimate(
+                    source_file, base_dir
+                )
+
+                if not is_valid:
+                    current_app.logger.warning(
+                        f"File {file_id} failed validation during sync: {error_msg}"
+                    )
+                    return
+
+                # Create target directory if it doesn't exist
+                target_files_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy file atomically if it doesn't exist or if source is newer
+                if not target_file.exists() or (
+                    source_file.stat().st_mtime > target_file.stat().st_mtime
+                ):
+                    try:
+                        # Create temporary file for atomic operation
+                        temp_fd, temp_path = tempfile.mkstemp(
+                            dir=target_files_dir,
+                            prefix=".sync_",
+                            suffix=".tmp",
+                        )
+                        temp_file = Path(temp_path)
+                        os.close(temp_fd)
+
+                        # Copy to temporary file
+                        shutil.copy2(source_file, temp_file)
+
+                        # Re-validate after copy
+                        is_still_valid, revalidation_error = (
+                            validation_service.is_file_legitimate(temp_file, base_dir)
+                        )
+
+                        if is_still_valid:
+                            # Atomically rename
+                            temp_file.rename(target_file)
+                            current_app.logger.info(
+                                f"[SYNC] Synchronized file {file_id} to source volume"
+                            )
+                        else:
+                            # File became invalid during sync, delete it
+                            temp_file.unlink()
+                            current_app.logger.warning(
+                                f"[SYNC SECURITY] File {file_id} became invalid during sync: {revalidation_error}"
+                            )
+                    except Exception as e:
+                        if temp_file.exists():
+                            temp_file.unlink()
+                        current_app.logger.error(
+                            f"[SYNC ERROR] Failed to sync file {file_id}: {e}"
+                        )
+
+            except Exception as e:
+                current_app.logger.error(
+                    f"[SYNC ERROR] Background sync failed for file {file_id}: {e}",
+                    exc_info=True,
+                )
+
+        # Start background sync thread
+        sync_thread = Thread(target=sync_file_to_source, args=(file_id,), daemon=True)
+        sync_thread.start()
+
+    except Exception as e:
+        # If background sync setup fails, log but don't fail the upload
+        current_app.logger.warning(
+            f"Failed to start background sync for file {file_id}: {e}"
+        )
+
     return jsonify({"file_id": file_id, "status": "success"}), 201
+
+
+# Share routes - separated from /api/files to avoid route conflicts
+@files_bp.route("/api/share/<file_id>", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+def create_share_link(file_id: str):
+    """Create a share link for a file."""
+    # Import traceback here to avoid importing at module level if not needed (only used in error handling)
+    import traceback
+
+    try:
+        # JWT authentication check
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization header missing"}), 401
+
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return jsonify({"error": "Invalid authorization header format"}), 401
+
+        token = parts[1]
+        secret_key = current_app.config.get("SECRET_KEY")
+        if not secret_key:
+            current_app.logger.error("SECRET_KEY not found in config")
+            return jsonify({"error": "Server configuration error"}), 500
+
+        from vault.services.auth_service import AuthService
+
+        auth_service = AuthService(secret_key)
+        user = auth_service.verify_token(token)
+
+        if not user:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        user_ip = get_client_ip() or "unknown"
+        audit = _get_audit()
+        share_service = _get_share_service()
+
+        # Verify file exists in PostgreSQL
+        metadata = None
+        try:
+            from vault.database.schema import File, db
+
+            file_obj = (
+                db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
+            )
+            if file_obj:
+                # Convert File to FileMetadata-like object
+                from vault.models import FileMetadata
+
+                metadata = FileMetadata(
+                    file_id=file_obj.id,
+                    original_name=file_obj.original_name,
+                    size=file_obj.size,
+                    encrypted_size=file_obj.encrypted_size,
+                    created_at=file_obj.created_at,
+                    encrypted_hash=file_obj.encrypted_hash,
+                    folder_id=file_obj.parent_id,
+                    encrypted_tags=None,
+                    encrypted_description=None,
+                    mime_type=file_obj.mime_type,
+                    thumbnail_hash=None,
+                    user_id=file_obj.owner_user_id,
+                )
+        except Exception as e:
+            current_app.logger.error(
+                f"Error querying database for file {file_id}: {type(e).__name__}"
+            )
+            return jsonify({"error": "Internal server error"}), 500
+
+        if not metadata:
+            audit.log_action(
+                "share",
+                user_ip,
+                {"error": "File not found"},
+                False,
+                file_id=file_id,
+            )
+            return jsonify({"error": "File not found"}), 404
+
+        # Get parameters from request
+        expires_in_hours = None
+        max_downloads = None
+        try:
+            if request.is_json and request.get_json():
+                request_json = request.get_json()
+                expires_in_hours = request_json.get("expires_in_hours")
+                max_downloads = request_json.get("max_downloads")
+        except Exception:
+            pass
+
+        if expires_in_hours:
+            try:
+                expires_in_hours = int(expires_in_hours)
+                if expires_in_hours < 1:
+                    expires_in_hours = None
+            except (ValueError, TypeError):
+                expires_in_hours = None
+
+        if max_downloads:
+            try:
+                max_downloads = int(max_downloads)
+                if max_downloads < 1:
+                    max_downloads = None
+            except (ValueError, TypeError):
+                max_downloads = None
+
+        # Create share link
+        try:
+            share_link = share_service.create_share_link(
+                file_id=file_id,
+                expires_in_hours=expires_in_hours,
+                max_downloads=max_downloads,
+            )
+        except Exception as e:
+            current_app.logger.error(
+                f"Error creating share link for file {file_id}: {type(e).__name__}"
+            )
+            return jsonify({"error": "Internal server error"}), 500
+
+        # Log successful share link creation
+        audit.log_action(
+            "share",
+            user_ip,
+            {
+                "file_id": file_id,
+                "link_id": share_link.link_id if share_link else None,
+                "expires_in_hours": expires_in_hours,
+                "max_downloads": max_downloads,
+            },
+            True,
+            file_id=file_id,
+        )
+
+        # Get share URL using VAULT_URL from settings
+        share_url = share_service.get_share_url(share_link.link_id, share_link.file_id)
+        share_link_dict = share_link.to_dict(share_url=share_url)
+        return jsonify(share_link_dict), 201
+    except Exception as e:
+        current_app.logger.error(
+            f"Unexpected error in create_share_link: {type(e).__name__}"
+        )
+        current_app.logger.debug(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@files_bp.route("/api/share/<file_id>/links", methods=["GET"])
+@csrf.exempt  # JWT-authenticated API endpoint (GET but has side effects)
+def list_share_links(file_id: str):
+    """List all share links for a file."""
+    # Import traceback here to avoid importing at module level if not needed (only used in error handling)
+    import traceback
+
+    try:
+        # JWT authentication check
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization header missing"}), 401
+
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return jsonify({"error": "Invalid authorization header format"}), 401
+
+        token = parts[1]
+        secret_key = current_app.config.get("SECRET_KEY")
+        if not secret_key:
+            current_app.logger.error("SECRET_KEY not found in config")
+            return jsonify({"error": "Server configuration error"}), 500
+
+        from vault.services.auth_service import AuthService
+
+        auth_service = AuthService(secret_key)
+        user = auth_service.verify_token(token)
+
+        if not user:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        share_service = _get_share_service()
+
+        # Verify file exists in PostgreSQL
+        file_metadata = None
+        try:
+            from vault.database.schema import File, db
+
+            file_obj = (
+                db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
+            )
+            if file_obj:
+                # Convert File to FileMetadata-like object
+                from vault.models import FileMetadata
+
+                file_metadata = FileMetadata(
+                    file_id=file_obj.id,
+                    original_name=file_obj.original_name,
+                    size=file_obj.size,
+                    encrypted_size=file_obj.encrypted_size,
+                    created_at=file_obj.created_at,
+                    encrypted_hash=file_obj.encrypted_hash,
+                    folder_id=file_obj.parent_id,
+                    encrypted_tags=None,
+                    encrypted_description=None,
+                    mime_type=file_obj.mime_type,
+                    thumbnail_hash=None,
+                    user_id=file_obj.owner_user_id,
+                )
+        except Exception as e:
+            current_app.logger.error(
+                f"Error querying database for file {file_id}: {type(e).__name__}"
+            )
+            return jsonify({"error": "Internal server error"}), 500
+
+        if not file_metadata:
+            return jsonify({"error": "File not found"}), 404
+
+        try:
+            links = share_service.list_links_for_file(file_id)
+        except Exception as e:
+            current_app.logger.error(
+                f"Error getting share links for file {file_id}: {type(e).__name__}"
+            )
+            return jsonify({"error": "Internal server error"}), 500
+
+        # Include share URLs using VAULT_URL from settings
+        links_dict = [
+            link.to_dict(
+                share_url=share_service.get_share_url(link.link_id, link.file_id)
+            )
+            for link in links
+        ]
+        return jsonify({"links": links_dict}), 200
+    except Exception as e:
+        current_app.logger.error(
+            f"Unexpected error in list_share_links: {type(e).__name__}"
+        )
+        current_app.logger.debug(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @files_bp.route("/api/files/<file_id>", methods=["GET"])
 def download_file(file_id: str):
     # Note: No @login_required to allow sharing via /share page
+    # But we check if user is logged in and verify ownership
     """Download an encrypted file."""
     user_ip = get_client_ip() or "unknown"
     audit = _get_audit()
     share_service = _get_share_service()
-
-    database = _get_database()
     storage = _get_storage()
+
+    # Check if user is logged in
+    from flask import session
+    from .utils import get_current_user_id
+
+    user_id = get_current_user_id()
+    is_logged_in = session.get("logged_in", False)
 
     # Check if this is a share link download
     link_token = request.args.get("token")
+    share_link = None
+    actual_file_id = file_id  # Will be updated if using share link
+
     if link_token:
+        # Get share link first (before validation to get better error messages)
+        share_link = share_service.get_share_link(link_token)
+        if not share_link:
+            from .utils import safe_error_response
+
+            current_app.logger.warning(
+                f"Share link not found: token={link_token[:20]}..., file_id={file_id}"
+            )
+            audit.log_action(
+                "download",
+                user_ip,
+                {"error": "Share link not found", "link_token": link_token[:20]},
+                False,
+                file_id=file_id,
+            )
+            return jsonify({"error": "Share link not found"}), 404
+
+        # Validate share link
         is_valid, error_msg = share_service.validate_share_link(link_token)
         if not is_valid:
+            current_app.logger.warning(
+                f"Invalid share link: {error_msg}, token={link_token[:20]}..., file_id={file_id}"
+            )
             audit.log_action(
                 "download",
                 user_ip,
                 {
                     "error": error_msg or "Invalid share link",
                     "file_id": file_id,
-                    "link_token": link_token,
+                    "link_token": link_token[:20],
                 },
                 False,
                 file_id=file_id,
             )
             return jsonify({"error": error_msg or "Invalid share link"}), 403
 
-        # Verify the link is for this file
-        share_link = share_service.get_share_link(link_token)
-        if share_link and share_link.file_id != file_id:
+        # Verify it's for this file
+        if share_link.file_id != file_id:
+            from .utils import safe_error_response
+
+            current_app.logger.warning(
+                f"Share link file mismatch: link_file_id={share_link.file_id}, requested_file_id={file_id}"
+            )
             audit.log_action(
                 "download",
                 user_ip,
                 {
                     "error": "Share link file mismatch",
-                    "file_id": file_id,
-                    "link_token": link_token,
+                    "link_file_id": share_link.file_id,
+                    "requested_file_id": file_id,
                 },
                 False,
                 file_id=file_id,
             )
             return jsonify({"error": "Share link file mismatch"}), 403
 
-        # Increment download count
-        if share_link:
-            share_service.increment_download_count(link_token)
-
-            # Check if limit reached after increment
-            updated_link = share_service.get_share_link(link_token)
-            if updated_link and updated_link.has_reached_limit():
-                share_service.deactivate_link(link_token)
-
-    metadata = database.get_file(file_id)
-    if not metadata:
+        # Use file_id from share link
+        actual_file_id = share_link.file_id
+    elif is_logged_in:
+        # For logged-in users, verify they own the file or are admin
+        # File will be checked below
+        pass
+    else:
+        # Not logged in and no share token - deny access
         audit.log_action(
             "download",
             user_ip,
-            {"error": "File not found", "file_id": file_id},
+            {"error": "Authentication required", "file_id": file_id},
             False,
             file_id=file_id,
+        )
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Get file from PostgreSQL using actual_file_id
+    from vault.database.schema import File, User, GlobalRole, db
+
+    file_obj = (
+        db.session.query(File).filter_by(id=actual_file_id, deleted_at=None).first()
+    )
+
+    # Verify file exists
+    if not file_obj:
+        from .utils import safe_error_response
+
+        current_app.logger.error(
+            f"File not found in database: file_id={actual_file_id}, link_token={link_token[:20] if link_token else 'N/A'}"
+        )
+        audit.log_action(
+            "download",
+            user_ip,
+            {"error": "File not found", "file_id": actual_file_id},
+            False,
+            file_id=actual_file_id,
         )
         return jsonify({"error": "File not found"}), 404
 
-    if not storage.file_exists(file_id):
-        audit.log_action(
-            "download",
-            user_ip,
-            {"error": "File data not found", "file_id": file_id},
-            False,
-            file_id=file_id,
-        )
-        return jsonify({"error": "File data not found"}), 404
+    # For logged-in users (without share link), verify ownership
+    # SECURITY: Admins cannot access user files without explicit sharing
+    if is_logged_in and not link_token:
+        # Only the owner can access the file
+        if file_obj.owner_user_id != user_id:
+            from .utils import safe_error_response
+
+            audit.log_action(
+                "download",
+                user_ip,
+                {"error": "Access denied - not owner"},
+                False,
+                file_id=actual_file_id,
+            )
+            return safe_error_response("authorization_error", 403)
+
+    # Increment download count if share link
+    if link_token and share_link:
+        share_service.increment_download_count(link_token)
+
+        # Check if limit reached after increment
+        updated_link = share_service.get_share_link(link_token)
+        if updated_link and updated_link.has_reached_limit():
+            share_service.deactivate_link(link_token)
+
+    # Use storage_ref if available, otherwise fallback to file_id
+    # For files uploaded via old system, storage_ref might not be set, so use file_id
+    storage_ref = None
+    if hasattr(file_obj, "storage_ref") and file_obj.storage_ref:
+        storage_ref = file_obj.storage_ref
+    else:
+        # Fallback to file_id for old system compatibility
+        storage_ref = actual_file_id
+
+    # Try storage_ref first, then fallback to file_id if not found
+    if not storage.file_exists(storage_ref):
+        # If storage_ref is different from file_id, try file_id as fallback
+        if storage_ref != actual_file_id and storage.file_exists(actual_file_id):
+            storage_ref = actual_file_id
+        else:
+            from .utils import safe_error_response
+
+            current_app.logger.error(
+                f"File not found in storage: file_id={actual_file_id}"
+            )
+            audit.log_action(
+                "download",
+                user_ip,
+                {"error": "File data not found"},
+                False,
+                file_id=actual_file_id,
+            )
+            return safe_error_response(
+                "file_not_found", 404, f"File storage_ref={storage_ref} not found"
+            )
 
     # Log successful download
     audit.log_action(
         "download",
         user_ip,
         {
-            "file_id": file_id,
-            "filename": metadata.original_name,
+            "file_id": actual_file_id,
+            "filename": file_obj.original_name,
             "user_agent": request.headers.get("User-Agent", "unknown"),
             "via_share_link": bool(link_token),
         },
         True,
-        file_id=file_id,
+        file_id=actual_file_id,
     )
 
-    file_path = storage.get_file_path(file_id)
+    # Find file path (checks both storage and source)
+    file_path = storage._find_file_path(storage_ref)
+    if not file_path:
+        current_app.logger.error(
+            f"File not found in storage or source: file_id={actual_file_id}, storage_ref={storage_ref}"
+        )
+        audit.log_action(
+            "download",
+            user_ip,
+            {"error": "File data not found"},
+            False,
+            file_id=actual_file_id,
+        )
+        return jsonify({"error": "File not found"}), 404
+
     return send_file(
         file_path,
         mimetype="application/octet-stream",
-        download_name=metadata.original_name,
+        download_name=file_obj.original_name,
     )
 
 
 @files_bp.route("/api/files", methods=["GET"])
 @login_required
 def list_files():
-    """List all files (metadata only)."""
-    database = _get_database()
-    files = database.list_files()
-    return jsonify({"files": [f.to_dict() for f in files]}), 200
+    """List files (metadata only), optionally filtered by folder and view type."""
+    user_ip = get_client_ip() or "unknown"
+    audit = _get_audit()
+
+    try:
+        from vault.database.schema import File, User, GlobalRole, db
+
+        share_service = _get_share_service()
+
+        # Get folder_id (parent_id) from query parameter if provided
+        parent_id = request.args.get("folder_id")
+        if parent_id == "":
+            parent_id = None
+
+        # Get view type from query parameter (recent, starred, shared, trash)
+        view_type = request.args.get("view", "all")
+
+        # Get current user ID
+        # SECURITY: Admins can only see their own files - no admin bypass
+        current_user_id = get_current_user_id()
+
+        if not current_user_id:
+            audit.log_action(
+                "list_files",
+                user_ip,
+                {"error": "Authentication required"},
+                False,
+            )
+            return jsonify({"error": "Authentication required"}), 401
+
+        # List files in the specified folder (or all files if parent_id is None)
+        # Only show files owned by the current user
+        # Build query based on view type
+        if view_type == "trash":
+            # For trash view, show deleted files
+            query = db.session.query(File).filter(File.deleted_at.isnot(None))
+        else:
+            # For other views, show non-deleted files
+            query = db.session.query(File).filter_by(deleted_at=None)
+
+        # Filter by owner only
+        query = query.filter(File.owner_user_id == current_user_id)
+
+        # Filter by view type
+        if view_type == "starred":
+            # Only show starred files
+            query = query.filter_by(is_starred=True)
+
+        if parent_id is not None:
+            query = query.filter_by(parent_id=parent_id)
+        else:
+            # Root level files (no parent)
+            query = query.filter_by(parent_id=None)
+
+        file_objs = query.all()
+
+        # Convert File objects to FileMetadata-like objects for compatibility
+        from vault.models import FileMetadata
+
+        files = []
+        for file_obj in file_objs:
+            metadata = FileMetadata(
+                file_id=file_obj.id,
+                original_name=file_obj.original_name,
+                size=file_obj.size,
+                encrypted_size=file_obj.encrypted_size,
+                created_at=file_obj.created_at,
+                encrypted_hash=file_obj.encrypted_hash,
+                folder_id=file_obj.parent_id,
+                encrypted_tags=None,
+                encrypted_description=file_obj.encrypted_metadata,
+                mime_type=file_obj.mime_type,
+                thumbnail_hash=None,
+                user_id=file_obj.owner_user_id,
+            )
+            files.append(metadata)
+
+        # Filter files based on view type
+        if view_type == "recent":
+            # Show files modified in last 7 days, sorted by most recent first
+            # Import timedelta here to avoid importing at module level if not needed (only used for recent view)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            files = [f for f in files if f.created_at >= cutoff]
+            files.sort(key=lambda x: x.created_at, reverse=True)
+        elif view_type == "shared":
+            # Show files that have active share links
+            # Note: Only share links are used for sharing
+            files_with_shares = []
+            for file_metadata in files:
+                try:
+                    share_links = share_service.list_links_for_file(
+                        file_metadata.file_id
+                    )
+                    active_links = [
+                        link
+                        for link in share_links
+                        if link.is_active and not link.is_expired()
+                    ]
+                    # Include files with active share links
+                    if len(active_links) > 0:
+                        files_with_shares.append(file_metadata)
+                except Exception as e:
+                    current_app.logger.warning(
+                        f"Failed to process share links for file {file_metadata.file_id}: {e}"
+                    )
+                    continue
+            files = files_with_shares
+
+        # Enhance each file with share link information
+        files_with_shares = []
+        for file_metadata in files:
+            try:
+                file_dict = file_metadata.to_dict()
+
+                # Get all share links for this file
+                try:
+                    share_links = share_service.list_links_for_file(
+                        file_metadata.file_id
+                    )
+                    # Filter to only active, non-expired links
+                    active_links = [
+                        link
+                        for link in share_links
+                        if link.is_active and not link.is_expired()
+                    ]
+                    file_dict["has_active_share"] = len(active_links) > 0
+                    file_dict["active_share_count"] = len(active_links)
+                except Exception as e:
+                    # If share service fails, log and skip share info
+                    current_app.logger.warning(
+                        f"Failed to retrieve share links for file {file_metadata.file_id}: {e}"
+                    )
+                    file_dict["has_active_share"] = False
+                    file_dict["active_share_count"] = 0
+
+                files_with_shares.append(file_dict)
+            except Exception as e:
+                # Skip files that fail to serialize
+                audit.log_action(
+                    "list_files",
+                    user_ip,
+                    {
+                        "error": f"Failed to serialize file {file_metadata.file_id}: {str(e)}"
+                    },
+                    False,
+                )
+                continue
+
+        return jsonify({"files": files_with_shares}), 200
+    except Exception as e:
+        from .utils import safe_error_response
+
+        current_app.logger.error(f"Error listing files: {type(e).__name__}")
+        audit.log_action(
+            "list_files",
+            user_ip,
+            {"error": "Internal error"},
+            False,
+        )
+        return safe_error_response("internal_error", 500, str(e))
 
 
-@files_bp.route("/api/files/<file_id>/share", methods=["POST"])
-@login_required
-def create_share_link(file_id: str):
-    """Create a share link for a file."""
+@files_bp.route("/api/shared/files", methods=["GET"])
+@csrf.exempt  # JWT-authenticated API endpoint
+def list_shared_files():
+    """List files shared with the current user via share links."""
+    # JWT authentication check
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return jsonify({"error": "Authorization header missing"}), 401
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return jsonify({"error": "Invalid authorization header format"}), 401
+
+    token = parts[1]
+    secret_key = current_app.config.get("SECRET_KEY")
+    if not secret_key:
+        return jsonify({"error": "Server configuration error"}), 500
+
+    from vault.services.auth_service import AuthService
+
+    auth_service = AuthService(secret_key)
+    user = auth_service.verify_token(token)
+
+    if not user:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
     user_ip = get_client_ip() or "unknown"
     audit = _get_audit()
     share_service = _get_share_service()
-    database = _get_database()
+    current_user_id = user.id
 
-    # Verify file exists
-    metadata = database.get_file(file_id)
-    if not metadata:
-        audit.log_action(
-            "share",
-            user_ip,
-            {"error": "File not found", "file_id": file_id},
-            False,
-            file_id=file_id,
+    try:
+        # Get all files that have active share links created by the current user
+        # This shows files the user has shared with others
+        from vault.database.schema import File, db
+
+        # Query files from PostgreSQL directly
+        all_file_objs = (
+            db.session.query(File)
+            .filter_by(owner_user_id=current_user_id, deleted_at=None)
+            .all()
         )
-        return jsonify({"error": "File not found"}), 404
 
-    # Get parameters from request
-    expires_in_hours = request.json.get("expires_in_hours") if request.is_json else None
-    max_downloads = request.json.get("max_downloads") if request.is_json else None
+        shared_files = []
 
-    if expires_in_hours:
-        try:
-            expires_in_hours = int(expires_in_hours)
-            if expires_in_hours < 1:
-                expires_in_hours = None
-        except (ValueError, TypeError):
-            expires_in_hours = None
+        for file_obj in all_file_objs:
+            try:
+                share_links = share_service.list_links_for_file(file_obj.id)
+                active_links = []
+                for link in share_links:
+                    # Check if link is active and not expired
+                    if link.is_active:
+                        if link.expires_at:
+                            # Compare with current time
+                            from datetime import timezone
 
-    if max_downloads:
-        try:
-            max_downloads = int(max_downloads)
-            if max_downloads < 1:
-                max_downloads = None
-        except (ValueError, TypeError):
-            max_downloads = None
+                            now_utc = datetime.now(timezone.utc)
+                            if link.expires_at.tzinfo:
+                                expires_utc = link.expires_at.astimezone(timezone.utc)
+                            else:
+                                expires_utc = link.expires_at.replace(
+                                    tzinfo=timezone.utc
+                                )
+                            if now_utc <= expires_utc:
+                                active_links.append(link)
+                        else:
+                            # No expiration date
+                            active_links.append(link)
 
-    # Create share link
-    share_link = share_service.create_share_link(
-        file_id=file_id,
-        expires_in_hours=expires_in_hours,
-        max_downloads=max_downloads,
-    )
+                if len(active_links) > 0:
+                    # Convert File to dict format compatible with frontend
+                    file_dict = {
+                        "id": file_obj.id,
+                        "file_id": file_obj.id,  # For compatibility
+                        "original_name": file_obj.original_name,
+                        "size": file_obj.size,
+                        "encrypted_size": file_obj.encrypted_size,
+                        "created_at": (
+                            file_obj.created_at.isoformat()
+                            if file_obj.created_at
+                            else None
+                        ),
+                        "updated_at": (
+                            file_obj.updated_at.isoformat()
+                            if file_obj.updated_at
+                            else None
+                        ),
+                        "mime_type": file_obj.mime_type,
+                        "vaultspace_id": file_obj.vaultspace_id,
+                        "parent_id": file_obj.parent_id,
+                        "owner_user_id": file_obj.owner_user_id,
+                        "is_starred": file_obj.is_starred,
+                    }
+                    # Add share link info with URLs
+                    file_dict["share_links"] = [
+                        link.to_dict(
+                            share_url=share_service.get_share_url(
+                                link.link_id, link.file_id
+                            )
+                        )
+                        for link in active_links
+                    ]
+                    shared_files.append(file_dict)
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to process share links for file {file_obj.id}: {e}"
+                )
+                continue
 
-    # Log successful share link creation
-    audit.log_action(
-        "share",
-        user_ip,
-        {
-            "file_id": file_id,
-            "link_id": share_link.link_id,
-            "expires_in_hours": expires_in_hours,
-            "max_downloads": max_downloads,
-        },
-        True,
-        file_id=file_id,
-    )
-
-    return jsonify(share_link.to_dict()), 201
-
-
-@files_bp.route("/api/files/<file_id>/shares", methods=["GET"])
-@login_required
-def list_share_links(file_id: str):
-    """List all share links for a file."""
-    share_service = _get_share_service()
-    database = _get_database()
-
-    # Verify file exists
-    if not database.get_file(file_id):
-        return jsonify({"error": "File not found"}), 404
-
-    links = share_service.list_links_for_file(file_id)
-    return jsonify({"links": [link.to_dict() for link in links]}), 200
+        return jsonify({"files": shared_files}), 200
+    except Exception as e:
+        audit.log_action(
+            "list_shared_files",
+            user_ip,
+            {"error": str(e)},
+            False,
+        )
+        return jsonify({"error": str(e)}), 500
 
 
 @files_bp.route("/api/shares/<link_token>", methods=["GET"])
+@csrf.exempt  # Public endpoint, no CSRF needed
 def get_share_link_info(link_token: str):
     """Get information about a share link."""
     share_service = _get_share_service()
@@ -432,16 +1174,118 @@ def get_share_link_info(link_token: str):
 
     is_valid, error_msg = share_service.validate_share_link(link_token)
 
-    return (
-        jsonify(
-            {
-                **share_link.to_dict(),
-                "is_valid": is_valid,
-                "error": error_msg,
-            }
-        ),
-        200,
+    # Get file information from PostgreSQL
+    filename = None
+    size = None
+    try:
+        from vault.database.schema import File, db
+
+        file_obj = (
+            db.session.query(File)
+            .filter_by(id=share_link.file_id, deleted_at=None)
+            .first()
+        )
+        if file_obj:
+            filename = file_obj.original_name
+            size = file_obj.size
+    except Exception as e:
+        current_app.logger.error(f"Error fetching file info for share link: {str(e)}")
+
+    # Get share URL using VAULT_URL from settings
+    share_url = share_service.get_share_url(link_token, share_link.file_id)
+    response_data = {
+        **share_link.to_dict(share_url=share_url),
+        "is_valid": is_valid,
+        "error": error_msg,
+    }
+
+    # Add file information if available
+    if filename:
+        response_data["filename"] = filename
+    if size is not None:
+        response_data["size"] = size
+
+    return jsonify(response_data), 200
+
+
+@files_bp.route("/api/shares/<link_token>", methods=["DELETE"])
+@csrf.exempt  # CSRF not needed for JWT-authenticated API endpoints
+def revoke_share_link(link_token: str):
+    """Revoke a share link."""
+    # JWT authentication check
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return jsonify({"error": "Authorization header missing"}), 401
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return jsonify({"error": "Invalid authorization header format"}), 401
+
+    token = parts[1]
+    secret_key = current_app.config.get("SECRET_KEY")
+    if not secret_key:
+        return jsonify({"error": "Server configuration error"}), 500
+
+    from vault.services.auth_service import AuthService
+
+    auth_service = AuthService(secret_key)
+    user = auth_service.verify_token(token)
+
+    if not user:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    user_ip = get_client_ip() or "unknown"
+    audit = _get_audit()
+    share_service = _get_share_service()
+
+    # Get share link to verify it exists and get file_id
+    share_link = share_service.get_share_link(link_token)
+    if not share_link:
+        from .utils import safe_error_response
+
+        audit.log_action(
+            "share_revoke",
+            user_ip,
+            {"error": "Share link not found"},
+            False,
+        )
+        return safe_error_response("not_found", 404)
+
+    # Verify file exists in PostgreSQL
+    from vault.database.schema import File, db
+
+    file_obj = (
+        db.session.query(File).filter_by(id=share_link.file_id, deleted_at=None).first()
     )
+    if not file_obj:
+        from .utils import safe_error_response
+
+        audit.log_action(
+            "share_revoke",
+            user_ip,
+            {"error": "File not found"},
+            False,
+            file_id=share_link.file_id,
+        )
+        return safe_error_response("file_not_found", 404)
+
+    # Deactivate the share link
+    share_service.deactivate_link(link_token)
+
+    # Log successful revocation
+    audit.log_action(
+        "share_revoke",
+        user_ip,
+        {
+            "link_token": link_token,
+            "file_id": share_link.file_id,
+            "filename": file_obj.original_name,
+        },
+        True,
+        file_id=share_link.file_id,
+    )
+
+    return jsonify({"status": "success"}), 200
 
 
 @files_bp.route("/api/files/<file_id>", methods=["DELETE"])
@@ -450,46 +1294,115 @@ def delete_file(file_id: str):
     """Delete a file."""
     user_ip = get_client_ip() or "unknown"
     audit = _get_audit()
-
-    database = _get_database()
     storage = _get_storage()
 
-    metadata = database.get_file(file_id)
-    if not metadata:
+    from vault.database.schema import File, db
+
+    file_obj = db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
+    if not file_obj:
+        from .utils import safe_error_response
+
         audit.log_action(
             "delete",
             user_ip,
-            {"error": "File not found", "file_id": file_id},
+            {"error": "File not found"},
             False,
             file_id=file_id,
         )
-        return jsonify({"error": "File not found"}), 404
+        return safe_error_response("file_not_found", 404)
 
-    deleted = database.delete_file(file_id)
+    # Soft delete: set deleted_at timestamp
+    file_obj.deleted_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    # Also delete from storage
     storage.delete_file(file_id)
 
-    if deleted:
-        # Log successful deletion
-        audit.log_action(
-            "delete",
-            user_ip,
-            {
-                "file_id": file_id,
-                "filename": metadata.original_name,
-            },
-            True,
-            file_id=file_id,
-        )
-        return jsonify({"status": "success"}), 200
-
+    # Log successful deletion
     audit.log_action(
         "delete",
         user_ip,
-        {"error": "Failed to delete", "file_id": file_id},
-        False,
+        {
+            "file_id": file_id,
+            "filename": file_obj.original_name,
+        },
+        True,
         file_id=file_id,
     )
-    return jsonify({"error": "Failed to delete"}), 500
+    return jsonify({"status": "success"}), 200
+
+
+@files_bp.route("/api/files/<file_id>/move", methods=["PUT"])
+@login_required
+def move_file(file_id: str):
+    """Move a file to a different folder."""
+    user_ip = get_client_ip() or "unknown"
+    audit = _get_audit()
+
+    if not request.is_json:
+        audit.log_action(
+            "file_move",
+            user_ip,
+            {"error": "Request must be JSON", "file_id": file_id},
+            False,
+        )
+        return jsonify({"error": "Request must be JSON"}), 400
+
+    from vault.database.schema import File, db
+
+    # Verify file exists
+    file_obj = db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
+    if not file_obj:
+        from .utils import safe_error_response
+
+        audit.log_action(
+            "file_move",
+            user_ip,
+            {"error": "File not found"},
+            False,
+        )
+        return safe_error_response("file_not_found", 404)
+
+    data = request.json
+    parent_id = data.get("folder_id")  # Can be None to move to root
+
+    # Validate parent_id if provided (must be a folder)
+    if parent_id is not None:
+        folder = (
+            db.session.query(File)
+            .filter_by(
+                id=parent_id, mime_type="application/x-directory", deleted_at=None
+            )
+            .first()
+        )
+        if folder is None:
+            from .utils import safe_error_response
+
+            audit.log_action(
+                "file_move",
+                user_ip,
+                {"error": "Folder not found"},
+                False,
+            )
+            return safe_error_response("not_found", 404)
+
+    # Move the file by updating parent_id
+    file_obj.parent_id = parent_id
+    file_obj.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    audit.log_action(
+        "file_move",
+        user_ip,
+        {
+            "file_id": file_id,
+            "filename": file_obj.original_name,
+            "folder_id": parent_id,
+        },
+        True,
+        file_id=file_id,
+    )
+    return jsonify({"status": "success"}), 200
 
 
 __all__ = ["files_bp"]

@@ -2,25 +2,22 @@
 
 from __future__ import annotations
 
-import subprocess
+import re
+
+import httpx
 
 from ..config import Settings
-from .logging import FileLogger
+from common.services.logging import FileLogger
 from .docker_proxy import DockerProxyService
 
 
 class SyncService:
     """Handles synchronization of volumes from temporary containers to source.
 
-    Note: This service uses subprocess to execute Docker commands directly
-    because the Docker Proxy only allows operations on existing containers
-    (inspect, start, stop, wait, unpause) and does not permit creating new
-    containers or executing commands inside containers. The synchronization
-    requires creating a temporary container to run rsync, which is not possible
-    through the restricted Docker Proxy API.
-
-    This is an architectural limitation that was accepted to maintain the
-    security model of the Docker Proxy (allowlist-based access control).
+    This service uses HTTP API calls to the vault container's internal sync endpoint
+    to synchronize data from the ephemeral tmpfs volume (/data) to the persistent
+    source volume (/data-source). This approach maintains the security model by
+    not requiring Docker CLI access in the orchestrator container.
     """
 
     def __init__(
@@ -29,13 +26,15 @@ class SyncService:
         self._settings = settings
         self._docker = docker
         self._logger = logger
+        self._client = httpx.Client(timeout=httpx.Timeout(300.0))  # 5 minute timeout
 
     def sync_container_data_to_source(self, container_name: str) -> bool:
         """Synchronize data from a container's temporary volume to the source volume.
 
-        This method creates a temporary container using Docker CLI (via subprocess)
-        because the Docker Proxy does not support container creation. The temporary
-        container mounts both volumes and runs rsync to synchronize data.
+        This method calls the vault container's internal sync API endpoint via HTTP
+        to synchronize data from /data (tmpfs) to /data-source (persistent). The
+        vault container has access to both volumes and performs the synchronization
+        internally.
 
         Args:
             container_name: Name of the container whose data should be synchronized
@@ -43,74 +42,77 @@ class SyncService:
         Returns:
             True if synchronization succeeded, False otherwise
         """
-        if not container_name.startswith("vault_web"):
+        # Validate container name with strict regex
+        # Maximum length to prevent DoS
+        if len(container_name) > 64:
+            self._logger.log(f"[SYNC ERROR] Container name too long: {container_name}")
+            return False
+
+        # Strict pattern: vault_web followed by number (1-9, then digits)
+        container_name_pattern = re.compile(r"^vault_web[1-9][0-9]*$")
+        if not container_name_pattern.match(container_name):
             self._logger.log(
-                f"[SYNC] Skipping sync for non-vault container: {container_name}"
+                f"[SYNC ERROR] Invalid container name format: {container_name}"
             )
             return False
 
-        # Extract volume suffix from container name
-        volume_suffix = container_name.replace("vault_", "")
-        temp_volume = f"vault-data-{volume_suffix}"
-        source_volume = "vault-data-source"
-
         self._logger.log(
-            f"[SYNC] Starting synchronization from {temp_volume} to {source_volume}"
+            f"[SYNC] Starting synchronization for container: {container_name}"
         )
 
         try:
-            # Create a unique temporary container name
-            sync_container_name = f"sync-{container_name}-{hash(temp_volume) % 10000}"
+            # Construct URL to vault container's internal sync endpoint
+            # Containers are on the same Docker network, so we can use container name as hostname
+            sync_url = f"http://{container_name}/api/internal/sync"
 
-            # Use Docker CLI to create and run a temporary sync container
-            # Note: This bypasses the Docker Proxy because the proxy doesn't support
-            # container creation (security restriction). The sync container is short-lived
-            # and only mounts volumes, it doesn't expose ports or networks.
-            docker_cmd = [
-                "docker",
-                "run",
-                "--rm",
-                "--name",
-                sync_container_name,
-                "--volumes-from",
-                container_name,
-                "-v",
-                f"{source_volume}:/source:rw",
-                "-v",
-                f"{temp_volume}:/temp:ro",
-                "alpine:latest",
-                "sh",
-                "-c",
-                "rsync -a --update /temp/ /source/",
-            ]
+            # Get authentication token from settings (INTERNAL_API_TOKEN, auto-generated from SECRET_KEY)
+            token = self._settings.internal_api_token
+            if not token:
+                self._logger.log(
+                    "[SYNC ERROR] INTERNAL_API_TOKEN not available for sync authentication"
+                )
+                return False
 
-            result = subprocess.run(
-                docker_cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout
-                check=False,  # Don't raise on non-zero exit
+            # Call the sync endpoint
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+
+            self._logger.log(
+                f"[SYNC] Calling sync endpoint at {sync_url} for container {container_name}"
             )
 
-            if result.returncode == 0:
+            # Send POST request with empty JSON body (Flask requires body when Content-Type is application/json)
+            response = self._client.post(
+                sync_url, headers=headers, json={}, timeout=300.0
+            )
+
+            if response.status_code == 200:
                 self._logger.log(
                     f"[SYNC] Successfully synchronized {container_name} to source"
                 )
                 return True
-            else:
+            elif response.status_code == 401:
                 self._logger.log(
-                    f"[SYNC ERROR] Failed to synchronize {container_name}: {result.stderr}"
+                    f"[SYNC ERROR] Authentication failed for {container_name} sync endpoint"
+                )
+                return False
+            else:
+                error_msg = response.text.strip()
+                self._logger.log(
+                    f"[SYNC ERROR] Failed to synchronize {container_name}: HTTP {response.status_code} - {error_msg}"
                 )
                 return False
 
-        except subprocess.TimeoutExpired:
+        except httpx.TimeoutException:
             self._logger.log(
                 f"[SYNC ERROR] Synchronization timeout for {container_name}"
             )
             return False
-        except FileNotFoundError:
+        except httpx.NetworkError as exc:
             self._logger.log(
-                f"[SYNC ERROR] Docker CLI not found. Ensure Docker is installed and accessible."
+                f"[SYNC ERROR] Network error during synchronization of {container_name}: {exc}"
             )
             return False
         except Exception as exc:

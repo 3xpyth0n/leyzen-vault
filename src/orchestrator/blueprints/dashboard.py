@@ -19,7 +19,7 @@ from flask import (
 )
 
 from ..extensions import csrf
-from ..services.logging import FileLogger
+from common.services.logging import FileLogger
 from ..services.rotation import RotationService
 from .utils import _settings, get_client_ip, login_required
 
@@ -110,18 +110,6 @@ def api_control():
                 {
                     "status": "error",
                     "message": "Stop orchestrator before kill",
-                    "rotation_active": rotation.rotation_active,
-                }
-            ),
-            400,
-        )
-
-    if action == "rotate" and not rotation.rotation_active:
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": "Resume rotation before forcing a switch.",
                     "rotation_active": rotation.rotation_active,
                 }
             ),

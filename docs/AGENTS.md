@@ -25,7 +25,7 @@ checks we expect before shipping changes.
 - `src/vault/` — Leyzen Vault secure file storage application with end-to-end encryption
 - `src/common/` — Shared Python modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
-- `src/compose/` — Python build scripts that generate `docker-compose.yml` and HAProxy
+- `src/compose/` — Python build scripts that generate `docker-generated.yml` and HAProxy
   configuration from environment variables.
 - `tools/cli/` — Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
@@ -236,9 +236,85 @@ Entrypoint scripts handle container initialization and user privilege management
 - When you touch front-end assets, run `npm install` (once) and then
   `npm run build:css` inside `src/orchestrator/` to refresh the generated CSS.
 - If you modify docker-compose services or shell scripts, validate them with
-  `docker compose config` and `shellcheck` where available.
-- Manual verification: start the stack with `docker compose up --build` and visit
+  `docker compose -f docker-generated.yml config` and `shellcheck` where available.
+- Manual verification: start the stack with `docker compose -f docker-generated.yml up --build` and visit
   the orchestrator dashboard to confirm rotation metrics still stream.
+
+## Environment Variable Naming Conventions
+
+Leyzen Vault follows a standardized naming convention for environment variables to ensure consistency and clarity. All environment variables are documented in `env.template` with their purpose, defaults, and validation rules.
+
+### Naming Prefixes
+
+Environment variables use specific prefixes to indicate their scope and purpose:
+
+- **`VAULT_*`**: Variables specific to Leyzen Vault core functionality only
+  - Examples: `VAULT_URL`, `VAULT_MAX_UPLOADS_PER_HOUR`, `VAULT_MAX_FILE_SIZE_MB`
+  - Used by: Vault application only
+
+- **`ORCH_*`**: Variables specific to the Orchestrator only
+  - Examples: `ORCH_USER`, `ORCH_PASS`, `ORCH_WEB_CONTAINERS`, `ORCH_PORT`
+  - Used by: Orchestrator application only
+
+- **`DOCKER_*`**: Variables for Docker/Docker Proxy configuration
+  - Examples: `DOCKER_PROXY_URL`, `DOCKER_SOCKET_PATH`
+  - Used by: Docker proxy service and orchestrator
+
+- **`LEYZEN_*`**: Variables for Leyzen Vault infrastructure/tooling
+  - Examples: `LEYZEN_ENV_FILE`, `LEYZEN_ENVIRONMENT`
+  - Used by: Build scripts, CLI tools, and multiple services
+
+- **No prefix**: Variables shared between services or used by infrastructure
+  - Examples: `SECRET_KEY`, `PROXY_TRUST_COUNT`, `HTTP_PORT`, `SSL_CERT_PATH`
+  - Used by: Multiple services or infrastructure components
+
+### Best Practices
+
+1. **When adding new environment variables**:
+   - Choose the appropriate prefix based on scope (VAULT*\*, ORCH*\_, DOCKER\_\_, LEYZEN\_\*, or no prefix)
+   - Document the variable in `env.template` with description, defaults, and validation rules
+   - Update validation in both Python (`src/*/config.py`) and Go (`tools/cli/cmd/validate.go`) if needed
+   - Add the variable to the appropriate settings dataclass (VaultSettings or Settings)
+
+2. **When modifying existing variables**:
+   - Maintain backward compatibility when possible
+   - Update documentation in `env.template`
+   - Update validation logic in both Python and Go implementations
+   - Update any references in documentation (README.md, AGENTS.md, etc.)
+
+3. **Validation synchronization**:
+   - Python validation: `src/vault/config.py`, `src/orchestrator/config.py`
+   - Go validation: `tools/cli/cmd/validate.go`
+   - Both implementations must stay synchronized (see `src/common/env.py` for notes on duplication)
+
+### Examples
+
+```python
+# Good: Uses VAULT_* prefix for vault-specific settings
+VAULT_MAX_FILE_SIZE_MB=100
+VAULT_MAX_UPLOADS_PER_HOUR=50
+
+# Good: Uses ORCH_* prefix for orchestrator-specific settings
+ORCH_USER=admin
+ORCH_PORT=80
+
+# Good: No prefix for shared settings
+SECRET_KEY=...
+PROXY_TRUST_COUNT=1
+
+# Bad: Inconsistent prefix usage
+VAULT_ORCH_USER=admin  # Should be ORCH_USER
+ORCH_VAULT_MAX_SIZE=100  # Should be VAULT_MAX_FILE_SIZE_MB
+```
+
+## Authentication and Authorization Differences
+
+Leyzen Vault uses different authentication mechanisms for the Vault application (SPA) and the Orchestrator dashboard (server-rendered). See [`docs/AUTHENTICATION.md`](AUTHENTICATION.md) for detailed documentation on:
+
+- Differences between `login_required()` implementations
+- CAPTCHA and CSRF token handling
+- Authentication flows for both applications
+- Best practices for adding authentication to new services
 
 ## Documentation & operational notes
 
@@ -246,5 +322,6 @@ Entrypoint scripts handle container initialization and user privilege management
   adjustments, update the relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki).
 - Security-sensitive tweaks (auth flow, captcha, CSP reporting) should include a
   short rationale in commit messages or doc updates.
+- See [`docs/README.md`](README.md) for a complete documentation map and links to all documentation files.
 
 Happy hacking!

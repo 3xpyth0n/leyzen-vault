@@ -64,7 +64,7 @@ Before submitting a pull request:
 - Run `./leyzenctl build` to regenerate images and assets.
 - Run `./leyzenctl start` (or `./leyzenctl restart` for an existing environment) to rebuild the Compose and HAProxy
   configurations and verify the stack boots without errors.
-- Inspect the regenerated `docker-compose.yml` and `haproxy/haproxy.cfg` when your change impacts
+- Inspect the regenerated `docker-generated.yml` and `haproxy/haproxy.cfg` when your change impacts
   routing or environment handling.
 - Update relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki) when behavior or workflows change.
 

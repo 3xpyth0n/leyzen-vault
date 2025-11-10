@@ -26,6 +26,8 @@ func (m *Model) View() string {
 		return m.renderConfigView()
 	case ViewWizard:
 		return m.renderWizardView()
+	case ViewContainerSelection:
+		return m.renderContainerSelectionView()
 	default:
 		return m.renderDashboard()
 	}
@@ -189,7 +191,7 @@ func (m *Model) buildConfigContent() string {
 	}
 
 	var rows []string
-	
+
 	// Show password toggle hint at the top
 	hasPasswords := false
 	for key := range m.configPairs {
@@ -206,7 +208,7 @@ func (m *Model) buildConfigContent() string {
 		rows = append(rows, m.theme.Subtitle.Render("💡 Press SPACE to toggle password visibility"))
 		rows = append(rows, "")
 	}
-	
+
 	header := fmt.Sprintf("%-32s  %s", "KEY", "VALUE")
 	rows = append(rows, m.theme.Accent.Render(header))
 	rows = append(rows, strings.Repeat("─", 80))
@@ -217,11 +219,16 @@ func (m *Model) buildConfigContent() string {
 	// Category order
 	categoryOrder := []string{
 		"General",
-		"Docker Proxy",
-		"Proxy",
-		"CSP",
+		"Authentication & Security",
 		"Vault",
 		"Orchestrator",
+		"PostgreSQL",
+		"Email (SMTP)",
+		"HAProxy/SSL",
+		"Docker Proxy",
+		"CSP",
+		"Proxy",
+		"Development",
 	}
 
 	// Display each category
@@ -275,19 +282,69 @@ func (m *Model) renderConfigPanel() string {
 func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]string {
 	categories := make(map[string][]string)
 
-	// Logical order of keys by category (USER before PASSWORD, etc.)
+	// Logical order of keys by category
+	generalOrder := map[string]int{
+		"TIMEZONE":           0,
+		"LEYZEN_ENVIRONMENT": 1,
+		"VAULT_URL":          2,
+	}
+	authSecurityOrder := map[string]int{
+		"ORCH_USER":               0,
+		"ORCH_PASS":               1,
+		"SECRET_KEY":              2,
+		"SESSION_COOKIE_SECURE":   3,
+		"CAPTCHA_LENGTH":          4,
+		"CAPTCHA_STORE_TTL_SECONDS": 5,
+		"LOGIN_CSRF_TTL_SECONDS":  6,
+	}
 	vaultOrder := map[string]int{
-		"VAULT_USER":                  0,
-		"VAULT_PASS":                  1,
-		"VAULT_MAX_FILE_SIZE_MB":      2,
-		"VAULT_MAX_UPLOADS_PER_HOUR":  3,
-		"VAULT_LOG_FILE":              4,
+		"VAULT_MAX_FILE_SIZE_MB":     0,
+		"VAULT_MAX_UPLOADS_PER_HOUR": 1,
+		"VAULT_MAX_TOTAL_SIZE_MB":    2,
+		"VAULT_AUDIT_RETENTION_DAYS": 3,
+		"VAULT_LOG_FILE":             4,
+		"ALLOW_SIGNUP":               5,
+	}
+	orchestratorOrder := map[string]int{
+		"ORCH_USER":            0,
+		"ORCH_PASS":            1,
+		"WEB_REPLICAS":         2,
+		"ROTATION_INTERVAL":    3,
+		"ORCH_PORT":            4,
+		"ORCH_LOG_DIR":         5,
+		"ORCH_LOG_FILE":        6,
+		"ORCH_SSE_INTERVAL_MS": 7,
+	}
+	postgresOrder := map[string]int{
+		"POSTGRES_DB":        0,
+		"POSTGRES_USER":      1,
+		"POSTGRES_PASSWORD": 2,
+		"POSTGRES_HOST":      3,
+		"POSTGRES_PORT":      4,
+		"POSTGRES_DATA_VOLUME": 5,
+	}
+	smtpOrder := map[string]int{
+		"SMTP_HOST":                     0,
+		"SMTP_PORT":                     1,
+		"SMTP_USER":                     2,
+		"SMTP_PASSWORD":                 3,
+		"SMTP_USE_TLS":                  4,
+		"SMTP_FROM_EMAIL":               5,
+		"SMTP_FROM_NAME":                6,
+		"EMAIL_VERIFICATION_EXPIRY_MINUTES": 7,
+	}
+	haproxyOrder := map[string]int{
+		"HTTP_PORT":     0,
+		"HTTPS_PORT":    1,
+		"ENABLE_HTTPS":  2,
+		"SSL_CERT_PATH": 3,
+		"SSL_KEY_PATH":  4,
 	}
 	dockerProxyOrder := map[string]int{
 		"DOCKER_PROXY_URL":       0,
-		"DOCKER_PROXY_TOKEN":     1,
+		"DOCKER_PROXY_LOG_LEVEL": 1,
 		"DOCKER_PROXY_TIMEOUT":   2,
-		"DOCKER_PROXY_LOG_LEVEL": 3,
+		"DOCKER_SOCKET_PATH":     3,
 	}
 	cspOrder := map[string]int{
 		"CSP_REPORT_MAX_SIZE":   0,
@@ -296,29 +353,9 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 	proxyOrder := map[string]int{
 		"PROXY_TRUST_COUNT": 0,
 	}
-	orchestratorOrder := map[string]int{
-		"ORCH_USER":              0,
-		"ORCH_PASS":              1,
-		"WEB_REPLICAS":           2,
-		"ROTATION_INTERVAL":      3,
-		"ORCH_PORT":              4,
-		"ORCH_LOG_DIR":           5,
-		"ORCH_LOG_FILE":          6,
-		"ORCH_SSE_INTERVAL_MS":   7,
-	}
-	sharedOrder := map[string]int{
-		"SECRET_KEY":                 0,
-		"SESSION_COOKIE_SECURE":      1,
-		"CAPTCHA_LENGTH":             2,
-		"CAPTCHA_STORE_TTL_SECONDS":  3,
-		"LOGIN_CSRF_TTL_SECONDS":     4,
-	}
-	infrastructureOrder := map[string]int{
-		"HTTP_PORT":      0,
-		"HTTPS_PORT":     1,
-		"ENABLE_HTTPS":   2,
-		"SSL_CERT_PATH":  3,
-		"SSL_KEY_PATH":   4,
+	developmentOrder := map[string]int{
+		"LEYZEN_ENV_FILE": 0,
+		"PYTHONPATH":      1,
 	}
 
 	// Collect all keys
@@ -331,26 +368,32 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 	for _, key := range allKeys {
 		category := ""
 
-		if key == "TIMEZONE" {
+		// Authentication & Security (check first, before ORCH_ prefix check)
+		if key == "ORCH_USER" || key == "ORCH_PASS" || key == "SECRET_KEY" ||
+			key == "SESSION_COOKIE_SECURE" || strings.HasPrefix(key, "CAPTCHA_") ||
+			key == "LOGIN_CSRF_TTL_SECONDS" {
+			category = "Authentication & Security"
+		} else if key == "TIMEZONE" || key == "LEYZEN_ENVIRONMENT" || key == "VAULT_URL" {
 			category = "General"
-		} else if strings.HasPrefix(key, "VAULT_") {
+		} else if strings.HasPrefix(key, "VAULT_") || key == "ALLOW_SIGNUP" {
 			category = "Vault"
-		} else if strings.HasPrefix(key, "ORCH_") {
+		} else if strings.HasPrefix(key, "ORCH_") || key == "WEB_REPLICAS" || key == "ROTATION_INTERVAL" {
 			category = "Orchestrator"
-		} else if strings.HasPrefix(key, "DOCKER_PROXY_") {
+		} else if strings.HasPrefix(key, "POSTGRES_") {
+			category = "PostgreSQL"
+		} else if strings.HasPrefix(key, "SMTP_") || key == "EMAIL_VERIFICATION_EXPIRY_MINUTES" {
+			category = "Email (SMTP)"
+		} else if key == "HTTP_PORT" || key == "HTTPS_PORT" || key == "ENABLE_HTTPS" ||
+			strings.HasPrefix(key, "SSL_") {
+			category = "HAProxy/SSL"
+		} else if strings.HasPrefix(key, "DOCKER_PROXY_") || key == "DOCKER_SOCKET_PATH" {
 			category = "Docker Proxy"
 		} else if strings.HasPrefix(key, "CSP_") {
 			category = "CSP"
 		} else if strings.HasPrefix(key, "PROXY_") {
-			category = "Shared"
-		} else if key == "SECRET_KEY" || key == "SESSION_COOKIE_SECURE" ||
-			strings.HasPrefix(key, "CAPTCHA_") || key == "LOGIN_CSRF_TTL_SECONDS" {
-			category = "Shared"
-		} else if key == "WEB_REPLICAS" || key == "ROTATION_INTERVAL" {
-			category = "Orchestrator"
-		} else if key == "HTTP_PORT" || key == "HTTPS_PORT" || key == "ENABLE_HTTPS" ||
-			key == "SSL_CERT_PATH" || key == "SSL_KEY_PATH" {
-			category = "Infrastructure"
+			category = "Proxy"
+		} else if key == "LEYZEN_ENV_FILE" || key == "PYTHONPATH" {
+			category = "Development"
 		} else {
 			category = "Other"
 		}
@@ -367,30 +410,30 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		var orderMap map[string]int
 
 		// Determine the order map according to the category
-		if category == "Vault" {
+		switch category {
+		case "General":
+			orderMap = generalOrder
+		case "Authentication & Security":
+			orderMap = authSecurityOrder
+		case "Vault":
 			orderMap = vaultOrder
-		} else if category == "Docker Proxy" {
-			orderMap = dockerProxyOrder
-		} else if category == "CSP" {
-			orderMap = cspOrder
-		} else if category == "Proxy" || category == "Shared" {
-			orderMap = proxyOrder
-			if category == "Shared" {
-				// Merge proxyOrder and sharedOrder for Shared category
-				mergedOrder := make(map[string]int)
-				for k, v := range proxyOrder {
-					mergedOrder[k] = v
-				}
-				for k, v := range sharedOrder {
-					mergedOrder[k] = v
-				}
-				orderMap = mergedOrder
-			}
-		} else if category == "Orchestrator" {
+		case "Orchestrator":
 			orderMap = orchestratorOrder
-		} else if category == "Infrastructure" {
-			orderMap = infrastructureOrder
-		} else {
+		case "PostgreSQL":
+			orderMap = postgresOrder
+		case "Email (SMTP)":
+			orderMap = smtpOrder
+		case "HAProxy/SSL":
+			orderMap = haproxyOrder
+		case "Docker Proxy":
+			orderMap = dockerProxyOrder
+		case "CSP":
+			orderMap = cspOrder
+		case "Proxy":
+			orderMap = proxyOrder
+		case "Development":
+			orderMap = developmentOrder
+		default:
 			orderMap = nil
 		}
 
@@ -413,7 +456,7 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 				return keys[i] < keys[j]
 			})
 		} else {
-			// For General and categories without specific order, sort alphabetically
+			// For categories without specific order, sort alphabetically
 			sort.Strings(keys)
 		}
 
@@ -465,12 +508,12 @@ func (m *Model) renderWizardPanel() string {
 	field := m.wizardFields[m.wizardIndex]
 	label := field.Key
 	if field.IsPassword {
-		label += " (password, hidden)"
+		label += " (password)"
 	}
 
 	labelText := m.theme.Accent.Bold(true).Render(fmt.Sprintf("%s:", label))
 	rows = append(rows, labelText)
-	
+
 	// Add helpful hint based on field name
 	hint := m.getWizardHint(field.Key)
 	if hint != "" {
@@ -488,12 +531,6 @@ func (m *Model) renderWizardPanel() string {
 	inputView := field.Input.View()
 	rows = append(rows, inputStyle.Render(inputView))
 	rows = append(rows, "")
-
-	// Help message
-	if field.IsPassword {
-		rows = append(rows, m.theme.Subtitle.Render("This is a password field. Your input will be hidden."))
-		rows = append(rows, "")
-	}
 
 	rows = append(rows, m.theme.Subtitle.Render("All fields are optional. Leave empty to keep existing value."))
 	rows = append(rows, "")
@@ -694,6 +731,14 @@ func (m *Model) renderFooter(context string) string {
 			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
 		}
+	case "container-selection":
+		hints = []string{
+			fmt.Sprintf("%s Select/Deselect", m.theme.HelpKey.Render("Space")),
+			fmt.Sprintf("%s Confirm", m.theme.HelpKey.Render("Enter")),
+			fmt.Sprintf("%s Cancel", m.theme.HelpKey.Render("Esc")),
+			fmt.Sprintf("%s Navigate", m.theme.HelpKey.Render("↑/↓")),
+			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
+		}
 	default:
 		hints = []string{
 			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
@@ -734,22 +779,86 @@ func (m *Model) renderHelp() string {
 // getWizardHint returns a helpful hint for a configuration field
 func (m *Model) getWizardHint(key string) string {
 	hints := map[string]string{
-		"VAULT_USER":              "Username for Vault authentication",
-		"VAULT_PASS":              "Password for Vault authentication",
-		"SECRET_KEY":              "Secret key used for encryption (shared)",
-		"ROTATION_INTERVAL":       "Time in seconds between container rotations",
-		"WEB_REPLICAS":            "Number of web container replicas",
-		"DOCKER_PROXY_URL":        "URL of the Docker proxy service",
-		"DOCKER_PROXY_TOKEN":      "Authentication token for Docker proxy",
-		"ORCH_USER":               "Username for Orchestrator authentication",
-		"ORCH_PASS":               "Password for Orchestrator authentication",
-		"ORCH_PORT":               "Port for the orchestrator service",
-		"ORCH_LOG_DIR":            "Directory for orchestrator log files",
-		"ORCH_LOG_FILE":           "Filename for orchestrator log file",
-		"ORCH_SSE_INTERVAL_MS":    "SSE stream interval in milliseconds",
+		"SECRET_KEY":           "Secret key used for encryption (shared)",
+		"ROTATION_INTERVAL":    "Time in seconds between container rotations",
+		"WEB_REPLICAS":         "Number of web container replicas",
+		"DOCKER_PROXY_URL":     "URL of the Docker proxy service",
+		// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY
+		// "DOCKER_PROXY_TOKEN":   "Authentication token for Docker proxy (auto-generated)",
+		"ORCH_USER":            "Username for Orchestrator authentication",
+		"ORCH_PASS":            "Password for Orchestrator authentication",
+		"ORCH_PORT":            "Port for the orchestrator service",
+		"ORCH_LOG_DIR":         "Directory for orchestrator log files",
+		"ORCH_LOG_FILE":        "Filename for orchestrator log file",
+		"ORCH_SSE_INTERVAL_MS": "SSE stream interval in milliseconds",
 	}
 	if hint, ok := hints[key]; ok {
 		return hint
 	}
 	return ""
+}
+
+func (m *Model) renderContainerSelectionView() string {
+	header := m.renderHeader()
+
+	var rows []string
+	actionName := strings.ToUpper(string(m.pendingAction))
+	rows = append(rows, m.theme.Accent.Render(fmt.Sprintf("Select containers for %s action", actionName)))
+	rows = append(rows, "")
+	rows = append(rows, m.theme.Subtitle.Render("Use SPACE to select/deselect, ENTER to confirm, ESC to cancel"))
+	rows = append(rows, "")
+
+	// Build list items display
+	var items []string
+	for i, item := range m.containerItems {
+		prefix := "  "
+		if item.Selected {
+			prefix = m.theme.SuccessStatus.Render("✓ ")
+		} else {
+			prefix = "  "
+		}
+
+		itemText := item.Name
+		if item.IsAllOption {
+			itemText = m.theme.Accent.Bold(true).Render(item.Name)
+		}
+
+		// Highlight current selection with a pointer
+		if m.containerIndex == i {
+			itemText = m.theme.HelpKey.Render("> " + itemText)
+		} else {
+			itemText = "  " + itemText
+		}
+
+		items = append(items, prefix+itemText)
+	}
+
+	// Display the list
+	listContent := strings.Join(items, "\n")
+	if listContent == "" {
+		listContent = "No containers available"
+	}
+
+	rows = append(rows, listContent)
+
+	content := strings.Join(rows, "\n")
+	containerSelection := m.theme.Pane.Render(content)
+
+	quitMsg := ""
+	if m.quitConfirm {
+		quitMsg = m.renderQuitConfirmation()
+	}
+
+	footer := m.renderFooter("container-selection")
+
+	var parts []string
+	parts = append(parts, header)
+	if quitMsg != "" {
+		parts = append(parts, quitMsg)
+	}
+	parts = append(parts, containerSelection)
+	parts = append(parts, footer)
+
+	layout := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, layout)
 }

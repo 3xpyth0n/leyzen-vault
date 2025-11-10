@@ -32,6 +32,12 @@ type configListMsg struct {
 	err   error
 }
 
+type composeServicesMsg struct {
+	services []string
+	action   ActionType
+	err      error
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -79,6 +85,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
+		// If we're in container selection view, handle keys there
+		if m.viewState == ViewContainerSelection {
+			return m.handleContainerSelectionKey(msg)
+		}
 		return m.handleKey(msg)
 	case actionProgressMsg:
 		return m.handleActionProgress(msg)
@@ -106,6 +116,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case wizardSaveMsg:
 		return m.handleWizardSave(msg)
+	case composeServicesMsg:
+		return m.handleComposeServices(msg)
 	}
 
 	// Handle viewport only if we're in a view that uses it
@@ -161,6 +173,18 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = viewportHeight
 	}
 
+	// Update container list size if in container selection view
+	if m.viewState == ViewContainerSelection {
+		m.containerList.SetWidth(m.width - 6)
+		if m.containerList.Width() < 20 {
+			m.containerList.SetWidth(20)
+		}
+		m.containerList.SetHeight(m.height - 10)
+		if m.containerList.Height() < 6 {
+			m.containerList.SetHeight(6)
+		}
+	}
+
 	return m, nil
 }
 
@@ -209,9 +233,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewConfig {
 			return m, fetchConfigListCmd(m.envFile)
 		}
-		// Otherwise, restart from the dashboard
+		// Otherwise, show container selection for restart from the dashboard
 		if m.viewState == ViewDashboard {
-			return m.startAction(ActionRestart)
+			return m, fetchComposeServicesCmd(m.envFile, ActionRestart)
 		}
 		return m, nil
 	case "?":
@@ -267,17 +291,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "s":
 		if m.viewState == ViewDashboard {
-			return m.startAction(ActionStop)
+			return m, fetchComposeServicesCmd(m.envFile, ActionStop)
 		}
 		return m, nil
 	case "b":
 		if m.viewState == ViewDashboard {
-			return m.startAction(ActionBuild)
+			return m, fetchComposeServicesCmd(m.envFile, ActionBuild)
 		}
 		return m, nil
 	case "a":
 		if m.viewState == ViewDashboard {
-			return m.startAction(ActionStart)
+			return m, fetchComposeServicesCmd(m.envFile, ActionStart)
 		}
 		return m, nil
 	case "up", "down", "pgup", "pgdn", "home", "end":
@@ -292,7 +316,102 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) handleContainerSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	switch key {
+	case "esc":
+		// Cancel and return to dashboard
+		m.switchToDashboard()
+		return m, nil
+	case " ":
+		// Toggle selection
+		if len(m.containerItems) == 0 {
+			return m, nil
+		}
+		idx := m.containerIndex
+		if idx < 0 || idx >= len(m.containerItems) {
+			return m, nil
+		}
+
+		item := &m.containerItems[idx]
+		item.Selected = !item.Selected
+
+		// If "All" is selected, deselect all others
+		if item.IsAllOption && item.Selected {
+			for i := range m.containerItems {
+				if i != idx {
+					m.containerItems[i].Selected = false
+				}
+			}
+		} else if item.Selected {
+			// If a specific service is selected, deselect "All"
+			if len(m.containerItems) > 0 && m.containerItems[0].IsAllOption {
+				m.containerItems[0].Selected = false
+			}
+		}
+		return m, nil
+	case "enter":
+		// Confirm selection and execute action
+		selectedServices := []string{}
+		allSelected := false
+
+		for _, item := range m.containerItems {
+			if item.Selected {
+				if item.IsAllOption {
+					// "All" selected - use empty list to mean all services
+					allSelected = true
+					selectedServices = []string{}
+					break
+				} else {
+					selectedServices = append(selectedServices, item.Name)
+				}
+			}
+		}
+
+		// If nothing selected, treat as "All" (default behavior)
+		if len(selectedServices) == 0 && !allSelected {
+			// Nothing explicitly selected, default to "All"
+			selectedServices = []string{}
+		}
+
+		// Save pending action before any state changes
+		pendingAction := m.pendingAction
+
+		// Clean up container selection view state without calling switchToDashboard
+		// (which would reset pendingAction)
+		m.containerItems = nil
+		m.containerIndex = 0
+		m.availableServices = nil
+
+		// Execute action with selected services
+		return m.startActionWithServices(pendingAction, selectedServices)
+	case "up", "down":
+		// Handle navigation manually
+		if key == "up" {
+			if m.containerIndex > 0 {
+				m.containerIndex--
+			} else {
+				m.containerIndex = len(m.containerItems) - 1
+			}
+		} else {
+			if m.containerIndex < len(m.containerItems)-1 {
+				m.containerIndex++
+			} else {
+				m.containerIndex = 0
+			}
+		}
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
 func (m *Model) startAction(action ActionType) (tea.Model, tea.Cmd) {
+	return m.startActionWithServices(action, []string{})
+}
+
+func (m *Model) startActionWithServices(action ActionType, services []string) (tea.Model, tea.Cmd) {
 	if action == ActionNone {
 		return m, nil
 	}
@@ -301,7 +420,13 @@ func (m *Model) startAction(action ActionType) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	stream, err := m.runner.Run(action)
+	// Switch to dashboard first if we're in container selection view
+	if m.viewState == ViewContainerSelection {
+		m.viewState = ViewDashboard
+		m.pendingAction = ActionNone // Clean up after we've saved it
+	}
+
+	stream, err := m.runner.RunWithServices(action, services)
 	if err != nil {
 		m.appendLog(fmt.Sprintf("❌ failed to start %s: %v", action, err))
 		return m, nil
@@ -375,6 +500,7 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s", "ctrl+S":
 		// Save all modifications
 		return m.saveWizard()
+	// Ctrl+Space removed - passwords are always visible in wizard
 	case "esc":
 		// Cancel and return to dashboard
 		m.switchToDashboard()
@@ -385,8 +511,9 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex++
 			if m.wizardIndex < len(m.wizardFields) {
-				m.wizardFields[m.wizardIndex].Input.Focus()
-				m.wizardFields[m.wizardIndex].Input.CursorEnd()
+				field := &m.wizardFields[m.wizardIndex]
+				field.Input.Focus()
+				field.Input.CursorEnd()
 			}
 			m.wizardError = ""
 		}
@@ -397,8 +524,9 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex--
 			if m.wizardIndex >= 0 {
-				m.wizardFields[m.wizardIndex].Input.Focus()
-				m.wizardFields[m.wizardIndex].Input.CursorEnd()
+				field := &m.wizardFields[m.wizardIndex]
+				field.Input.Focus()
+				field.Input.CursorEnd()
 			}
 			m.wizardError = ""
 		}
@@ -409,8 +537,9 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wizardFields[m.wizardIndex].Input.Blur()
 			m.wizardIndex++
 			if m.wizardIndex < len(m.wizardFields) {
-				m.wizardFields[m.wizardIndex].Input.Focus()
-				m.wizardFields[m.wizardIndex].Input.CursorEnd()
+				field := &m.wizardFields[m.wizardIndex]
+				field.Input.Focus()
+				field.Input.CursorEnd()
 			}
 			m.wizardError = ""
 		}
@@ -561,6 +690,15 @@ func (m *Model) handleWizardSave(msg wizardSaveMsg) (tea.Model, tea.Cmd) {
 	)
 
 	return m, cmd
+}
+
+func (m *Model) handleComposeServices(msg composeServicesMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.appendLog(fmt.Sprintf("❌ failed to load services: %v", msg.err))
+		return m, nil
+	}
+	m.initContainerSelection(msg.services, msg.action)
+	return m, nil
 }
 
 func waitForActionProgress(stream <-chan actionProgressMsg) tea.Cmd {

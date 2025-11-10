@@ -31,9 +31,8 @@ body:
       label: Steps to reproduce
       description: List the exact commands run (prefer `./leyzenctl` invocations) and configuration edits made.
       placeholder: |
-        1. Set VAULT_USER and VAULT_PASS in .env
-        2. Run ./leyzenctl build
-        3. Run ./leyzenctl start
+        1. Run ./leyzenctl build
+        2. Run ./leyzenctl start
     validations:
       required: true
   - type: textarea

@@ -45,6 +45,7 @@ from common.constants import (  # noqa: E402
 # DO NOT reimplement this function inline.
 # This ensures consistent parsing behavior across all services.
 from common.env import parse_container_names  # noqa: E402
+from common.token_utils import derive_docker_proxy_token  # noqa: E402
 
 
 logging.basicConfig(
@@ -126,17 +127,25 @@ def _ensure_configured() -> None:
             raise RuntimeError(str(stored_error)) from stored_error
 
         raise RuntimeError(
-            "Docker proxy is not configured; ensure DOCKER_PROXY_TOKEN and "
-            "ORCH_WEB_CONTAINERS are set."
+            "Docker proxy is not configured; ensure SECRET_KEY and ORCH_WEB_CONTAINERS are set."
         )
 
 
 def _configure_runtime() -> None:
     global EXPECTED_TOKEN, ALLOWED_CONTAINERS, CLIENT
 
-    token = os.environ.get("DOCKER_PROXY_TOKEN")
-    if not token:
-        raise RuntimeError("DOCKER_PROXY_TOKEN must be provided")
+    # Always generate token from SECRET_KEY (DOCKER_PROXY_TOKEN is no longer configurable)
+    # This ensures consistency with the orchestrator which also generates the token from SECRET_KEY
+    # Ignore DOCKER_PROXY_TOKEN from environment if present (legacy support, but always regenerate)
+    secret_key = os.environ.get("SECRET_KEY", "").strip()
+    if not secret_key:
+        raise RuntimeError(
+            "SECRET_KEY must be provided. DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY."
+        )
+    token = derive_docker_proxy_token(secret_key)
+    logger.info(
+        f"Auto-generated DOCKER_PROXY_TOKEN from SECRET_KEY (token length: {len(token)})"
+    )
 
     allowed = _load_allowed_containers()
 

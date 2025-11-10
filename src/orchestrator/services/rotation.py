@@ -34,7 +34,7 @@ from .docker_proxy import (
     DockerProxyService,
     ProxyContainer,
 )
-from .logging import FileLogger
+from common.services.logging import FileLogger
 from .rotation_telemetry import RotationTelemetry
 
 
@@ -331,21 +331,43 @@ class RotationService:
         for next_index in candidate_indices:
             next_name = managed_containers[next_index]
 
-            released = self._docker.stop_container(
-                active_name, reason="releasing for rotation"
-            )
-
-            # Synchronize data to source before rotation
+            # 1. Synchronize data BEFORE starting rotation
             try:
                 from .sync_service import SyncService
 
                 sync_service = SyncService(self._settings, self._docker, self._logger)
-                sync_service.sync_container_data_to_source(active_name)
+                if not sync_service.sync_container_data_to_source(active_name):
+                    raise RuntimeError(
+                        f"Failed to synchronize {active_name} before rotation"
+                    )
             except Exception as exc:
                 self._logger.log(
-                    f"[WARNING] Failed to synchronize {active_name} before rotation: {exc}"
+                    f"[ERROR] Failed to synchronize {active_name} before rotation: {exc}. Aborting rotation."
                 )
+                # Stop rotation if sync fails to prevent data loss
+                return False, active_index, active_name
 
+            # 2. Start the new container WITHOUT stopping the old one
+            next_cont = self._docker.start_container(next_name, reason=start_reason)
+            if not next_cont:
+                # If startup fails, try the next candidate (the old one remains active)
+                self._logger.log(
+                    f"[WARNING] Failed to start {next_name} — trying next candidate."
+                )
+                continue
+
+            # 3. Wait for the new container to be healthy
+            if not self._docker.wait_until_healthy(next_cont):
+                # If not healthy, stop the new one and try the next candidate
+                self._logger.log(
+                    f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
+                )
+                self._docker.stop_container(
+                    next_name, reason="failed rotation health check"
+                )
+                continue  # Try the next candidate, the old one remains active
+
+            # 4. The new container is healthy: stop the old one now
             elapsed = self.accumulate_and_clear_active(active_name)
             if elapsed > 0:
                 total_seconds = self.container_total_active_seconds.get(active_name, 0)
@@ -353,47 +375,23 @@ class RotationService:
                     f"Accumulated {elapsed}s for {active_name} (total={total_seconds}s) before rotation"
                 )
 
+            released = self._docker.stop_container(
+                active_name, reason="releasing for rotation"
+            )
+
             if not released:
                 self._logger.log(
-                    f"[WARNING] Failed to stop {active_name} prior to rotation; will retry later."
+                    f"[WARNING] Failed to stop {active_name} after {next_name} became healthy."
+                )
+                # Stop the new one because we couldn't stop the old one
+                self._docker.stop_container(
+                    next_name, reason="failed to stop previous active container"
                 )
                 self.mark_active(active_name)
                 time.sleep(ROTATION_ERROR_RETRY_SLEEP)
                 continue
 
-            next_cont = self._docker.start_container(next_name, reason=start_reason)
-            if not next_cont:
-                restore = self._docker.start_container(
-                    active_name, reason=restore_reason
-                )
-                if restore and self._docker.wait_until_healthy(restore):
-                    self.mark_active(active_name)
-                    self._docker.ensure_single_active(active_name, managed_containers)
-                else:
-                    self._logger.log(
-                        f"[ERROR] Unable to restart {active_name} after {next_name} failed to launch."
-                    )
-                continue
-
-            if not self._docker.wait_until_healthy(next_cont):
-                self._logger.log(
-                    f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
-                )
-                self._docker.stop_container(
-                    next_name, reason="failed rotation health check"
-                )
-                restore = self._docker.start_container(
-                    active_name, reason=restore_reason
-                )
-                if restore and self._docker.wait_until_healthy(restore):
-                    self.mark_active(active_name)
-                    self._docker.ensure_single_active(active_name, managed_containers)
-                else:
-                    self._logger.log(
-                        f"[ERROR] Unable to restore {active_name} after unhealthy rotation candidate {next_name}."
-                    )
-                continue
-
+            # 5. Rotation successful: mark the new one as active
             self._logger.log(
                 f"{next_name} marked ACTIVE at {datetime.now(self._settings.timezone).strftime('%H:%M:%S')}"
             )
@@ -646,9 +644,7 @@ class RotationService:
             self.rotation_resuming = False
 
     def force_rotate(self) -> tuple[bool, str, dict[str, object] | None]:
-        if not self.rotation_active:
-            return False, "Rotation is paused; resume before rotating.", None
-
+        # Allow manual rotation even when automatic rotation is paused
         with self._rotation_lock:
             if not self._managed_containers or len(self._managed_containers) <= 1:
                 return (

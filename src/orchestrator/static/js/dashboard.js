@@ -141,10 +141,6 @@ async function sendControl(action) {
     showStatus("Stop orchestrator before kill.");
     return;
   }
-  if (action === "rotate" && !orchestratorRunning) {
-    showStatus("Resume rotation before rotating.");
-    return;
-  }
 
   showStatus(`<span class="loader"></span> Processing ${action}...`, {
     allowHtml: true,
@@ -331,15 +327,17 @@ function updateControlButtons() {
   const btnKill = document.getElementById("btn-kill");
   const btnRotate = document.getElementById("btn-rotate");
 
+  // Rotate button is always enabled for manual rotation
+  if (btnRotate) {
+    btnRotate.disabled = false;
+    btnRotate.classList.remove("disabled");
+  }
+
   if (orchestratorRunning) {
     btnStart.disabled = true;
     btnStart.classList.add("disabled");
     btnStop.disabled = false;
     btnStop.classList.remove("disabled");
-    if (btnRotate) {
-      btnRotate.disabled = false;
-      btnRotate.classList.remove("disabled");
-    }
     btnKill.disabled = true;
     btnKill.classList.add("disabled");
   } else {
@@ -347,10 +345,6 @@ function updateControlButtons() {
     btnStart.classList.remove("disabled");
     btnStop.disabled = true;
     btnStop.classList.add("disabled");
-    if (btnRotate) {
-      btnRotate.disabled = true;
-      btnRotate.classList.add("disabled");
-    }
     btnKill.disabled = false;
     btnKill.classList.remove("disabled");
   }

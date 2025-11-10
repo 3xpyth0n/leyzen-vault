@@ -8,18 +8,21 @@ import (
 
 const (
 	// Minimum secret length required for cryptographic secrets
-	minSecretLength = 12
+	// This aligns with Python validation in:
+	// - src/vault/config.py::load_settings() (requires 32 characters)
+	// - src/orchestrator/config.py::load_settings() (requires 32 characters)
+	minSecretLength = 32
 )
 
 type valueValidator func(string) (string, error)
 
 var keyValidators = map[string]valueValidator{
 	"WEB_REPLICAS":         validatePositiveInt,
-	"VAULT_PASS":           validatePassword,
 	"ORCH_PASS":            validatePassword,
 	"ROTATION_INTERVAL":    validatePositiveInt,
 	"SECRET_KEY":           validateSecretLength,
-	"DOCKER_PROXY_TOKEN":   validateSecretLength,
+	// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY and no longer required
+	// "DOCKER_PROXY_TOKEN":   validateSecretLength,
 }
 
 // ValidateEnvValue validates and sanitizes a value for the given key.
@@ -63,15 +66,17 @@ func validatePassword(value string) (string, error) {
 }
 
 // validateSecretLength validates that a cryptographic secret meets minimum length requirements.
-// This aligns with the Python validation in src/orchestrator/config.py::_validate_secret_length()
-// which requires secrets to be at least 12 characters long.
+// This aligns with the Python validation in:
+// - src/vault/config.py::load_settings() (requires 32 characters via validate_secret_entropy)
+// - src/orchestrator/config.py::load_settings() (requires 32 characters via validate_secret_entropy)
+// Both Python implementations use validate_secret_entropy() with min_length=32.
 func validateSecretLength(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", nil // Empty value allowed (optional field)
 	}
 	if len(trimmed) < minSecretLength {
-		return "", fmt.Errorf("secret must be at least %d characters long (got %d characters)", minSecretLength, len(trimmed))
+		return "", fmt.Errorf("secret must be at least %d characters long (got %d characters). Generate with: openssl rand -hex 32", minSecretLength, len(trimmed))
 	}
 	return trimmed, nil
 }

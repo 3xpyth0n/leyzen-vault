@@ -1,0 +1,54 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run weekly on Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Scan Python Dependencies for Vulnerabilities
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Scan all dependencies
+        run: |
+          pip-audit --format=json --output=security-report.json || true
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: security-reports
+          path: |
+            security-report.json
+          retention-days: 30
+
+      - name: Fail if critical vulnerabilities found
+        run: |
+          # Check if any critical vulnerabilities were found
+          if [ -f security-report.json ]; then
+            if grep -q '"severity":"CRITICAL"' security-report.json; then
+              echo "Critical vulnerabilities found in vault dependencies!"
+              exit 1
+            fi
+          fi

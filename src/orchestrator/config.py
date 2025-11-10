@@ -12,6 +12,12 @@ from zoneinfo import ZoneInfo
 
 from werkzeug.security import generate_password_hash
 
+from common.config_utils import (
+    parse_bool,
+    parse_int_env_var,
+    validate_default_credentials,
+    validate_secret_entropy,
+)
 from common.constants import (
     ALLOWED_URL_SCHEMES,
     CAPTCHA_LENGTH_DEFAULT,
@@ -31,6 +37,10 @@ from common.constants import (
 )
 from common.env import load_env_with_override, parse_container_names, parse_timezone
 from common.exceptions import ConfigurationError
+from common.token_utils import (
+    derive_docker_proxy_token,
+    derive_internal_api_token,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +53,7 @@ class Settings:
     proxy_trust_count: int
     docker_proxy_url: str
     docker_proxy_token: str
+    internal_api_token: str
     web_containers: list[str]
     rotation_interval: int
     log_file: Path
@@ -79,42 +90,6 @@ def _ensure_required_variables(required: list[str], env: dict[str, str]) -> None
         )
 
 
-def _parse_int_env_var(
-    name: str,
-    default: int,
-    env: dict[str, str],
-    min_value: int | None = None,
-    max_value: int | None = None,
-    *,
-    strip_quotes: bool = False,
-) -> int:
-    """Parse an integer environment variable with optional min/max constraints.
-
-    Args:
-        name: Environment variable name
-        default: Default value if variable is missing or invalid
-        env: Dictionary containing environment variables
-        min_value: Minimum value if specified (inclusive), None otherwise
-        max_value: Maximum value if specified (inclusive), None otherwise
-        strip_quotes: If True, strip matching quotes from the value
-
-    Returns:
-        Parsed integer value, or default if parsing fails
-    """
-    raw_value = env.get(name, str(default)).strip()
-    if strip_quotes:
-        raw_value = raw_value.strip('"').strip("'")
-    try:
-        value = int(raw_value)
-        if min_value is not None:
-            value = max(min_value, value)
-        if max_value is not None:
-            value = min(max_value, value)
-        return value
-    except ValueError:
-        return default
-
-
 def _determine_log_file(base_dir: Path, env: dict[str, str]) -> Path:
     override = env.get("ORCH_LOG_DIR")
     if override:
@@ -138,23 +113,6 @@ def _determine_log_file(base_dir: Path, env: dict[str, str]) -> Path:
         pass
 
     return log_path
-
-
-_TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
-_FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
-
-
-def _parse_bool(value: str | None, *, default: bool) -> bool:
-    if value is None:
-        return default
-
-    normalized = value.strip().lower()
-    if normalized in _TRUE_VALUES:
-        return True
-    if normalized in _FALSE_VALUES:
-        return False
-
-    return default
 
 
 def _validate_url(url: str, variable_name: str) -> str:
@@ -190,69 +148,6 @@ def _validate_url(url: str, variable_name: str) -> str:
     return url
 
 
-def _validate_secret_length(var_name: str, value: str, min_length: int = 12) -> None:
-    """Validate that a cryptographic secret meets minimum length requirements.
-
-    Args:
-        var_name: Name of the environment variable for error messages
-        value: The secret value to validate
-        min_length: Minimum required length (default: 12)
-
-    Raises:
-        ConfigurationError: If the secret is too short
-    """
-    if len(value) < min_length:
-        raise ConfigurationError(
-            f"{var_name} must be at least {min_length} characters long "
-            f"for security (got {len(value)} characters)"
-        )
-
-
-def _validate_default_credentials(
-    username: str, password: str, env_values: dict[str, str]
-) -> None:
-    """Validate that credentials are not default values in production mode.
-
-    Args:
-        username: The username to validate
-        password: The password to validate
-        env_values: Dictionary containing environment variables
-
-    Raises:
-        ConfigurationError: If default credentials are detected in production mode
-    """
-    # Determine environment mode (default to production for security)
-    env_mode = env_values.get("LEYZEN_ENVIRONMENT", "prod").strip().lower()
-    is_production = env_mode in {"prod", "production", "1", "true"}
-
-    if not is_production:
-        # Allow default credentials in development mode
-        return
-
-    # Default credentials to reject
-    DEFAULT_USERNAME = "admin"
-    DEFAULT_PASSWORD = "admin"
-
-    errors = []
-    if username == DEFAULT_USERNAME:
-        errors.append(
-            f"ORCH_USER cannot be '{DEFAULT_USERNAME}' in production mode. "
-            "Set LEYZEN_ENVIRONMENT=dev for development, or change ORCH_USER to a non-default value."
-        )
-
-    if password == DEFAULT_PASSWORD:
-        errors.append(
-            f"ORCH_PASS cannot be '{DEFAULT_PASSWORD}' in production mode. "
-            "Set LEYZEN_ENVIRONMENT=dev for development, or change ORCH_PASS to a secure password "
-            "(generate with: openssl rand -base64 32)."
-        )
-
-    if errors:
-        raise ConfigurationError(
-            "Security validation failed:\n  " + "\n  ".join(errors)
-        )
-
-
 def load_settings() -> Settings:
     """Load orchestrator settings from environment variables.
 
@@ -273,7 +168,7 @@ def load_settings() -> Settings:
     # These variables are required at runtime and must be present and non-empty.
     # When modifying this list, update the Go implementation to match.
     _ensure_required_variables(
-        ["ORCH_USER", "ORCH_PASS", "SECRET_KEY", "DOCKER_PROXY_TOKEN"],
+        ["ORCH_USER", "ORCH_PASS", "SECRET_KEY"],
         env_values,
     )
 
@@ -309,37 +204,37 @@ def load_settings() -> Settings:
     password = env_values.get("ORCH_PASS") or ""
 
     # Validate that credentials are not default values in production
-    _validate_default_credentials(username, password, env_values)
+    validate_default_credentials(username, password, env_values)
 
     password_hash = generate_password_hash(password)
 
-    proxy_trust_count = _parse_int_env_var(
+    proxy_trust_count = parse_int_env_var(
         "PROXY_TRUST_COUNT", PROXY_TRUST_COUNT_DEFAULT, env_values, min_value=0
     )
 
-    rotation_interval = _parse_int_env_var(
+    rotation_interval = parse_int_env_var(
         "ROTATION_INTERVAL", ROTATION_INTERVAL_DEFAULT, env_values, min_value=1
     )
 
     html_dir = base_dir
     log_file = _determine_log_file(base_dir, env_values)
 
-    captcha_length = _parse_int_env_var(
+    captcha_length = parse_int_env_var(
         "CAPTCHA_LENGTH", CAPTCHA_LENGTH_DEFAULT, env_values
     )
 
-    captcha_store_ttl = _parse_int_env_var(
+    captcha_store_ttl = parse_int_env_var(
         "CAPTCHA_STORE_TTL_SECONDS", CAPTCHA_STORE_TTL_SECONDS_DEFAULT, env_values
     )
 
-    login_csrf_ttl = _parse_int_env_var(
+    login_csrf_ttl = parse_int_env_var(
         "LOGIN_CSRF_TTL_SECONDS",
         LOGIN_CSRF_TTL_SECONDS_DEFAULT,
         env_values,
         min_value=60,
     )
 
-    csp_report_max_size = _parse_int_env_var(
+    csp_report_max_size = parse_int_env_var(
         "CSP_REPORT_MAX_SIZE",
         CSP_REPORT_MAX_SIZE_DEFAULT,
         env_values,
@@ -347,7 +242,7 @@ def load_settings() -> Settings:
         strip_quotes=True,
     )
 
-    csp_report_rate_limit = _parse_int_env_var(
+    csp_report_rate_limit = parse_int_env_var(
         "CSP_REPORT_RATE_LIMIT",
         CSP_REPORT_RATE_LIMIT_DEFAULT,
         env_values,
@@ -363,24 +258,41 @@ def load_settings() -> Settings:
     docker_proxy_url = _validate_url(docker_proxy_url_raw, "DOCKER_PROXY_URL").rstrip(
         "/"
     )
-    docker_proxy_token = env_values.get("DOCKER_PROXY_TOKEN", "")
-    _validate_secret_length("DOCKER_PROXY_TOKEN", docker_proxy_token)
 
     secret_key = env_values.get("SECRET_KEY", "")
-    _validate_secret_length("SECRET_KEY", secret_key)
+    validate_secret_entropy(secret_key, min_length=32, secret_name="SECRET_KEY")
 
-    sse_stream_interval_ms = _parse_int_env_var(
+    # Generate tokens automatically from SECRET_KEY
+    # Tokens are derived deterministically, so all services using the same SECRET_KEY
+    # will generate the same tokens without needing to share or persist them
+    docker_proxy_token = derive_docker_proxy_token(secret_key)
+    internal_api_token = derive_internal_api_token(secret_key)
+
+    sse_stream_interval_ms = parse_int_env_var(
         "ORCH_SSE_INTERVAL_MS",
         SSE_INTERVAL_MS_DEFAULT,
         env_values,
         min_value=SSE_INTERVAL_MS_MINIMUM,
     )
 
-    session_cookie_secure = _parse_bool(
+    session_cookie_secure = parse_bool(
         env_values.get("SESSION_COOKIE_SECURE"), default=True
     )
 
-    orchestrator_port = _parse_int_env_var(
+    # SECURITY: Validate session cookie security for HTTPS deployments
+    # If HTTPS is enabled (via ENABLE_HTTPS), SESSION_COOKIE_SECURE should be True
+    enable_https = parse_bool(env_values.get("ENABLE_HTTPS"), default=False)
+    if enable_https and not session_cookie_secure:
+        import warnings
+
+        warnings.warn(
+            "SECURITY WARNING: ENABLE_HTTPS is True but SESSION_COOKIE_SECURE is False. "
+            "Session cookies should be marked as Secure when using HTTPS. "
+            "Set SESSION_COOKIE_SECURE=true in your .env file.",
+            UserWarning,
+        )
+
+    orchestrator_port = parse_int_env_var(
         "ORCH_PORT",
         ORCHESTRATOR_PORT_DEFAULT,
         env_values,
@@ -395,6 +307,7 @@ def load_settings() -> Settings:
         proxy_trust_count=proxy_trust_count,
         docker_proxy_url=docker_proxy_url,
         docker_proxy_token=docker_proxy_token,
+        internal_api_token=internal_api_token,
         web_containers=list(web_containers),
         rotation_interval=rotation_interval,
         log_file=log_file,

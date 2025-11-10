@@ -7,7 +7,74 @@
     <link rel="icon" type="image/png" href="/favicon.ico" />
     <title>{% block title %}Leyzen Vault{% endblock %}</title>
     <link rel="stylesheet" href="/static/vault.css" />
+    <link rel="stylesheet" href="/static/logout-modal.css" />
     {% block extra_head %}{% endblock %}
+    <!-- Service Worker Registration -->
+    <script nonce="{{ csp_nonce }}">
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          let scriptURL = "/static/service-worker.js";
+          if (window.vaultScriptURLPolicy) {
+            try {
+              scriptURL =
+                window.vaultScriptURLPolicy.createScriptURL(scriptURL);
+            } catch (e) {
+              console.warn("Failed to create TrustedScriptURL:", e);
+            }
+          } else if (window.trustedTypes && window.trustedTypes.createPolicy) {
+            try {
+              const trustedScriptURLPolicy = window.trustedTypes.createPolicy(
+                "vault-script-url",
+                {
+                  createScriptURL: (url) => url,
+                },
+              );
+              scriptURL = trustedScriptURLPolicy.createScriptURL(scriptURL);
+            } catch (e) {
+              console.warn("Failed to create TrustedScriptURL:", e);
+            }
+          }
+          navigator.serviceWorker
+            .register(scriptURL)
+            .then((registration) => {
+              // Service Worker registered successfully
+            })
+            .catch((error) => {
+              // Service Worker registration failed
+            });
+        });
+      }
+    </script>
+    <!-- Initialize Trusted Types policies before CSP enforcement -->
+    <script nonce="{{ csp_nonce }}">
+      if (window.trustedTypes && window.trustedTypes.createPolicy) {
+        // Store policies globally so they can be accessed later
+        window.vaultHTMLPolicy = window.trustedTypes.createPolicy(
+          "vault-html",
+          {
+            createHTML: (html) => {
+              return html;
+            },
+          },
+        );
+        window.notificationsHTMLPolicy = window.trustedTypes.createPolicy(
+          "notifications-html",
+          {
+            createHTML: (html) => {
+              return html;
+            },
+          },
+        );
+        window.vaultScriptURLPolicy = window.trustedTypes.createPolicy(
+          "vault-script-url",
+          {
+            createScriptURL: (url) => {
+              return url;
+            },
+          },
+        );
+      }
+    </script>
   </head>
   <body>
     <div class="vault-container">
@@ -17,58 +84,40 @@
           <span class="header-subtitle">End-to-End Encryption</span>
         </div>
         <nav class="header-nav">
-          {% if request.path != "/security" %}
-          <a href="/security" class="btn btn-secondary header-nav-link"
-            >Security</a
-          >
-          {% endif %} {% if request.path == "/security" %}
           <a href="/" class="btn btn-secondary header-nav-link">Files</a>
-          {% endif %}
           <a href="/orchestrator" class="btn btn-secondary header-nav-link"
             >Orchestrator</a
           >
-          <form
-            method="post"
-            action="/logout"
-            class="header-nav-form"
-            id="logout-form"
-          >
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-            <button type="submit" class="btn btn-secondary">Logout</button>
-          </form>
+          <div class="header-actions">
+            <a href="/account" class="btn btn-account">Account</a>
+            <button id="logout-btn" class="btn btn-logout">Logout</button>
+          </div>
         </nav>
       </header>
 
       <main class="vault-main">{% block content %}{% endblock %}</main>
     </div>
 
-    <!-- Confirmation Modal -->
-    <div
-      id="confirmationModal"
-      class="modal-overlay"
-      aria-hidden="true"
-      role="dialog"
-      aria-labelledby="modal-title"
-    >
-      <div class="modal-container">
-        <div class="modal-content-confirm">
-          <div class="modal-icon" id="modalIcon">⚠️</div>
-          <h2 id="modalTitle" class="modal-title">Confirm Action</h2>
-          <p id="modalMessage" class="modal-message"></p>
-          <div class="modal-buttons">
-            <button id="modalCancel" class="modal-btn modal-btn-cancel">
-              Cancel
-            </button>
-            <button id="modalConfirm" class="modal-btn modal-btn-confirm">
-              Confirm
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     {% block scripts %}{% endblock %}
-    <script src="/static/notifications.js"></script>
-    <script src="/static/logout.js"></script>
+    <script src="/static/icons.js"></script>
+    <script src="/static/logout-modal.js"></script>
+    <!-- Cleanup: Remove any stuck confirmation modal if it exists (respects CSP) -->
+    <script src="/static/cleanup-modal.js"></script>
+    {% block extra_scripts %}{% endblock %}
+    <script nonce="{{ csp_nonce }}">
+      // Handle logout button with styled modal
+      document.addEventListener("DOMContentLoaded", function () {
+        const logoutBtn = document.getElementById("logout-btn");
+        if (logoutBtn && window.showLogoutModal) {
+          logoutBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Show styled logout modal
+            window.showLogoutModal();
+          });
+        }
+      });
+    </script>
   </body>
 </html>

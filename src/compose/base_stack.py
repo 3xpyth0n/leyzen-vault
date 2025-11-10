@@ -119,11 +119,31 @@ def build_base_services(
     web_containers: Sequence[str],
     web_container_string: str,
 ) -> OrderedDict[str, dict]:
-    """Return the base services for the Leyzen stack."""
+    """Return the base services for the Leyzen stack.
 
-    # Resolve the environment file name to use in docker-compose.yml
+    Service Dependencies:
+    - HAProxy: No dependencies (front-end service, starts first)
+    - Docker Proxy: No dependencies (must be healthy before orchestrator starts)
+    - Orchestrator: Depends on:
+      - All vault web containers (service_started condition)
+      - Docker proxy (service_healthy condition)
+      - The orchestrator coordinates container rotation and needs access to both
+        the vault containers and the docker-proxy to manage container lifecycle
+
+    Service Startup Order:
+    1. HAProxy (starts first, no dependencies)
+    2. Docker Proxy (starts early, must be healthy for orchestrator)
+    3. Vault web containers (start after HAProxy and PostgreSQL are ready)
+    4. Orchestrator (starts last, depends on vault containers and docker-proxy)
+    """
+
+    # Resolve the environment file name to use in docker-generated.yml
     env_file_name = resolve_env_file_name(REPO_ROOT)
 
+    # Orchestrator dependencies:
+    # - All vault web containers must be started (service_started condition)
+    # - Docker proxy must be healthy (service_healthy condition) to enable
+    #   container lifecycle operations (start/stop/restart)
     orchestrator_depends = OrderedDict(
         (container, {"condition": "service_started"}) for container in web_containers
     )
@@ -206,9 +226,10 @@ def build_base_services(
                 "CMD-SHELL",
                 "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1",
             ],
-            "interval": "1s",
+            "interval": "2s",
             "timeout": "5s",
-            "retries": 5,
+            "retries": 10,
+            "start_period": "30s",
         },
         "networks": ["vault-net"],
     }
@@ -237,8 +258,8 @@ def build_base_services(
         "restart": "unless-stopped",
         "env_file": [env_file_name],
         "environment": {
-            # Always use environment variable references to avoid hardcoding secrets
-            "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:?Set DOCKER_PROXY_TOKEN in .env}",
+            # DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY if not set
+            # Optional override: "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:-}",
             "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
             "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
             "ORCH_WEB_CONTAINERS": web_container_string,
@@ -246,9 +267,10 @@ def build_base_services(
         },
         "healthcheck": {
             "test": ["CMD-SHELL", "curl -f http://localhost:2375/healthz || exit 1"],
-            "interval": "1s",
+            "interval": "2s",
             "timeout": "10s",
             "retries": 10,
+            "start_period": "30s",
         },
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock:ro",
@@ -262,11 +284,13 @@ def build_base_services(
         "container_name": "orchestrator",
         "image": "leyzen/orchestrator:latest",
         "restart": "on-failure",
+        "stop_grace_period": "30s",
         "healthcheck": {
             "test": ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"],
-            "interval": "1s",
+            "interval": "2s",
             "timeout": "5s",
             "retries": 10,
+            "start_period": "30s",
         },
         "env_file": [env_file_name],
         "environment": {

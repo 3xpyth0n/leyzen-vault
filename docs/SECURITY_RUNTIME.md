@@ -23,9 +23,8 @@ service and highlights considerations for extending the stack safely.
 
 ## Authentication and session protection
 
-- Administrator authentication relies on `werkzeug.security` password hashes
-  derived from the configured `VAULT_PASS` secret; plaintext passwords are not
-  stored. See `load_settings()` in `src/orchestrator/config.py`.
+- Administrator authentication relies on `werkzeug.security` password hashes;
+  plaintext passwords are not stored. See `load_settings()` in `src/orchestrator/config.py`.
 
 - The login form issues rotating CSRF tokens kept in an in-memory store with a
   configurable TTL. Tokens are required for captcha refreshes and initial login

@@ -1,0 +1,12 @@
+# Ignore dist directory - it's built inside the container
+src/vault/static/dist/
+
+# Ignore node_modules - they're installed inside the container
+src/vault/static/node_modules/
+
+# Ignore build artifacts
+*.log
+*.swp
+*.swo
+*~
+

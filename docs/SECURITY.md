@@ -45,14 +45,14 @@ Regular rotation of secrets, tokens, and passwords is essential for maintaining 
 
 ### Core Secrets
 
-#### VAULT_PASS (Dashboard Password)
+#### ORCH_PASS (Dashboard Password)
 
 The orchestrator dashboard password should be rotated periodically (recommended: every 90 days).
 
 **Rotation procedure:**
 
 1. Generate a new strong password using a secure method: `openssl rand -base64 32` or a password manager
-2. Update `VAULT_PASS` in your `.env` file with the new value
+2. Update `ORCH_PASS` in your `.env` file with the new value
 3. Restart the orchestrator service: `./leyzenctl restart`
 4. Verify you can log in with the new password
 5. Securely destroy the old password
@@ -72,18 +72,20 @@ The Flask secret key is used for session encryption and CSRF token generation. R
 
 **Impact:** All existing user sessions will be invalidated. Users will need to log in again.
 
-#### DOCKER_PROXY_TOKEN (Docker Proxy Authentication Token)
+#### DOCKER_PROXY_TOKEN and INTERNAL_API_TOKEN (Auto-generated Tokens)
 
-The token used to authenticate requests between the orchestrator and docker-proxy service. Rotate this key quarterly (recommended: every 90 days).
+**Note:** These tokens are now automatically generated from `SECRET_KEY` at runtime. You do not need to configure them manually.
+
+- **DOCKER_PROXY_TOKEN**: Used to authenticate requests between the orchestrator and docker-proxy service
+- **INTERNAL_API_TOKEN**: Used to authenticate internal API requests (e.g., container synchronization)
+
+Both tokens are derived deterministically from `SECRET_KEY` using HMAC-SHA256, so all services using the same `SECRET_KEY` will generate identical tokens without needing to share or persist them.
 
 **Rotation procedure:**
 
-1. Generate a new token: `openssl rand -hex 32`
-2. Update `DOCKER_PROXY_TOKEN` in your `.env` file
-3. Restart both services: `./leyzenctl restart`
-4. Verify container operations still function correctly from the dashboard
+To rotate these tokens, rotate `SECRET_KEY` instead (see SECRET_KEY rotation above). The tokens will be automatically regenerated from the new `SECRET_KEY` on the next service restart.
 
-**Impact:** Brief interruption in container operations during restart. Ensure the orchestrator and docker-proxy restart in sequence to avoid authentication failures.
+**Impact:** Rotating `SECRET_KEY` will automatically regenerate both tokens. Brief interruption in container operations and internal API calls during restart.
 
 ### Rotation Best Practices
 

@@ -40,7 +40,7 @@
 
     <script src="/static/vault.js"></script>
     <script src="/static/download.js"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
       // Pass template variables to JavaScript
       window.SHARE_LINK_TOKEN = {% if link_token %}"{{ link_token }}"{% else %}null{% endif %};
       window.SHARE_FILE_ID = {% if file_id %}"{{ file_id }}"{% else %}null{% endif %};

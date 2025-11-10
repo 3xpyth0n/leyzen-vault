@@ -1,0 +1,1115 @@
+"""Advanced file API routes with versioning and collaboration."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from flask import Blueprint, current_app, jsonify, request
+
+from vault.database.schema import File, db
+from vault.extensions import csrf
+from vault.middleware import get_current_user, jwt_required
+from vault.services.encryption_service import EncryptionService
+from vault.services.file_service import AdvancedFileService
+from vault.services.quota_service import QuotaService
+from vault.storage import FileStorage
+from vault.blueprints.validators import (
+    validate_vaultspace_id,
+    validate_file_id,
+    validate_pagination_params,
+)
+
+files_api_bp = Blueprint("files_api", __name__, url_prefix="/api/v2/files")
+
+
+def _get_file_service() -> AdvancedFileService:
+    """Get AdvancedFileService instance."""
+    return AdvancedFileService()
+
+
+def _get_encryption_service() -> EncryptionService:
+    """Get EncryptionService instance."""
+    return EncryptionService()
+
+
+def _get_storage() -> FileStorage:
+    """Get FileStorage instance."""
+    storage = current_app.config.get("VAULT_STORAGE")
+    if storage is None:
+        raise RuntimeError(
+            "VAULT_STORAGE is not configured. Please check application initialization."
+        )
+    return storage
+
+
+def _get_quota_service() -> QuotaService:
+    """Get QuotaService instance."""
+    return QuotaService()
+
+
+def _validate_encrypted_key(encrypted_key: str) -> tuple[bool, str]:
+    """Validate encrypted key format and size.
+
+    Uses EncryptionService for consistent validation across the application.
+
+    Args:
+        encrypted_key: The encrypted key to validate
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is empty.
+    """
+    from vault.services.encryption_service import EncryptionService
+
+    encryption_service = EncryptionService()
+    is_valid = encryption_service.validate_encrypted_key_format(encrypted_key)
+
+    if not is_valid:
+        return False, "Invalid encrypted key format"
+
+    # Additional validation: check entropy to ensure data is actually encrypted
+    try:
+        import base64
+
+        decoded = base64.b64decode(encrypted_key, validate=True)
+
+        # Extract ciphertext (after IV, before tag)
+        if len(decoded) < 28:  # Minimum: IV (12) + tag (16)
+            return False, "Invalid encrypted key structure"
+
+        iv = decoded[:12]
+        tag = decoded[-16:]
+        ciphertext = decoded[12:-16]
+
+        # Verify IV is not all zeros
+        if all(b == 0 for b in iv):
+            return False, "Invalid encrypted key (weak IV detected)"
+
+        # Verify tag is not all zeros or repeating pattern
+        if all(b == 0 for b in tag) or len(set(tag)) == 1:
+            return False, "Invalid encrypted key (corrupted tag detected)"
+
+        # Verify encryption entropy for ciphertext
+        if len(ciphertext) > 0:
+            is_encrypted, entropy = _check_encryption_entropy(ciphertext)
+            if not is_encrypted:
+                data_size = len(ciphertext)
+                if data_size <= 64:
+                    expected_threshold = 4.0
+                elif data_size <= 128:
+                    expected_threshold = 6.0
+                else:
+                    expected_threshold = 7.5
+                return (
+                    False,
+                    f"Invalid encrypted key (low entropy: {entropy:.2f} bits/byte, expected > {expected_threshold})",
+                )
+
+        return True, ""
+    except Exception as e:
+        return False, f"Invalid encrypted key format: {str(e)}"
+
+
+def _check_encryption_entropy(data: bytes) -> tuple[bool, float]:
+    """Check if data has high entropy (indicating encryption).
+
+    For small data sizes (e.g., 32 bytes for an AES-256 key), the entropy
+    can be lower than 7.5 bits/byte even for properly encrypted data due to
+    statistical variance. We use a size-adjusted threshold.
+
+    Args:
+        data: Data bytes to check
+
+    Returns:
+        Tuple of (is_encrypted, entropy_bits_per_byte)
+    """
+    import math
+    from collections import Counter
+
+    if len(data) < 16:
+        return False, 0.0
+
+    # Calculate Shannon entropy
+    counter = Counter(data)
+    entropy = 0.0
+    for count in counter.values():
+        probability = count / len(data)
+        if probability > 0:
+            entropy -= probability * math.log2(probability)
+
+    # Size-adjusted entropy threshold
+    # For small data (32 bytes), entropy can be ~4.5-5.5 bits/byte for encrypted data
+    # For larger data (>100 bytes), entropy should be >7.5 bits/byte
+    data_size = len(data)
+    if data_size <= 64:
+        # For small ciphertexts (32-64 bytes), use a lower threshold
+        # Encrypted data should have entropy > 4.0 bits/byte
+        threshold = 4.0
+    elif data_size <= 128:
+        # For medium ciphertexts, use a moderate threshold
+        threshold = 6.0
+    else:
+        # For larger ciphertexts, use the strict threshold
+        threshold = 7.5
+
+    # Additional check: encrypted data should not be all zeros or repeating patterns
+    unique_bytes = len(counter)
+    if unique_bytes == 1:
+        # All bytes are the same - definitely not encrypted
+        return False, entropy
+
+    # Check if data is mostly zeros (another sign of non-encrypted data)
+    zero_count = counter.get(0, 0)
+    if zero_count > len(data) * 0.9:
+        return False, entropy
+
+    return entropy > threshold, entropy
+
+
+@files_api_bp.route("/folders", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def create_folder():
+    """Create a folder.
+
+    Request body:
+        {
+            "vaultspace_id": "vaultspace-uuid",
+            "name": "Folder Name",
+            "parent_id": "parent-folder-uuid" (optional)
+        }
+
+    Returns:
+        JSON with folder info
+    """
+    from vault.middleware import validate_json_request, validate_vaultspace_id_param
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    vaultspace_id = data.get("vaultspace_id")
+    name = data.get("name", "").strip()
+    parent_id = data.get("parent_id")
+
+    # Validate vaultspace_id format
+    if vaultspace_id and not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format (must be UUID)"}), 400
+
+    # Validate parent_id format if provided
+    if parent_id and not validate_file_id(parent_id):
+        return jsonify({"error": "Invalid parent_id format (must be UUID)"}), 400
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not name:
+        return jsonify({"error": "Folder name is required"}), 400
+
+    file_service = _get_file_service()
+
+    try:
+        folder = file_service.create_folder(
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+            name=name,
+            parent_id=parent_id,
+        )
+
+        return (
+            jsonify(
+                {
+                    "folder": folder.to_dict(),
+                }
+            ),
+            201,
+        )
+    except ValueError as e:
+        error_message = str(e)
+        # Check if error is about duplicate name
+        if "already exists" in error_message.lower():
+            return jsonify({"error": error_message}), 409
+        return jsonify({"error": error_message}), 400
+
+
+@files_api_bp.route("", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def upload_file_v2():
+    """Upload file with VaultSpace support.
+
+    Request form data:
+        - vaultspace_id: VaultSpace ID (required)
+        - file: File to upload (required)
+        - encrypted_file_key: File key encrypted with VaultSpace key (required)
+        - encrypted_metadata: Encrypted metadata JSON (optional)
+        - parent_id: Parent folder ID (optional)
+
+    Returns:
+        JSON with file info and FileKey
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.form
+    vaultspace_id = data.get("vaultspace_id")
+    encrypted_file_key = data.get("encrypted_file_key")
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not encrypted_file_key:
+        return jsonify({"error": "encrypted_file_key is required"}), 400
+
+    # Validate encrypted key format and size
+    is_valid, error_msg = _validate_encrypted_key(encrypted_file_key)
+    if not is_valid:
+        return jsonify({"error": f"Invalid encrypted_file_key: {error_msg}"}), 400
+
+    # Rate limiting: 10 uploads per minute per user
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        from vault.blueprints.utils import get_client_ip
+
+        client_ip = get_client_ip() or "unknown"
+        user_id = user.id
+        rate_limit_id = f"upload:{user_id}:{client_ip}"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            rate_limit_id, max_attempts=10, window_seconds=60, action_name="file_upload"
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many uploads. Please try again later."}
+                ),
+                429,
+            )
+
+    if "file" not in request.files:
+        return jsonify({"error": "File is required"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "File is required"}), 400
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+    quota_service = _get_quota_service()
+
+    try:
+        # Read file data first to check size
+        file_data = file.read()
+        file_size = len(file_data)
+
+        # Check storage quota before upload
+        # Estimate encrypted size (add ~33% overhead for AES-GCM)
+        estimated_encrypted_size = int(file_size * 1.33)
+
+        has_storage_quota, storage_quota_info = quota_service.check_user_quota(
+            user.id, estimated_encrypted_size
+        )
+
+        if not has_storage_quota:
+            return (
+                jsonify(
+                    {
+                        "error": "Storage quota exceeded",
+                        "quota_info": storage_quota_info,
+                    }
+                ),
+                403,
+            )
+
+        # Check file quota before upload
+        has_file_quota, file_quota_info = quota_service.check_user_file_quota(
+            user.id, additional_files=1
+        )
+
+        if not has_file_quota:
+            return (
+                jsonify(
+                    {
+                        "error": "File quota exceeded",
+                        "quota_info": file_quota_info,
+                    }
+                ),
+                403,
+            )
+
+        # Generate file ID for storage
+        file_id = storage.generate_file_id()
+
+        # Store encrypted file (file is already encrypted client-side)
+        try:
+            storage_ref = storage.save_file(file_id, file_data)
+        except IOError as e:
+            current_app.logger.error(
+                f"Failed to save file {file_id}: {type(e).__name__}"
+            )
+            return jsonify({"error": "Failed to save file"}), 500
+
+        # Calculate hash of encrypted data
+        import hashlib
+
+        encrypted_hash = hashlib.sha256(file_data).hexdigest()
+
+        # Upload file metadata
+        file_obj, file_key = file_service.upload_file(
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+            original_name=file.filename,
+            encrypted_data=file_data,
+            encrypted_hash=encrypted_hash,
+            storage_ref=file_id,  # Use file_id as storage_ref
+            encrypted_file_key=encrypted_file_key,
+            mime_type=file.content_type,
+            parent_id=data.get("parent_id"),
+            encrypted_metadata=data.get("encrypted_metadata"),
+        )
+
+        return (
+            jsonify(
+                {
+                    "file": file_obj.to_dict(),
+                    "file_key": file_key.to_dict(),
+                }
+            ),
+            201,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("", methods=["GET"])
+@jwt_required
+def list_files():
+    """List files in a VaultSpace.
+
+    Query parameters:
+        - vaultspace_id: VaultSpace ID (required)
+        - parent_id: Parent folder ID (optional)
+
+    Returns:
+        JSON with list of files
+    """
+    from vault.blueprints.validators import validate_file_id, validate_vaultspace_id
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_id = request.args.get("vaultspace_id")
+    parent_id = request.args.get("parent_id")
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    # Validate vaultspace_id format
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format (must be UUID)"}), 400
+
+    # Validate parent_id format if provided
+    if parent_id and not validate_file_id(parent_id):
+        return jsonify({"error": "Invalid parent_id format (must be UUID)"}), 400
+
+    page, per_page, error = validate_pagination_params(
+        request.args.get("page", 1), request.args.get("per_page", 50), max_per_page=100
+    )
+    if error:
+        return jsonify({"error": error}), 400
+
+    file_service = _get_file_service()
+
+    try:
+        result = file_service.list_files_in_vaultspace(
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+            parent_id=parent_id,
+            page=page,
+            per_page=per_page,
+        )
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/<file_id>", methods=["GET"])
+@jwt_required
+def get_file(file_id: str):
+    """Get file details and encrypted FileKey.
+
+    Query parameters:
+        - vaultspace_id: VaultSpace ID (required)
+
+    Returns:
+        JSON with file info and encrypted FileKey
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_id = request.args.get("vaultspace_id")
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format"}), 400
+
+    file_service = _get_file_service()
+    encryption_service = _get_encryption_service()
+
+    try:
+        file_obj, permissions = file_service.get_file_with_permissions(file_id, user.id)
+
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        if file_obj.vaultspace_id != vaultspace_id:
+            return (
+                jsonify({"error": "File does not belong to specified VaultSpace"}),
+                400,
+            )
+
+        # Check if user has read permission
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # For folders (directories), we don't need a FileKey
+        if file_obj.mime_type == "application/x-directory":
+            return (
+                jsonify(
+                    {
+                        "file": file_obj.to_dict(),
+                        "file_key": None,
+                    }
+                ),
+                200,
+            )
+
+        # Get encrypted FileKey for regular files
+        file_key = encryption_service.get_file_key(file_id, vaultspace_id)
+
+        if not file_key:
+            return jsonify({"error": "FileKey not found"}), 404
+
+        return (
+            jsonify(
+                {
+                    "file": file_obj.to_dict(),
+                    "file_key": file_key.to_dict(),
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/<file_id>/download", methods=["GET"])
+@jwt_required
+def download_file(file_id: str):
+    """Download encrypted file data.
+
+    Query parameters:
+        - vaultspace_id: VaultSpace ID (required)
+
+    Returns:
+        Encrypted file data as binary stream
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_id = request.args.get("vaultspace_id")
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format"}), 400
+
+    # Rate limiting: 20 downloads per minute per user
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        from vault.blueprints.utils import get_client_ip
+
+        client_ip = get_client_ip() or "unknown"
+        user_id = user.id
+        rate_limit_id = f"download:{user_id}:{client_ip}"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            rate_limit_id,
+            max_attempts=20,
+            window_seconds=60,
+            action_name="file_download",
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {
+                        "error": error_msg
+                        or "Too many downloads. Please try again later."
+                    }
+                ),
+                429,
+            )
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+
+    try:
+        # Get file with permissions check
+        file_obj, permissions = file_service.get_file_with_permissions(file_id, user.id)
+
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        if file_obj.vaultspace_id != vaultspace_id:
+            return (
+                jsonify({"error": "File does not belong to specified VaultSpace"}),
+                400,
+            )
+
+        # Check if user has read permission
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Read encrypted file data from storage
+        try:
+            encrypted_data = storage.read_file(file_obj.storage_ref)
+        except FileNotFoundError:
+            return jsonify({"error": "File data not found in storage"}), 404
+
+        # Return encrypted file as binary response
+        from flask import Response
+
+        response = Response(
+            encrypted_data,
+            mimetype="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_obj.original_name}.encrypted"',
+                "Content-Length": str(len(encrypted_data)),
+            },
+        )
+        return response
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/<file_id>", methods=["DELETE"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def delete_file(file_id: str):
+    """Delete a file or folder.
+
+    Args:
+        file_id: File ID
+
+    Returns:
+        JSON with success message
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+
+    try:
+        # Get file to get storage_ref
+        file_obj, _ = file_service.get_file_with_permissions(file_id, user.id)
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        # Delete file
+        success = file_service.delete_file(file_id, user.id)
+
+        if not success:
+            return jsonify({"error": "File not found"}), 404
+
+        # Delete from storage (only if it's a file, not a folder)
+        if file_obj.storage_ref and file_obj.mime_type != "application/x-directory":
+            try:
+                storage.delete_file(file_obj.storage_ref)
+            except Exception as e:
+                # Storage deletion failure shouldn't block database deletion, but log the error
+                current_app.logger.warning(
+                    f"Failed to delete storage file {file_obj.storage_ref}: {e}"
+                )
+
+        return (
+            jsonify(
+                {
+                    "message": "File deleted successfully",
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@files_api_bp.route("/<file_id>/rename", methods=["PUT"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def rename_file(file_id: str):
+    """Rename a file or folder.
+
+    Request body:
+        {
+            "name": "New Name"
+        }
+
+    Returns:
+        JSON with updated file info
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    new_name = data.get("name", "").strip()
+    if not new_name:
+        return jsonify({"error": "Name is required"}), 400
+
+    file_service = _get_file_service()
+
+    try:
+        file_obj = file_service.rename_file(
+            file_id=file_id,
+            user_id=user.id,
+            new_name=new_name,
+        )
+
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        return (
+            jsonify(
+                {
+                    "file": file_obj.to_dict(),
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@files_api_bp.route("/<file_id>/move", methods=["PUT"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def move_file(file_id: str):
+    """Move a file or folder to a different parent.
+
+    Request body:
+        {
+            "parent_id": "parent-folder-uuid" (optional, null for root)
+        }
+
+    Returns:
+        JSON with updated file info
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    parent_id = data.get("parent_id")  # Can be None for root
+
+    file_service = _get_file_service()
+
+    try:
+        file_obj = file_service.move_file(
+            file_id=file_id,
+            user_id=user.id,
+            new_parent_id=parent_id,
+        )
+
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        return (
+            jsonify(
+                {
+                    "file": file_obj.to_dict(),
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/<file_id>/share", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def share_file_v2(file_id: str):
+    """Share file endpoint (removed).
+
+    This endpoint has been removed. Please use share links (ShareService) or public links (AdvancedSharingService) instead.
+
+    Returns:
+        HTTP 410 Gone with error message
+    """
+    return (
+        jsonify(
+            {
+                "error": "This endpoint is not available. Please use share links or public links instead.",
+                "code": "FEATURE_REMOVED",
+            }
+        ),
+        410,
+    )
+
+
+@files_api_bp.route("/batch/delete", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def batch_delete_files():
+    """Delete multiple files in batch.
+
+    Request body:
+        {
+            "file_ids": ["file-uuid1", "file-uuid2", ...]
+        }
+
+    Returns:
+        JSON with batch operation results
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    file_ids = data.get("file_ids", [])
+    if not isinstance(file_ids, list) or len(file_ids) == 0:
+        return jsonify({"error": "file_ids must be a non-empty list"}), 400
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+
+    try:
+        result = file_service.batch_delete_files(file_ids, user.id)
+
+        # Delete from storage for successfully deleted files
+        for file_id in file_ids:
+            try:
+                file_obj = db.session.query(File).filter_by(id=file_id).first()
+                if (
+                    file_obj
+                    and file_obj.storage_ref
+                    and file_obj.mime_type != "application/x-directory"
+                ):
+                    try:
+                        storage.delete_file(file_obj.storage_ref)
+                    except Exception as e:
+                        # Storage deletion failure shouldn't block batch operation, but log the error
+                        current_app.logger.warning(
+                            f"Failed to delete storage file {file_obj.storage_ref} during batch operation: {e}"
+                        )
+            except Exception as e:
+                # Log error but continue with batch operation
+                current_app.logger.warning(
+                    f"Error processing file {file_id} during batch operation: {e}"
+                )
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/batch/move", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def batch_move_files():
+    """Move multiple files to a new parent in batch.
+
+    Request body:
+        {
+            "file_ids": ["file-uuid1", "file-uuid2", ...],
+            "new_parent_id": "parent-folder-uuid" (optional, null for root)
+        }
+
+    Returns:
+        JSON with batch operation results
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    file_ids = data.get("file_ids", [])
+    if not isinstance(file_ids, list) or len(file_ids) == 0:
+        return jsonify({"error": "file_ids must be a non-empty list"}), 400
+
+    new_parent_id = data.get("new_parent_id")
+
+    file_service = _get_file_service()
+
+    try:
+        result = file_service.batch_move_files(file_ids, user.id, new_parent_id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/batch/rename", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def batch_rename_files():
+    """Rename multiple files in batch.
+
+    Request body:
+        {
+            "file_renames": [
+                {"file_id": "file-uuid1", "new_name": "New Name 1"},
+                {"file_id": "file-uuid2", "new_name": "New Name 2"},
+                ...
+            ]
+        }
+
+    Returns:
+        JSON with batch operation results
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    file_renames = data.get("file_renames", [])
+    if not isinstance(file_renames, list) or len(file_renames) == 0:
+        return jsonify({"error": "file_renames must be a non-empty list"}), 400
+
+    file_service = _get_file_service()
+
+    try:
+        result = file_service.batch_rename_files(file_renames, user.id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/<file_id>/copy", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def copy_file(file_id: str):
+    """Copy a file or folder to a new location.
+
+    Request body:
+        {
+            "new_parent_id": "parent-folder-uuid" (optional, null for root),
+            "new_vaultspace_id": "vaultspace-uuid" (optional, null to keep same),
+            "new_name": "New Name" (optional, null to keep same)
+        }
+
+    Returns:
+        JSON with copied file info
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    new_parent_id = data.get("new_parent_id")
+    new_vaultspace_id = data.get("new_vaultspace_id")
+    new_name = data.get("new_name")
+
+    file_service = _get_file_service()
+
+    try:
+        # Check if it's a folder
+        file_obj, _ = file_service.get_file_with_permissions(file_id, user.id)
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+
+        if file_obj.mime_type == "application/x-directory":
+            copied_file = file_service.copy_folder(
+                folder_id=file_id,
+                user_id=user.id,
+                new_parent_id=new_parent_id,
+                new_vaultspace_id=new_vaultspace_id,
+                new_name=new_name,
+            )
+        else:
+            copied_file = file_service.copy_file(
+                file_id=file_id,
+                user_id=user.id,
+                new_parent_id=new_parent_id,
+                new_vaultspace_id=new_vaultspace_id,
+                new_name=new_name,
+            )
+
+        return jsonify({"file": copied_file.to_dict()}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/recent", methods=["GET"])
+@jwt_required
+def list_recent_files():
+    """List recent files.
+
+    Query parameters:
+        - vaultspace_id: Optional VaultSpace ID filter
+        - limit: Maximum number of files to return (default: 50)
+        - days: Number of days to look back (default: 30)
+
+    Returns:
+        JSON with list of recent files
+    """
+    from datetime import timedelta
+    from sqlalchemy import and_, or_
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_id = request.args.get("vaultspace_id")
+    limit = int(request.args.get("limit", 50))
+    days = int(request.args.get("days", 30))
+
+    # Calculate cutoff date
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Query recent files
+    query = db.session.query(File).filter(
+        File.deleted_at.is_(None),
+        File.owner_user_id == user.id,
+        or_(
+            File.updated_at >= cutoff_date,
+            File.created_at >= cutoff_date,
+        ),
+    )
+
+    # Filter by vaultspace if provided
+    if vaultspace_id:
+        query = query.filter(File.vaultspace_id == vaultspace_id)
+
+    # Order by most recently updated first
+    query = query.order_by(File.updated_at.desc())
+
+    # Limit results
+    recent_files = query.limit(limit).all()
+
+    return jsonify({"files": [f.to_dict() for f in recent_files]}), 200
+
+
+@files_api_bp.route("/starred", methods=["GET"])
+@jwt_required
+def list_starred_files():
+    """List all starred files.
+
+    Query parameters:
+        - vaultspace_id: Optional VaultSpace ID filter
+
+    Returns:
+        JSON with list of starred files
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_id = request.args.get("vaultspace_id")
+    file_service = _get_file_service()
+
+    try:
+        starred_files = file_service.list_starred_files(
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+        )
+        return jsonify({"files": [f.to_dict() for f in starred_files]}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/<file_id>/star", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def toggle_star_file(file_id: str):
+    """Toggle star status of a file.
+
+    Returns:
+        JSON with updated file info
+    """
+    # Validate file_id format
+    if not validate_file_id(file_id):
+        return jsonify({"error": "Invalid file_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    file_service = _get_file_service()
+
+    try:
+        file_obj = file_service.toggle_star_file(file_id=file_id, user_id=user.id)
+        if not file_obj:
+            return jsonify({"error": "File not found"}), 404
+        return jsonify({"file": file_obj.to_dict()}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403

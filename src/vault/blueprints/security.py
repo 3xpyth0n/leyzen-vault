@@ -3,32 +3,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from flask import Blueprint, current_app, jsonify, render_template
+from flask import Blueprint, current_app, jsonify
 
-from ..models import FileDatabase
+from ..database.schema import File, db
 from ..services.audit import AuditService
 from .utils import _settings, get_client_ip, login_required
 
 security_bp = Blueprint("security", __name__, url_prefix="/security")
 
 
-@security_bp.route("/", strict_slashes=False)
-@login_required
-def dashboard():
-    """Serve the security dashboard."""
-    return render_template("security.html")
+# All frontend routes are handled by Vue.js SPA
+# Only API routes remain here
 
 
 @security_bp.route("/api/stats", methods=["GET"])
 @login_required
 def get_stats():
     """Get security and storage statistics."""
-    database = current_app.config["VAULT_DATABASE"]
     audit = current_app.config["VAULT_AUDIT"]
     storage = current_app.config["VAULT_STORAGE"]
 
-    # Get all files
-    files = database.list_files()
+    # Get all files from PostgreSQL
+    files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
 
     # Calculate statistics
     total_files = len(files)
@@ -38,10 +34,10 @@ def get_stats():
 
     # Files by extension
     files_by_type: dict[str, int] = {}
-    for file in files:
+    for file_obj in files:
         ext = (
-            file.original_name.split(".")[-1].lower()
-            if "." in file.original_name
+            file_obj.original_name.split(".")[-1].lower()
+            if "." in file_obj.original_name
             else "no-extension"
         )
         files_by_type[ext] = files_by_type.get(ext, 0) + 1

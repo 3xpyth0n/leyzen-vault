@@ -18,7 +18,7 @@ var validateCmd = &cobra.Command{
 	Long: `Validate the .env configuration file by:
 - Comparing with env.template for missing or extra variables
 - Checking that required variables are present and non-empty
-- Verifying cryptographic secrets meet minimum length requirements (≥12 characters)`,
+- Verifying cryptographic secrets meet minimum length requirements (≥32 characters)`,
 	RunE: runValidate,
 }
 
@@ -58,13 +58,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check cryptographic secrets length (≥12 characters)
+	// Check cryptographic secrets length (≥32 characters)
 	for _, secretVar := range secretVars {
 		value, exists := envVars[secretVar]
 		if exists && strings.TrimSpace(value) != "" {
-			if len(value) < 12 {
+			if len(value) < 32 {
 				errors = append(errors, fmt.Sprintf(
-					"Secret %s must be at least 12 characters long (got %d characters)",
+					"Secret %s must be at least 32 characters long (got %d characters). Generate with: openssl rand -hex 32",
 					secretVar, len(value),
 				))
 			}
@@ -155,26 +155,25 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 
 			vars[varName] = varInfo{optional: isOptional}
 
-			// Only SECRET_KEY and DOCKER_PROXY_TOKEN are secrets, check explicitly
-			if varName == "SECRET_KEY" || varName == "DOCKER_PROXY_TOKEN" {
+			// Only SECRET_KEY is a secret, check explicitly
+			// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY and no longer required
+			if varName == "SECRET_KEY" {
 				secrets = append(secrets, varName)
 			}
 		}
 	}
 
 	// Synchronize with Python validation in:
-	// - src/vault/config.py::load_settings() (requires VAULT_USER, VAULT_PASS, SECRET_KEY)
-	// - src/orchestrator/config.py::_ensure_required_variables() (requires ORCH_USER, ORCH_PASS, SECRET_KEY, DOCKER_PROXY_TOKEN)
+	// - src/vault/config.py::load_settings() (requires SECRET_KEY only)
+	// - src/orchestrator/config.py::_ensure_required_variables() (requires ORCH_USER, ORCH_PASS, SECRET_KEY)
 	// These variables are required at runtime and must be present and non-empty.
 	// When modifying this list, update the Python implementations to match.
 	// We only use this explicit list to avoid false positives from conditional "REQUIRED if ..." comments.
+	// Note: DOCKER_PROXY_TOKEN is no longer required - it's auto-generated from SECRET_KEY
 	required := []string{
-		"VAULT_USER",
-		"VAULT_PASS",
 		"ORCH_USER",
 		"ORCH_PASS",
 		"SECRET_KEY",
-		"DOCKER_PROXY_TOKEN",
 	}
 
 	return vars, required, secrets, nil

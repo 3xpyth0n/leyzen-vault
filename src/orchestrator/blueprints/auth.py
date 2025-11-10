@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-import random
-import secrets
-import string
-import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from io import BytesIO
 from threading import Lock
 
 from urllib.parse import urljoin, urlsplit
@@ -26,31 +21,23 @@ from flask import (
     url_for,
 )
 
-try:
-    from PIL import Image, ImageDraw, ImageFilter, ImageFont  # type: ignore[import-not-found]
-except (
-    ModuleNotFoundError
-) as exc:  # pragma: no cover - fallback path for optional dependency
-    Image = ImageDraw = ImageFilter = ImageFont = None  # type: ignore[assignment]
-    _PIL_IMPORT_ERROR: ModuleNotFoundError | None = exc
-else:  # pragma: no branch
-    _PIL_IMPORT_ERROR = None
+# PIL imports are now handled in common.captcha
 from werkzeug.security import check_password_hash
 
+from common.captcha_helpers import (
+    build_captcha_image_with_settings,
+    get_captcha_nonce_with_store,
+    get_captcha_store_for_app,
+    get_login_csrf_store_for_app,
+    refresh_captcha_with_store,
+)
 from common.constants import (
-    CAPTCHA_LENGTH_DEFAULT,
-    CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
     LOGIN_BLOCK_WINDOW_MINUTES,
-    LOGIN_CSRF_TTL_SECONDS_DEFAULT,
     MAX_LOGIN_ATTEMPTS,
-    CAPTCHA_NOISE_PIXELS,
-    CAPTCHA_DISTRACTION_LINES,
-    CAPTCHA_FONT_SIZE,
-    CAPTCHA_SVG_FONT_SIZE,
 )
 
 from ..extensions import csrf
-from ..services.logging import FileLogger
+from common.services.logging import FileLogger
 from .utils import _settings, get_client_ip
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/orchestrator")
@@ -60,259 +47,106 @@ login_attempts: defaultdict[str | None, deque] = defaultdict(
 )
 BLOCK_WINDOW = timedelta(minutes=LOGIN_BLOCK_WINDOW_MINUTES)
 
-captcha_store: dict[str, tuple[str, float]] = {}
-captcha_store_lock = Lock()
-login_csrf_store: dict[str, float] = {}
-login_csrf_lock = Lock()
+# Global stores (will be initialized lazily with settings values)
+_captcha_store = None
+_login_csrf_store = None
+_captcha_store_lock = Lock()
+_login_csrf_store_lock = Lock()
 
 
 def _logger() -> FileLogger:
+    """Get logger from Flask app config."""
     return current_app.config["LOGGER"]
 
 
-def _generate_captcha_text(length: int) -> str:
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+def _get_captcha_store():
+    """Get or create CAPTCHA store with current settings TTL."""
+    global _captcha_store
+    if _captcha_store is None:
+        with _captcha_store_lock:
+            if _captcha_store is None:
+                settings = _settings()
+                _captcha_store = get_captcha_store_for_app(settings)
+    return _captcha_store
 
 
-def _random_color(min_value: int = 0, max_value: int = 255) -> tuple[int, int, int]:
-    r = random.randint(min_value, max_value)
-    g = random.randint(min_value, max_value)
-    b = random.randint(min_value, max_value)
-    return (r, g, b)
-
-
-def _load_captcha_font(size: int = CAPTCHA_FONT_SIZE) -> ImageFont.ImageFont:
-    """Load a PIL ImageFont with the specified size.
-
-    Falls back to default font if font_variant is not available.
-    """
-    base_font = ImageFont.load_default()
-    try:
-        return base_font.font_variant(size=size)  # type: ignore[attr-defined]
-    except AttributeError:
-        return base_font
+def _get_login_csrf_store():
+    """Get or create login CSRF store with current settings TTL."""
+    global _login_csrf_store
+    if _login_csrf_store is None:
+        with _login_csrf_store_lock:
+            if _login_csrf_store is None:
+                settings = _settings()
+                _login_csrf_store = get_login_csrf_store_for_app(settings)
+    return _login_csrf_store
 
 
 def _build_captcha_image(text: str) -> tuple[bytes, str]:
+    """Build CAPTCHA image using settings."""
     settings = _settings()
-    captcha_length = getattr(settings, "captcha_length", CAPTCHA_LENGTH_DEFAULT)
-    # Calculate dimensions based on CAPTCHA length
-    # Width: ~35px per character + padding
-    width = captcha_length * 35 + 20
-    # Height: fixed at 70px
-    height = 70
 
-    if (
-        Image is not None
-        and ImageDraw is not None
-        and ImageFilter is not None
-        and ImageFont is not None
-    ):
-        image = Image.new("RGB", (width, height), _random_color(200, 255))
-        draw = ImageDraw.Draw(image)
+    def on_svg_warning(msg: str) -> None:
+        _logger().log(msg)
 
-        for _ in range(CAPTCHA_DISTRACTION_LINES):
-            start = (random.randint(0, width), random.randint(0, height))
-            end = (random.randint(0, width), random.randint(0, height))
-            draw.line([start, end], fill=_random_color(80, 200), width=2)
-
-        font = _load_captcha_font()
-        char_spacing = width // (len(text) + 1)
-        for index, character in enumerate(text):
-            position = (
-                15 + index * char_spacing + random.randint(-5, 5),
-                random.randint(5, height - 45),
-            )
-            draw.text(
-                position,
-                character,
-                font=font,
-                fill=_random_color(10, 70),
-                stroke_width=2,
-                stroke_fill=(0, 0, 0),
-            )
-
-        for _ in range(CAPTCHA_NOISE_PIXELS):
-            x = random.randint(0, width - 1)
-            y = random.randint(0, height - 1)
-            image.putpixel((x, y), _random_color(0, 255))
-
-        image = image.filter(ImageFilter.GaussianBlur(radius=0.5))
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        buffer.seek(0)
-        return buffer.read(), "image/png"
-
-    return _build_svg_captcha(text, width, height)
-
-
-_svg_warning_emitted = False
-
-
-def _build_svg_captcha(text: str, width: int, height: int) -> tuple[bytes, str]:
-    import html
-
-    # The SVG fallback intentionally mirrors the noise pattern of the Pillow
-    # version to remain resistant to trivial OCR when Pillow is unavailable.
-    background = _random_color(220, 255)
-    svg_lines = [
-        "<?xml version='1.0' encoding='UTF-8'?>",
-        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>",
-        f"<rect width='100%' height='100%' fill='rgb{background}' />",
-    ]
-
-    for _ in range(CAPTCHA_DISTRACTION_LINES):
-        start_x = random.randint(0, width)
-        start_y = random.randint(0, height)
-        end_x = random.randint(0, width)
-        end_y = random.randint(0, height)
-        color = _random_color(80, 200)
-        svg_lines.append(
-            f"<line x1='{start_x}' y1='{start_y}' x2='{end_x}' y2='{end_y}' stroke='rgb{color}' stroke-width='2' />"
-        )
-
-    char_spacing = width // (len(text) + 1)
-    for index, character in enumerate(text):
-        x = 15 + index * char_spacing + random.randint(-5, 5)
-        y = random.randint(height // 2, height - 10)
-        fill_color = _random_color(10, 70)
-        svg_lines.append(
-            "<text "
-            "font-family='monospace' "
-            f"font-size='{CAPTCHA_SVG_FONT_SIZE}' "
-            "stroke='black' stroke-width='1' "
-            f"fill='rgb{fill_color}' x='{x}' y='{y}'>"
-            f"{html.escape(character)}</text>"
-        )
-
-    for _ in range(CAPTCHA_NOISE_PIXELS):
-        x = random.randint(0, width)
-        y = random.randint(0, height)
-        color = _random_color(0, 255)
-        svg_lines.append(f"<circle cx='{x}' cy='{y}' r='1' fill='rgb{color}' />")
-
-    svg_lines.append("</svg>")
-    svg_content = "".join(svg_lines).encode("utf-8")
-    global _svg_warning_emitted
-    if _PIL_IMPORT_ERROR is not None and not _svg_warning_emitted:
-        _logger().log(
-            f"Pillow not available, serving SVG captcha fallback. Install Pillow to restore PNG captcha rendering: {_PIL_IMPORT_ERROR}"
-        )
-        _svg_warning_emitted = True
-    return svg_content, "image/svg+xml"
-
-
-def _settings_captcha_length() -> int:
-    settings = _settings()
-    return getattr(settings, "captcha_length", CAPTCHA_LENGTH_DEFAULT)
-
-
-def _captcha_store_ttl() -> int:
-    settings = _settings()
-    return getattr(settings, "captcha_store_ttl", CAPTCHA_STORE_TTL_SECONDS_DEFAULT)
-
-
-def _login_csrf_ttl() -> int:
-    settings = _settings()
-    return getattr(settings, "login_csrf_ttl", LOGIN_CSRF_TTL_SECONDS_DEFAULT)
-
-
-def _prune_captcha_store(now: float | None = None) -> None:
-    cutoff = (now or time.time()) - _captcha_store_ttl()
-    with captcha_store_lock:
-        expired = [key for key, (_, ts) in captcha_store.items() if ts < cutoff]
-        for key in expired:
-            captcha_store.pop(key, None)
+    return build_captcha_image_with_settings(
+        text, settings, on_svg_warning=on_svg_warning
+    )
 
 
 def _store_captcha_entry(nonce: str, text: str) -> None:
-    if not nonce:
-        return
-    now = time.time()
-    with captcha_store_lock:
-        captcha_store[nonce] = (text, now)
-    _prune_captcha_store(now)
+    """Store CAPTCHA entry in store."""
+    _get_captcha_store().store(nonce, text)
 
 
 def _get_captcha_from_store(nonce: str | None) -> str | None:
-    if not nonce:
-        return None
-    cutoff = time.time() - _captcha_store_ttl()
-    with captcha_store_lock:
-        entry = captcha_store.get(nonce)
-        if not entry:
-            return None
-        text, timestamp = entry
-        if timestamp < cutoff:
-            captcha_store.pop(nonce, None)
-            return None
-        return text
+    """Get CAPTCHA from store."""
+    return _get_captcha_store().get(nonce)
 
 
 def _drop_captcha_from_store(nonce: str | None) -> None:
-    if not nonce:
-        return
-    with captcha_store_lock:
-        captcha_store.pop(nonce, None)
-
-
-def _prune_login_csrf_store(now: float | None = None) -> None:
-    now = now or time.time()
-    cutoff = now - _login_csrf_ttl()
-    with login_csrf_lock:
-        expired = [token for token, ts in login_csrf_store.items() if ts < cutoff]
-        for token in expired:
-            login_csrf_store.pop(token, None)
+    """Drop CAPTCHA from store."""
+    _get_captcha_store().drop(nonce)
 
 
 def _issue_login_csrf_token() -> str:
-    token = secrets.token_urlsafe(32)
-    now = time.time()
-    with login_csrf_lock:
-        login_csrf_store[token] = now
-    _prune_login_csrf_store(now)
-    return token
+    """Issue login CSRF token."""
+    return _get_login_csrf_store().issue()
 
 
 def _touch_login_csrf_token(token: str | None) -> bool:
-    if not token:
-        return False
-    now = time.time()
-    cutoff = now - _login_csrf_ttl()
-    with login_csrf_lock:
-        timestamp = login_csrf_store.get(token)
-        if not timestamp or timestamp < cutoff:
-            login_csrf_store.pop(token, None)
-            return False
-        login_csrf_store[token] = now
-        return True
+    """Touch login CSRF token."""
+    return _get_login_csrf_store().touch(token)
 
 
 def _consume_login_csrf_token(token: str | None) -> None:
-    if not token:
-        return
-    with login_csrf_lock:
-        login_csrf_store.pop(token, None)
+    """Consume login CSRF token."""
+    _get_login_csrf_store().consume(token)
 
 
 def _refresh_captcha() -> str:
-    text = _generate_captcha_text(_settings_captcha_length())
-    nonce = secrets.token_urlsafe(8)
-    session["captcha_text"] = text
-    session["captcha_nonce"] = nonce
-    _store_captcha_entry(nonce, text)
-    return nonce
+    """Generate a new CAPTCHA and store it."""
+    settings = _settings()
+    store = _get_captcha_store()
+
+    def on_svg_warning(msg: str) -> None:
+        _logger().log(msg)
+
+    return refresh_captcha_with_store(
+        store, settings, session, on_svg_warning=on_svg_warning
+    )
 
 
 def _get_captcha_nonce() -> str:
-    text = session.get("captcha_text")
-    nonce = session.get("captcha_nonce")
-    if not text or not nonce:
-        nonce = _refresh_captcha()
-    else:
-        _store_captcha_entry(str(nonce), str(text))
-    return nonce
+    """Get existing CAPTCHA nonce from session or create a new one."""
+    settings = _settings()
+    store = _get_captcha_store()
+
+    def on_svg_warning(msg: str) -> None:
+        _logger().log(msg)
+
+    return get_captcha_nonce_with_store(
+        store, session, settings, on_svg_warning=on_svg_warning
+    )
 
 
 def is_blocked(ip: str | None, current_time: datetime | None = None) -> bool:

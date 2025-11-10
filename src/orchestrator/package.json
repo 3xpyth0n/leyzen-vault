@@ -1,14 +1,14 @@
 {
-  "name": "orchestrator",
-  "version": "1.0.0",
+  "name": "leyzen-orchestrator",
+  "version": "2.0.0",
+  "author": "Saad Idrissi",
+  "license": "BSL-1.1",
   "private": true,
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./styles/tailwind.css -o ./static/tailwind.css --minify"
   },
   "keywords": [],
-  "author": "",
-  "license": "BSL-1.1",
   "description": "",
   "devDependencies": {
     "tailwindcss": "^3.4.13"

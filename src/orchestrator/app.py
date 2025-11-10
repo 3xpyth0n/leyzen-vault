@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import atexit
 import importlib
 import importlib.util
 import signal
@@ -101,10 +102,18 @@ def _build_placeholder_app(error: ConfigurationError) -> Flask:
         path: str,
     ) -> tuple[str, int, dict[str, str]]:  # pragma: no cover - runtime guard
         """Return error message when configuration is missing."""
+        # Log the detailed error server-side for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Configuration error: {error}")
+
+        # Return generic error message to avoid information disclosure
+        # Do not expose specific environment variable names or implementation details
         message = (
-            "Leyzen Vault orchestrator cannot start because required environment "
-            "variables are missing. Set DOCKER_PROXY_TOKEN, VAULT_PASS, "
-            "SECRET_KEY, and VAULT_USER before launching the service."
+            "Leyzen Vault orchestrator cannot start because required configuration "
+            "is missing or invalid. Please check your environment variables and "
+            "refer to the documentation for required settings."
         )
         return message, 500, {"Content-Type": "text/plain; charset=utf-8"}
 
@@ -140,15 +149,28 @@ def main() -> None:
 
     logger = real_app.config["LOGGER"]
 
+    def log_shutdown(sig: int | None = None) -> None:
+        """Log shutdown message and flush logger."""
+        if sig is not None:
+            logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
+        else:
+            logger.log("=== Orchestrator stopped ===")
+        logger.flush()
+
     def handle_shutdown(
         sig: int, frame: object
     ) -> None:  # pragma: no cover - runtime signal handler
         """Handle shutdown signals gracefully."""
-        logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
+        log_shutdown(sig)
         sys.exit(0)
 
+    # Register signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # Register atexit handler as backup to ensure shutdown message is logged
+    # even if signal handler doesn't execute properly
+    atexit.register(log_shutdown)
 
     settings = real_app.config["SETTINGS"]
     # nosec B104: Binding to 0.0.0.0 is intentional and safe in Docker containers.

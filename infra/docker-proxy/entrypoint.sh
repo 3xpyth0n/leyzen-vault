@@ -46,19 +46,32 @@ if [ -S "$SOCKET_PATH" ]; then
                 # This may fail if the GID is already in use by another group
                 if addgroup -g "$SOCK_GID" "$TEMP_GROUP" >/dev/null 2>&1; then
                     EXISTING_GROUP="$TEMP_GROUP"
+                    log "[docker-proxy] Created group '${TEMP_GROUP}' with GID ${SOCK_GID} for Docker socket access"
                 else
                     # If creation failed, check again (maybe another process created it)
                     EXISTING_GROUP=$(find_group_by_gid "$SOCK_GID")
+                    if [ -z "$EXISTING_GROUP" ]; then
+                        log "[docker-proxy] WARNING: Failed to create group with GID ${SOCK_GID} and no existing group found"
+                        log "[docker-proxy] WARNING: Docker socket access may fail. The default group '${DEFAULT_GROUP}' will be used"
+                        log "[docker-proxy] WARNING: Please check Docker socket permissions if you encounter access issues"
+                    else
+                        log "[docker-proxy] Found existing group '${EXISTING_GROUP}' with GID ${SOCK_GID} (created by another process)"
+                    fi
                 fi
             fi
 
             # If we have a group (existing or newly created), add dockerproxy to it
             if [ -n "$EXISTING_GROUP" ]; then
                 # Add dockerproxy user to the group (|| true to avoid errors if already member)
-                addgroup "$PROXY_USER" "$EXISTING_GROUP" >/dev/null 2>&1 || true
+                if addgroup "$PROXY_USER" "$EXISTING_GROUP" >/dev/null 2>&1; then
+                    log "[docker-proxy] Added user '${PROXY_USER}' to group '${EXISTING_GROUP}' for Docker socket access"
+                else
+                    log "[docker-proxy] User '${PROXY_USER}' is already a member of group '${EXISTING_GROUP}' (or addgroup failed)"
+                fi
                 TARGET_GROUP="$EXISTING_GROUP"
             else
-                log "[docker-proxy] unable to match socket gid ${SOCK_GID}; continuing with default group"
+                log "[docker-proxy] WARNING: Unable to match socket GID ${SOCK_GID} to any group; continuing with default group '${DEFAULT_GROUP}'"
+                log "[docker-proxy] WARNING: Docker socket access may fail. Please verify Docker socket permissions"
             fi
         fi
     else
@@ -72,8 +85,10 @@ fi
 # su-exec is a minimal setuid tool that's safer than su for dropping privileges
 SU_EXEC_BIN=$(command -v su-exec 2>/dev/null || true)
 if [ -z "$SU_EXEC_BIN" ]; then
-    log "[docker-proxy] su-exec not available; running command as root"
-    exec "$@"
+    log "[docker-proxy] ERROR: su-exec not available; cannot drop privileges safely"
+    log "[docker-proxy] This container requires su-exec to run securely as a non-root user"
+    log "[docker-proxy] Please ensure su-exec is installed in the Docker image"
+    exit 1
 fi
 
 # Execute as dockerproxy user with the target group (either the socket's group or default)

@@ -283,3 +283,35 @@ func InitializeEnvFromTemplate(envFilePath string) (map[string]string, error) {
 	// File already has variables, return them
 	return envFile.Pairs(), nil
 }
+
+// LoadAllEnvVariables loads all environment variables by merging env.template with .env.
+// Values from .env take priority over template values.
+// This function is used to display all available variables in the Config view and Wizard,
+// even if they are not yet set in the .env file.
+func LoadAllEnvVariables(envFilePath string) (map[string]string, error) {
+	// Load template first (all available variables)
+	templatePairs, err := LoadEnvTemplate(envFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("load template: %w", err)
+	}
+
+	// Load current .env file
+	envFile, err := LoadEnvFile(envFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("load env file: %w", err)
+	}
+
+	envPairs := envFile.Pairs()
+
+	// Merge: start with template, then override with .env values
+	result := make(map[string]string)
+	for key, value := range templatePairs {
+		result[key] = value
+	}
+	// Override with .env values (they take priority)
+	for key, value := range envPairs {
+		result[key] = value
+	}
+
+	return result, nil
+}

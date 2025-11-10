@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -35,11 +36,12 @@ const (
 type ViewState string
 
 const (
-	ViewDashboard ViewState = "dashboard"
-	ViewLogs      ViewState = "logs"
-	ViewAction    ViewState = "action"
-	ViewConfig    ViewState = "config"
-	ViewWizard    ViewState = "wizard"
+	ViewDashboard          ViewState = "dashboard"
+	ViewLogs               ViewState = "logs"
+	ViewAction             ViewState = "action"
+	ViewConfig             ViewState = "config"
+	ViewWizard             ViewState = "wizard"
+	ViewContainerSelection ViewState = "container-selection"
 )
 
 const (
@@ -64,12 +66,21 @@ type Theme struct {
 }
 
 type WizardField struct {
-	Key        string
-	Message    string
-	Value      string
-	IsPassword bool
-	Input      textinput.Model
+	Key         string
+	Message     string
+	Value       string
+	IsPassword  bool
+	ShowPassword bool
+	Input       textinput.Model
 }
+
+type ContainerItem struct {
+	Name        string
+	Selected    bool
+	IsAllOption bool
+}
+
+func (i ContainerItem) FilterValue() string { return i.Name }
 
 type Model struct {
 	envFile             string
@@ -96,7 +107,13 @@ type Model struct {
 	wizardFields        []WizardField
 	wizardIndex         int
 	wizardError         string
-	quitConfirm         bool // Confirmation de sortie
+	quitConfirm         bool // Quit confirmation
+	// Container selection fields
+	containerList     list.Model
+	containerItems    []ContainerItem
+	containerIndex    int        // Current index in the selection list
+	pendingAction     ActionType // Action pending after selection
+	availableServices []string
 }
 
 func NewModel(envFile string, runner *Runner) *Model {
@@ -209,6 +226,15 @@ func (m *Model) switchToDashboard() {
 		m.wizardError = ""
 	}
 
+	// If coming from container selection, clean up state
+	if m.viewState == ViewContainerSelection {
+		m.containerList = list.Model{}
+		m.containerItems = nil
+		m.containerIndex = 0
+		m.pendingAction = ActionNone
+		m.availableServices = nil
+	}
+
 	// COMPLETELY CLEAN: logs, viewport, action, quit confirmation
 	// Logs should not be displayed on the dashboard
 	m.logs = nil
@@ -308,21 +334,19 @@ func (m *Model) initWizard(existing map[string]string) {
 		ti.Placeholder = fmt.Sprintf("Value for %s", key)
 		ti.CharLimit = 512 // Increase the limit
 		ti.Width = 60
-		if isPassword {
-			ti.EchoMode = textinput.EchoPassword
-			ti.EchoCharacter = '•'
-		}
+		// Don't mask passwords in wizard - they're stored in plain text in .env anyway
 		// Pre-fill with existing value
 		if existingValue != "" {
 			ti.SetValue(existingValue)
 		}
 
 		m.wizardFields[i] = WizardField{
-			Key:        key,
-			Message:    key,
-			Value:      existingValue,
-			IsPassword: isPassword,
-			Input:      ti,
+			Key:          key,
+			Message:      key,
+			Value:        existingValue,
+			IsPassword:   isPassword,
+			ShowPassword: true, // Always show passwords in wizard
+			Input:        ti,
 		}
 	}
 
@@ -344,4 +368,42 @@ func (m *Model) initWizard(existing map[string]string) {
 
 func (m *Model) switchToWizard() {
 	m.viewState = ViewWizard
+}
+
+func (m *Model) initContainerSelection(services []string, action ActionType) {
+	m.pendingAction = action
+	m.availableServices = services
+
+	// Sort services alphabetically for consistent display
+	sortedServices := make([]string, len(services))
+	copy(sortedServices, services)
+	sort.Strings(sortedServices)
+
+	// Create items with "All" option first
+	items := make([]ContainerItem, 0, len(sortedServices)+1)
+	items = append(items, ContainerItem{
+		Name:        "All",
+		Selected:    false,
+		IsAllOption: true,
+	})
+
+	// Add other services in alphabetical order
+	for _, svc := range sortedServices {
+		items = append(items, ContainerItem{
+			Name:        svc,
+			Selected:    false,
+			IsAllOption: false,
+		})
+	}
+
+	m.containerItems = items
+	m.containerIndex = 0
+
+	// Initialize list model (not really used for navigation, but kept for compatibility)
+	m.containerList = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	m.containerList.SetShowStatusBar(false)
+	m.containerList.SetFilteringEnabled(false)
+	m.containerList.SetShowHelp(false)
+
+	m.viewState = ViewContainerSelection
 }

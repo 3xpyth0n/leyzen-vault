@@ -1,0 +1,23 @@
+{
+  "name": "leyzen-vault",
+  "version": "2.0.0",
+  "author": "Saad Idrissi",
+  "license": "BSL-1.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "patch-package": "^8.0.0",
+    "vite": "^5.4.21"
+  }
+}

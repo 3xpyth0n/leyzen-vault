@@ -1,0 +1,329 @@
+"""Service for validating files before synchronization."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+from flask import current_app
+from sqlalchemy import and_
+
+from vault.database.schema import File, db
+
+
+class SyncValidationService:
+    """Service for validating files before synchronization to prevent malware persistence."""
+
+    def __init__(self):
+        """Initialize the validation service."""
+        self._legitimate_files: dict[str, dict[str, Any]] = {}
+        self._legitimate_thumbnails: set[str] = set()
+        self._loaded = False
+
+    def load_legitimate_files(self) -> dict[str, dict[str, Any]]:
+        """Load all legitimate file IDs and their metadata from PostgreSQL.
+
+        Returns:
+            Dictionary mapping file_id to file metadata (storage_ref, encrypted_hash, size)
+        """
+        try:
+            # Query all non-deleted files
+            files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
+
+            legitimate_files = {}
+            for file_obj in files:
+                # Use the file_id from the database (file_obj.id) as the key
+                # The storage_ref can be in different formats:
+                # - Just the file_id: "abc123..."
+                # - Full path: "/data/files/abc123..."
+                # - Relative path: "files/abc123..."
+                file_id = file_obj.id
+                storage_ref = file_obj.storage_ref
+
+                legitimate_files[file_id] = {
+                    "storage_ref": storage_ref,
+                    "encrypted_hash": file_obj.encrypted_hash,
+                    "size": file_obj.encrypted_size,
+                    "file_id": file_id,
+                }
+
+            current_app.logger.info(
+                f"Loaded {len(legitimate_files)} legitimate files from database"
+            )
+            return legitimate_files
+
+        except Exception as e:
+            current_app.logger.error(
+                f"Failed to load legitimate files: {e}", exc_info=True
+            )
+            return {}
+
+    def load_legitimate_thumbnails(self) -> set[str]:
+        """Load all legitimate thumbnail storage references from PostgreSQL.
+
+        Returns:
+            Set of legitimate thumbnail storage references (normalized paths)
+        """
+        try:
+            # Query all files with thumbnails
+            files = (
+                db.session.query(File)
+                .filter(
+                    and_(
+                        File.deleted_at.is_(None),
+                        File.thumbnail_refs.isnot(None),
+                        File.has_thumbnail.is_(True),
+                    )
+                )
+                .all()
+            )
+
+            legitimate_thumbnails = set()
+            for file_obj in files:
+                if not file_obj.thumbnail_refs:
+                    continue
+
+                try:
+                    # Parse thumbnail_refs JSON
+                    # Format: {"64x64": "storage_ref", "128x128": "storage_ref", ...}
+                    # storage_ref is the value returned by get_thumbnail_storage_key()
+                    # which is like: "thumbnails/{hash[:2]}/{hash[2:4]}/{hash}_{size}.jpg"
+                    thumbnail_refs = json.loads(file_obj.thumbnail_refs)
+                    if isinstance(thumbnail_refs, dict):
+                        for size_key, storage_ref in thumbnail_refs.items():
+                            if storage_ref:
+                                # Normalize the storage_ref to handle different formats
+                                # Remove leading /data/files/ if present
+                                normalized_ref = storage_ref.strip()
+                                if normalized_ref.startswith("/data/files/"):
+                                    normalized_ref = normalized_ref[
+                                        len("/data/files/") :
+                                    ]
+                                elif normalized_ref.startswith("/"):
+                                    normalized_ref = normalized_ref[1:]
+
+                                # Normalize path separators (Windows vs Unix)
+                                normalized_ref = normalized_ref.replace("\\", "/")
+
+                                # Add normalized version
+                                legitimate_thumbnails.add(normalized_ref)
+
+                except (json.JSONDecodeError, AttributeError) as e:
+                    current_app.logger.warning(
+                        f"Failed to parse thumbnail_refs for file {file_obj.id}: {e}"
+                    )
+                    continue
+
+            current_app.logger.info(
+                f"Loaded {len(legitimate_thumbnails)} legitimate thumbnail references"
+            )
+            return legitimate_thumbnails
+
+        except Exception as e:
+            current_app.logger.error(
+                f"Failed to load legitimate thumbnails: {e}", exc_info=True
+            )
+            return set()
+
+    def load_whitelist(self) -> None:
+        """Load the complete whitelist (files + thumbnails) into memory."""
+        if self._loaded:
+            return
+
+        self._legitimate_files = self.load_legitimate_files()
+        self._legitimate_thumbnails = self.load_legitimate_thumbnails()
+        self._loaded = True
+
+        current_app.logger.info(
+            f"Whitelist loaded: {len(self._legitimate_files)} files, "
+            f"{len(self._legitimate_thumbnails)} thumbnails"
+        )
+
+    def extract_file_id_from_path(self, file_path: Path, base_dir: Path) -> str | None:
+        """Extract file_id from file path.
+
+        Args:
+            file_path: Full path to the file
+            base_dir: Base directory (/data/files)
+
+        Returns:
+            File ID if extractable, None otherwise
+        """
+        try:
+            # Get relative path from base_dir
+            relative_path = file_path.relative_to(base_dir)
+            parts = relative_path.parts
+
+            if not parts:
+                return None
+
+            # Files are stored directly: /data/files/{file_id}
+            # Thumbnails are stored: /data/files/thumbnails/{hash[:2]}/{hash[2:4]}/{hash}_{size}.jpg
+            # Subdirectories (if any) would be: /data/files/{subdir}/{file_id}
+            # For now, assume files are stored directly at the root of /data/files/
+            if parts[0] == "thumbnails":
+                # This is a thumbnail, return None to handle separately
+                return None
+
+            # First part should be the file_id (UUID format, 32 hex characters with hyphens)
+            # Files are stored with file_id as filename directly in /data/files/
+            file_id = parts[0]
+
+            # Validate that it looks like a UUID (basic check)
+            # UUID format: 8-4-4-4-12 hex characters
+            if (
+                len(file_id) >= 32
+                and file_id.replace("-", "").replace("_", "").isalnum()
+            ):
+                return file_id
+
+            # If it doesn't look like a UUID, it might still be valid (legacy format)
+            # Return it anyway and let the whitelist check decide
+            return file_id
+
+        except (ValueError, IndexError):
+            return None
+
+    def compute_file_hash(self, file_path: Path) -> str:
+        """Compute SHA-256 hash of file.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            SHA-256 hash in hex format
+        """
+        sha256 = hashlib.sha256()
+        try:
+            with open(file_path, "rb") as f:
+                # Read in chunks to handle large files
+                while chunk := f.read(8192):
+                    sha256.update(chunk)
+            return sha256.hexdigest()
+        except Exception as e:
+            current_app.logger.error(f"Failed to compute hash for {file_path}: {e}")
+            return ""
+
+    def validate_file(self, file_path: Path, base_dir: Path) -> tuple[bool, str | None]:
+        """Validate if a file is legitimate.
+
+        Args:
+            file_path: Full path to the file
+            base_dir: Base directory (/data/files)
+
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is None.
+        """
+        try:
+            # Use common file validation utility to check path traversal
+            from vault.utils.file_validation import validate_file_path
+
+            is_valid_path, path_error = validate_file_path(file_path, base_dir)
+            if not is_valid_path:
+                return False, path_error
+
+            # Get relative path and normalize it
+            relative_path = file_path.relative_to(base_dir)
+            normalized_path = str(relative_path).replace("\\", "/")
+
+            # Check if it's a thumbnail first (in thumbnails/ subdirectory)
+            if normalized_path.startswith("thumbnails/"):
+                # This is a thumbnail, validate it separately
+                return self.validate_thumbnail(file_path, base_dir)
+
+            # Extract file_id (should be the first part of the path for regular files)
+            file_id = self.extract_file_id_from_path(file_path, base_dir)
+
+            if file_id is None:
+                return False, "File ID not extractable from path"
+
+            # Check if file_id exists in whitelist
+            if file_id not in self._legitimate_files:
+                return False, f"File ID {file_id} not found in database"
+
+            # Get expected metadata
+            file_metadata = self._legitimate_files[file_id]
+
+            # Verify hash
+            actual_hash = self.compute_file_hash(file_path)
+            expected_hash = file_metadata["encrypted_hash"]
+
+            if actual_hash != expected_hash:
+                return (
+                    False,
+                    f"Hash mismatch for file {file_id}: expected {expected_hash[:16]}..., got {actual_hash[:16]}...",
+                )
+
+            # Verify file size (optional but recommended)
+            actual_size = file_path.stat().st_size
+            expected_size = file_metadata["size"]
+
+            if actual_size != expected_size:
+                return (
+                    False,
+                    f"Size mismatch for file {file_id}: expected {expected_size}, got {actual_size}",
+                )
+
+            return True, None
+
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
+
+    def validate_thumbnail(
+        self, file_path: Path, base_dir: Path
+    ) -> tuple[bool, str | None]:
+        """Validate if a thumbnail is legitimate.
+
+        Args:
+            file_path: Full path to the thumbnail
+            base_dir: Base directory (/data/files)
+
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is None.
+        """
+        try:
+            # Get relative path and normalize it
+            relative_path = file_path.relative_to(base_dir)
+            normalized_ref = str(relative_path).replace("\\", "/")
+
+            # Remove leading /data/files/ if present (shouldn't be, but just in case)
+            if normalized_ref.startswith("/data/files/"):
+                normalized_ref = normalized_ref[len("/data/files/") :]
+            elif normalized_ref.startswith("/"):
+                normalized_ref = normalized_ref[1:]
+
+            # Check if this normalized path is in the whitelist
+            if normalized_ref in self._legitimate_thumbnails:
+                return True, None
+
+            return False, f"Thumbnail {normalized_ref} not found in database"
+
+        except Exception as e:
+            return False, f"Thumbnail validation error: {str(e)}"
+
+    def is_file_legitimate(
+        self, file_path: Path, base_dir: Path
+    ) -> tuple[bool, str | None]:
+        """Check if a file or thumbnail is legitimate.
+
+        Args:
+            file_path: Full path to the file
+            base_dir: Base directory (/data/files)
+
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is None.
+        """
+        if not self._loaded:
+            self.load_whitelist()
+
+        # Check if it's a thumbnail (in thumbnails/ subdirectory)
+        relative_path = file_path.relative_to(base_dir)
+        if str(relative_path).startswith("thumbnails/"):
+            return self.validate_thumbnail(file_path, base_dir)
+        else:
+            return self.validate_file(file_path, base_dir)
+
+
+__all__ = ["SyncValidationService"]

@@ -43,7 +43,6 @@ DOCKER_PROXY_PORT_DEFAULT = 2375  # Default port for docker-proxy service
 # Orchestrator configuration defaults
 ORCHESTRATOR_PORT_DEFAULT = 80
 ORCHESTRATOR_LOG_FILE_DEFAULT = "orchestrator.log"
-VAULT_USER_DEFAULT = "admin"
 
 # ============================================================================
 # Fixed Constants (not user-configurable)
@@ -187,7 +186,6 @@ __all__ = [
     "ALLOWED_URL_SCHEMES",
     "ORCHESTRATOR_PORT_DEFAULT",
     "ORCHESTRATOR_LOG_FILE_DEFAULT",
-    "VAULT_USER_DEFAULT",
     "DOCKER_PROXY_CLIENT_TIMEOUT_DEFAULT",
     "DOCKER_PROXY_INSPECT_CACHE_TTL",
     "ROTATION_MAX_WORKERS",

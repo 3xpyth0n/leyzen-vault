@@ -1,0 +1,1254 @@
+"""Advanced file service with versioning, sharing, and encryption key management."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from vault.database.schema import (
+    File,
+    FileKey,
+    FileVersion,
+    User,
+    VaultSpace,
+    VaultSpaceType,
+    db,
+)
+from vault.services.encryption_service import EncryptionService
+from vault.storage import FileStorage
+
+from vault.services.vaultspace_service import VaultSpaceService
+from vault.services.search_service import SearchService
+from vault.services.cache_service import get_cache_service, cache_key
+
+logger = logging.getLogger(__name__)
+
+
+class AdvancedFileService:
+    """Advanced file service with versioning, sharing, and encryption key management."""
+
+    def __init__(self):
+        """Initialize advanced file service."""
+        self.vaultspace_service = VaultSpaceService()
+        self.encryption_service = EncryptionService()
+        self.search_service = SearchService()
+
+    def _check_duplicate_name_in_folder(
+        self,
+        vaultspace_id: str,
+        parent_id: str | None,
+        name: str,
+        exclude_file_id: str | None = None,
+    ) -> bool:
+        """Check if a file with the same name already exists in the same folder.
+
+        Args:
+            vaultspace_id: VaultSpace ID
+            parent_id: Parent folder ID (None for root folder)
+            name: File name to check
+            exclude_file_id: Optional file ID to exclude from check (for renaming)
+
+        Returns:
+            True if a duplicate exists, False otherwise
+        """
+        query = (
+            db.session.query(File)
+            .filter_by(
+                vaultspace_id=vaultspace_id,
+                parent_id=parent_id,
+                original_name=name,
+            )
+            .filter(File.deleted_at.is_(None))
+        )
+        if exclude_file_id:
+            query = query.filter(File.id != exclude_file_id)
+        existing = query.first()
+        return existing is not None
+
+    def upload_file(
+        self,
+        vaultspace_id: str,
+        user_id: str,
+        original_name: str,
+        encrypted_data: bytes,
+        encrypted_hash: str,
+        storage_ref: str,
+        encrypted_file_key: str,
+        mime_type: str | None = None,
+        parent_id: str | None = None,
+        encrypted_metadata: str | None = None,
+    ) -> tuple[File, FileKey]:
+        """Upload a file with encryption key management.
+
+        Args:
+            vaultspace_id: VaultSpace ID
+            user_id: User ID uploading the file
+            original_name: Original filename
+            encrypted_data: Encrypted file data
+            encrypted_hash: Hash of encrypted data
+            storage_ref: Storage reference path
+            encrypted_file_key: File key encrypted with VaultSpace key
+            mime_type: MIME type
+            parent_id: Parent folder ID
+            encrypted_metadata: Encrypted metadata JSON
+
+        Returns:
+            Tuple of (File, FileKey) objects
+
+        Raises:
+            ValueError: If user doesn't have write permission to VaultSpace
+        """
+        # Verify user has access to VaultSpace
+        vaultspace = self.vaultspace_service.get_vaultspace(vaultspace_id)
+        if not vaultspace:
+            raise ValueError(f"VaultSpace {vaultspace_id} not found")
+
+        # Check permissions: only owner can upload
+        if vaultspace.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have write permission to VaultSpace {vaultspace_id}"
+            )
+
+        # Validate filename format using common validation utility
+        from vault.utils.file_validation import validate_filename
+
+        is_valid, validation_error = validate_filename(original_name)
+        if not is_valid:
+            raise ValueError(validation_error or "Invalid filename")
+
+        # Validate parent if provided
+        if parent_id:
+            parent_file = (
+                db.session.query(File)
+                .filter_by(id=parent_id, vaultspace_id=vaultspace_id)
+                .first()
+            )
+            if not parent_file:
+                raise ValueError(
+                    f"Parent file {parent_id} not found in VaultSpace {vaultspace_id}"
+                )
+
+        # Check for duplicate names in the same folder
+        if self._check_duplicate_name_in_folder(
+            vaultspace_id, parent_id, original_name
+        ):
+            raise ValueError(
+                f"A file with the name '{original_name}' already exists in this folder"
+            )
+
+        # Create file record
+        file_obj = File(
+            id=str(uuid.uuid4()),
+            vaultspace_id=vaultspace_id,
+            parent_id=parent_id,
+            owner_user_id=user_id,
+            original_name=original_name,
+            size=len(encrypted_data),
+            encrypted_size=len(encrypted_data),
+            encrypted_hash=encrypted_hash,
+            encrypted_metadata=encrypted_metadata,
+            storage_ref=storage_ref,
+            mime_type=mime_type,
+        )
+        db.session.add(file_obj)
+
+        # Validate encrypted key format
+        if not self.encryption_service.validate_encrypted_key_format(
+            encrypted_file_key
+        ):
+            raise ValueError("Invalid encrypted file key format")
+
+        # Create file key entry (encrypted with VaultSpace key)
+        # Note: create_file_key_entry commits internally, so it's atomic
+        file_key = self.encryption_service.create_file_key_entry(
+            file_id=file_obj.id,
+            vaultspace_id=vaultspace_id,
+            encrypted_key=encrypted_file_key,
+        )
+
+        # Create initial version
+        version = FileVersion(
+            id=str(uuid.uuid4()),
+            file_id=file_obj.id,
+            version_number=1,
+            branch_name="main",
+            encrypted_hash=encrypted_hash,
+            storage_ref=storage_ref,
+            created_by=user_id,
+        )
+        db.session.add(version)
+        db.session.commit()
+
+        # Index file for search (outside transaction to avoid blocking)
+        self.search_service.index_file(file_obj)
+
+        return file_obj, file_key
+
+    def create_version(
+        self,
+        file_id: str,
+        encrypted_hash: str,
+        storage_ref: str,
+        created_by: str,
+        branch_name: str = "main",
+        change_description: str | None = None,
+        parent_version_id: str | None = None,
+    ) -> FileVersion:
+        """Create a new version of a file.
+
+        Args:
+            file_id: File ID
+            encrypted_hash: Hash of encrypted version data
+            storage_ref: Storage reference
+            created_by: User ID creating version
+            branch_name: Branch name (default: "main")
+            change_description: Description of changes
+            parent_version_id: Parent version ID (for branching)
+
+        Returns:
+            FileVersion object
+        """
+        # Get latest version number for branch
+        latest_version = (
+            db.session.query(FileVersion)
+            .filter_by(file_id=file_id, branch_name=branch_name)
+            .order_by(FileVersion.version_number.desc())
+            .first()
+        )
+
+        version_number = latest_version.version_number + 1 if latest_version else 1
+
+        version = FileVersion(
+            id=str(uuid.uuid4()),
+            file_id=file_id,
+            version_number=version_number,
+            branch_name=branch_name,
+            encrypted_hash=encrypted_hash,
+            storage_ref=storage_ref,
+            created_by=created_by,
+            change_description=change_description,
+            parent_version_id=parent_version_id,
+        )
+        db.session.add(version)
+        db.session.commit()
+
+        return version
+
+    def get_file_versions(
+        self,
+        file_id: str,
+        branch_name: str | None = None,
+    ) -> list[FileVersion]:
+        """Get file versions.
+
+        Args:
+            file_id: File ID
+            branch_name: Optional branch name filter
+
+        Returns:
+            List of FileVersion objects
+        """
+        query = db.session.query(FileVersion).filter_by(file_id=file_id)
+        if branch_name:
+            query = query.filter_by(branch_name=branch_name)
+        return query.order_by(FileVersion.version_number.desc()).all()
+
+    def create_branch(
+        self,
+        file_id: str,
+        branch_name: str,
+        from_version_id: str,
+        created_by: str,
+    ) -> FileVersion:
+        """Create a new branch from a version.
+
+        Args:
+            file_id: File ID
+            branch_name: New branch name
+            from_version_id: Version ID to branch from
+            created_by: User ID creating branch
+
+        Returns:
+            FileVersion object (first version in new branch)
+        """
+        parent_version = (
+            db.session.query(FileVersion).filter_by(id=from_version_id).first()
+        )
+        if not parent_version:
+            raise ValueError(f"Version {from_version_id} not found")
+
+        # Create first version in new branch
+        version = FileVersion(
+            id=str(uuid.uuid4()),
+            file_id=file_id,
+            version_number=1,
+            branch_name=branch_name,
+            encrypted_hash=parent_version.encrypted_hash,
+            storage_ref=parent_version.storage_ref,
+            created_by=created_by,
+            parent_version_id=from_version_id,
+        )
+        db.session.add(version)
+        db.session.commit()
+
+        return version
+
+    def delete_file(
+        self,
+        file_id: str,
+        user_id: str,
+    ) -> bool:
+        """Delete a file with permission check.
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting deletion
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            ValueError: If user doesn't have permission to delete
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return False
+
+        # Check permissions: only owner can delete
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to delete file {file_id}"
+            )
+
+        # Delete all FileKeys (cascade will handle)
+        file_keys = self.encryption_service.get_all_file_keys(file_id)
+        for fk in file_keys:
+            db.session.delete(fk)
+
+        # Delete all FileVersions
+        versions = db.session.query(FileVersion).filter_by(file_id=file_id).all()
+        for version in versions:
+            db.session.delete(version)
+
+        # Soft delete: set deleted_at timestamp instead of hard delete
+        from datetime import datetime, timezone
+
+        file_obj.deleted_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+        # Remove from search index
+        if self.search_service.index_service:
+            try:
+                self.search_service.index_service.remove_file(file_id)
+            except Exception as e:
+                # Log warning but don't fail the operation if search index removal fails
+                logger.warning(
+                    f"Failed to remove file {file_id} from search index: {e}"
+                )
+
+        return True
+
+    def restore_file(
+        self,
+        file_id: str,
+        user_id: str,
+    ) -> File | None:
+        """Restore a soft-deleted file from trash.
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting restoration
+
+        Returns:
+            Restored File object, or None if not found
+
+        Raises:
+            ValueError: If user doesn't have permission to restore
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return None
+
+        # Check if file is actually deleted
+        if not file_obj.deleted_at:
+            raise ValueError(f"File {file_id} is not deleted")
+
+        # Check permissions: only owner can restore
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to restore file {file_id}"
+            )
+
+        # Restore file by clearing deleted_at
+        file_obj.deleted_at = None
+        db.session.commit()
+
+        # Re-index file after restore
+        self.search_service.index_file(file_obj)
+
+        return file_obj
+
+    def permanently_delete_file(
+        self,
+        file_id: str,
+        user_id: str,
+    ) -> bool:
+        """Permanently delete a file (hard delete, cannot be undone).
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting permanent deletion
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            ValueError: If user doesn't have permission to delete
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return False
+
+        # Check permissions: only owner can permanently delete
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to permanently delete file {file_id}"
+            )
+
+        # Delete all FileKeys (cascade will handle)
+        file_keys = self.encryption_service.get_all_file_keys(file_id)
+        for fk in file_keys:
+            db.session.delete(fk)
+
+        # Delete all FileVersions
+        versions = db.session.query(FileVersion).filter_by(file_id=file_id).all()
+        for version in versions:
+            db.session.delete(version)
+
+        # Hard delete file
+        db.session.delete(file_obj)
+        db.session.commit()
+
+        # Remove from search index
+        if self.search_service.index_service:
+            try:
+                self.search_service.index_service.remove_file(file_id)
+            except Exception as e:
+                # Log warning but don't fail the operation if search index removal fails
+                logger.warning(
+                    f"Failed to remove file {file_id} from search index: {e}"
+                )
+
+        return True
+
+    def list_trash_files(
+        self,
+        vaultspace_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[File]:
+        """List all deleted files (trash).
+
+        Args:
+            vaultspace_id: Optional VaultSpace ID filter
+            user_id: Optional user ID filter (files owned by user)
+
+        Returns:
+            List of deleted File objects
+        """
+        query = db.session.query(File).filter(File.deleted_at.isnot(None))
+
+        if vaultspace_id:
+            query = query.filter_by(vaultspace_id=vaultspace_id)
+
+        if user_id:
+            query = query.filter_by(owner_user_id=user_id)
+
+        return query.order_by(File.deleted_at.desc()).all()
+
+    def toggle_star_file(
+        self,
+        file_id: str,
+        user_id: str,
+    ) -> File | None:
+        """Toggle star status of a file.
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting toggle
+
+        Returns:
+            Updated File object if found, None otherwise
+
+        Raises:
+            ValueError: If user doesn't have permission
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return None
+
+        # Check permissions: only owner can star
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to star file {file_id}"
+            )
+
+        # Toggle star status
+        file_obj.is_starred = not file_obj.is_starred
+        db.session.commit()
+
+        return file_obj
+
+    def list_starred_files(
+        self,
+        vaultspace_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[File]:
+        """List all starred files.
+
+        Args:
+            vaultspace_id: Optional VaultSpace ID filter
+            user_id: Optional user ID filter (files accessible by user)
+
+        Returns:
+            List of starred File objects
+        """
+        query = db.session.query(File).filter_by(is_starred=True)
+
+        # Exclude deleted files
+        query = query.filter(File.deleted_at.is_(None))
+
+        if vaultspace_id:
+            query = query.filter_by(vaultspace_id=vaultspace_id)
+
+        # Filter by user access if provided
+        if user_id:
+            # Only files owned by user
+            query = query.filter(File.owner_user_id == user_id)
+
+        return query.order_by(File.updated_at.desc()).all()
+
+    def get_file_with_permissions(
+        self,
+        file_id: str,
+        user_id: str,
+    ) -> tuple[File | None, list]:
+        """Get file (legacy method, permissions always empty).
+
+        Args:
+            file_id: File ID
+            user_id: User ID
+
+        Returns:
+            Tuple of (File, empty list)
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return None, []
+
+        return file_obj, []
+
+    def create_folder(
+        self,
+        vaultspace_id: str,
+        user_id: str,
+        name: str,
+        parent_id: str | None = None,
+    ) -> File:
+        """Create a folder (directory).
+
+        Args:
+            vaultspace_id: VaultSpace ID
+            user_id: User ID creating the folder
+            name: Folder name
+            parent_id: Optional parent folder ID
+
+        Returns:
+            Created File object representing the folder
+
+        Raises:
+            ValueError: If user doesn't have write permission to VaultSpace
+        """
+        # Verify user has access to VaultSpace
+        vaultspace = self.vaultspace_service.get_vaultspace(vaultspace_id)
+        if not vaultspace:
+            raise ValueError(f"VaultSpace {vaultspace_id} not found")
+
+        # Check permissions: only owner can upload
+        if vaultspace.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have write permission to VaultSpace {vaultspace_id}"
+            )
+
+        # Validate parent if provided
+        if parent_id:
+            parent_file = (
+                db.session.query(File)
+                .filter_by(id=parent_id, vaultspace_id=vaultspace_id)
+                .first()
+            )
+            if not parent_file:
+                raise ValueError(
+                    f"Parent folder {parent_id} not found in VaultSpace {vaultspace_id}"
+                )
+            # Check that parent is actually a folder
+            if parent_file.mime_type != "application/x-directory":
+                raise ValueError(f"Parent {parent_id} is not a folder")
+
+        # Normalize folder name (trim and collapse spaces, same as validation does)
+        import re
+
+        name = name.strip()
+        name = re.sub(r"\s+", " ", name)
+
+        # Validate folder name format using common validation utility
+        from vault.utils.file_validation import validate_filename
+
+        is_valid, validation_error = validate_filename(name)
+        if not is_valid:
+            raise ValueError(validation_error or "Invalid folder name")
+
+        # Check for duplicate folder names in the same parent
+        # Use the normalized name for comparison
+        if self._check_duplicate_name_in_folder(vaultspace_id, parent_id, name):
+            raise ValueError(
+                f"A folder with the name '{name}' already exists in this location"
+            )
+
+        # Create folder record (folders have mime_type="application/x-directory" and empty storage_ref)
+        folder = File(
+            id=str(uuid.uuid4()),
+            vaultspace_id=vaultspace_id,
+            parent_id=parent_id,
+            owner_user_id=user_id,
+            original_name=name,
+            size=0,
+            encrypted_size=0,
+            encrypted_hash="",  # Folders don't have content hash
+            encrypted_metadata=None,
+            storage_ref="",  # Folders don't have storage reference
+            mime_type="application/x-directory",
+        )
+        db.session.add(folder)
+        db.session.commit()
+
+        # Invalidate cache for this vaultspace to ensure fresh data
+        # The cache key format is: "files:vaultspace_id:user_id:parent_id:page:per_page"
+        # We need to invalidate all pages and per_page combinations for this parent
+        cache = get_cache_service()
+        # Create a base pattern that matches the beginning of cache keys
+        # This will match all pages and per_page values
+        base_pattern = (
+            f"files:{vaultspace_id}:{user_id}:{parent_id if parent_id else 'None'}"
+        )
+        cache.invalidate_pattern(base_pattern)
+        # Also invalidate root parent cache in case parent_id is None
+        if parent_id is not None:
+            base_pattern_root = f"files:{vaultspace_id}:{user_id}:None"
+            cache.invalidate_pattern(base_pattern_root)
+
+        return folder
+
+    def rename_file(
+        self,
+        file_id: str,
+        user_id: str,
+        new_name: str,
+    ) -> File | None:
+        """Rename a file or folder.
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting rename
+            new_name: New name
+
+        Returns:
+            Updated File object if found, None otherwise
+
+        Raises:
+            ValueError: If user doesn't have permission to rename
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return None
+
+        # Check permissions: only owner can rename
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to rename file {file_id}"
+            )
+
+        # Validate filename format using common validation utility
+        from vault.utils.file_validation import validate_filename
+
+        is_valid, validation_error = validate_filename(new_name)
+        if not is_valid:
+            raise ValueError(validation_error or "Invalid filename")
+
+        # Check for duplicate names in the same folder
+        if self._check_duplicate_name_in_folder(
+            file_obj.vaultspace_id,
+            file_obj.parent_id,
+            new_name,
+            exclude_file_id=file_id,
+        ):
+            raise ValueError(
+                f"A file with the name '{new_name}' already exists in this folder"
+            )
+
+        file_obj.original_name = new_name
+        db.session.commit()
+
+        # Invalidate cache for this vaultspace/parent to ensure fresh data
+        cache = get_cache_service()
+        parent_id = file_obj.parent_id
+        vaultspace_id = file_obj.vaultspace_id
+        user_id = file_obj.owner_user_id
+        # Create a base pattern that matches all pages and per_page values
+        base_pattern = (
+            f"files:{vaultspace_id}:{user_id}:{parent_id if parent_id else 'None'}"
+        )
+        cache.invalidate_pattern(base_pattern)
+
+        # Re-index file after rename
+        self.search_service.index_file(file_obj)
+
+        return file_obj
+
+    def move_file(
+        self,
+        file_id: str,
+        user_id: str,
+        new_parent_id: str | None = None,
+    ) -> File | None:
+        """Move a file or folder to a different parent.
+
+        Args:
+            file_id: File ID
+            user_id: User ID requesting move
+            new_parent_id: New parent folder ID (None for root)
+
+        Returns:
+            Updated File object if found, None otherwise
+
+        Raises:
+            ValueError: If user doesn't have permission or move would create cycle
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            return None
+
+        # Check permissions: only owner can move
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to move file {file_id}"
+            )
+
+        # Validate new parent if provided
+        if new_parent_id:
+            parent_file = (
+                db.session.query(File)
+                .filter_by(id=new_parent_id, vaultspace_id=file_obj.vaultspace_id)
+                .first()
+            )
+            if not parent_file:
+                raise ValueError(f"Parent folder {new_parent_id} not found")
+            # Check that parent is actually a folder
+            if parent_file.mime_type != "application/x-directory":
+                raise ValueError(f"Parent {new_parent_id} is not a folder")
+
+            # Check for cycles (can't move folder into itself or its descendants)
+            if file_obj.mime_type == "application/x-directory":
+                if self._would_create_cycle(file_id, new_parent_id):
+                    raise ValueError("Moving folder would create a cycle")
+
+        file_obj.parent_id = new_parent_id
+        db.session.commit()
+
+        # Invalidate cache for this vaultspace to ensure fresh data
+        cache = get_cache_service()
+        vaultspace_id = file_obj.vaultspace_id
+        user_id = file_obj.owner_user_id
+        # Invalidate cache for new parent (all pages and per_page values)
+        base_pattern_new = f"files:{vaultspace_id}:{user_id}:{new_parent_id if new_parent_id else 'None'}"
+        cache.invalidate_pattern(base_pattern_new)
+        # Also invalidate root cache in case file was moved to/from root
+        base_pattern_root = f"files:{vaultspace_id}:{user_id}:None"
+        cache.invalidate_pattern(base_pattern_root)
+
+        # Re-index file after move
+        self.search_service.index_file(file_obj)
+
+        return file_obj
+
+    def _would_create_cycle(self, folder_id: str, new_parent_id: str) -> bool:
+        """Check if moving a folder would create a cycle.
+
+        Args:
+            folder_id: Folder ID to move
+            new_parent_id: New parent folder ID
+
+        Returns:
+            True if cycle would be created, False otherwise
+        """
+        # Traverse up from new_parent_id to see if we reach folder_id
+        current_id = new_parent_id
+        visited = set()
+
+        while current_id:
+            if current_id == folder_id:
+                return True  # Cycle detected
+            if current_id in visited:
+                break  # Already checked this path
+            visited.add(current_id)
+
+            parent = (
+                db.session.query(File)
+                .filter_by(id=current_id, mime_type="application/x-directory")
+                .first()
+            )
+            if not parent:
+                break
+            current_id = parent.parent_id
+
+        return False
+
+    def batch_delete_files(
+        self,
+        file_ids: list[str],
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Delete multiple files in batch.
+
+        Args:
+            file_ids: List of file IDs to delete
+            user_id: User ID requesting deletion
+
+        Returns:
+            Dictionary with success_count, failed_count, and errors
+        """
+        success_count = 0
+        failed_count = 0
+        errors = []
+
+        for file_id in file_ids:
+            try:
+                if self.delete_file(file_id, user_id):
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    errors.append({"file_id": file_id, "error": "File not found"})
+            except ValueError as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+            except Exception as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+
+        return {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "total": len(file_ids),
+            "errors": errors,
+        }
+
+    def batch_move_files(
+        self,
+        file_ids: list[str],
+        user_id: str,
+        new_parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Move multiple files to a new parent in batch.
+
+        Args:
+            file_ids: List of file IDs to move
+            user_id: User ID requesting move
+            new_parent_id: New parent folder ID (None for root)
+
+        Returns:
+            Dictionary with success_count, failed_count, and errors
+        """
+        success_count = 0
+        failed_count = 0
+        errors = []
+        moved_files = []
+
+        for file_id in file_ids:
+            try:
+                file_obj = self.move_file(file_id, user_id, new_parent_id)
+                if file_obj:
+                    success_count += 1
+                    moved_files.append(file_obj.to_dict())
+                else:
+                    failed_count += 1
+                    errors.append({"file_id": file_id, "error": "File not found"})
+            except ValueError as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+            except Exception as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+
+        return {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "total": len(file_ids),
+            "moved_files": moved_files,
+            "errors": errors,
+        }
+
+    def batch_rename_files(
+        self,
+        file_renames: list[dict[str, str]],
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Rename multiple files in batch.
+
+        Args:
+            file_renames: List of dicts with "file_id" and "new_name"
+            user_id: User ID requesting rename
+
+        Returns:
+            Dictionary with success_count, failed_count, and errors
+        """
+        success_count = 0
+        failed_count = 0
+        errors = []
+        renamed_files = []
+
+        for rename_op in file_renames:
+            file_id = rename_op.get("file_id")
+            new_name = rename_op.get("new_name")
+
+            if not file_id or not new_name:
+                failed_count += 1
+                errors.append(
+                    {
+                        "file_id": file_id or "unknown",
+                        "error": "Missing file_id or new_name",
+                    }
+                )
+                continue
+
+            try:
+                file_obj = self.rename_file(file_id, user_id, new_name)
+                if file_obj:
+                    success_count += 1
+                    renamed_files.append(file_obj.to_dict())
+                else:
+                    failed_count += 1
+                    errors.append({"file_id": file_id, "error": "File not found"})
+            except ValueError as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+            except Exception as e:
+                failed_count += 1
+                errors.append({"file_id": file_id, "error": str(e)})
+
+        return {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "total": len(file_renames),
+            "renamed_files": renamed_files,
+            "errors": errors,
+        }
+
+    def copy_file(
+        self,
+        file_id: str,
+        user_id: str,
+        new_parent_id: str | None = None,
+        new_vaultspace_id: str | None = None,
+        new_name: str | None = None,
+    ) -> File:
+        """Copy a file to a new location.
+
+        Args:
+            file_id: File ID to copy
+            user_id: User ID requesting copy
+            new_parent_id: New parent folder ID (None for root)
+            new_vaultspace_id: New VaultSpace ID (None to keep same)
+            new_name: New name for copied file (None to keep same)
+
+        Returns:
+            New File object (copy)
+
+        Raises:
+            ValueError: If user doesn't have permission or file not found
+        """
+        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        if not file_obj:
+            raise ValueError(f"File {file_id} not found")
+
+        # Check permissions: only owner can copy
+        if file_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to copy file {file_id}"
+            )
+
+        # Determine target VaultSpace
+        target_vaultspace_id = new_vaultspace_id or file_obj.vaultspace_id
+
+        # Verify user has write permission to target VaultSpace
+        vaultspace = self.vaultspace_service.get_vaultspace(target_vaultspace_id)
+        if not vaultspace:
+            raise ValueError(f"Target VaultSpace {target_vaultspace_id} not found")
+
+        if vaultspace.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have write permission to target VaultSpace {target_vaultspace_id}"
+            )
+
+        # Determine new name (handle conflicts)
+        new_file_name = new_name or file_obj.original_name
+        if new_parent_id:
+            parent_file = (
+                db.session.query(File)
+                .filter_by(id=new_parent_id, vaultspace_id=target_vaultspace_id)
+                .first()
+            )
+            if not parent_file:
+                raise ValueError(f"Parent folder {new_parent_id} not found")
+            if parent_file.mime_type != "application/x-directory":
+                raise ValueError(f"Parent {new_parent_id} is not a folder")
+
+        # Check for name conflicts and generate unique name if needed
+        existing = (
+            db.session.query(File)
+            .filter_by(
+                vaultspace_id=target_vaultspace_id,
+                parent_id=new_parent_id,
+                original_name=new_file_name,
+            )
+            .first()
+        )
+
+        if existing:
+            # Generate unique name
+            import os
+
+            name_parts = os.path.splitext(new_file_name)
+            counter = 1
+            while existing:
+                new_file_name = f"{name_parts[0]} ({counter}){name_parts[1]}"
+                existing = (
+                    db.session.query(File)
+                    .filter_by(
+                        vaultspace_id=target_vaultspace_id,
+                        parent_id=new_parent_id,
+                        original_name=new_file_name,
+                    )
+                    .first()
+                )
+                counter += 1
+
+        # Create new file record (copy)
+        new_file = File(
+            id=str(uuid.uuid4()),
+            vaultspace_id=target_vaultspace_id,
+            parent_id=new_parent_id,
+            owner_user_id=user_id,
+            original_name=new_file_name,
+            size=file_obj.size,
+            encrypted_size=file_obj.encrypted_size,
+            encrypted_hash=file_obj.encrypted_hash,
+            encrypted_metadata=file_obj.encrypted_metadata,
+            storage_ref=file_obj.storage_ref,  # Share storage reference
+            mime_type=file_obj.mime_type,
+        )
+        db.session.add(new_file)
+
+        # Copy FileKey if needed (re-encrypt for new VaultSpace)
+        if new_vaultspace_id and new_vaultspace_id != file_obj.vaultspace_id:
+            # Get original FileKey
+            original_file_key = (
+                db.session.query(FileKey)
+                .filter_by(file_id=file_id, vaultspace_id=file_obj.vaultspace_id)
+                .first()
+            )
+            if original_file_key:
+                # Note: In a full implementation, we'd need to re-encrypt the file key
+                # with the new VaultSpace key. For now, we'll create a placeholder.
+                # The client will need to handle re-encryption.
+                pass
+
+        db.session.commit()
+        return new_file
+
+    def copy_folder(
+        self,
+        folder_id: str,
+        user_id: str,
+        new_parent_id: str | None = None,
+        new_vaultspace_id: str | None = None,
+        new_name: str | None = None,
+    ) -> File:
+        """Copy a folder recursively to a new location.
+
+        Args:
+            folder_id: Folder ID to copy
+            user_id: User ID requesting copy
+            new_parent_id: New parent folder ID (None for root)
+            new_vaultspace_id: New VaultSpace ID (None to keep same)
+            new_name: New name for copied folder (None to keep same)
+
+        Returns:
+            New File object (copy of folder)
+
+        Raises:
+            ValueError: If user doesn't have permission or folder not found
+        """
+        folder_obj = db.session.query(File).filter_by(id=folder_id).first()
+        if not folder_obj:
+            raise ValueError(f"Folder {folder_id} not found")
+
+        if folder_obj.mime_type != "application/x-directory":
+            raise ValueError(f"File {folder_id} is not a folder")
+
+        # Check permissions: only owner can copy
+        if folder_obj.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to copy folder {folder_id}"
+            )
+
+        # Copy the folder itself
+        new_folder = self.copy_file(
+            file_id=folder_id,
+            user_id=user_id,
+            new_parent_id=new_parent_id,
+            new_vaultspace_id=new_vaultspace_id,
+            new_name=new_name,
+        )
+
+        # Recursively copy children
+        children = (
+            db.session.query(File)
+            .filter_by(vaultspace_id=folder_obj.vaultspace_id, parent_id=folder_id)
+            .all()
+        )
+
+        for child in children:
+            if child.mime_type == "application/x-directory":
+                self.copy_folder(
+                    folder_id=child.id,
+                    user_id=user_id,
+                    new_parent_id=new_folder.id,
+                    new_vaultspace_id=new_vaultspace_id,
+                )
+            else:
+                self.copy_file(
+                    file_id=child.id,
+                    user_id=user_id,
+                    new_parent_id=new_folder.id,
+                    new_vaultspace_id=new_vaultspace_id,
+                )
+
+        return new_folder
+
+    def calculate_folder_size(self, folder_id: str) -> int:
+        """Calculate total size of a folder recursively.
+
+        Args:
+            folder_id: Folder ID
+
+        Returns:
+            Total size in bytes (sum of all files in folder and subfolders)
+        """
+        total_size = 0
+
+        # Get all direct children (files and folders)
+        children = (
+            db.session.query(File).filter_by(parent_id=folder_id, deleted_at=None).all()
+        )
+
+        for child in children:
+            if child.mime_type == "application/x-directory":
+                # Recursively calculate size of subfolder
+                total_size += self.calculate_folder_size(child.id)
+            else:
+                # Add file size
+                total_size += child.size
+
+        return total_size
+
+    def list_files_in_vaultspace(
+        self,
+        vaultspace_id: str,
+        user_id: str,
+        parent_id: str | None = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> dict[str, Any]:
+        """List files in a VaultSpace with permissions and pagination.
+
+        Args:
+            vaultspace_id: VaultSpace ID
+            user_id: User ID
+            parent_id: Optional parent folder ID
+            page: Page number (1-indexed)
+            per_page: Items per page
+
+        Returns:
+            Dictionary with files list, pagination info, and total count
+        """
+        cache = get_cache_service()
+        cache_key_str = cache_key(
+            "files", vaultspace_id, user_id, parent_id, page, per_page
+        )
+
+        # Try to get from cache
+        cached_result = cache.get(cache_key_str)
+        if cached_result is not None:
+            return cached_result
+
+        query = db.session.query(File).filter_by(vaultspace_id=vaultspace_id)
+        if parent_id:
+            query = query.filter_by(parent_id=parent_id)
+        else:
+            query = query.filter_by(parent_id=None)
+
+        # Exclude deleted files (soft delete)
+        query = query.filter(File.deleted_at.is_(None))
+
+        # Get total count before pagination
+        total_count = query.count()
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        files = (
+            query.order_by(File.created_at.desc()).offset(offset).limit(per_page).all()
+        )
+
+        # Build result with permissions
+        result_files = []
+        for file_obj in files:
+            # Check permissions: only show files owned by user
+            if file_obj.owner_user_id == user_id:
+                file_dict = file_obj.to_dict()
+                file_dict["permission_level"] = "owner"
+
+                # Calculate folder size if it's a directory
+                if file_obj.mime_type == "application/x-directory":
+                    folder_size = self.calculate_folder_size(file_obj.id)
+                    file_dict["total_size"] = folder_size
+                    file_dict["size"] = folder_size  # Override size for display
+
+                result_files.append(file_dict)
+
+        result = {
+            "files": result_files,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total_count,
+                "pages": (
+                    (total_count + per_page - 1) // per_page if per_page > 0 else 1
+                ),
+            },
+        }
+
+        # Cache result for 30 seconds
+        cache.set(cache_key_str, result, ttl=30)
+
+        return result

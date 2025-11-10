@@ -9,6 +9,50 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Helper function to safely set innerHTML with Trusted Types
+// Uses policies created in base.html before CSP enforcement
+function setInnerHTML(element, html) {
+  if (!element) {
+    console.error("setInnerHTML: element is null or undefined");
+    return;
+  }
+
+  // Use the global policy created in base.html if available
+  if (window.vaultHTMLPolicy) {
+    try {
+      const trustedHTML = window.vaultHTMLPolicy.createHTML(html);
+      element.innerHTML = trustedHTML;
+      return;
+    } catch (e) {
+      // Fallback if policy fails
+      console.warn("Failed to use vaultHTMLPolicy:", e);
+    }
+  }
+
+  // Fallback: if Trusted Types is required but policy doesn't exist, this will fail
+  // This should not happen if base.html script executed correctly
+  if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
+    try {
+      const trustedHTML = window.trustedTypes.defaultPolicy.createHTML(html);
+      element.innerHTML = trustedHTML;
+      return;
+    } catch (e) {
+      console.warn("Failed to use defaultPolicy:", e);
+    }
+  }
+
+  // Last resort fallback - this will fail if CSP requires Trusted Types
+  // but it's better than crashing silently
+  try {
+    element.innerHTML = html;
+  } catch (e) {
+    console.error("Failed to set innerHTML:", e);
+    console.error("vaultHTMLPolicy available:", !!window.vaultHTMLPolicy);
+    console.error("trustedTypes available:", !!window.trustedTypes);
+    throw e;
+  }
+}
+
 // Format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return "0 B";
@@ -80,7 +124,10 @@ function renderActivityBreakdown(byAction) {
   if (!container) return;
 
   if (Object.keys(byAction).length === 0) {
-    container.innerHTML = '<div class="files-loading">No recent activity</div>';
+    setInnerHTML(
+      container,
+      '<div class="files-loading">No recent activity</div>',
+    );
     return;
   }
 
@@ -92,7 +139,7 @@ function renderActivityBreakdown(byAction) {
     access_denied: "Access Denied",
   };
 
-  container.innerHTML = Object.entries(byAction)
+  const html = Object.entries(byAction)
     .map(([action, count]) => {
       // Escape user data to prevent XSS attacks
       const escapedAction = escapeHtml(action);
@@ -107,6 +154,7 @@ function renderActivityBreakdown(byAction) {
       `;
     })
     .join("");
+  setInnerHTML(container, html);
 }
 
 // Render audit logs
@@ -115,7 +163,7 @@ function renderAuditLogs(logs) {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = '<div class="files-loading">No audit logs</div>';
+    setInnerHTML(container, '<div class="files-loading">No audit logs</div>');
     return;
   }
 
@@ -127,7 +175,7 @@ function renderAuditLogs(logs) {
     access_denied: "🚫",
   };
 
-  container.innerHTML = logs
+  const html = logs
     .map((log) => {
       const icon = actionIcons[log.action] || "📋";
       const successClass = log.success ? "log-success" : "log-error";
@@ -163,6 +211,7 @@ function renderAuditLogs(logs) {
       `;
     })
     .join("");
+  setInnerHTML(container, html);
 }
 
 // Initialize

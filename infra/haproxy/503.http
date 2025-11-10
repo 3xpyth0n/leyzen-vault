@@ -152,7 +152,7 @@ Content-Type: text/html
       </div>
 
       <a href="javascript:location.reload()" class="btn-retry">
-        🔄 Refresh Page
+        Refresh Page
       </a>
 
       <div class="info-box">

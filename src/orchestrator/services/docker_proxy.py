@@ -19,7 +19,7 @@ from common.constants import (
 from common.exceptions import DockerProxyError, DockerProxyNotFound
 
 from ..config import Settings
-from .logging import FileLogger
+from common.services.logging import FileLogger
 
 
 class DockerProxyClient:

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -25,6 +26,11 @@ func StartApp(ctx context.Context, envFile string) error {
 		return err
 	}
 
+	// Ensure docker-generated.yml exists at startup (silently, no logs)
+	if err := internal.EnsureDockerGeneratedFileWithWriter(io.Discard, io.Discard, resolvedEnv); err != nil {
+		return fmt.Errorf("failed to initialize docker-generated.yml: %w", err)
+	}
+
 	runner := NewRunner(resolvedEnv)
 	model := NewModel(resolvedEnv, runner)
 
@@ -41,6 +47,10 @@ func StartApp(ctx context.Context, envFile string) error {
 }
 
 func (r *Runner) Run(action ActionType) (<-chan actionProgressMsg, error) {
+	return r.RunWithServices(action, []string{})
+}
+
+func (r *Runner) RunWithServices(action ActionType, services []string) (<-chan actionProgressMsg, error) {
 	if action == ActionNone {
 		return nil, fmt.Errorf("no action requested")
 	}
@@ -54,13 +64,13 @@ func (r *Runner) Run(action ActionType) (<-chan actionProgressMsg, error) {
 		var err error
 		switch action {
 		case ActionRestart:
-			err = r.restart(writer)
+			err = r.restartWithServices(writer, services)
 		case ActionStart:
-			err = r.start(writer)
+			err = r.startWithServices(writer, services)
 		case ActionStop:
-			err = r.stop(writer)
+			err = r.stopWithServices(writer, services)
 		case ActionBuild:
-			err = r.build(writer)
+			err = r.buildWithServices(writer, services)
 		case ActionWizard:
 			err = r.wizard(writer)
 		default:
@@ -81,35 +91,77 @@ func (r *Runner) Run(action ActionType) (<-chan actionProgressMsg, error) {
 }
 
 func (r *Runner) restart(writer *actionWriter) error {
+	return r.restartWithServices(writer, []string{})
+}
+
+func (r *Runner) restartWithServices(writer *actionWriter, services []string) error {
 	writer.emit("🔄 [RESTART] Restarting Leyzen Vault...")
-	if err := r.stop(writer); err != nil {
+	if err := r.stopWithServices(writer, services); err != nil {
 		return err
 	}
-	if err := r.build(writer); err != nil {
+	if err := r.buildWithServices(writer, services); err != nil {
 		return err
 	}
-	if err := r.start(writer); err != nil {
+	if err := r.startWithServices(writer, services); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (r *Runner) start(writer *actionWriter) error {
-	writer.emit("▶ [START] Starting Docker stack...")
-	return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--remove-orphans")
+	return r.startWithServices(writer, []string{})
+}
+
+func (r *Runner) startWithServices(writer *actionWriter, services []string) error {
+	if len(services) == 0 {
+		writer.emit("▶ [START] Starting Docker stack...")
+		return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--remove-orphans")
+	}
+	writer.emit(fmt.Sprintf("▶ [START] Starting services: %s", strings.Join(services, ", ")))
+	args := []string{"up", "-d", "--remove-orphans"}
+	args = append(args, services...)
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
 }
 
 func (r *Runner) stop(writer *actionWriter) error {
-	writer.emit("⏹ [STOP] Stopping Docker stack...")
-	return internal.RunComposeWithWriter(writer, writer, r.envFile, "down", "--remove-orphans")
+	return r.stopWithServices(writer, []string{})
+}
+
+func (r *Runner) stopWithServices(writer *actionWriter, services []string) error {
+	if len(services) == 0 {
+		writer.emit("⏹ [STOP] Stopping Docker stack...")
+		return internal.RunComposeWithWriter(writer, writer, r.envFile, "down", "--remove-orphans")
+	}
+	writer.emit(fmt.Sprintf("⏹ [STOP] Stopping services: %s", strings.Join(services, ", ")))
+	// For stop, we need to use 'stop' command instead of 'down' for specific services
+	args := []string{"stop"}
+	args = append(args, services...)
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
 }
 
 func (r *Runner) build(writer *actionWriter) error {
+	return r.buildWithServices(writer, []string{})
+}
+
+func (r *Runner) buildWithServices(writer *actionWriter, services []string) error {
 	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
 		return err
 	}
-	writer.emit("🔨 [BUILD] Rebuilding Docker stack...")
-	return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--build", "--remove-orphans")
+	if len(services) == 0 {
+		writer.emit("🔨 [BUILD] Rebuilding Docker stack...")
+		return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--build", "--remove-orphans")
+	}
+	writer.emit(fmt.Sprintf("🔨 [BUILD] Rebuilding services: %s", strings.Join(services, ", ")))
+	// Build only the specified services
+	buildArgs := []string{"build"}
+	buildArgs = append(buildArgs, services...)
+	if err := internal.RunComposeWithWriter(writer, writer, r.envFile, buildArgs...); err != nil {
+		return err
+	}
+	// Then start the specified services
+	upArgs := []string{"up", "-d", "--remove-orphans"}
+	upArgs = append(upArgs, services...)
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, upArgs...)
 }
 
 func (r *Runner) wizard(writer *actionWriter) error {
@@ -121,12 +173,26 @@ func (r *Runner) wizard(writer *actionWriter) error {
 
 func fetchConfigListCmd(envFile string) tea.Cmd {
 	return func() tea.Msg {
-		// Initialize from template if file is empty
-		pairs, err := internal.InitializeEnvFromTemplate(envFile)
+		// Load all variables from template + .env (template values are defaults, .env values take priority)
+		pairs, err := internal.LoadAllEnvVariables(envFile)
 		if err != nil {
 			return configListMsg{err: err}
 		}
 		return configListMsg{pairs: pairs}
+	}
+}
+
+func fetchComposeServicesCmd(envFile string, action ActionType) tea.Cmd {
+	return func() tea.Msg {
+		// Ensure docker-generated.yml exists before fetching services (silently, no logs)
+		if err := internal.EnsureDockerGeneratedFileWithWriter(io.Discard, io.Discard, envFile); err != nil {
+			return composeServicesMsg{err: err, action: action}
+		}
+		services, err := internal.GetComposeServices(envFile)
+		if err != nil {
+			return composeServicesMsg{err: err, action: action}
+		}
+		return composeServicesMsg{services: services, action: action}
 	}
 }
 
@@ -159,33 +225,50 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 	for {
 		idx := strings.IndexByte(data, '\n')
 		if idx == -1 {
+			// No newline found, keep in buffer for next write
 			w.buf.WriteString(data)
 			break
 		}
 
-		line := strings.TrimSpace(strings.TrimSuffix(data[:idx], "\r"))
+		line := strings.TrimSuffix(data[:idx], "\r")
 		// Clean the line of control characters
 		line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+		// Trim whitespace but preserve intentional spaces
+		line = strings.TrimSpace(line)
 
-		// Ignore empty lines or problematic isolated characters
-		if line != "" {
-			// Filter isolated characters that are likely artifacts
-			if len(line) == 1 {
-				// Allow only valid special characters
-				validSingleChars := map[string]bool{
-					"[": true,
-					"]": true,
-					"(": true,
-					")": true,
-				}
-				if !validSingleChars[line] {
-					// Ignore isolated characters like "C", "B", etc.
-					data = data[idx+1:]
-					continue
-				}
-			}
-			w.stream <- actionProgressMsg{Action: w.action, Line: line}
+		// Ignore empty lines
+		if line == "" {
+			data = data[idx+1:]
+			continue
 		}
+
+		// Filter isolated single characters that are likely artifacts
+		// These are usually control characters or terminal escape sequence remnants
+		if len(line) == 1 {
+			// Allow only valid special characters that might appear alone
+			validSingleChars := map[string]bool{
+				"[": true,
+				"]": true,
+				"(": true,
+				")": true,
+				"{": true,
+				"}": true,
+			}
+			// Filter out isolated letters, numbers, and other single characters
+			if !validSingleChars[line] {
+				// Ignore isolated characters like "d", "C", "B", etc.
+				data = data[idx+1:]
+				continue
+			}
+		}
+
+		// Filter out lines that are just single lowercase letters (common artifacts)
+		if len(line) == 1 && line >= "a" && line <= "z" {
+			data = data[idx+1:]
+			continue
+		}
+
+		w.stream <- actionProgressMsg{Action: w.action, Line: line}
 		data = data[idx+1:]
 	}
 
@@ -200,8 +283,33 @@ func (w *actionWriter) flush() {
 		return
 	}
 
-	line := strings.TrimSpace(w.buf.String())
+	line := w.buf.String()
+	// Clean the line of control characters
+	line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+	line = strings.TrimSpace(line)
+	
+	// Filter out isolated single characters
 	if line != "" {
+		if len(line) == 1 {
+			validSingleChars := map[string]bool{
+				"[": true,
+				"]": true,
+				"(": true,
+				")": true,
+				"{": true,
+				"}": true,
+			}
+			if !validSingleChars[line] {
+				// Ignore isolated characters
+				w.buf.Reset()
+				return
+			}
+		}
+		// Filter out single lowercase letters
+		if len(line) == 1 && line >= "a" && line <= "z" {
+			w.buf.Reset()
+			return
+		}
 		w.stream <- actionProgressMsg{Action: w.action, Line: line}
 	}
 	w.buf.Reset()

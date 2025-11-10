@@ -1,4 +1,18 @@
-/** @file vault.js - Leyzen Vault client-side encryption using Web Crypto API */
+/**
+ * @file vault.js - Leyzen Vault client-side encryption using Web Crypto API
+ *
+ * @deprecated This file is deprecated. Use src/services/encryption.js instead.
+ * This file is kept for backward compatibility only and will be removed in a future version.
+ * The encryption.js module provides the same functionality with better structure and ES6 imports.
+ *
+ * Migration guide:
+ * - Replace VaultCrypto.encryptFile() with import { encryptFileLegacy } from './services/encryption.js'
+ * - Replace VaultCrypto.decryptFile() with import { decryptFileLegacy } from './services/encryption.js'
+ * - Replace VaultCrypto.arrayToBase64url() with import { arrayToBase64url } from './services/encryption.js'
+ * - Replace VaultCrypto.base64urlToArray() with import { base64urlToArray } from './services/encryption.js'
+ * - Replace VaultCrypto.parseShareUrl() with import { parseShareUrl } from './services/encryption.js'
+ * - Replace VaultCrypto.createShareUrl() with import { createShareUrl } from './services/encryption.js'
+ */
 
 /**
  * Encrypts a file using AES-GCM encryption.

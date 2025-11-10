@@ -3,11 +3,60 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+@dataclass
+class FileVersion:
+    """Version of a file with encryption."""
+
+    version_id: str
+    file_id: str
+    version_number: int
+    encrypted_hash: str  # Hash of encrypted version data
+    created_at: datetime
+    created_by: str | None  # User ID who created this version
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "version_id": self.version_id,
+            "file_id": self.file_id,
+            "version_number": self.version_number,
+            "encrypted_hash": self.encrypted_hash,
+            "created_at": self.created_at.isoformat(),
+            "created_by": self.created_by,
+        }
+
+
+@dataclass
+class User:
+    """User model for multi-user support."""
+
+    user_id: str  # UUID
+    username: str
+    password_hash: str  # PBKDF2 hash
+    created_at: datetime
+    last_login: datetime | None = None
+    email: str | None = None
+    is_active: bool = True
+    is_admin: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "user_id": self.user_id,
+            "username": self.username,
+            "email": self.email,
+            "created_at": self.created_at.isoformat(),
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "is_active": self.is_active,
+        }
 
 
 @dataclass
@@ -20,6 +69,12 @@ class FileMetadata:
     encrypted_size: int
     created_at: datetime
     encrypted_hash: str
+    user_id: str | None = None  # User who owns/uploaded the file
+    folder_id: str | None = None  # Reference to parent folder
+    encrypted_tags: str | None = None  # Encrypted JSON tags
+    encrypted_description: str | None = None  # Encrypted description
+    mime_type: str | None = None  # MIME type for preview
+    thumbnail_hash: str | None = None  # Hash of encrypted thumbnail
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -30,6 +85,12 @@ class FileMetadata:
             "encrypted_size": self.encrypted_size,
             "created_at": self.created_at.isoformat(),
             "encrypted_hash": self.encrypted_hash,
+            "folder_id": self.folder_id,
+            "encrypted_tags": self.encrypted_tags,
+            "encrypted_description": self.encrypted_description,
+            "mime_type": self.mime_type,
+            "thumbnail_hash": self.thumbnail_hash,
+            "user_id": self.user_id,
         }
 
 
@@ -57,6 +118,29 @@ class AuditLog:
 
 
 @dataclass
+class Folder:
+    """Metadata for an encrypted folder."""
+
+    folder_id: str
+    encrypted_name: str  # Encrypted folder name
+    name_hash: str  # SHA-256 hash of folder name for search
+    parent_id: str | None  # None for root folder
+    created_at: datetime
+    updated_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "folder_id": self.folder_id,
+            "encrypted_name": self.encrypted_name,
+            "name_hash": self.name_hash,
+            "parent_id": self.parent_id,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
 class ShareLink:
     """Share link for a file with expiration and download limits."""
 
@@ -68,9 +152,13 @@ class ShareLink:
     download_count: int
     is_active: bool
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
+    def to_dict(self, share_url: str | None = None) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Args:
+            share_url: Optional share URL to include in the response
+        """
+        result = {
             "link_id": self.link_id,
             "file_id": self.file_id,
             "created_at": self.created_at.isoformat(),
@@ -78,14 +166,25 @@ class ShareLink:
             "max_downloads": self.max_downloads,
             "download_count": self.download_count,
             "is_active": self.is_active,
+            "is_expired": self.is_expired(),
         }
+        if share_url:
+            result["share_url"] = share_url
+        return result
 
-    def is_expired(self) -> bool:
+    def is_expired(self, tolerance_seconds: int = 60) -> bool:
         """Check if the link has expired.
 
         Uses UTC for comparison to ensure consistency regardless of server timezone.
+        Adds a tolerance window to account for clock drift and network delays.
+
+        Args:
+            tolerance_seconds: Tolerance in seconds (default: 60) to account for clock drift
+
+        Returns:
+            True if expired, False otherwise
         """
-        from datetime import timezone
+        from datetime import timezone, timedelta
 
         if not self.is_active:
             return True
@@ -99,7 +198,11 @@ class ShareLink:
             else:
                 # If expires_at is naive, assume it's UTC
                 expires_utc = self.expires_at.replace(tzinfo=timezone.utc)
-            return now_utc > expires_utc
+
+            # Apply tolerance to account for clock drift and network delays
+            # This prevents false positives due to minor clock differences
+            expires_with_tolerance = expires_utc + timedelta(seconds=tolerance_seconds)
+            return now_utc > expires_with_tolerance
         return False
 
     def has_reached_limit(self) -> bool:
@@ -109,117 +212,11 @@ class ShareLink:
         return self.download_count >= self.max_downloads
 
 
-class FileDatabase:
-    """SQLite database for file metadata."""
-
-    def __init__(self, db_path: Path):
-        """Initialize the database."""
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
-
-    def _init_db(self) -> None:
-        """Initialize the database schema."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS files (
-                    file_id TEXT PRIMARY KEY,
-                    original_name TEXT NOT NULL,
-                    size INTEGER NOT NULL,
-                    encrypted_size INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    encrypted_hash TEXT NOT NULL
-                )
-            """
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def add_file(self, metadata: FileMetadata) -> None:
-        """Add a file metadata entry."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(
-                """
-                INSERT INTO files (file_id, original_name, size, encrypted_size, created_at, encrypted_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    metadata.file_id,
-                    metadata.original_name,
-                    metadata.size,
-                    metadata.encrypted_size,
-                    metadata.created_at.isoformat(),
-                    metadata.encrypted_hash,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def get_file(self, file_id: str) -> FileMetadata | None:
-        """Get file metadata by ID."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cursor = conn.execute(
-                """
-                SELECT file_id, original_name, size, encrypted_size, created_at, encrypted_hash
-                FROM files WHERE file_id = ?
-            """,
-                (file_id,),
-            )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            return FileMetadata(
-                file_id=row[0],
-                original_name=row[1],
-                size=row[2],
-                encrypted_size=row[3],
-                created_at=datetime.fromisoformat(row[4]),
-                encrypted_hash=row[5],
-            )
-        finally:
-            conn.close()
-
-    def list_files(self) -> list[FileMetadata]:
-        """List all files."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cursor = conn.execute(
-                """
-                SELECT file_id, original_name, size, encrypted_size, created_at, encrypted_hash
-                FROM files ORDER BY created_at DESC
-            """
-            )
-            results = []
-            for row in cursor.fetchall():
-                results.append(
-                    FileMetadata(
-                        file_id=row[0],
-                        original_name=row[1],
-                        size=row[2],
-                        encrypted_size=row[3],
-                        created_at=datetime.fromisoformat(row[4]),
-                        encrypted_hash=row[5],
-                    )
-                )
-            return results
-        finally:
-            conn.close()
-
-    def delete_file(self, file_id: str) -> bool:
-        """Delete a file metadata entry."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cursor = conn.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
-
-
-__all__ = ["FileMetadata", "FileDatabase", "AuditLog", "ShareLink"]
+__all__ = [
+    "FileMetadata",
+    "AuditLog",
+    "ShareLink",
+    "Folder",
+    "User",
+    "FileVersion",
+]

@@ -1,0 +1,2518 @@
+<template>
+  <AppLayout @logout="logout">
+    <div>
+      <header class="view-header">
+        <button @click="$router.push('/dashboard')" class="btn btn-back">
+          ← Back
+        </button>
+        <h1>{{ vaultspace?.name || "Loading..." }}</h1>
+        <div class="header-actions">
+          <button @click="createFolderDirect" class="btn btn-primary">
+            New Folder
+          </button>
+          <button @click="handleUploadClick" class="btn btn-primary">
+            Upload File
+          </button>
+        </div>
+      </header>
+
+      <main class="view-main">
+        <!-- Breadcrumbs -->
+        <div
+          v-if="breadcrumbs.length > 0 || currentParentId"
+          class="breadcrumbs glass"
+        >
+          <button
+            @click="loadFiles(null)"
+            class="breadcrumb-link"
+            v-if="currentParentId"
+          >
+            {{ vaultspace?.name || "Home" }}
+          </button>
+          <span v-if="currentParentId" class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-active">Current Folder</span>
+        </div>
+
+        <div v-if="loading" class="loading">Loading files...</div>
+        <div v-else-if="error" class="error glass">{{ error }}</div>
+
+        <div v-else class="files-list glass">
+          <div
+            v-if="folders.length === 0 && filesList.length === 0"
+            class="empty-state"
+          >
+            <p>No files or folders in this location</p>
+            <div class="empty-actions">
+              <button @click="createFolderDirect" class="btn btn-primary">
+                Create Folder
+              </button>
+              <button @click="handleUploadClick" class="btn btn-primary">
+                Upload File
+              </button>
+            </div>
+          </div>
+
+          <!-- File List View Component -->
+          <FileListView
+            v-else
+            :folders="folders"
+            :files="filesList"
+            :selectedItems="selectedItems"
+            :viewMode="viewMode"
+            :editingItemId="editingItemId"
+            :newlyCreatedItemId="newlyCreatedFolderId"
+            @view-change="viewMode = $event"
+            @item-click="handleItemClick"
+            @action="handleFileAction"
+            @selection-change="handleSelectionChange"
+            @item-context-menu="handleContextMenu"
+            @rename="handleInlineRename"
+            @drag-start="handleDragStart"
+            @drag-over="handleDragOver"
+            @drag-leave="handleDragLeave"
+            @drop="handleDrop"
+          />
+        </div>
+      </main>
+
+      <!-- Upload Progress Bar (Sticky at bottom) -->
+      <Teleport to="body">
+        <ProgressBar
+          v-if="uploading && uploadProgress !== null"
+          :progress="uploadProgress"
+          :speed="uploadSpeed"
+          :time-remaining="uploadTimeRemaining"
+          :file-name="uploadFileName"
+          :status="uploadCancelled ? 'Cancelled' : 'Uploading...'"
+          :sticky="true"
+          :on-cancel="uploadCancelled ? null : handleUploadCancel"
+        />
+      </Teleport>
+
+      <!-- Download Progress Bar (Sticky at bottom) -->
+      <Teleport to="body">
+        <ProgressBar
+          v-if="downloading && downloadProgress !== null"
+          :progress="downloadProgress"
+          :speed="downloadSpeed"
+          :time-remaining="downloadTimeRemaining"
+          :file-name="downloadFileName"
+          status="Downloading..."
+          :sticky="true"
+        />
+      </Teleport>
+
+      <!-- Batch Actions Bar -->
+      <BatchActions
+        v-if="selectedItems.length > 0"
+        :selectedItems="selectedItems"
+        :availableFolders="allFolders"
+        @delete="handleBatchDelete"
+        @move="handleBatchMove"
+        @download="handleBatchDownload"
+        @clear="clearSelection"
+      />
+    </div>
+
+    <!-- Hidden file input for direct upload (programmatically triggered) -->
+    <input
+      type="file"
+      @change="handleFileSelect"
+      ref="fileInput"
+      class="file-input-hidden"
+      multiple
+    />
+
+    <!-- Delete Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDeleteConfirmModal"
+      title="Move to Trash"
+      :message="getDeleteMessage()"
+      confirm-text="Move to Trash"
+      :dangerous="true"
+      :disabled="deleting"
+      @confirm="confirmDelete"
+      @close="
+        if (!deleting) {
+          showDeleteConfirmModal = false;
+          deleteError = null;
+        }
+      "
+    />
+
+    <!-- Error Modal (legacy, kept for backward compatibility) -->
+    <div
+      v-if="showErrorModal"
+      class="modal-overlay"
+      @click="showErrorModal = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <div class="modal-header">
+          <h2>Error</h2>
+        </div>
+        <div class="modal-content">
+          <p>{{ errorMessage }}</p>
+          <div class="form-actions">
+            <button @click="showErrorModal = false" class="btn btn-primary">
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Modal (for better UX) -->
+    <AlertModal
+      :show="showAlertModal"
+      :type="alertModalConfig.type"
+      :title="alertModalConfig.title"
+      :message="alertModalConfig.message"
+      @close="handleAlertModalClose"
+      @ok="handleAlertModalClose"
+    />
+
+    <!-- File Properties Modal -->
+    <FileProperties
+      :show="showProperties"
+      :fileId="propertiesFileId"
+      :vaultspaceId="$route.params.id"
+      @close="
+        showProperties = false;
+        propertiesFileId = null;
+      "
+      @action="handlePropertiesAction"
+    />
+
+    <!-- Confirmation Modal for share link revocation -->
+    <ConfirmationModal
+      :show="showRevokeConfirm"
+      title="Revoke Share Link"
+      :message="revokeConfirmMessage"
+      confirm-text="Revoke"
+      :dangerous="true"
+      @confirm="handleRevokeConfirm"
+      @close="showRevokeConfirm = false"
+    />
+  </AppLayout>
+</template>
+
+<script>
+import { files, vaultspaces, auth } from "../services/api";
+import BatchActions from "../components/BatchActions.vue";
+import DragDropUpload from "../components/DragDropUpload.vue";
+import FileListView from "../components/FileListView.vue";
+import FileProperties from "../components/FileProperties.vue";
+import AppLayout from "../components/AppLayout.vue";
+import ConfirmationModal from "../components/ConfirmationModal.vue";
+import ProgressBar from "../components/ProgressBar.vue";
+import { clipboardManager } from "../utils/clipboard";
+import {
+  generateFileKey,
+  encryptFile,
+  encryptFileKey,
+  decryptFile,
+  decryptFileKey,
+} from "../services/encryption";
+import {
+  getUserMasterKey,
+  decryptVaultSpaceKeyForUser,
+  cacheVaultSpaceKey,
+  getCachedVaultSpaceKey,
+  createVaultSpaceKey,
+  clearUserMasterKey,
+  getStoredSalt,
+} from "../services/keyManager";
+import { debounce } from "../utils/debounce";
+import { folderPicker } from "../utils/FolderPicker";
+import { logger } from "../utils/logger.js";
+import AlertModal from "../components/AlertModal.vue";
+
+export default {
+  name: "VaultSpaceView",
+  components: {
+    AppLayout,
+    BatchActions,
+    DragDropUpload,
+    FileListView,
+    FileProperties,
+    ConfirmationModal,
+    ProgressBar,
+    AlertModal,
+  },
+  data() {
+    return {
+      vaultspace: null,
+      files: [],
+      folders: [],
+      filesList: [],
+      currentParentId: null,
+      breadcrumbs: [],
+      loading: false,
+      error: null,
+      showDeleteConfirmModal: false,
+      showErrorModal: false,
+      showAlertModal: false,
+      alertModalConfig: {
+        type: "error",
+        title: "Error",
+        message: "",
+      },
+      uploading: false,
+      uploadProgress: null,
+      uploadSpeed: 0,
+      uploadTimeRemaining: null,
+      uploadFileName: "",
+      uploadCancelFunctions: [], // Array of cancel functions for active uploads
+      uploadCancelled: false, // Flag to track if upload was cancelled
+      uploadCancellationMessageShown: false, // Flag to track if cancellation message was shown
+      downloading: false,
+      _folderCreateRetryCount: 0,
+      downloadProgress: null,
+      downloadSpeed: 0,
+      downloadTimeRemaining: null,
+      downloadFileName: "",
+      deleting: false,
+      selectedFiles: [], // Array of File objects for upload
+      uploadedFileIds: [], // Array of file IDs uploaded in current batch (for verification)
+      itemToDelete: null,
+      uploadError: null,
+      deleteError: null,
+      errorMessage: "",
+      vaultspaceKey: null, // Decrypted VaultSpace key (stored in memory only)
+      selectedItems: [], // Array of selected file/folder objects
+      viewMode: "grid", // 'grid' or 'list'
+      showProperties: false,
+      propertiesFileId: null,
+      editingItemId: null,
+      showRevokeConfirm: false,
+      revokeConfirmMessage: "",
+      newlyCreatedFolderId: null,
+      pendingRevokeCallback: null,
+    };
+  },
+  created() {
+    // Create debounced version of loadFiles to preserve 'this' context
+    this.debouncedLoadFiles = debounce((parentId = null) => {
+      this.loadFilesInternal(parentId);
+    }, 300);
+  },
+  async mounted() {
+    // Check if user master key is available first
+    const userMasterKey = await getUserMasterKey();
+    if (!userMasterKey) {
+      // Check if salt exists - this means master key was lost
+      const storedSalt = getStoredSalt();
+      if (storedSalt) {
+        // User is authenticated but master key is lost (likely after page refresh)
+        // This is normal - user needs to re-enter password to access encrypted content
+        // Don't logout - keep JWT token so user doesn't need to re-authenticate
+        console.warn(
+          "Master key lost from memory but salt exists. This is normal after page refresh.",
+        );
+        console.warn(
+          "User needs to re-enter password to access encrypted content.",
+        );
+        // Show error message but don't redirect - user can still navigate
+        this.showError(
+          "Your encryption session has expired. Please log in again to access encrypted content.",
+        );
+        // Don't load encrypted content, but don't disconnect user
+        // User can navigate to other pages or go to login to re-enter password
+        return;
+      } else {
+        // No salt and no master key - user is not authenticated or session expired
+        console.warn(
+          "User master key not available and no salt found. Redirecting to login.",
+        );
+        this.showError("You must be logged in to access this VaultSpace.");
+        setTimeout(() => {
+          auth.logout();
+          this.$router.push("/login");
+        }, 2000);
+        return;
+      }
+    }
+
+    // Master key is available, proceed with loading
+    await this.loadVaultSpace();
+    await this.loadVaultSpaceKey();
+    await this.loadFiles();
+
+    // Setup keyboard shortcuts
+    this.setupKeyboardShortcuts();
+
+    // Expose showConfirmationModal for sharing.js to use
+    window.showConfirmationModal = (options) => {
+      this.revokeConfirmMessage =
+        options.message || "Are you sure you want to proceed?";
+      this.pendingRevokeCallback = options.onConfirm || null;
+      this.showRevokeConfirm = true;
+    };
+  },
+  beforeUnmount() {
+    // Cleanup keyboard shortcuts
+    if (this._keyboardShortcutHandler) {
+      document.removeEventListener("keydown", this._keyboardShortcutHandler);
+    }
+    // Cleanup global function
+    if (window.showConfirmationModal) {
+      delete window.showConfirmationModal;
+    }
+  },
+  computed: {
+    allFolders() {
+      // Return all folders for move destination selection
+      return this.folders;
+    },
+  },
+  methods: {
+    async loadVaultSpace() {
+      try {
+        this.vaultspace = await vaultspaces.get(this.$route.params.id);
+      } catch (err) {
+        this.error = err.message;
+        this.showError("Failed to load VaultSpace: " + err.message);
+      }
+    },
+
+    async loadVaultSpaceKey() {
+      try {
+        // Check if VaultSpace key is already cached
+        const cachedKey = getCachedVaultSpaceKey(this.$route.params.id);
+        if (cachedKey) {
+          this.vaultspaceKey = cachedKey;
+          return;
+        }
+
+        // Get user master key from key manager
+        const userMasterKey = await getUserMasterKey();
+        if (!userMasterKey) {
+          // Check if salt exists in sessionStorage - this indicates a lost session
+          const storedSalt = getStoredSalt();
+          if (storedSalt) {
+            console.warn(
+              "Master key lost from memory but salt exists in sessionStorage. Session may have expired.",
+            );
+          } else {
+            console.warn(
+              "User master key not available, VaultSpace key will be loaded on demand",
+            );
+          }
+          return;
+        }
+
+        // Try to get encrypted VaultSpace key from server
+        const vaultspaceKeyData = await vaultspaces.getKey(
+          this.$route.params.id,
+        );
+
+        if (!vaultspaceKeyData) {
+          // Key doesn't exist, create it
+          const currentUser = await auth.getCurrentUser();
+
+          // Create VaultSpace key and store it
+          const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
+
+          // Store the encrypted key on the server (share with self)
+          await vaultspaces.share(
+            this.$route.params.id,
+            currentUser.id,
+            encryptedKey,
+          );
+
+          // Decrypt and cache
+          this.vaultspaceKey = await decryptVaultSpaceKeyForUser(
+            userMasterKey,
+            encryptedKey,
+          );
+          cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
+        } else {
+          // Decrypt VaultSpace key with user master key
+          try {
+            this.vaultspaceKey = await decryptVaultSpaceKeyForUser(
+              userMasterKey,
+              vaultspaceKeyData.encrypted_key,
+            );
+
+            // Cache the decrypted key
+            cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
+          } catch (decryptErr) {
+            // Decryption failed - this means the VaultSpace key was encrypted with a different master key
+            // This can happen for existing users whose VaultSpace keys were encrypted before the salt was made persistent
+            logger.error("Failed to decrypt VaultSpace key:", decryptErr);
+            if (decryptErr.name === "OperationError") {
+              logger.warn(
+                "OperationError: The VaultSpace key was encrypted with a different master key.",
+              );
+              logger.warn(
+                "This can happen for existing users. Creating a new VaultSpace key...",
+              );
+
+              // For existing users, create a new VaultSpace key with the current master key
+              // Note: This means existing files encrypted with the old VaultSpace key will become inaccessible
+              try {
+                const currentUser = await auth.getCurrentUser();
+
+                // Create new VaultSpace key and store it
+                // The backend will update the existing key if it already exists
+                const { encryptedKey } =
+                  await createVaultSpaceKey(userMasterKey);
+
+                // Store/update the encrypted key on the server (share with self)
+                // This will update the key if it already exists (for existing users)
+                await vaultspaces.share(
+                  this.$route.params.id,
+                  currentUser.id,
+                  encryptedKey,
+                );
+
+                // Decrypt and cache the new key
+                this.vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                  userMasterKey,
+                  encryptedKey,
+                );
+                cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
+
+                // Show warning about existing files
+                this.showError(
+                  "Warning: A new VaultSpace key has been created. " +
+                    "Existing files encrypted with the old key will no longer be accessible. " +
+                    "You can now use this VaultSpace normally.",
+                );
+              } catch (recreateErr) {
+                console.error(
+                  "Failed to recreate VaultSpace key:",
+                  recreateErr,
+                );
+                this.error =
+                  "Unable to decrypt VaultSpace key and failed to create a new key. " +
+                  "Please contact support.";
+                this.showError(
+                  "Error: Unable to decrypt existing VaultSpace key and failed to create a new key. " +
+                    "Please contact technical support.",
+                );
+                throw recreateErr;
+              }
+            } else {
+              throw decryptErr;
+            }
+          }
+        }
+      } catch (err) {
+        // Don't show error modal here, just log
+        // The error will be shown when user tries to perform an action that needs the key
+        logger.error("Failed to load VaultSpace key:", err);
+        this.error = err.message;
+      }
+    },
+
+    goToPage(page) {
+      if (page >= 1 && page <= this.totalPages) {
+        this.currentPage = page;
+        this.loadFiles(this.currentParentId);
+      }
+    },
+
+    // Debounced loadFiles for better performance
+    loadFiles(parentId = null) {
+      this.debouncedLoadFiles(parentId);
+    },
+
+    loadFilesInternal(parentId = null, cacheBust = false) {
+      this.loading = true;
+      this.error = null;
+      return files
+        .list(
+          this.$route.params.id,
+          parentId,
+          this.currentPage,
+          this.perPage,
+          cacheBust,
+        )
+        .then((result) => {
+          const allItems = result.files || [];
+          this.totalFiles = result.pagination?.total || 0;
+          this.totalPages = result.pagination?.pages || 1;
+
+          // Separate folders and files
+          this.folders = allItems.filter(
+            (item) => item.mime_type === "application/x-directory",
+          );
+          this.filesList = allItems.filter(
+            (item) => item.mime_type !== "application/x-directory",
+          );
+
+          this.files = allItems;
+          this.currentParentId = parentId;
+
+          // Update breadcrumbs if in a folder
+          if (parentId) {
+            this.updateBreadcrumbs(parentId);
+          } else {
+            this.breadcrumbs = [];
+          }
+          return result;
+        })
+        .catch((err) => {
+          this.error = err.message;
+          this.showError("Failed to load files: " + err.message);
+          throw err;
+        })
+        .finally(() => {
+          this.loading = false;
+        });
+    },
+
+    /**
+     * Reload files with retry mechanism to ensure uploaded files appear.
+     * Retries up to 3 times if uploaded files are not found in the response.
+     *
+     * @param {string|null} parentId - Parent folder ID
+     * @param {string[]} uploadedFileIds - Array of file IDs that were uploaded
+     * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+     * @param {number} initialDelay - Initial delay in milliseconds (default: 300)
+     */
+    async reloadFilesWithRetry(
+      parentId = null,
+      uploadedFileIds = [],
+      maxRetries = 3,
+      initialDelay = 300,
+    ) {
+      if (!uploadedFileIds || uploadedFileIds.length === 0) {
+        // No files to verify, just reload once
+        await new Promise((resolve) => setTimeout(resolve, initialDelay));
+        await this.loadFilesInternal(parentId, true);
+        return;
+      }
+
+      let retryCount = 0;
+      let allFilesFound = false;
+
+      while (retryCount <= maxRetries && !allFilesFound) {
+        // Wait before reloading (longer delay on first attempt)
+        const delay = retryCount === 0 ? initialDelay : 200;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        try {
+          // Reload files with cache-busting
+          const result = await this.loadFilesInternal(parentId, true);
+          const allItems = result.files || [];
+
+          // Check if all uploaded files are present in the response
+          const foundFileIds = allItems.map((item) => item.id);
+          const missingFileIds = uploadedFileIds.filter(
+            (id) => !foundFileIds.includes(id),
+          );
+
+          if (missingFileIds.length === 0) {
+            // All files found, success!
+            allFilesFound = true;
+          } else if (retryCount < maxRetries) {
+            // Some files still missing, retry
+            retryCount++;
+            logger.debug(
+              `Files not yet visible, retrying... (attempt ${retryCount}/${maxRetries})`,
+            );
+          } else {
+            // Max retries reached, but files still not found
+            // This might happen if files are on a different page due to pagination
+            // Log warning but don't fail - files might still be there
+            logger.warn(
+              `Some uploaded files not found after ${maxRetries} retries. They may be on a different page.`,
+            );
+            allFilesFound = true; // Stop retrying
+          }
+        } catch (err) {
+          // If reload fails, retry if we haven't exceeded max retries
+          if (retryCount < maxRetries) {
+            retryCount++;
+            logger.warn(
+              `Failed to reload files, retrying... (attempt ${retryCount}/${maxRetries}):`,
+              err,
+            );
+          } else {
+            // Max retries reached, throw error
+            throw err;
+          }
+        }
+      }
+    },
+
+    async navigateToFolder(folderId) {
+      await this.loadFiles(folderId);
+    },
+
+    async updateBreadcrumbs(folderId) {
+      // For now, we'll build breadcrumbs from the current path
+      // In a full implementation, we'd fetch folder details recursively
+      this.breadcrumbs = [];
+    },
+
+    async handleUploadClick() {
+      // Load VaultSpace key if not already loaded
+      if (!this.vaultspaceKey) {
+        try {
+          await this.loadVaultSpaceKey();
+
+          // Check again if key is loaded
+          if (!this.vaultspaceKey) {
+            // Key still not loaded - check if user master key is available
+            const userMasterKey = await getUserMasterKey();
+            if (!userMasterKey) {
+              // Check if salt exists - this indicates session was lost
+              const storedSalt = getStoredSalt();
+              let errorMessage =
+                "Your session has expired. Please log in again.";
+
+              if (storedSalt) {
+                console.warn(
+                  "Master key lost from memory but salt exists in sessionStorage. Session expired.",
+                );
+                errorMessage =
+                  "Your session has expired. The encryption key has been lost. Please log in again.";
+              } else {
+                console.warn(
+                  "User master key not available, no salt found. User needs to login.",
+                );
+              }
+
+              // Clear any stale data and redirect to login
+              clearUserMasterKey();
+              this.showError(errorMessage);
+              setTimeout(() => {
+                auth.logout();
+                this.$router.push("/login");
+              }, 2000);
+              return;
+            }
+          }
+        } catch (err) {
+          this.showError("Failed to load VaultSpace key: " + err.message);
+          return;
+        }
+      }
+
+      if (!this.vaultspaceKey) {
+        this.showError(
+          "The VaultSpace key could not be loaded. Please try again or refresh the page.",
+        );
+        return;
+      }
+
+      // Open file picker directly without modal
+      this.$nextTick(() => {
+        const fileInput = this.$refs.fileInput;
+        if (fileInput) {
+          fileInput.click();
+        }
+      });
+    },
+    async generateUniqueFolderName(baseName = "New Folder", retryAttempt = 0) {
+      try {
+        // Use local state first (it's already up-to-date from the last load)
+        // This is faster and avoids cache issues
+        const localFolderNames = new Set(
+          (this.folders || [])
+            .filter(
+              (f) =>
+                f &&
+                f.mime_type === "application/x-directory" &&
+                f.name && // Ensure name exists
+                (f.parent_id === this.currentParentId ||
+                  (!f.parent_id && !this.currentParentId)),
+            )
+            .map((f) => (f.name || "").trim()) // Normalize: trim whitespace, handle null/undefined
+            .filter((name) => name.length > 0), // Filter out empty names
+        );
+
+        // Also fetch from API to get the absolute latest (with cache-busting on retry)
+        let apiFolderNames = new Set();
+        try {
+          // Fetch all folders from API with pagination (max 100 per page)
+          const allFolders = [];
+          let page = 1;
+          const perPage = 100; // API limit
+          let hasMore = true;
+
+          while (hasMore && page <= 10) {
+            // Safety limit: max 10 pages (1000 folders)
+            const result = await files.list(
+              this.$route.params.id,
+              this.currentParentId,
+              page,
+              perPage,
+              retryAttempt > 0, // Use cache-busting on retry
+            );
+
+            const items = result.files || [];
+            allFolders.push(...items);
+
+            // Check if there are more pages
+            const pagination = result.pagination || {};
+            const totalPages = pagination.pages || 1;
+            hasMore = page < totalPages && items.length > 0;
+            page++;
+
+            // If no items returned, we've reached the end
+            if (items.length === 0) {
+              hasMore = false;
+            }
+          }
+
+          // Filter folders in the current parent directory
+          const existingFolders = allFolders.filter(
+            (item) =>
+              item &&
+              item.mime_type === "application/x-directory" &&
+              item.name && // Ensure name exists
+              (item.parent_id === this.currentParentId ||
+                (!item.parent_id && !this.currentParentId)),
+          );
+
+          apiFolderNames = new Set(
+            existingFolders
+              .map((f) => (f.name || "").trim()) // Normalize: trim whitespace, handle null/undefined
+              .filter((name) => name.length > 0), // Filter out empty names
+          );
+        } catch (apiError) {
+          // Failed to fetch from API, will use local state only
+        }
+
+        // Merge both sets to get the most complete list
+        const existingNames = new Set([...localFolderNames, ...apiFolderNames]);
+
+        // Check if base name is available
+        if (!existingNames.has(baseName)) {
+          return baseName;
+        }
+
+        // Find the next available number
+        let counter = 1;
+        let newName = `${baseName}(${counter})`;
+
+        while (existingNames.has(newName)) {
+          counter++;
+          newName = `${baseName}(${counter})`;
+
+          // Safety limit to prevent infinite loop
+          if (counter > 1000) {
+            // Use UUID as fallback to guarantee uniqueness
+            const uuid = crypto.randomUUID().slice(0, 8);
+            newName = `${baseName}(${uuid})`;
+            break;
+          }
+        }
+
+        return newName;
+      } catch (error) {
+        // Fallback: use local state and add a UUID to ensure uniqueness
+        const existingNames = new Set(
+          (this.folders || [])
+            .filter(
+              (f) =>
+                f &&
+                f.mime_type === "application/x-directory" &&
+                f.name && // Ensure name exists
+                (f.parent_id === this.currentParentId ||
+                  (!f.parent_id && !this.currentParentId)),
+            )
+            .map((f) => (f.name || "").trim()) // Normalize: trim whitespace, handle null/undefined
+            .filter((name) => name.length > 0), // Filter out empty names
+        );
+
+        // Try base name first
+        if (!existingNames.has(baseName)) {
+          return baseName;
+        }
+
+        // Try numbered versions
+        let counter = 1;
+        let newName = `${baseName}(${counter})`;
+
+        while (existingNames.has(newName) && counter <= 100) {
+          counter++;
+          newName = `${baseName}(${counter})`;
+        }
+
+        // If we still have conflicts, use UUID to guarantee uniqueness
+        if (existingNames.has(newName)) {
+          const uuid = crypto.randomUUID().slice(0, 8);
+          newName = `${baseName}(${uuid})`;
+        }
+
+        return newName;
+      }
+    },
+    async createFolderDirect() {
+      // Normalize parent_id for comparison (null and undefined should be treated the same)
+      const normalizedParentId = this.currentParentId || null;
+
+      // Track known folder names (from local state + conflicts encountered)
+      const knownFolderNames = new Set(
+        (this.folders || [])
+          .filter((f) => {
+            if (!f || f.mime_type !== "application/x-directory" || !f.name)
+              return false;
+            const fParentId = f.parent_id || null;
+            return fParentId === normalizedParentId;
+          })
+          .map((f) => (f.name || "").trim())
+          .filter((name) => name.length > 0),
+      );
+
+      // Helper function to generate unique name
+      const generateUniqueName = (existingNames) => {
+        let name = "New Folder";
+        if (existingNames.has(name)) {
+          let counter = 1;
+          name = `New Folder(${counter})`;
+          while (existingNames.has(name)) {
+            counter++;
+            name = `New Folder(${counter})`;
+          }
+        }
+        return name;
+      };
+
+      // Helper function to add folder to local state and animate
+      const addFolderToUI = (folder) => {
+        const folderToAdd = {
+          ...folder,
+          mime_type: folder.mime_type || "application/x-directory",
+          parent_id: folder.parent_id || null,
+          name: folder.name,
+        };
+        this.folders.push(folderToAdd);
+        this.files.push(folderToAdd);
+
+        this.newlyCreatedFolderId = folder.id;
+        this.$nextTick(() => {
+          setTimeout(() => {
+            const element = document.querySelector(
+              `[data-folder-id="${folder.id}"]`,
+            );
+            if (element) {
+              element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+            setTimeout(() => {
+              this.newlyCreatedFolderId = null;
+            }, 600);
+          }, 50);
+        });
+      };
+
+      // Try to create folder with retry logic for conflicts
+      let retryCount = 0;
+      const maxRetries = 10;
+
+      while (retryCount <= maxRetries) {
+        // Generate unique name from known folder names
+        const uniqueName = generateUniqueName(knownFolderNames);
+
+        try {
+          // Try to create folder
+          const folder = await files.createFolder(
+            this.$route.params.id,
+            uniqueName,
+            normalizedParentId,
+          );
+
+          // Add to UI
+          addFolderToUI(folder);
+
+          // Success - exit
+          return;
+        } catch (err) {
+          // Check if it's a 409 conflict error
+          const isConflict =
+            err.message &&
+            (err.message.toLowerCase().includes("already exists") ||
+              err.message.includes("409") ||
+              err.message.includes("CONFLICT"));
+
+          if (isConflict && retryCount < maxRetries) {
+            // Conflict detected - add this name to our known names and retry
+            // Add the conflicting name to our known names
+            knownFolderNames.add(uniqueName.trim());
+
+            // Increment retry counter and try again
+            retryCount++;
+            // Small delay before retry
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          } else {
+            // Not a conflict, or too many retries
+            this.showAlert({
+              type: "error",
+              title: "Error",
+              message:
+                retryCount >= maxRetries
+                  ? "Failed to create folder after multiple attempts. Please refresh the page and try again."
+                  : "Failed to create folder: " + err.message,
+            });
+            return;
+          }
+        }
+      }
+    },
+
+    async handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      if (files.length === 0) return;
+
+      this.selectedFiles = files;
+      this.uploadError = null;
+
+      // Auto-upload files immediately after selection
+      await this.handleUpload();
+    },
+
+    handleFilesSelected(files) {
+      this.selectedFiles = files;
+      // Auto-upload when files are dropped
+      if (files.length > 0) {
+        this.handleUpload();
+      }
+    },
+
+    async handleUpload() {
+      this.uploadError = null;
+
+      if (this.selectedFiles.length === 0) {
+        this.uploadError = "Please select at least one file";
+        return;
+      }
+
+      if (!this.vaultspaceKey) {
+        this.uploadError =
+          "VaultSpace key not loaded. Please wait or refresh the page.";
+        return;
+      }
+
+      this.uploading = true;
+      this.uploadProgress = 0;
+      this.uploadSpeed = 0;
+      this.uploadTimeRemaining = null;
+      this.uploadCancelFunctions = [];
+      this.uploadCancelled = false;
+      this.uploadCancellationMessageShown = false;
+      this.uploadedFileIds = []; // Reset uploaded file IDs for this upload batch
+
+      try {
+        const totalFiles = this.selectedFiles.length;
+        let uploadedCount = 0;
+
+        for (
+          let fileIndex = 0;
+          fileIndex < this.selectedFiles.length && !this.uploadCancelled;
+          fileIndex++
+        ) {
+          const file = this.selectedFiles[fileIndex];
+
+          try {
+            // Set current file name for progress display
+            this.uploadFileName = file.name;
+
+            // Generate file key
+            const fileKey = await generateFileKey();
+
+            // Read file data
+            const fileData = await file.arrayBuffer();
+
+            // Encrypt file
+            const { encrypted, iv } = await encryptFile(fileKey, fileData);
+
+            // Encrypt file key with VaultSpace key
+            const encryptedFileKey = await encryptFileKey(
+              this.vaultspaceKey,
+              fileKey,
+            );
+
+            // Combine IV with encrypted data for storage
+            const combined = new Uint8Array(iv.length + encrypted.byteLength);
+            combined.set(iv, 0);
+            combined.set(new Uint8Array(encrypted), iv.length);
+            const encryptedDataBlob = new Blob([combined]);
+
+            // Calculate base progress for files already uploaded
+            const baseProgress = (uploadedCount / totalFiles) * 100;
+            const fileProgressWeight = (1 / totalFiles) * 100;
+
+            // Upload to server with progress callback
+            const uploadResult = files.upload(
+              {
+                file: encryptedDataBlob,
+                originalName: file.name,
+                vaultspaceId: this.$route.params.id,
+                encryptedFileKey: encryptedFileKey,
+                parentId: this.currentParentId,
+              },
+              (loaded, total, speed, timeRemaining) => {
+                // Only update progress if not cancelled
+                if (!this.uploadCancelled) {
+                  // Calculate overall progress across all files
+                  const fileProgress = (loaded / total) * fileProgressWeight;
+                  this.uploadProgress = Math.round(baseProgress + fileProgress);
+                  this.uploadSpeed = speed || 0;
+                  this.uploadTimeRemaining = timeRemaining;
+                }
+              },
+            );
+
+            // Store cancel function
+            this.uploadCancelFunctions.push(uploadResult.cancel);
+
+            // Wait for upload to complete
+            const result = await uploadResult.promise;
+
+            // Check if upload was cancelled
+            if (this.uploadCancelled) {
+              break;
+            }
+
+            // Store uploaded file IDs for verification after reload
+            if (!this.uploadedFileIds) {
+              this.uploadedFileIds = [];
+            }
+            this.uploadedFileIds.push(result.file.id);
+
+            uploadedCount++;
+          } catch (err) {
+            // Check if error is due to cancellation
+            if (err.message === "Upload cancelled" || this.uploadCancelled) {
+              this.uploadCancelled = true;
+              break;
+            }
+            console.error(`Failed to upload ${file.name}:`, err);
+
+            // Check if error is quota-related and show modal
+            if (
+              err.message &&
+              (err.message.includes("quota exceeded") ||
+                err.message.includes("Quota exceeded"))
+            ) {
+              // Extract quota info if available
+              let quotaMessage = err.message;
+              if (err.quota_info) {
+                const quotaInfo = err.quota_info;
+                if (quotaInfo.limit !== null && quotaInfo.limit !== undefined) {
+                  const used = quotaInfo.used || 0;
+                  const limit = quotaInfo.limit;
+                  const available = quotaInfo.available || 0;
+
+                  if (err.message.includes("File quota")) {
+                    quotaMessage = `You have reached your file limit.\n\nUsed: ${used} / ${limit} files\nAvailable: ${available} files`;
+                  } else if (err.message.includes("Storage quota")) {
+                    // Format storage sizes
+                    const formatSize = (bytes) => {
+                      if (bytes === 0) return "0 B";
+                      const k = 1024;
+                      const sizes = ["B", "KB", "MB", "GB", "TB"];
+                      const i = Math.floor(Math.log(bytes) / Math.log(k));
+                      return (
+                        Math.round((bytes / Math.pow(k, i)) * 100) / 100 +
+                        " " +
+                        sizes[i]
+                      );
+                    };
+                    quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(used)} / ${formatSize(limit)}\nAvailable: ${formatSize(available)}`;
+                  }
+                }
+              }
+
+              this.showAlert({
+                type: "error",
+                title: "Quota Exceeded",
+                message: quotaMessage,
+              });
+
+              // Stop uploading remaining files
+              break;
+            } else {
+              this.uploadError = `Failed to upload ${file.name}: ${err.message}`;
+            }
+          }
+        }
+
+        if (this.uploadCancelled) {
+          // Show cancellation message if not already shown
+          if (!this.uploadCancellationMessageShown) {
+            // Always show alert modal for visibility
+            this.showAlert({
+              type: "info",
+              title: "Upload Cancelled",
+              message: "The upload has been cancelled successfully.",
+            });
+
+            // Also try to show toast notification if available (non-blocking)
+            if (
+              window.Notifications &&
+              typeof window.Notifications.info === "function"
+            ) {
+              window.Notifications.info("Upload cancelled", 3000);
+            }
+
+            this.uploadCancellationMessageShown = true;
+          }
+
+          // Wait a moment to show the cancelled status in the progress bar, then clean up
+          setTimeout(() => {
+            this.uploadProgress = null;
+            this.uploadSpeed = 0;
+            this.uploadTimeRemaining = null;
+            this.uploadFileName = "";
+            this.uploadCancelFunctions = [];
+            this.uploadError = "Upload cancelled";
+            this.uploadCancellationMessageShown = false;
+          }, 1500);
+        } else if (uploadedCount === totalFiles) {
+          this.selectedFiles = [];
+          this.uploadProgress = 100;
+          this.uploadSpeed = 0;
+          this.uploadTimeRemaining = null;
+          this.uploadFileName = "";
+          this.uploadCancelFunctions = [];
+
+          // Hide progress after a short delay
+          setTimeout(() => {
+            this.uploadProgress = null;
+          }, 1000);
+
+          if (this.$refs.fileInput) {
+            this.$refs.fileInput.value = "";
+          }
+
+          // Reload files with retry mechanism to ensure uploaded files appear
+          await this.reloadFilesWithRetry(
+            this.currentParentId,
+            this.uploadedFileIds,
+          );
+
+          // Clear uploaded file IDs after successful reload
+          this.uploadedFileIds = [];
+        }
+      } catch (err) {
+        // Check if error is due to cancellation
+        if (err.message === "Upload cancelled" || this.uploadCancelled) {
+          // Show cancellation message if not already shown
+          if (!this.uploadCancellationMessageShown) {
+            // Always show alert modal for visibility
+            this.showAlert({
+              type: "info",
+              title: "Upload Cancelled",
+              message: "The upload has been cancelled successfully.",
+            });
+
+            // Also try to show toast notification if available (non-blocking)
+            if (
+              window.Notifications &&
+              typeof window.Notifications.info === "function"
+            ) {
+              window.Notifications.info("Upload cancelled", 3000);
+            }
+
+            this.uploadCancellationMessageShown = true;
+          }
+
+          // Wait a moment to show the cancelled status, then clean up
+          setTimeout(() => {
+            this.uploadProgress = null;
+            this.uploadSpeed = 0;
+            this.uploadTimeRemaining = null;
+            this.uploadFileName = "";
+            this.uploadCancelFunctions = [];
+            this.uploadError = "Upload cancelled";
+            this.uploadCancellationMessageShown = false;
+          }, 1500);
+        } else {
+          // Check if error is quota-related and show modal
+          if (
+            err.message &&
+            (err.message.includes("quota exceeded") ||
+              err.message.includes("Quota exceeded"))
+          ) {
+            // Extract quota info if available
+            let quotaMessage = err.message;
+            if (err.quota_info) {
+              const quotaInfo = err.quota_info;
+              if (quotaInfo.limit !== null && quotaInfo.limit !== undefined) {
+                const used = quotaInfo.used || 0;
+                const limit = quotaInfo.limit;
+                const available = quotaInfo.available || 0;
+
+                if (err.message.includes("File quota")) {
+                  quotaMessage = `You have reached your file limit.\n\nUsed: ${used} / ${limit} files\nAvailable: ${available} files`;
+                } else if (err.message.includes("Storage quota")) {
+                  // Format storage sizes
+                  const formatSize = (bytes) => {
+                    if (bytes === 0) return "0 B";
+                    const k = 1024;
+                    const sizes = ["B", "KB", "MB", "GB", "TB"];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return (
+                      Math.round((bytes / Math.pow(k, i)) * 100) / 100 +
+                      " " +
+                      sizes[i]
+                    );
+                  };
+                  quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(used)} / ${formatSize(limit)}\nAvailable: ${formatSize(available)}`;
+                }
+              }
+            }
+
+            this.showAlert({
+              type: "error",
+              title: "Quota Exceeded",
+              message: quotaMessage,
+            });
+          } else {
+            this.uploadError = err.message || "Upload failed";
+          }
+          this.uploadProgress = null;
+          this.uploadSpeed = 0;
+          this.uploadTimeRemaining = null;
+          this.uploadFileName = "";
+          this.uploadCancelFunctions = [];
+        }
+      } finally {
+        this.uploading = false;
+        if (this.uploadProgress !== 100 && this.uploadProgress !== null) {
+          // Only clear if not cancelled (cancelled state is handled above)
+          if (!this.uploadError || this.uploadError !== "Upload cancelled") {
+            this.uploadProgress = null;
+            this.uploadSpeed = 0;
+            this.uploadTimeRemaining = null;
+            this.uploadFileName = "";
+          }
+        }
+        // Reset cancel flag
+        this.uploadCancelled = false;
+      }
+    },
+
+    handleUploadCancel() {
+      // Set cancellation flag
+      this.uploadCancelled = true;
+      // Cancel all active uploads
+      this.uploadCancelFunctions.forEach((cancelFn) => {
+        if (cancelFn) {
+          cancelFn();
+        }
+      });
+      this.uploadCancelFunctions = [];
+
+      // Show cancellation message immediately (only once)
+      if (!this.uploadCancellationMessageShown) {
+        // Always show alert modal for visibility, and also try toast notification
+        this.showAlert({
+          type: "info",
+          title: "Upload Cancelled",
+          message: "The upload has been cancelled successfully.",
+        });
+
+        // Also try to show toast notification if available (non-blocking)
+        if (
+          window.Notifications &&
+          typeof window.Notifications.info === "function"
+        ) {
+          window.Notifications.info("Upload cancelled", 3000);
+        }
+
+        this.uploadCancellationMessageShown = true;
+      }
+    },
+
+    async downloadFile(file) {
+      try {
+        if (!this.vaultspaceKey) {
+          this.showError("VaultSpace key not loaded");
+          return;
+        }
+
+        // Initialize download progress
+        this.downloading = true;
+        this.downloadProgress = 0;
+        this.downloadSpeed = 0;
+        this.downloadTimeRemaining = null;
+        this.downloadFileName = file.original_name || file.name || "file";
+
+        // Get file and encrypted FileKey from server
+        const fileData = await files.get(file.id, this.$route.params.id);
+
+        // Decrypt FileKey with VaultSpace key
+        const fileKey = await decryptFileKey(
+          this.vaultspaceKey,
+          fileData.file_key.encrypted_key,
+        );
+
+        // Download encrypted file data from server with progress callback
+        const encryptedDataArrayBuffer = await files.download(
+          file.id,
+          this.$route.params.id,
+          (loaded, total, speed, timeRemaining) => {
+            if (total > 0) {
+              this.downloadProgress = Math.round((loaded / total) * 100);
+            }
+            this.downloadSpeed = speed || 0;
+            this.downloadTimeRemaining = timeRemaining;
+          },
+        );
+
+        // Convert ArrayBuffer to Uint8Array
+        const encryptedData = new Uint8Array(encryptedDataArrayBuffer);
+
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const iv = encryptedData.slice(0, 12);
+        const encrypted = encryptedData.slice(12);
+
+        // Update status for decryption phase
+        this.downloadProgress = 95;
+        this.downloadSpeed = 0;
+        this.downloadTimeRemaining = null;
+
+        // Decrypt file
+        const decrypted = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Update progress to complete
+        this.downloadProgress = 100;
+
+        // Create blob and download
+        const blob = new Blob([decrypted]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = file.original_name;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Hide progress after a short delay
+        setTimeout(() => {
+          this.downloadProgress = null;
+          this.downloadSpeed = 0;
+          this.downloadTimeRemaining = null;
+          this.downloadFileName = "";
+        }, 1000);
+      } catch (err) {
+        this.showError("Download failed: " + err.message);
+        this.downloadProgress = null;
+        this.downloadSpeed = 0;
+        this.downloadTimeRemaining = null;
+        this.downloadFileName = "";
+      } finally {
+        this.downloading = false;
+        if (this.downloadProgress !== 100) {
+          this.downloadProgress = null;
+          this.downloadSpeed = 0;
+          this.downloadTimeRemaining = null;
+          this.downloadFileName = "";
+        }
+      }
+    },
+
+    showDeleteConfirm(file) {
+      this.itemToDelete = file;
+      this.showDeleteConfirmModal = true;
+      this.deleteError = null;
+    },
+
+    getDeleteMessage() {
+      if (!this.itemToDelete) {
+        return "Are you sure you want to move this item to trash? You can restore it from the trash later.";
+      }
+      const itemName = this.itemToDelete.original_name || "this item";
+      const itemType =
+        this.itemToDelete.mime_type === "application/x-directory"
+          ? "folder"
+          : "file";
+      return `Are you sure you want to move "${itemName}" to trash? This ${itemType} will be moved to the trash and can be restored later.`;
+    },
+
+    async confirmDelete() {
+      if (!this.itemToDelete) {
+        return;
+      }
+
+      this.deleting = true;
+      this.deleteError = null;
+
+      const itemToDelete = this.itemToDelete; // Store reference before deletion
+      const itemType =
+        itemToDelete.mime_type === "application/x-directory"
+          ? "Folder"
+          : "File";
+
+      try {
+        await files.delete(itemToDelete.id);
+
+        // Remove from appropriate list
+        if (itemToDelete.mime_type === "application/x-directory") {
+          this.folders = this.folders.filter((f) => f.id !== itemToDelete.id);
+        } else {
+          this.filesList = this.filesList.filter(
+            (f) => f.id !== itemToDelete.id,
+          );
+        }
+        this.files = this.files.filter((f) => f.id !== itemToDelete.id);
+
+        this.showDeleteConfirmModal = false;
+        this.itemToDelete = null;
+
+        // Show success message
+        if (window.Notifications) {
+          window.Notifications.success(
+            `${itemType} moved to trash successfully`,
+          );
+        }
+      } catch (err) {
+        this.deleteError = err.message || "Failed to move to trash";
+      } finally {
+        this.deleting = false;
+      }
+    },
+
+    showError(message) {
+      this.errorMessage = message;
+      this.showErrorModal = true;
+    },
+    showAlert(config) {
+      this.alertModalConfig = {
+        type: config.type || "error",
+        title: config.title || "Error",
+        message: config.message || "",
+      };
+      this.showAlertModal = true;
+    },
+    handleAlertModalClose() {
+      this.showAlertModal = false;
+    },
+    async initSharingManager(fileId) {
+      try {
+        // Check if sharing manager is already available
+        if (window.sharingManager) {
+          window.sharingManager.showShareModal(fileId, "file");
+          return;
+        }
+
+        // Try to use the showShareModalAdvanced function if available
+        if (window.showShareModalAdvanced) {
+          window.showShareModalAdvanced(fileId, "file");
+          return;
+        }
+
+        // Wait for SharingManager to initialize (it's loaded in index.html)
+        let retries = 0;
+        const maxRetries = 30; // 3 seconds max
+        const checkInterval = setInterval(() => {
+          retries++;
+          if (window.sharingManager) {
+            clearInterval(checkInterval);
+            window.sharingManager.showShareModal(fileId, "file");
+          } else if (window.showShareModalAdvanced) {
+            clearInterval(checkInterval);
+            window.showShareModalAdvanced(fileId, "file");
+          } else if (retries >= maxRetries) {
+            clearInterval(checkInterval);
+            this.showError(
+              "Share functionality is not available. Please refresh the page.",
+            );
+          }
+        }, 100);
+      } catch (err) {
+        console.error("Error initializing sharing manager:", err);
+        this.showError("Failed to open share dialog. Please refresh the page.");
+      }
+    },
+
+    showFileMenu(file, event) {
+      // Context menu implementation would go here
+    },
+
+    formatSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return "";
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    },
+
+    // Selection methods
+    toggleSelection(item) {
+      const index = this.selectedItems.findIndex((i) => i.id === item.id);
+      if (index >= 0) {
+        this.selectedItems.splice(index, 1);
+      } else {
+        this.selectedItems.push(item);
+      }
+    },
+
+    isSelected(itemId) {
+      return this.selectedItems.some((item) => item.id === itemId);
+    },
+
+    selectAll() {
+      this.selectedItems = [...this.folders, ...this.filesList];
+    },
+
+    clearSelection() {
+      this.selectedItems = [];
+    },
+
+    handleSelectionChange(change) {
+      if (change.action === "select") {
+        if (!this.isSelected(change.item.id)) {
+          this.selectedItems.push(change.item);
+        }
+      } else if (change.action === "deselect") {
+        const index = this.selectedItems.findIndex(
+          (i) => i.id === change.item.id,
+        );
+        if (index >= 0) {
+          this.selectedItems.splice(index, 1);
+        }
+      } else if (change.action === "select-all") {
+        this.selectedItems = [...change.items];
+      } else if (change.action === "clear") {
+        this.selectedItems = [];
+      }
+    },
+
+    handleItemClick(item, event) {
+      // If clicking checkbox, don't navigate
+      if (event.target.type === "checkbox") {
+        return;
+      }
+
+      // If Ctrl/Cmd key is pressed, toggle selection
+      if (event.ctrlKey || event.metaKey) {
+        this.toggleSelection(item);
+        return;
+      }
+
+      // If Shift key is pressed, select range
+      if (event.shiftKey && this.selectedItems.length > 0) {
+        // Select range from last selected to current
+        const allItems = [...this.folders, ...this.filesList];
+        const lastSelectedIndex = allItems.findIndex(
+          (i) => i.id === this.selectedItems[this.selectedItems.length - 1].id,
+        );
+        const currentIndex = allItems.findIndex((i) => i.id === item.id);
+
+        if (lastSelectedIndex >= 0 && currentIndex >= 0) {
+          const start = Math.min(lastSelectedIndex, currentIndex);
+          const end = Math.max(lastSelectedIndex, currentIndex);
+          const range = allItems.slice(start, end + 1);
+          this.selectedItems = [...new Set([...this.selectedItems, ...range])];
+        }
+        return;
+      }
+
+      // Normal click: navigate for folders, select for files
+      if (item.mime_type === "application/x-directory") {
+        this.navigateToFolder(item.id);
+      } else {
+        // For files, toggle selection if not already selected
+        if (!this.isSelected(item.id)) {
+          this.clearSelection();
+          this.toggleSelection(item);
+        }
+      }
+    },
+
+    handleFileAction(action, item, newName = null) {
+      if (action === "download") {
+        this.downloadFile(item);
+      } else if (action === "delete") {
+        this.showDeleteConfirm(item);
+      } else if (action === "properties") {
+        this.showFileProperties(item.id);
+      } else if (action === "star") {
+        this.toggleStar(item);
+      } else if (action === "rename") {
+        if (newName) {
+          // Save rename with new name
+          this.handleRename(item, newName);
+        } else {
+          // Start editing
+          this.editingItemId = item.id;
+        }
+      } else if (action === "move") {
+        this.handleMoveAction(item);
+      } else if (action === "copy") {
+        this.handleCopyAction(item);
+      } else if (action === "share") {
+        // Open share modal using SharingManager
+        if (window.sharingManager) {
+          window.sharingManager.showShareModal(
+            item.id,
+            "file",
+            this.$route.params.id,
+            this.vaultspaceKey,
+          );
+        } else {
+          // Fallback: try to load sharing manager
+          this.initSharingManager(item.id);
+        }
+      } else if (action === "cancel-rename") {
+        this.editingItemId = null;
+      }
+    },
+
+    handleContextMenu(item, event) {
+      // Right-click context menu - could be enhanced with a custom menu component
+      // For now, just show properties
+      event.preventDefault();
+      this.showFileProperties(item.id);
+    },
+
+    showFileProperties(fileId) {
+      this.propertiesFileId = fileId;
+      this.showProperties = true;
+    },
+
+    handlePropertiesAction(action, file) {
+      this.showProperties = false;
+      if (action === "download") {
+        this.downloadFile(file);
+      } else if (action === "rename") {
+        this.editingItemId = file.id;
+      } else if (action === "move") {
+        this.handleMoveAction(file);
+      } else if (action === "copy") {
+        this.handleCopyAction(file);
+      } else if (action === "share") {
+        // Open share modal using SharingManager
+        if (window.sharingManager) {
+          window.sharingManager.showShareModal(
+            file.id,
+            "file",
+            this.$route.params.id,
+            this.vaultspaceKey,
+          );
+        } else {
+          // Fallback: try to load sharing manager
+          this.initSharingManager(file.id);
+        }
+      } else if (action === "delete") {
+        this.showDeleteConfirm(file);
+      }
+    },
+
+    logout() {
+      auth.logout();
+      this.$router.push("/login");
+    },
+
+    handleRevokeConfirm() {
+      this.showRevokeConfirm = false;
+      if (this.pendingRevokeCallback) {
+        const callback = this.pendingRevokeCallback;
+        this.pendingRevokeCallback = null;
+        callback();
+      }
+    },
+
+    async handleInlineRename(item) {
+      this.editingItemId = item.id;
+    },
+
+    async handleRename(item, newName) {
+      try {
+        await files.rename(item.id, newName);
+        const index = this.filesList.findIndex((f) => f.id === item.id);
+        if (index >= 0) {
+          this.filesList[index].original_name = newName;
+        }
+        const folderIndex = this.folders.findIndex((f) => f.id === item.id);
+        if (folderIndex >= 0) {
+          this.folders[folderIndex].original_name = newName;
+        }
+        const fileIndex = this.files.findIndex((f) => f.id === item.id);
+        if (fileIndex >= 0) {
+          this.files[fileIndex].original_name = newName;
+        }
+        this.editingItemId = null;
+      } catch (err) {
+        this.showError(err.message || "Error renaming");
+        this.editingItemId = null;
+      }
+    },
+
+    async handleMove(item, newParentId) {
+      try {
+        const updatedFile = await files.move(item.id, newParentId);
+        const index = this.filesList.findIndex((f) => f.id === item.id);
+        if (index >= 0) {
+          this.filesList[index] = updatedFile;
+        }
+        const folderIndex = this.folders.findIndex((f) => f.id === item.id);
+        if (folderIndex >= 0) {
+          this.folders[folderIndex] = updatedFile;
+        }
+        const fileIndex = this.files.findIndex((f) => f.id === item.id);
+        if (fileIndex >= 0) {
+          this.files[fileIndex] = updatedFile;
+        }
+        if (newParentId !== this.currentParentId) {
+          this.folders = this.folders.filter((f) => f.id !== item.id);
+          this.filesList = this.filesList.filter((f) => f.id !== item.id);
+          this.files = this.files.filter((f) => f.id !== item.id);
+        }
+      } catch (err) {
+        this.showError(err.message || "Error moving");
+      }
+    },
+
+    async handleMoveAction(item) {
+      try {
+        // Get all folders in the vaultspace for the picker
+        const allFolders = await this.getAllFolders();
+
+        // Show folder picker
+        const selectedFolderId = await folderPicker.show(
+          allFolders,
+          this.currentParentId,
+          this.$route.params.id,
+          item.mime_type === "application/x-directory" ? item.id : null,
+        );
+
+        // User cancelled
+        if (selectedFolderId === undefined) {
+          return;
+        }
+
+        // Perform move
+        await this.handleMove(item, selectedFolderId);
+
+        // Reload files to reflect changes
+        await this.loadFiles();
+
+        // Show success message
+        if (window.Notifications) {
+          window.Notifications.success(
+            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
+          );
+        }
+      } catch (err) {
+        console.error("Move action error:", err);
+        this.showError(err.message || "Failed to move item");
+      }
+    },
+
+    async handleCopyAction(item) {
+      try {
+        // Get all folders in the vaultspace for the picker
+        const allFolders = await this.getAllFolders();
+
+        // Show folder picker
+        const selectedFolderId = await folderPicker.show(
+          allFolders,
+          this.currentParentId,
+          this.$route.params.id,
+          item.mime_type === "application/x-directory" ? item.id : null,
+        );
+
+        // User cancelled
+        if (selectedFolderId === undefined) {
+          return;
+        }
+
+        // Perform copy
+        await this.handleCopy(item, selectedFolderId, null);
+
+        // Reload files to show the new copy
+        await this.loadFiles();
+
+        // Show success message
+        if (window.Notifications) {
+          window.Notifications.success(
+            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} copied successfully`,
+          );
+        }
+      } catch (err) {
+        console.error("Copy action error:", err);
+        this.showError(err.message || "Failed to copy item");
+      }
+    },
+
+    async getAllFolders() {
+      // Get all folders in the current vaultspace
+      // For now, return the folders we already have loaded
+      // In the future, we could recursively load all folders
+      return this.folders;
+    },
+
+    async handleCopy(item, newParentId, newName) {
+      try {
+        const copiedFile = await files.copy(item.id, {
+          newParentId: newParentId,
+          newVaultspaceId: null, // Keep in same vaultspace
+          newName: newName, // Keep same name unless specified
+        });
+
+        // Reload files to show the new copy
+        await this.loadFiles();
+      } catch (err) {
+        this.showError(err.message || "Error copying");
+        throw err;
+      }
+    },
+
+    handleDragStart(item, event) {
+      // Drag data is already set in FileListView
+    },
+
+    handleDragOver(item, event) {
+      // Visual feedback handled in FileListView
+    },
+
+    handleDragLeave(item, event) {
+      // Visual feedback handled in FileListView
+    },
+
+    async handleDrop(targetFolder, event) {
+      event.preventDefault();
+      try {
+        const dragData = JSON.parse(
+          event.dataTransfer.getData("application/json"),
+        );
+        if (!dragData || !dragData.id) {
+          return;
+        }
+
+        const sourceItem = this.files.find((f) => f.id === dragData.id);
+        if (!sourceItem) {
+          return;
+        }
+
+        const targetFolderId = targetFolder.id;
+        if (sourceItem.id === targetFolderId) {
+          return; // Can't drop on itself
+        }
+
+        await this.handleMove(sourceItem, targetFolderId);
+      } catch (err) {
+        this.showError(err.message || "Error moving item");
+      }
+    },
+
+    setupKeyboardShortcuts() {
+      const handleKeyDown = (event) => {
+        // Don't trigger shortcuts when typing in inputs
+        if (
+          event.target.tagName === "INPUT" ||
+          event.target.tagName === "TEXTAREA" ||
+          event.target.isContentEditable
+        ) {
+          // Allow Escape to cancel editing
+          if (event.key === "Escape" && this.editingItemId) {
+            this.editingItemId = null;
+          }
+          return;
+        }
+
+        // Ctrl+C or Cmd+C - Copy selected items
+        if ((event.ctrlKey || event.metaKey) && event.key === "c") {
+          event.preventDefault();
+          if (this.selectedItems.length > 0) {
+            clipboardManager.copy(this.selectedItems);
+          }
+        }
+
+        // Ctrl+V or Cmd+V - Paste clipboard items
+        if ((event.ctrlKey || event.metaKey) && event.key === "v") {
+          event.preventDefault();
+          if (clipboardManager.hasItems()) {
+            this.handlePaste();
+          }
+        }
+
+        // Escape - Cancel editing or close modals
+        if (event.key === "Escape") {
+          if (this.editingItemId) {
+            this.editingItemId = null;
+          }
+        }
+      };
+
+      document.addEventListener("keydown", handleKeyDown);
+
+      // Store handler for cleanup
+      this._keyboardShortcutHandler = handleKeyDown;
+    },
+
+    async handlePaste() {
+      const items = clipboardManager.getItems();
+      if (items.length === 0) {
+        return;
+      }
+
+      try {
+        for (const item of items) {
+          const sourceItem = this.files.find((f) => f.id === item.id);
+          if (sourceItem) {
+            await this.handleCopy(sourceItem, this.currentParentId, null);
+          }
+        }
+      } catch (err) {
+        this.showError(err.message || "Error pasting items");
+      }
+    },
+
+    async toggleStar(file) {
+      try {
+        const updatedFile = await files.toggleStar(file.id);
+        // Update in lists
+        const index = this.filesList.findIndex((f) => f.id === file.id);
+        if (index >= 0) {
+          this.filesList[index].is_starred = updatedFile.is_starred;
+        }
+        const folderIndex = this.folders.findIndex((f) => f.id === file.id);
+        if (folderIndex >= 0) {
+          this.folders[folderIndex].is_starred = updatedFile.is_starred;
+        }
+        // Update in main files array
+        const fileIndex = this.files.findIndex((f) => f.id === file.id);
+        if (fileIndex >= 0) {
+          this.files[fileIndex].is_starred = updatedFile.is_starred;
+        }
+      } catch (err) {
+        this.showError("Failed to toggle star: " + err.message);
+      }
+    },
+
+    async handleBatchDelete(result) {
+      // Remove deleted items from lists
+      const deletedIds = new Set(
+        result.errors.length === 0
+          ? this.selectedItems.map((i) => i.id)
+          : this.selectedItems
+              .filter((item) =>
+                result.errors.every((e) => e.file_id !== item.id),
+              )
+              .map((i) => i.id),
+      );
+
+      this.folders = this.folders.filter((f) => !deletedIds.has(f.id));
+      this.filesList = this.filesList.filter((f) => !deletedIds.has(f.id));
+      this.files = this.files.filter((f) => !deletedIds.has(f.id));
+
+      if (result.errors.length > 0) {
+        this.showError(
+          `Some items could not be deleted: ${result.errors.map((e) => e.error).join(", ")}`,
+        );
+      }
+    },
+
+    async handleBatchMove(result) {
+      // Update moved items in lists
+      const movedIds = new Set(result.moved_files?.map((f) => f.id) || []);
+
+      result.moved_files?.forEach((movedFile) => {
+        const index = this.folders.findIndex((f) => f.id === movedFile.id);
+        if (index >= 0) {
+          this.folders[index] = movedFile;
+        } else {
+          const fileIndex = this.filesList.findIndex(
+            (f) => f.id === movedFile.id,
+          );
+          if (fileIndex >= 0) {
+            this.filesList[fileIndex] = movedFile;
+          }
+        }
+      });
+
+      // Remove items that were successfully moved to a different parent
+      if (this.currentParentId) {
+        this.folders = this.folders.filter(
+          (f) => !movedIds.has(f.id) || f.parent_id === this.currentParentId,
+        );
+        this.filesList = this.filesList.filter(
+          (f) => !movedIds.has(f.id) || f.parent_id === this.currentParentId,
+        );
+      }
+
+      if (result.errors.length > 0) {
+        this.showError(
+          `Some items could not be moved: ${result.errors.map((e) => e.error).join(", ")}`,
+        );
+      }
+    },
+
+    async handleBatchDownload(items) {
+      // Download files individually
+      // In the future, we could create a ZIP file on the server
+      for (const item of items) {
+        if (item.mime_type !== "application/x-directory") {
+          try {
+            await this.downloadFile(item);
+          } catch (err) {
+            console.error(`Failed to download ${item.original_name}:`, err);
+          }
+        }
+      }
+    },
+  },
+};
+</script>
+
+<style scoped>
+.vaultspace-view {
+  min-height: 100vh;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.view-header {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  z-index: 2;
+}
+
+.view-header h1 {
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  position: relative;
+  z-index: 3;
+}
+
+.header-actions .btn {
+  position: relative;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.view-header .btn-primary,
+.header-actions .btn-primary {
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: var(--text-primary, #e6eef6);
+  box-shadow: none;
+}
+
+.view-header .btn-primary:hover,
+.header-actions .btn-primary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(148, 163, 184, 0.4);
+  transform: translateY(0);
+}
+
+.view-main {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.breadcrumbs {
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-link {
+  background: none;
+  border: none;
+  color: var(--accent-blue);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.breadcrumb-link:hover {
+  color: var(--accent-blue-dark);
+}
+
+.breadcrumb-active {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.breadcrumb-separator {
+  color: var(--text-muted);
+}
+
+.files-list {
+  padding: 2rem;
+  border-radius: var(--radius-lg);
+  min-height: 400px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-secondary);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.file-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  position: relative;
+  transition: all var(--transition-base);
+  cursor: default;
+}
+
+.file-card.selected {
+  border-color: var(--accent-blue, #38bdf8);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.file-checkbox {
+  margin-right: 0.75rem;
+  margin-top: 0.25rem;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.selection-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-md, 8px);
+}
+
+.selection-count {
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.file-card:hover {
+  border-color: var(--border-color-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.folder-card {
+  cursor: pointer;
+}
+
+.folder-card:hover {
+  background: var(--bg-glass-hover);
+}
+
+.file-icon {
+  font-size: 3.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.file-info {
+  flex: 1;
+}
+
+.file-info h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.file-size,
+.file-date,
+.file-type {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.file-type {
+  font-style: italic;
+}
+
+.file-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  justify-content: flex-end;
+}
+
+.btn-icon {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-base);
+}
+
+.btn-icon:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-color-hover);
+  transform: scale(1.1);
+}
+
+.btn-back {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.btn-back:hover {
+  background: var(--bg-glass-hover);
+  color: var(--text-primary);
+}
+
+.loading,
+.error {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+.error {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 10000 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.modal {
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.95),
+    rgba(15, 23, 42, 0.9)
+  ) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  padding: 0 !important;
+  border-radius: 1.25rem !important;
+  min-width: 400px !important;
+  max-width: 90vw !important;
+  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6) !important;
+  position: relative !important;
+  z-index: 10001 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: #e6eef6 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.modal-header {
+  padding: 2rem 2.5rem 1rem 2.5rem !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
+.modal-content {
+  padding: 0px 2.5rem 0rem !important;
+  flex: 1 !important;
+}
+
+.modal-form {
+  padding: 1.5rem 2.5rem 2rem 2.5rem;
+  flex: 1;
+  padding-bottom: 2rem !important;
+}
+
+.modal h2 {
+  margin: 0 !important;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-align: center !important;
+}
+
+.modal p {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.modal .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.modal .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.modal .form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.modal .form-group input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modal .form-group input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 2rem;
+  margin-bottom: 0;
+}
+
+.modal .form-actions {
+  margin-top: 2rem;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.upload-progress {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--bg-glass);
+  border-radius: var(--radius-md);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.error-message {
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--error);
+  margin-bottom: 1.5rem;
+}
+
+.file-input-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  position: absolute !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.form-group input[type="file"] {
+  padding: var(--space-2);
+  cursor: pointer;
+}
+
+.form-group input[type="file"]::file-selector-button {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  margin-right: var(--space-3);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.form-group input[type="file"]::file-selector-button:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-color-hover);
+}
+
+.selected-files {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius-md, 8px);
+}
+
+.selected-files ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.selected-files li {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+</style>

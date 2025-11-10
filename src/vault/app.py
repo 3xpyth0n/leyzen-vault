@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from flask import Flask, render_template
+from flask import Flask
 
 # Bootstrap common modules
 _COMMON_DIR = Path("/common")
@@ -19,19 +19,36 @@ else:
         sys.path.insert(0, str(_SRC_DIR))
 
 from common.path_setup import bootstrap_entry_point  # noqa: E402
+from common.token_utils import derive_internal_api_token  # noqa: E402
 
 bootstrap_entry_point()
 
+from .blueprints.admin import admin_api_bp  # noqa: E402
 from .blueprints.auth import auth_bp  # noqa: E402
-from .blueprints.files import files_bp  # noqa: E402
+from .blueprints.auth_api import auth_api_bp  # noqa: E402
+from .blueprints.files_api_v2 import files_api_bp  # noqa: E402
+from .blueprints.internal_api import internal_api_bp  # noqa: E402
+from .blueprints.quota_api import quota_api_bp as quota_api_v2_bp  # noqa: E402
+from .blueprints.search_api import search_api_bp  # noqa: E402
 from .blueprints.security import security_bp  # noqa: E402
-from .config import VaultSettings, load_settings  # noqa: E402
+from .blueprints.sharing_api import sharing_api_bp  # noqa: E402
+from .blueprints.thumbnail_api import thumbnail_api_bp  # noqa: E402
+from .blueprints.trash_api import trash_api_bp  # noqa: E402
+from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
+from .blueprints.versions_api import versions_api_bp  # noqa: E402
+from .config import (
+    VaultSettings,
+    get_postgres_url,
+    is_setup_complete,
+    load_settings,
+)  # noqa: E402
+from .database import db, init_db  # noqa: E402
 from .extensions import csrf  # noqa: E402
-from .models import FileDatabase  # noqa: E402
+
 from .services.audit import AuditService  # noqa: E402
-from .services.logging import FileLogger  # noqa: E402
+from common.services.logging import FileLogger  # noqa: E402
 from .services.rate_limiter import RateLimiter  # noqa: E402
-from .services.share_service import ShareService  # noqa: E402
+from .services.share_link_service import ShareService  # noqa: E402
 from .storage import FileStorage  # noqa: E402
 
 
@@ -60,46 +77,28 @@ def _create_fallback_settings() -> VaultSettings:
     # Use allow_fallback=True to gracefully fall back to UTC on error
     fallback_timezone = parse_timezone(allow_fallback=True)
 
-    # Require environment variables - no hardcoded secrets
-    username = os.environ.get("VAULT_USER", "").strip()
-    if not username:
-        raise ConfigurationError(
-            "VAULT_USER is required. Fallback mode requires environment variables to be set. "
-            "This function should NOT be used in production."
-        )
-
-    password = os.environ.get("VAULT_PASS", "").strip()
-    if not password:
-        raise ConfigurationError(
-            "VAULT_PASS is required. Fallback mode requires environment variables to be set. "
-            "This function should NOT be used in production."
-        )
-
+    # Secret key (required)
     secret_key = os.environ.get("SECRET_KEY", "").strip()
     if not secret_key:
         raise ConfigurationError(
-            "SECRET_KEY is required (minimum 12 characters). Fallback mode requires environment variables to be set. "
+            "SECRET_KEY is required (minimum 32 characters). Fallback mode requires environment variables to be set. "
             "This function should NOT be used in production."
         )
 
-    if len(secret_key) < 12:
+    if len(secret_key) < 32:
         raise ConfigurationError(
-            "SECRET_KEY must be at least 12 characters long. "
-            "Fallback mode requires environment variables to be set."
+            "SECRET_KEY must be at least 32 characters long. "
+            "Generate a secure key with: openssl rand -hex 32"
         )
 
-    from werkzeug.security import generate_password_hash
-
     return VaultSettings(
-        username=username,
-        password_hash=generate_password_hash(password),
         secret_key=secret_key,
         timezone=fallback_timezone,
         proxy_trust_count=1,
         captcha_length=6,
         captcha_store_ttl=300,
         login_csrf_ttl=900,
-        log_file=Path("/tmp/vault.log"),
+        log_file=Path("/dev/shm/vault.log"),
         session_cookie_secure=False,
         max_file_size_mb=100,
         max_uploads_per_hour=50,
@@ -107,9 +106,45 @@ def _create_fallback_settings() -> VaultSettings:
     )
 
 
+def _get_or_generate_internal_api_token(
+    env_values: dict[str, str],
+    secret_key: str | None = None,
+    logger=None,
+) -> str:
+    """Get or generate INTERNAL_API_TOKEN from environment or SECRET_KEY.
+
+    This function centralizes the logic for obtaining the INTERNAL_API_TOKEN.
+    It first checks environment variables, then generates from SECRET_KEY if needed.
+
+    Args:
+        env_values: Dictionary containing environment variables
+        secret_key: Optional secret key to use for token generation
+        logger: Optional logger instance for warning messages
+
+    Returns:
+        The internal API token string
+    """
+    import os
+
+    # Check environment variables first
+    internal_api_token = env_values.get("INTERNAL_API_TOKEN", "")
+    if not internal_api_token:
+        internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
+
+    # If not set, generate automatically from SECRET_KEY
+    if not internal_api_token and secret_key:
+        internal_api_token = derive_internal_api_token(secret_key)
+    elif not internal_api_token and logger:
+        logger.log(
+            "[WARNING] INTERNAL_API_TOKEN not set and SECRET_KEY not available. "
+            "Internal API endpoints will be disabled."
+        )
+
+    return internal_api_token or ""
+
+
 def create_app(
     storage_dir: Path | None = None,
-    database_path: Path | None = None,
     *args: object,
     **kwargs: object,
 ) -> Flask:
@@ -117,12 +152,41 @@ def create_app(
     # Get the directory containing this file
     vault_dir = Path(__file__).parent
 
+    # Check if dist/ exists (production build) or use static/ (development)
+    static_dir = vault_dir / "static" / "dist"
+    if not static_dir.exists():
+        static_dir = vault_dir / "static"
+
+    # Also keep reference to original static folder for fallback
+    original_static_dir = vault_dir / "static"
+
+    # Don't use Flask's default static folder mechanism - we'll handle it manually
     app = Flask(
         __name__,
         template_folder=str(vault_dir / "templates"),
-        static_folder=str(vault_dir / "static"),
-        static_url_path="/static",
+        static_folder=None,  # Disable default static file serving
+        static_url_path=None,
     )
+
+    # Load environment values first
+    # Import os here (already imported at top level) - this import is redundant but kept for clarity
+    import os
+
+    env_values = {}
+    try:
+        # Import here to avoid circular dependency with common.env during module initialization
+        from common.env import load_env_with_override
+
+        env_values = load_env_with_override()
+        env_values.update(os.environ)
+    except Exception:
+        pass
+
+    # Detect production environment
+    # Default to production for security (hide error details by default)
+    leylen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+    is_production = leylen_env not in ("dev", "development")
+    app.config["IS_PRODUCTION"] = is_production
 
     # Load settings
     try:
@@ -138,10 +202,79 @@ def create_app(
         # Initialize logger
         logger = FileLogger(settings)
         app.config["LOGGER"] = logger
+
+        # Internal API token for orchestrator operations
+        # Auto-generate from SECRET_KEY if not explicitly set
+        internal_api_token = _get_or_generate_internal_api_token(
+            env_values, settings.secret_key, logger
+        )
+        app.config["INTERNAL_API_TOKEN"] = internal_api_token
+
+        # Configure PostgreSQL database
+        try:
+            postgres_url = get_postgres_url(env_values)
+            app.config["SQLALCHEMY_DATABASE_URI"] = postgres_url
+            app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+            init_db(app)
+            logger.log("[INIT] PostgreSQL database initialized")
+
+            # Check if setup is complete
+            try:
+                if not is_setup_complete(app):
+                    logger.log(
+                        "[WARNING] Setup not complete. Visit /setup to create superadmin account."
+                    )
+                else:
+                    logger.log("[INIT] Setup complete - users exist in database")
+            except Exception as setup_check_error:
+                logger.log(
+                    f"[WARNING] Failed to check setup status: {setup_check_error}"
+                )
+        except Exception as db_exc:
+            # Log the error with full details
+            # Import traceback here to avoid importing it at module level if not needed
+            import traceback
+
+            error_details = (
+                f"Failed to initialize PostgreSQL: {db_exc}\n{traceback.format_exc()}"
+            )
+            logger.log(f"[ERROR] {error_details}")
+
+            # In production, fail startup if PostgreSQL is unavailable
+            # In development mode, allow fallback for testing
+            if is_production:
+                raise RuntimeError(
+                    "PostgreSQL database initialization failed. "
+                    "Leyzen Vault requires PostgreSQL to run in production mode. "
+                    "Please ensure PostgreSQL is available and properly configured. "
+                    "Set LEYZEN_ENVIRONMENT=dev only for development/testing."
+                ) from db_exc
+            else:
+                # Development mode: log warning but continue
+                logger.log(
+                    "[WARNING] Continuing without PostgreSQL (development mode only). "
+                    "This is not recommended for production use."
+                )
+                # Continue without PostgreSQL for development/testing only
     except Exception as exc:
-        # Fallback for development/testing
+        # Fallback for development/testing only - NOT allowed in production
         # Note: This fallback now requires environment variables to be set
         # Hardcoded secrets have been removed for security
+
+        # SECURITY: Prevent fallback mode in production
+        # If we're in production mode, fail fast rather than using fallback settings
+        if is_production:
+            raise RuntimeError(
+                "Cannot start in production mode without valid configuration. "
+                "The application failed to load settings and fallback mode is not allowed in production. "
+                "Please check your environment variables and configuration files. "
+                "Set LEYZEN_ENVIRONMENT=dev only for development/testing."
+            ) from exc
+
+        # Set IS_PRODUCTION if not already set (default to False for fallback mode)
+        if "IS_PRODUCTION" not in app.config:
+            app.config["IS_PRODUCTION"] = is_production
+
         fallback_settings = _create_fallback_settings()
         app.config["SECRET_KEY"] = fallback_settings.secret_key
         app.config.update(
@@ -151,9 +284,18 @@ def create_app(
         )
         app.config["VAULT_SETTINGS"] = fallback_settings
         app.config["LOGGER"] = FileLogger(fallback_settings)
+        # Internal API token for orchestrator operations
+        # Auto-generate from SECRET_KEY if available
+        internal_api_token = _get_or_generate_internal_api_token(
+            env_values, fallback_settings.secret_key, None
+        )
+        app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
     # Initialize CSRF protection
     csrf.init_app(app)
+
+    # Enable CSRF check by default for security
+    app.config["WTF_CSRF_CHECK_DEFAULT"] = True
 
     # Configure CSRF to accept tokens in FormData for multipart/form-data requests
     # Flask-WTF automatically checks request.form for CSRF tokens in POST requests
@@ -161,45 +303,24 @@ def create_app(
 
     # Default paths - ensure they are Path objects
     if storage_dir is None:
-        storage_dir = Path("/data/files")
+        storage_dir = Path("/data")
     elif not isinstance(storage_dir, Path):
         # Convert to Path if it's not already a Path object
         storage_dir = Path(str(storage_dir))
 
-    # Database paths - check environment variables first
-    env_values = {}
-    try:
-        from common.env import load_env_with_override
-        import os
+    # Source directory for persistent storage (mounted from vault-data-source volume)
+    # Note: source_dir should point to the parent directory, FileStorage will handle /files subdirectory
+    source_dir = Path("/data-source") if Path("/data-source").exists() else None
 
-        env_values = load_env_with_override()
-        env_values.update(os.environ)
-    except Exception:
-        pass
+    # Initialize storage with primary directory (tmpfs) and source directory (persistent)
+    # FileStorage will check source_dir/files if file is not found in storage_dir/files
+    storage = FileStorage(storage_dir, source_dir=source_dir)
 
-    if database_path is None:
-        # Check for VAULT_DB_PATH environment variable
-        db_path_env = env_values.get("VAULT_DB_PATH", "/data/vault.db")
-        database_path = Path(db_path_env)
-    elif not isinstance(database_path, Path):
-        # Convert to Path if it's not already a Path object
-        database_path = Path(str(database_path))
-
-    # Initialize storage and database
-    storage = FileStorage(storage_dir)
-    database = FileDatabase(database_path)
-
-    # Initialize audit service
-    audit_db_path_env = env_values.get("VAULT_AUDIT_DB_PATH")
-    if audit_db_path_env:
-        audit_db_path = Path(audit_db_path_env)
-    else:
-        audit_db_path = database_path.parent / "audit.db"
+    # Initialize audit service (uses PostgreSQL)
     try:
         settings = app.config.get("VAULT_SETTINGS")
         if settings:
             audit_service = AuditService(
-                audit_db_path,
                 timezone=settings.timezone,
                 retention_days=settings.audit_retention_days,
             )
@@ -207,37 +328,28 @@ def create_app(
             # Fallback: use UTC and default retention
             from zoneinfo import ZoneInfo
 
-            audit_service = AuditService(
-                audit_db_path, timezone=ZoneInfo("UTC"), retention_days=90
-            )
+            audit_service = AuditService(timezone=ZoneInfo("UTC"), retention_days=90)
     except Exception:
         # Fallback: use UTC and default retention
         from zoneinfo import ZoneInfo
 
-        audit_service = AuditService(
-            audit_db_path, timezone=ZoneInfo("UTC"), retention_days=90
-        )
+        audit_service = AuditService(timezone=ZoneInfo("UTC"), retention_days=90)
 
-    # Initialize share service
-    share_db_path_env = env_values.get("VAULT_SHARES_DB_PATH")
-    if share_db_path_env:
-        share_db_path = Path(share_db_path_env)
-    else:
-        share_db_path = database_path.parent / "shares.db"
+    # Initialize share service (uses PostgreSQL)
     try:
         settings = app.config.get("VAULT_SETTINGS")
         if settings:
-            share_service = ShareService(share_db_path, timezone=settings.timezone)
+            share_service = ShareService(timezone=settings.timezone)
         else:
             # Fallback: use UTC
             from zoneinfo import ZoneInfo
 
-            share_service = ShareService(share_db_path, timezone=ZoneInfo("UTC"))
+            share_service = ShareService(timezone=ZoneInfo("UTC"))
     except Exception:
         # Fallback: use UTC
         from zoneinfo import ZoneInfo
 
-        share_service = ShareService(share_db_path, timezone=ZoneInfo("UTC"))
+        share_service = ShareService(timezone=ZoneInfo("UTC"))
 
     # Initialize rate limiter
     try:
@@ -253,15 +365,23 @@ def create_app(
         fallback_settings = _create_fallback_settings()
         rate_limiter = RateLimiter(fallback_settings)
 
+    # Store services in app config
     app.config["VAULT_STORAGE"] = storage
-    app.config["VAULT_DATABASE"] = database
     app.config["VAULT_AUDIT"] = audit_service
     app.config["VAULT_SHARE"] = share_service
     app.config["VAULT_RATE_LIMITER"] = rate_limiter
+    # Internal API token for orchestrator operations
+    # Auto-generate from SECRET_KEY if not explicitly set
+    secret_key = app.config.get("SECRET_KEY") or env_values.get("SECRET_KEY", "")
+    internal_api_token = _get_or_generate_internal_api_token(
+        env_values, secret_key, None
+    )
+    app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
     # Start background thread for automatic audit log cleanup
     def _audit_cleanup_worker() -> None:
         """Background worker to periodically clean up old audit logs."""
+        # Import here to avoid importing at module level if worker thread is not started
         import time
         import logging
 
@@ -275,15 +395,60 @@ def create_app(
             except Exception as e:
                 logger.error(f"Error during audit log cleanup: {e}", exc_info=True)
 
+    # Import threading here to avoid importing at module level if cleanup thread is not started
     import threading
 
     cleanup_thread = threading.Thread(target=_audit_cleanup_worker, daemon=True)
     cleanup_thread.start()
 
     # Register blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(files_bp)
-    app.register_blueprint(security_bp)
+    app.register_blueprint(admin_api_bp)  # Admin API
+    app.register_blueprint(
+        auth_bp
+    )  # Legacy auth (session-based, for CAPTCHA/logout until fully migrated)
+    app.register_blueprint(auth_api_bp)  # JWT-based auth API
+    app.register_blueprint(files_api_bp)  # Advanced files API v2
+    app.register_blueprint(internal_api_bp)  # Internal API for orchestrator
+    app.register_blueprint(search_api_bp)  # Search API
+    app.register_blueprint(versions_api_bp)  # Versions API v2
+    app.register_blueprint(trash_api_bp)  # Trash API v2
+    app.register_blueprint(quota_api_v2_bp)  # Quota API v2
+    app.register_blueprint(sharing_api_bp)  # Advanced Sharing API v2
+    app.register_blueprint(thumbnail_api_bp)  # Thumbnail API v2
+    app.register_blueprint(security_bp)  # Security stats
+    app.register_blueprint(vaultspace_api_bp)  # VaultSpaces API
+
+    # Route registration complete - no debug logging in production
+
+    # Custom static file handler - check dist/ first, then fallback to static/
+    # This must be registered AFTER blueprints to have priority
+    @app.route("/static/<path:filename>")
+    def serve_static_fallback(filename):
+        """Serve static files from dist/ first, then fallback to static/."""
+        from flask import send_from_directory, abort
+
+        # If filename starts with "assets/", it's from Vue.js build
+        # Request: /static/assets/index-BNuRR0jV.js
+        # Should serve: dist/assets/index-BNuRR0jV.js
+        if filename.startswith("assets/"):
+            dist_dir = vault_dir / "static" / "dist"
+            if dist_dir.exists():
+                asset_file = dist_dir / filename  # dist/assets/index-BNuRR0jV.js
+                if asset_file.exists() and asset_file.is_file():
+                    # send_from_directory needs the directory and relative filename
+                    return send_from_directory(str(dist_dir), filename)
+
+        # Try dist/ first (for Vue.js build assets and index.html)
+        dist_file = static_dir / filename
+        if dist_file.exists() and dist_file.is_file():
+            return send_from_directory(str(static_dir), filename)
+
+        # Fallback to original static/ (for legacy files like vault.css, vault.js, etc.)
+        original_file = original_static_dir / filename
+        if original_file.exists() and original_file.is_file():
+            return send_from_directory(str(original_static_dir), filename)
+
+        abort(404)
 
     @app.after_request
     def save_session(response):
@@ -297,18 +462,43 @@ def create_app(
             pass
         return response
 
+    @app.before_request
+    def generate_csp_nonce():
+        """Generate CSP nonce for each request and make it available to templates."""
+        # Import secrets here to avoid importing at module level if not needed
+        import secrets
+        from flask import g
+
+        # Generate a secure random nonce (base64url encoded, 16 bytes = 128 bits)
+        g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.context_processor
+    def inject_csp_nonce():
+        """Make CSP nonce available to all templates."""
+        from flask import g
+
+        return {"csp_nonce": getattr(g, "csp_nonce", "")}
+
     @app.after_request
     def add_security_headers(response):
         """Add strict security headers including CSP."""
+        # Import json here to avoid importing at module level if not needed
         import json
-        from flask import request
+        from flask import request, g
         from common.constants import SESSION_MAX_AGE_SECONDS
+
+        # Get CSP nonce for this request
+        csp_nonce = getattr(g, "csp_nonce", "")
 
         # Content Security Policy - enhanced with trusted types and reporting
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self'",
+            (
+                f"script-src 'self' 'nonce-{csp_nonce}'"
+                if csp_nonce
+                else "script-src 'self'"
+            ),
+            "style-src 'self' https://fonts.googleapis.com",
             "img-src 'self' data: blob:",
             "font-src 'self' https://fonts.gstatic.com",
             "connect-src 'self'",
@@ -317,6 +507,7 @@ def create_app(
             "form-action 'self'",
             "object-src 'none'",
             "upgrade-insecure-requests",
+            "trusted-types vault-html notifications-html vault-script-url vue",
             "require-trusted-types-for 'script'",
             "report-uri /orchestrator/csp-violation-report-endpoint",
             "report-to vault-csp",
@@ -334,13 +525,32 @@ def create_app(
         # Add Report-To header pointing to orchestrator CSP endpoint
         # Use the same format as orchestrator for consistency
         # Construct orchestrator URL from current request
+        orchestrator_url = None
+        use_fallback = False
         try:
             from flask import request
+            from urllib.parse import urlparse
 
-            orchestrator_url = f"{request.scheme}://{request.host}/orchestrator/csp-violation-report-endpoint"
+            # Construct URL from request context
+            constructed_url = f"{request.scheme}://{request.host}/orchestrator/csp-violation-report-endpoint"
+            # Validate URL format
+            parsed = urlparse(constructed_url)
+            if parsed.scheme and parsed.netloc:
+                orchestrator_url = constructed_url
+            else:
+                use_fallback = True
         except Exception:
-            # Fallback: use relative URL if request context unavailable
+            # Fallback: use relative URL if request context unavailable or URL invalid
+            use_fallback = True
+
+        if use_fallback or not orchestrator_url:
             orchestrator_url = "/orchestrator/csp-violation-report-endpoint"
+            # Log warning if fallback is used (only in development to avoid log spam)
+            is_production = current_app.config.get("IS_PRODUCTION", True)
+            if not is_production:
+                current_app.logger.debug(
+                    "CSP Report-To: Using fallback relative URL (request context unavailable or invalid)"
+                )
 
         report_to = {
             "group": "vault-csp",
@@ -368,30 +578,110 @@ def create_app(
         """Health check endpoint."""
         return {"status": "ok"}, 200
 
-    @app.route("/share/<link_token>")
-    def share_with_token(link_token: str):
-        """Serve the share page for downloading files via share token."""
-        share_service = app.config["VAULT_SHARE"]
-        is_valid, error_msg = share_service.validate_share_link(link_token)
+    # All frontend routes (/share) are handled by Vue.js SPA
+    # Share route is now handled by Vue Router at /share/:token
 
-        if not is_valid:
-            return (
-                render_template("share.html", error=error_msg or "Invalid share link"),
-                404,
-            )
+    @app.route("/")
+    def serve_vue_app_root():
+        """Serve Vue.js SPA root - return index.html."""
+        from flask import send_file
 
-        share_link = share_service.get_share_link(link_token)
-        if not share_link:
-            return render_template("share.html", error="Share link not found"), 404
+        dist_index = static_dir / "index.html"
+        if dist_index.exists():
+            return send_file(str(dist_index))
 
-        return render_template(
-            "share.html", link_token=link_token, file_id=share_link.file_id
+        # Frontend must be built - return error
+        return (
+            "<html><body><h1>Leyzen Vault</h1><p>Frontend not built. Run 'npm run build' in src/vault/static/</p></body></html>",
+            404,
         )
 
-    @app.route("/share")
-    def share():
-        """Serve the share page for downloading files (no auth required)."""
-        return render_template("share.html")
+    @app.errorhandler(404)
+    def serve_vue_app_for_404(e):
+        """Serve Vue.js SPA for 404 errors (Vue Router will handle client-side routing)."""
+        from flask import request, send_file, jsonify
+
+        # Import sys here (already imported at top level) - this import is redundant but kept for clarity
+        import sys
+
+        # Return JSON for API endpoints
+        if request.path.startswith("/api/"):
+            # Log 404 for API endpoints to help debug
+            print(
+                f"404 for API endpoint: {request.path} {request.method}",
+                file=sys.stderr,
+            )
+            current_app.logger.error(
+                f"404 for API endpoint: {request.path} {request.method}"
+            )
+            # Check if route exists in url_map
+            matching_rules = [
+                rule
+                for rule in current_app.url_map.iter_rules()
+                if rule.rule == request.path
+                or request.path.startswith(
+                    rule.rule.replace("<file_id>", "").replace("<link_token>", "")
+                )
+            ]
+            if matching_rules:
+                print(
+                    f"Matching rules found: {[r.rule for r in matching_rules]}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"No matching rules found for {request.path}", file=sys.stderr)
+            return jsonify({"error": "Not found", "path": request.path}), 404
+
+        # Don't intercept static files
+        if request.path.startswith("/static/"):
+            return e
+
+        # Serve index.html for SPA routes
+        dist_index = static_dir / "index.html"
+        if dist_index.exists():
+            return send_file(str(dist_index))
+
+        # Return original 404
+        return e
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Global exception handler - return JSON for API routes, HTML for others."""
+        # Import traceback here to avoid importing at module level if not needed
+        import traceback
+        from flask import request, jsonify, current_app
+        from werkzeug.exceptions import HTTPException
+
+        # Handle Werkzeug HTTPException
+        if isinstance(e, HTTPException):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": e.description or str(e)}), e.code
+            return e
+
+        # Determine if we're in production mode
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+
+        # Log the error with full details (always log details server-side)
+        error_details = f"Unhandled exception: {e}\n{traceback.format_exc()}"
+        current_app.logger.error(error_details)
+
+        # If this is an API route, return JSON error
+        if request.path.startswith("/api/"):
+            # In production, return generic error message to avoid information disclosure
+            # In development, return detailed error message for debugging
+            if is_production:
+                error_message = "An internal error occurred"
+            else:
+                error_message = str(e) if str(e) else "An internal error occurred"
+
+            status_code = getattr(e, "code", 500)
+            if not isinstance(status_code, int) or status_code < 400:
+                status_code = 500
+            return jsonify({"error": error_message}), status_code
+
+        # For non-API routes, let Flask handle it (will show HTML error page)
+        # But we still want to log it
+        return e
 
     return app
 
