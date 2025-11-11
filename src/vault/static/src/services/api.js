@@ -264,6 +264,22 @@ export const auth = {
   },
 
   /**
+   * Get master key salt for current user.
+   * Used by SSO users to retrieve their salt for master key derivation.
+   *
+   * @returns {Promise<string>} Base64-encoded master key salt
+   */
+  async getMasterKeySalt() {
+    const response = await apiRequest("/auth/account/master-key-salt");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to get master key salt");
+    }
+    const data = await response.json();
+    return data.master_key_salt;
+  },
+
+  /**
    * Logout user.
    */
   async logout() {
@@ -1446,72 +1462,97 @@ export const admin = {
   },
 
   /**
-   * List SSO domain rules.
+   * Get password authentication status.
    *
-   * @returns {Promise<Array>} List of SSO domain rules
+   * @returns {Promise<boolean>} Password authentication enabled status
    */
-  async listSSODomains() {
-    const response = await apiRequest("/admin/sso-domains");
+  async getPasswordAuthStatus() {
+    const settings = await this.getSettings();
+    return (
+      settings.password_authentication_enabled === "true" ||
+      settings.password_authentication_enabled === true
+    );
+  },
+
+  /**
+   * Update password authentication status.
+   *
+   * @param {boolean} enabled - Whether password authentication is enabled
+   * @returns {Promise<void>}
+   */
+  async updatePasswordAuthStatus(enabled) {
+    await this.updateSettings({
+      password_authentication_enabled: enabled,
+    });
+  },
+
+  /**
+   * List domain rules.
+   *
+   * @returns {Promise<Array>} List of domain rules
+   */
+  async listDomainRules() {
+    const response = await apiRequest("/admin/domain-rules");
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to list SSO domains");
+      throw new Error(errorData.error || "Failed to list domain rules");
     }
     const data = await response.json();
     return data.rules || [];
   },
 
   /**
-   * Create SSO domain rule.
+   * Create domain rule.
    *
-   * @param {object} rule - SSO domain rule data
+   * @param {object} rule - Domain rule data
    * @returns {Promise<object>} Created rule
    */
-  async createSSODomain(rule) {
-    const response = await apiRequest("/admin/sso-domains", {
+  async createDomainRule(rule) {
+    const response = await apiRequest("/admin/domain-rules", {
       method: "POST",
       body: JSON.stringify(rule),
     });
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to create SSO domain rule");
+      throw new Error(errorData.error || "Failed to create domain rule");
     }
     const data = await response.json();
     return data.rule;
   },
 
   /**
-   * Update SSO domain rule.
+   * Update domain rule.
    *
    * @param {string} ruleId - Rule ID
    * @param {object} rule - Rule data to update
    * @returns {Promise<object>} Updated rule
    */
-  async updateSSODomain(ruleId, rule) {
-    const response = await apiRequest(`/admin/sso-domains/${ruleId}`, {
+  async updateDomainRule(ruleId, rule) {
+    const response = await apiRequest(`/admin/domain-rules/${ruleId}`, {
       method: "PUT",
       body: JSON.stringify(rule),
     });
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to update SSO domain rule");
+      throw new Error(errorData.error || "Failed to update domain rule");
     }
     const data = await response.json();
     return data.rule;
   },
 
   /**
-   * Delete SSO domain rule.
+   * Delete domain rule.
    *
    * @param {string} ruleId - Rule ID
    * @returns {Promise<void>}
    */
-  async deleteSSODomain(ruleId) {
-    const response = await apiRequest(`/admin/sso-domains/${ruleId}`, {
+  async deleteDomainRule(ruleId) {
+    const response = await apiRequest(`/admin/domain-rules/${ruleId}`, {
       method: "DELETE",
     });
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to delete SSO domain rule");
+      throw new Error(errorData.error || "Failed to delete domain rule");
     }
   },
 
@@ -1584,6 +1625,108 @@ export const admin = {
     const data = await response.json();
     return data.api_keys || [];
   },
+
+  /**
+   * List SSO providers.
+   *
+   * @returns {Promise<Array>} List of SSO providers
+   */
+  async listSSOProviders() {
+    const response = await apiRequest("/admin/sso-providers");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to list SSO providers");
+    }
+    const data = await response.json();
+    return data.providers || [];
+  },
+
+  /**
+   * Get a specific SSO provider.
+   *
+   * @param {string} providerId - Provider ID
+   * @returns {Promise<object>} SSO provider
+   */
+  async getSSOProvider(providerId) {
+    const response = await apiRequest(`/admin/sso-providers/${providerId}`);
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to get SSO provider");
+    }
+    const data = await response.json();
+    return data.provider;
+  },
+
+  /**
+   * Create a new SSO provider.
+   *
+   * @param {object} provider - SSO provider data
+   * @returns {Promise<object>} Created provider
+   */
+  async createSSOProvider(provider) {
+    const response = await apiRequest("/admin/sso-providers", {
+      method: "POST",
+      body: JSON.stringify(provider),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to create SSO provider");
+    }
+    const data = await response.json();
+    return data.provider;
+  },
+
+  /**
+   * Update an SSO provider.
+   *
+   * @param {string} providerId - Provider ID
+   * @param {object} provider - Provider data to update
+   * @returns {Promise<object>} Updated provider
+   */
+  async updateSSOProvider(providerId, provider) {
+    const response = await apiRequest(`/admin/sso-providers/${providerId}`, {
+      method: "PUT",
+      body: JSON.stringify(provider),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to update SSO provider");
+    }
+    const data = await response.json();
+    return data.provider;
+  },
+
+  /**
+   * Delete an SSO provider.
+   *
+   * @param {string} providerId - Provider ID
+   * @returns {Promise<void>}
+   */
+  async deleteSSOProvider(providerId) {
+    const response = await apiRequest(`/admin/sso-providers/${providerId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to delete SSO provider");
+    }
+  },
+
+  /**
+   * Test SMTP configuration by sending a test email.
+   *
+   * @returns {Promise<object>} Test result with success/error message
+   */
+  async testSMTP() {
+    const response = await apiRequest("/admin/test-smtp", {
+      method: "POST",
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to test SMTP");
+    }
+    return await response.json();
+  },
 };
 
 /**
@@ -1591,9 +1734,9 @@ export const admin = {
  */
 export const sso = {
   /**
-   * List SSO providers.
+   * List active SSO providers (public endpoint).
    *
-   * @returns {Promise<Array>} List of SSO providers
+   * @returns {Promise<Array>} List of active SSO providers
    */
   async listProviders() {
     const response = await apiRequest("/sso/providers");
@@ -1605,8 +1748,79 @@ export const sso = {
     return data.providers || [];
   },
 
-  // SSO providers API routes have been removed from backend
-  // SSO domains are managed via admin API (admin.listSSODomains, admin.createSSODomain, etc.)
+  /**
+   * Initiate SSO login flow.
+   *
+   * @param {string} providerId - SSO provider ID
+   * @param {string} returnUrl - Optional return URL after authentication
+   * @returns {Promise<string>} Redirect URL to SSO provider
+   */
+  async initiateLogin(providerId, returnUrl = null) {
+    const body = {};
+    if (returnUrl) {
+      body.return_url = returnUrl;
+    }
+
+    const response = await apiRequest(`/sso/login/${providerId}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to initiate SSO login");
+    }
+
+    const data = await response.json();
+    return data.redirect_url;
+  },
+
+  /**
+   * Initiate magic link login (requires email).
+   *
+   * @param {string} providerId - SSO provider ID
+   * @param {string} email - Email address
+   * @param {string} returnUrl - Optional return URL after login
+   * @returns {Promise<object>} Response with message
+   */
+  async initiateMagicLinkLogin(providerId, email, returnUrl = null) {
+    const body = { email };
+    if (returnUrl) {
+      body.return_url = returnUrl;
+    }
+
+    const response = await apiRequest(`/sso/login/${providerId}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to send magic link");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Check if an email domain requires SSO authentication.
+   *
+   * @param {string} email - Email address to check
+   * @returns {Promise<object>} Domain info with SSO requirement
+   */
+  async checkDomain(email) {
+    const response = await apiRequest("/sso/check-domain", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to check domain");
+    }
+
+    return await response.json();
+  },
 };
 
 export default {

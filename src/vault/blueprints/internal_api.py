@@ -315,7 +315,7 @@ def sync_volumes():
 
     except Exception as e:
         current_app.logger.error(f"Failed to synchronize volumes: {e}", exc_info=True)
-        return jsonify({"error": f"Synchronization failed: {str(e)}"}), 500
+        return jsonify({"error": "Synchronization failed"}), 500
 
 
 __all__ = ["internal_api_bp"]

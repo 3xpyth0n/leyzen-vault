@@ -13,6 +13,7 @@ import AccountView from "../views/AccountView.vue";
 import EmailVerification from "../views/EmailVerification.vue";
 import AcceptInvitation from "../views/AcceptInvitation.vue";
 import AdminPanel from "../views/AdminPanel.vue";
+import SSOCallback from "../views/SSOCallback.vue";
 import { getUserMasterKey, getStoredSalt } from "../services/keyManager";
 import { auth } from "../services/api";
 
@@ -231,6 +232,13 @@ const routes = [
     name: "AcceptInvitation",
     component: AcceptInvitation,
     beforeEnter: requireGuest,
+  },
+  {
+    path: "/sso/callback/:providerId",
+    name: "SSOCallback",
+    component: SSOCallback,
+    beforeEnter: requireGuest,
+    props: true,
   },
   {
     path: "/share/:token",

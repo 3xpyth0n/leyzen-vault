@@ -155,6 +155,8 @@ def main() -> None:
             logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
         else:
             logger.log("=== Orchestrator stopped ===")
+        # Clean up rotation service resources
+        rotation_service.cleanup()
         logger.flush()
 
     def handle_shutdown(

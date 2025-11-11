@@ -1,6 +1,6 @@
 <template>
   <div class="login-wrapper">
-    <div class="login-container glass glass-card">
+    <div class="login-content">
       <h1>Leyzen Vault Login</h1>
       <div v-if="error" class="error">
         {{ error }}
@@ -15,7 +15,52 @@
           </router-link>
         </div>
       </div>
-      <form @submit.prevent="handleLogin">
+      <div v-if="ssoProviders.length > 0" class="sso-section">
+        <template v-for="provider in ssoProviders" :key="provider.id">
+          <!-- Email Magic Link: Show email input form -->
+          <div
+            v-if="provider.provider_type === 'email-magic-link'"
+            class="magic-link-form"
+          >
+            <h3>{{ provider.name }}</h3>
+            <form @submit.prevent="handleMagicLinkLogin(provider.id)">
+              <input
+                v-model="magicLinkEmail"
+                type="email"
+                placeholder="Enter your email address"
+                autocomplete="email"
+                required
+                :disabled="loading || magicLinkLoading"
+                class="magic-link-input"
+              />
+              <button
+                type="submit"
+                class="sso-button magic-link-button"
+                :disabled="loading || magicLinkLoading"
+              >
+                {{ magicLinkLoading ? "Sending..." : "Send Magic Link" }}
+              </button>
+            </form>
+            <div v-if="magicLinkSuccess" class="magic-link-success">
+              Magic link sent! Please check your email.
+            </div>
+          </div>
+          <!-- Other SSO providers: Show button -->
+          <button
+            v-else
+            type="button"
+            class="sso-button"
+            :disabled="loading || ssoLoading"
+            @click="handleSSOLogin(provider.id)"
+          >
+            {{ ssoLoading ? "Connecting..." : `Sign in with ${provider.name}` }}
+          </button>
+        </template>
+        <div v-if="passwordAuthEnabled" class="separator">
+          <span>Or</span>
+        </div>
+      </div>
+      <form v-if="passwordAuthEnabled" @submit.prevent="handleLogin">
         <input
           v-model="username"
           type="text"
@@ -72,8 +117,8 @@
 
 <script setup>
 import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { auth } from "../services/api";
+import { useRouter, useRoute } from "vue-router";
+import { auth, sso } from "../services/api";
 import {
   initializeUserMasterKey,
   clearUserMasterKey,
@@ -82,15 +127,22 @@ import { logger } from "../utils/logger.js";
 import PasswordInput from "../components/PasswordInput.vue";
 
 const router = useRouter();
+const route = useRoute();
 const username = ref("");
 const password = ref("");
 const captchaResponse = ref("");
 const captchaNonce = ref("");
 const loading = ref(false);
+const ssoLoading = ref(false);
 const error = ref("");
 const showVerificationLink = ref(false);
 const emailForVerification = ref("");
 const signupEnabled = ref(true);
+const ssoProviders = ref([]);
+const passwordAuthEnabled = ref(true);
+const magicLinkEmail = ref("");
+const magicLinkLoading = ref(false);
+const magicLinkSuccess = ref(false);
 
 const captchaImageUrl = ref("");
 
@@ -142,9 +194,39 @@ const refreshCaptcha = async () => {
 };
 
 onMounted(async () => {
-  refreshCaptcha();
+  // Check for error in query parameters (e.g., from SSO callback failure)
+  if (route.query.error) {
+    error.value = decodeURIComponent(route.query.error);
+    // Clean up the URL by removing the error parameter
+    router.replace({ query: {} });
+  }
+
+  // Check if password authentication is enabled
+  try {
+    const response = await fetch("/api/auth/password-auth-status");
+    if (response.ok) {
+      const data = await response.json();
+      passwordAuthEnabled.value = data.password_authentication_enabled === true;
+    }
+  } catch (err) {
+    logger.error("Failed to check password auth status:", err);
+    passwordAuthEnabled.value = true; // Default to enabled
+  }
+
+  // Load captcha only if password auth is enabled
+  if (passwordAuthEnabled.value) {
+    refreshCaptcha();
+  }
+
   // Check if signup is enabled
   signupEnabled.value = await auth.isSignupEnabled();
+  // Load SSO providers
+  try {
+    ssoProviders.value = await sso.listProviders();
+  } catch (err) {
+    logger.error("Failed to load SSO providers:", err);
+    // Don't show error to user, just log it
+  }
 });
 
 const handleLogin = async () => {
@@ -207,6 +289,48 @@ const handleLogin = async () => {
     loading.value = false;
   }
 };
+
+const handleSSOLogin = async (providerId) => {
+  error.value = "";
+  ssoLoading.value = true;
+
+  try {
+    const returnUrl = window.location.origin + "/dashboard";
+    const redirectUrl = await sso.initiateLogin(providerId, returnUrl);
+    // Redirect to SSO provider
+    window.location.href = redirectUrl;
+  } catch (err) {
+    error.value =
+      err.message || "Failed to initiate SSO login. Please try again.";
+    ssoLoading.value = false;
+  }
+};
+
+const handleMagicLinkLogin = async (providerId) => {
+  error.value = "";
+  magicLinkSuccess.value = false;
+  magicLinkLoading.value = true;
+
+  try {
+    const returnUrl = window.location.origin + "/dashboard";
+    const result = await sso.initiateMagicLinkLogin(
+      providerId,
+      magicLinkEmail.value,
+      returnUrl,
+    );
+
+    if (result && result.message) {
+      magicLinkSuccess.value = true;
+      magicLinkEmail.value = ""; // Clear email after success
+    } else {
+      error.value = "Failed to send magic link. Please try again.";
+    }
+  } catch (err) {
+    error.value = err.message || "Failed to send magic link. Please try again.";
+  } finally {
+    magicLinkLoading.value = false;
+  }
+};
 </script>
 
 <style scoped>
@@ -220,29 +344,82 @@ const handleLogin = async () => {
   z-index: 1;
 }
 
-.login-container {
-  max-width: 400px;
+.login-content {
+  max-width: 600px;
   width: 100%;
-  padding: 2.5rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 h1 {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 3rem;
   color: #e6eef6;
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  background: linear-gradient(135deg, #e6eef6 0%, #cbd5e1 50%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 4px 20px rgba(230, 238, 246, 0.3);
+  margin-top: 0;
 }
 
 form {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
 }
 
 input {
   width: 100%;
   box-sizing: border-box;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.5);
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button[type="submit"] {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+button[type="submit"]:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+}
+
+button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .captcha-section {
@@ -296,6 +473,16 @@ p {
   text-align: center;
   margin-top: 1.5rem;
   color: #94a3b8;
+  width: 100%;
+}
+
+p a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+p a:hover {
+  text-decoration: underline;
 }
 
 .error {
@@ -305,6 +492,8 @@ p {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
   margin-bottom: 1rem;
+  width: 100%;
+  text-align: center;
 }
 
 .verification-link {
@@ -321,5 +510,113 @@ p {
 
 .verification-link a:hover {
   text-decoration: underline;
+}
+
+.sso-section {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.sso-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.sso-button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 8px;
+  color: #58a6ff;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sso-button:hover:not(:disabled) {
+  background: rgba(88, 166, 255, 0.2);
+  border-color: rgba(88, 166, 255, 0.5);
+}
+
+.sso-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.magic-link-form {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.magic-link-form h3 {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  color: #e6eef6;
+}
+
+.magic-link-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.magic-link-input {
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  background: rgba(13, 17, 23, 0.5);
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.magic-link-input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.magic-link-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.magic-link-button {
+  width: 100%;
+}
+
+.magic-link-success {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+  color: #4ade80;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.separator {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.5rem 0;
+  color: #94a3b8;
+}
+
+.separator::before,
+.separator::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.separator span {
+  padding: 0 1rem;
+  font-size: 0.9rem;
 }
 </style>

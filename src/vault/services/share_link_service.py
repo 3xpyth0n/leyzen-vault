@@ -28,10 +28,15 @@ class ShareService:
         self.timezone = timezone or ZoneInfo("UTC")
 
     def _get_base_url(self) -> str | None:
-        """Get base URL from VAULT_URL setting or request.host_url.
+        """Get base URL from VAULT_URL setting.
 
         Returns:
-            Base URL string or None
+            Base URL string or None if not configured
+
+        Note:
+            This method does not raise an error if VAULT_URL is not set
+            because share links can work with relative URLs as fallback.
+            However, VAULT_URL should be configured for proper functionality.
         """
         # Try to get from VAULT_SETTINGS
         try:
@@ -39,19 +44,15 @@ class ShareService:
             if settings and hasattr(settings, "vault_url") and settings.vault_url:
                 return settings.vault_url.rstrip("/")
         except Exception as e:
-            # Log warning but continue to fallback
+            # Log warning but continue
             logger.warning(f"Failed to get vault_url from VAULT_SETTINGS: {e}")
 
-        # Fallback to request.host_url
-        try:
-            from flask import request
-
-            if request:
-                return request.host_url.rstrip("/")
-        except Exception as e:
-            # Log warning if fallback also fails
-            logger.warning(f"Failed to get vault_url from request.host_url: {e}")
-
+        # SECURITY: No fallback to request.host_url to prevent Host header injection
+        # Share links will use relative URLs if VAULT_URL is not configured
+        logger.warning(
+            "VAULT_URL not configured. Share links will use relative URLs. "
+            "Set VAULT_URL environment variable for proper functionality."
+        )
         return None
 
     def get_share_url(self, link_id: str, file_id: str) -> str:

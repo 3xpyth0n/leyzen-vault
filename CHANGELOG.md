@@ -7,9 +7,32 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+#### Admin Dashboard Enhancements
+
+- **Enhanced Dashboard Statistics**: Improved admin dashboard with enriched statistics including user role breakdown, storage usage progress bars, and average metrics per user. Added visual indicators for disk storage usage with percentage display and color-coded warnings.
+- **Recent Activity Overview**: New "Recent Activity" section displaying the 3 most recent audit log entries with success/failure indicators, timestamps, and quick access to full audit logs.
+- **Top Users by Storage**: New "Top Users by Storage" card showing the 3 users with highest storage consumption, including visual progress bars and quick navigation to user management.
+- **Quota Alerts**: New "Quota Alerts" section displaying users approaching their storage limits (≥80% usage) with visual warnings and percentage indicators for proactive quota management.
+- **Quick Stats Cards**: Added clickable quick stats cards for API Keys and SSO Providers with summary information and direct navigation to respective management sections.
+- **Dashboard Refresh**: Added manual refresh button and last update timestamp indicator for real-time statistics monitoring.
+- **Improved UX**: Enhanced user experience with clickable cards, better visual hierarchy, and responsive grid layout for better information density.
+
+#### Single Sign-On (SSO)
+
+- **SSO Provider Management**: Complete SSO provider management system with support for multiple provider types (Google, Microsoft Entra, Slack, Discord, GitLab, OIDC Generic, SAML Generic, Email Magic Link). Admins can create, edit, activate/deactivate, and delete SSO providers through the admin panel.
+- **Provider Type Presets**: Intuitive provider creation with predefined configurations for popular SSO providers, simplifying setup with provider-specific fields and automatic endpoint configuration.
+- **Email Magic Link Authentication**: Passwordless authentication via email magic links. Users receive a secure link via email to authenticate without a password. Includes link expiry management.
+- **Provider Validation**: Comprehensive validation system ensuring provider name uniqueness and preventing multiple active providers of the same preset type (e.g., only one active Google provider at a time).
+- **Password Authentication Toggle**: System-wide toggle to disable password authentication and CAPTCHA. When disabled, requires at least one active SSO provider (including Email Magic Link). Existing users can authenticate via SSO providers that map to their email address.
+- **SSO Callback Handling**: Robust callback handling for all SSO provider types with proper error handling and user feedback. Automatic redirect to dashboard on successful authentication.
+- **SMTP Configuration Testing**: Built-in SMTP configuration testing for Email Magic Link providers with detailed error feedback and status indicators in the admin panel.
+
 ### Fixed
 
 - **API Key Permissions**: Fixed security issue where admins could create API keys for any user, including super admins. Admins can now only create API keys for themselves, while super admins can create API keys for any user.
+- **SSO Error Handling**: Fixed SSO authentication error display on login page. Errors from SSO callbacks are now properly displayed to users with automatic URL cleanup.
 
 ---
 

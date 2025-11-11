@@ -31,7 +31,7 @@ jobs:
           pip install ruff
 
       - name: Validate Python bytecode
-        run: python -m compileall src/orchestrator infra/docker-proxy src/compose
+        run: python -m compileall src/orchestrator infra/docker-proxy src/compose src/vault
 
       - name: Ruff lint
         run: ruff check --select F401 src/orchestrator infra/docker-proxy src/compose

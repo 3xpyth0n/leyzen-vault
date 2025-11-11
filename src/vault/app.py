@@ -32,6 +32,7 @@ from .blueprints.quota_api import quota_api_bp as quota_api_v2_bp  # noqa: E402
 from .blueprints.search_api import search_api_bp  # noqa: E402
 from .blueprints.security import security_bp  # noqa: E402
 from .blueprints.sharing_api import sharing_api_bp  # noqa: E402
+from .blueprints.sso_api import sso_api_bp  # noqa: E402
 from .blueprints.thumbnail_api import thumbnail_api_bp  # noqa: E402
 from .blueprints.trash_api import trash_api_bp  # noqa: E402
 from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
@@ -410,6 +411,7 @@ def create_app(
     app.register_blueprint(files_api_bp)  # Advanced files API v2
     app.register_blueprint(internal_api_bp)  # Internal API for orchestrator
     app.register_blueprint(search_api_bp)  # Search API
+    app.register_blueprint(sso_api_bp)  # SSO API (SAML, OAuth2, OIDC)
     app.register_blueprint(versions_api_bp)  # Versions API v2
     app.register_blueprint(trash_api_bp)  # Trash API v2
     app.register_blueprint(quota_api_v2_bp)  # Quota API v2
@@ -494,20 +496,20 @@ def create_app(
         csp_directives = [
             "default-src 'self'",
             (
-                f"script-src 'self' 'nonce-{csp_nonce}'"
+                f"script-src 'self' 'nonce-{csp_nonce}' https://static.cloudflareinsights.com"
                 if csp_nonce
-                else "script-src 'self'"
+                else "script-src 'self' https://static.cloudflareinsights.com"
             ),
             "style-src 'self' https://fonts.googleapis.com",
             "img-src 'self' data: blob:",
             "font-src 'self' https://fonts.gstatic.com",
-            "connect-src 'self'",
+            "connect-src 'self' https://static.cloudflareinsights.com",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",
             "upgrade-insecure-requests",
-            "trusted-types vault-html notifications-html vault-script-url vue",
+            "trusted-types vault-html notifications-html vault-script-url vue goog#html",
             "require-trusted-types-for 'script'",
             "report-uri /orchestrator/csp-violation-report-endpoint",
             "report-to vault-csp",
@@ -596,10 +598,53 @@ def create_app(
             404,
         )
 
+    def _is_spa_route(path: str) -> bool:
+        """Check if a path matches a valid Vue Router route pattern.
+
+        Returns True if the path should be handled by Vue Router (SPA),
+        False if it's a real 404 that should be handled by HAProxy.
+        """
+        import re
+
+        # Exact routes in Vue Router
+        exact_routes = {
+            "/",
+            "/setup",
+            "/login",
+            "/register",
+            "/verify-email",
+            "/accept-invitation",
+            "/dashboard",
+            "/trash",
+            "/starred",
+            "/recent",
+            "/shared",
+            "/account",
+            "/admin",
+        }
+
+        if path in exact_routes:
+            return True
+
+        # Routes with dynamic parameters
+        # /sso/callback/:providerId - matches /sso/callback/ followed by any non-slash chars
+        if re.match(r"^/sso/callback/[^/]+", path):
+            return True
+
+        # /share/:token - matches /share/ followed by any non-slash chars
+        if re.match(r"^/share/[^/]+", path):
+            return True
+
+        # /vaultspace/:id - matches /vaultspace/ followed by any non-slash chars
+        if re.match(r"^/vaultspace/[^/]+", path):
+            return True
+
+        return False
+
     @app.errorhandler(404)
     def serve_vue_app_for_404(e):
         """Serve Vue.js SPA for 404 errors (Vue Router will handle client-side routing)."""
-        from flask import request, send_file, jsonify
+        from flask import request, send_file, jsonify, make_response, current_app
 
         # Import sys here (already imported at top level) - this import is redundant but kept for clarity
         import sys
@@ -636,10 +681,18 @@ def create_app(
         if request.path.startswith("/static/"):
             return e
 
-        # Serve index.html for SPA routes
+        # Check if this is a valid SPA route (should be handled by Vue Router)
         dist_index = static_dir / "index.html"
         if dist_index.exists():
-            return send_file(str(dist_index))
+            if _is_spa_route(request.path):
+                # Valid SPA route - serve index.html with 200 so Vue Router can handle it
+                return send_file(str(dist_index))
+            else:
+                # Invalid route - serve index.html with 404 so HAProxy can intercept
+                # This allows HAProxy to intercept and serve its custom 404 page
+                response = make_response(send_file(str(dist_index)))
+                response.status_code = 404
+                return response
 
         # Return original 404
         return e

@@ -72,10 +72,29 @@ class RotationService:
         self._container_cache_lock = Lock()
         self._stats_error_last_logged: dict[str, float] = {}
         self._telemetry = RotationTelemetry(settings)
+        self._sync_service: SyncService | None = None
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _get_sync_service(self) -> SyncService:
+        """Get or create the shared SyncService instance.
+
+        Returns:
+            The shared SyncService instance
+        """
+        if self._sync_service is None:
+            from .sync_service import SyncService
+
+            self._sync_service = SyncService(self._settings, self._docker, self._logger)
+        return self._sync_service
+
+    def cleanup(self) -> None:
+        """Clean up resources, including closing the SyncService HTTP client."""
+        if self._sync_service is not None:
+            self._sync_service.close()
+            self._sync_service = None
+
     def mark_active(self, name: str) -> None:
         self.container_active_since[name] = datetime.now(self._settings.timezone)
 
@@ -333,9 +352,7 @@ class RotationService:
 
             # 1. Synchronize data BEFORE starting rotation
             try:
-                from .sync_service import SyncService
-
-                sync_service = SyncService(self._settings, self._docker, self._logger)
+                sync_service = self._get_sync_service()
                 if not sync_service.sync_container_data_to_source(active_name):
                     raise RuntimeError(
                         f"Failed to synchronize {active_name} before rotation"

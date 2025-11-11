@@ -147,7 +147,7 @@ Content-Type: text/html
         Sit tight—you're being guided back to familiar territory.
       </p>
 
-      <a href="/orchestrator" class="btn-home">
+      <a href="/" class="btn-home">
         🏠 Redirecting to Home...
       </a>
 

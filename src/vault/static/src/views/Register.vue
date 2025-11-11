@@ -1,9 +1,25 @@
 <template>
   <div class="register-wrapper">
-    <div class="register-container glass glass-card">
+    <div class="register-content">
       <h1>Create Account</h1>
       <div v-if="error" class="error">{{ error }}</div>
-      <form @submit.prevent="handleRegister">
+      <div v-if="ssoRequired && ssoProvider" class="sso-required-message">
+        <p>
+          This email domain requires authentication via {{ ssoProvider.name }}.
+          Please sign in with {{ ssoProvider.name }} instead.
+        </p>
+        <button
+          type="button"
+          class="sso-button"
+          :disabled="ssoLoading"
+          @click="handleSSOLogin(ssoProvider.id)"
+        >
+          {{
+            ssoLoading ? "Connecting..." : `Sign in with ${ssoProvider.name}`
+          }}
+        </button>
+      </div>
+      <form v-if="!ssoRequired" @submit.prevent="handleRegister">
         <input
           v-model="email"
           type="email"
@@ -42,9 +58,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { auth, vaultspaces } from "../services/api";
+import { auth, vaultspaces, sso } from "../services/api";
 import {
   initializeUserMasterKey,
   createVaultSpaceKey,
@@ -58,7 +74,42 @@ const email = ref("");
 const password = ref("");
 const confirmPassword = ref("");
 const loading = ref(false);
+const ssoLoading = ref(false);
 const error = ref("");
+const ssoRequired = ref(false);
+const ssoProvider = ref(null);
+
+// Debounce function for email domain checking
+let emailCheckTimeout = null;
+
+// Watch email input to check for SSO requirement
+watch(email, (newEmail) => {
+  // Clear previous timeout
+  if (emailCheckTimeout) {
+    clearTimeout(emailCheckTimeout);
+  }
+
+  // Reset SSO state
+  ssoRequired.value = false;
+  ssoProvider.value = null;
+
+  // Check if email is valid and contains @
+  if (newEmail && newEmail.includes("@") && newEmail.length > 3) {
+    // Debounce the check
+    emailCheckTimeout = setTimeout(async () => {
+      try {
+        const domainInfo = await sso.checkDomain(newEmail);
+        if (domainInfo.requires_sso && domainInfo.provider) {
+          ssoRequired.value = true;
+          ssoProvider.value = domainInfo.provider;
+        }
+      } catch (err) {
+        // Don't show error, just log it
+        logger.error("Failed to check domain for SSO:", err);
+      }
+    }, 500); // Wait 500ms after user stops typing
+  }
+});
 
 onMounted(async () => {
   // Check if signup is enabled
@@ -71,6 +122,8 @@ onMounted(async () => {
       router.push("/login");
     }, 3000);
   }
+  // SSO providers are not shown on registration page
+  // Users must register with password first, then can use SSO to login
 });
 
 const handleRegister = async () => {
@@ -167,8 +220,41 @@ const handleRegister = async () => {
     }
   } catch (err) {
     error.value = err.message || "Registration failed. Please try again.";
+    // Check if error is about SSO requirement
+    if (
+      err.message &&
+      (err.message.includes("requires SSO") ||
+        err.message.includes("SSO authentication"))
+    ) {
+      // Try to get the provider info from the error or check domain again
+      try {
+        const domainInfo = await sso.checkDomain(email.value);
+        if (domainInfo.requires_sso && domainInfo.provider) {
+          ssoRequired.value = true;
+          ssoProvider.value = domainInfo.provider;
+        }
+      } catch (checkErr) {
+        logger.error("Failed to check domain after error:", checkErr);
+      }
+    }
   } finally {
     loading.value = false;
+  }
+};
+
+const handleSSOLogin = async (providerId) => {
+  error.value = "";
+  ssoLoading.value = true;
+
+  try {
+    const returnUrl = window.location.origin + "/dashboard";
+    const redirectUrl = await sso.initiateLogin(providerId, returnUrl);
+    // Redirect to SSO provider
+    window.location.href = redirectUrl;
+  } catch (err) {
+    error.value =
+      err.message || "Failed to initiate SSO login. Please try again.";
+    ssoLoading.value = false;
   }
 };
 </script>
@@ -184,34 +270,147 @@ const handleRegister = async () => {
   z-index: 1;
 }
 
-.register-container {
-  max-width: 400px;
+.register-content {
+  max-width: 600px;
   width: 100%;
-  padding: 2.5rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 h1 {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 3rem;
   color: #e6eef6;
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  background: linear-gradient(135deg, #e6eef6 0%, #cbd5e1 50%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 4px 20px rgba(230, 238, 246, 0.3);
+  margin-top: 0;
 }
 
 form {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
 }
 
 input {
   width: 100%;
   box-sizing: border-box;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.5);
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button[type="submit"] {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+button[type="submit"]:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+}
+
+button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 p {
   text-align: center;
   margin-top: 1.5rem;
   color: #94a3b8;
+  width: 100%;
+}
+
+p a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+p a:hover {
+  text-decoration: underline;
+}
+
+.error {
+  color: #fca5a5;
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  width: 100%;
+  text-align: center;
+}
+
+.sso-required-message {
+  padding: 1rem;
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  width: 100%;
+}
+
+.sso-required-message p {
+  color: #58a6ff;
+  margin: 0 0 1rem 0;
+  font-size: 0.95rem;
+}
+
+.sso-button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(88, 166, 255, 0.2);
+  border: 1px solid rgba(88, 166, 255, 0.5);
+  border-radius: 8px;
+  color: #58a6ff;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sso-button:hover:not(:disabled) {
+  background: rgba(88, 166, 255, 0.3);
+  border-color: rgba(88, 166, 255, 0.7);
+}
+
+.sso-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

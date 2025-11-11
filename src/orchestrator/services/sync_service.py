@@ -121,5 +121,10 @@ class SyncService:
             )
             return False
 
+    def close(self) -> None:
+        """Close the HTTP client and release resources."""
+        if hasattr(self, "_client") and self._client is not None:
+            self._client.close()
+
 
 __all__ = ["SyncService"]

@@ -103,7 +103,7 @@
 
     <!-- Create/Edit Quota Modal -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="closeModal">
-      <div class="modal glass glass-card" @click.stop>
+      <div class="modal glass glass-card modal-wide" @click.stop>
         <div class="modal-header">
           <h3>{{ editingQuota ? "Edit Quota" : "Set Quota" }}</h3>
           <button
@@ -115,64 +115,70 @@
             ×
           </button>
         </div>
-        <form @submit.prevent="saveQuota" class="modal-form">
-          <div class="form-group">
-            <label>User:</label>
-            <select
-              v-model="quotaForm.user_id"
-              :disabled="editingQuota"
-              required
-              class="form-select"
-            >
-              <option value="">Select a user...</option>
-              <option
-                v-for="quota in quotas"
-                :key="quota.user_id"
-                :value="quota.user_id"
+        <div class="modal-body">
+          <form @submit.prevent="saveQuota" class="modal-form">
+            <div class="form-group">
+              <label>User:</label>
+              <select
+                v-model="quotaForm.user_id"
+                :disabled="editingQuota"
+                required
+                class="form-select"
               >
-                {{ quota.user_email || quota.user_id }}
-              </option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Max Storage (GB):</label>
-            <input
-              v-model.number="quotaForm.max_storage_gb"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="Leave empty for unlimited"
-              class="form-input"
-            />
-            <small class="form-help">
-              Current usage: {{ getCurrentUsage(quotaForm.user_id) }}
-            </small>
-          </div>
-          <div class="form-group">
-            <label>Max Files:</label>
-            <input
-              v-model.number="quotaForm.max_files"
-              type="number"
-              min="0"
-              placeholder="Leave empty for unlimited"
-              class="form-input"
-            />
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save</button>
-            <button type="button" @click="closeModal" class="btn btn-secondary">
-              Cancel
-            </button>
-            <button
-              v-if="editingQuota"
-              type="button"
-              @click="removeQuota"
-              class="btn btn-danger"
-            >
-              Remove Quota
-            </button>
-          </div>
-        </form>
+                <option value="">Select a user...</option>
+                <option
+                  v-for="quota in quotas"
+                  :key="quota.user_id"
+                  :value="quota.user_id"
+                >
+                  {{ quota.user_email || quota.user_id }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Max Storage (GB):</label>
+              <input
+                v-model.number="quotaForm.max_storage_gb"
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="Leave empty for unlimited"
+                class="form-input"
+              />
+              <small class="form-help">
+                Current usage: {{ getCurrentUsage(quotaForm.user_id) }}
+              </small>
+            </div>
+            <div class="form-group">
+              <label>Max Files:</label>
+              <input
+                v-model.number="quotaForm.max_files"
+                type="number"
+                min="0"
+                placeholder="Leave empty for unlimited"
+                class="form-input"
+              />
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Save</button>
+              <button
+                type="button"
+                @click="closeModal"
+                class="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                v-if="editingQuota"
+                type="button"
+                @click="removeQuota"
+                class="btn btn-danger"
+              >
+                Remove Quota
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>
@@ -563,48 +569,80 @@ export default {
 }
 
 .btn {
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
   border: none;
+  border-radius: 0.75rem;
   cursor: pointer;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  font-weight: 500;
-  transition: all 0.2s;
-  font-size: 0.9rem;
 }
 
 .btn-primary {
-  background: #3b82f6;
-  color: white;
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.2) 0%,
+    rgba(129, 140, 248, 0.2) 100%
+  );
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-.btn-primary:hover {
-  background: #2563eb;
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.3) 0%,
+    rgba(129, 140, 248, 0.3) 100%
+  );
+  border-color: rgba(56, 189, 248, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+}
+
+.btn-secondary {
+  background: rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.btn-danger {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.2) 0%,
+    rgba(220, 38, 38, 0.2) 100%
+  );
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.3) 0%,
+    rgba(220, 38, 38, 0.3) 100%
+  );
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
 }
 
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.85rem;
-}
-
-.btn-secondary {
-  background: rgba(148, 163, 184, 0.2);
-  color: #cbd5e1;
-}
-
-.btn-secondary:hover {
-  background: rgba(148, 163, 184, 0.3);
-}
-
-.btn-danger {
-  background: #ef4444;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #dc2626;
 }
 
 .modal-overlay {
@@ -613,89 +651,141 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
 }
 
 .modal {
-  background: #1e293b;
-  border-radius: 1rem;
-  padding: 2rem;
-  max-width: 500px;
-  width: 90%;
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.95),
+    rgba(15, 23, 42, 0.9)
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0;
+  border-radius: 1.25rem;
+  min-width: 400px;
+  max-width: 90vw;
   max-height: 90vh;
-  overflow-y: auto;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.modal-wide {
+  width: 90%;
+  max-width: 600px;
+  min-width: 500px;
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .modal-header h3 {
   margin: 0;
   color: #e6eef6;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .modal-close-btn {
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.2);
   color: #94a3b8;
-  font-size: 1.5rem;
   cursor: pointer;
-  padding: 0;
-  width: 2rem;
-  height: 2rem;
+  padding: 0.5rem;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
 }
 
 .modal-close-btn:hover {
-  color: #e6eef6;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 2rem;
+  padding-top: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .modal-form {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
 }
 
 .form-group {
+  margin-bottom: 1.25rem;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
 .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
   color: #cbd5e1;
-  font-weight: 500;
   font-size: 0.9rem;
+  font-weight: 500;
+  width: 100%;
 }
 
 .form-input,
 .form-select {
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(30, 41, 59, 0.5);
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.4);
   color: #e6eef6;
-  font-size: 1rem;
-  transition: border-color 0.2s;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .form-input:focus,
 .form-select:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(30, 41, 59, 0.6);
 }
 
 .form-input:disabled,
@@ -707,12 +797,17 @@ export default {
 .form-help {
   color: #94a3b8;
   font-size: 0.85rem;
+  margin-top: 0.5rem;
 }
 
 .form-actions {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
-  margin-top: 0.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  width: 100%;
+  box-sizing: border-box;
 }
 </style>

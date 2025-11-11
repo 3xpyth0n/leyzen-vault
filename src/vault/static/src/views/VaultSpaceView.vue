@@ -161,6 +161,73 @@
       </div>
     </div>
 
+    <!-- Password Modal for SSO Users -->
+    <Teleport to="body">
+      <div
+        v-if="showPasswordModal"
+        class="password-modal-overlay"
+        @click="closePasswordModal"
+        role="dialog"
+        aria-labelledby="password-modal-title"
+        aria-modal="true"
+      >
+        <div class="password-modal-container" @click.stop>
+          <div class="password-modal-content">
+            <div class="password-modal-header">
+              <h2 id="password-modal-title">Enter Encryption Password</h2>
+              <button
+                @click="closePasswordModal"
+                class="password-modal-close"
+                :disabled="passwordModalLoading"
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="password-modal-body">
+              <p class="password-modal-description">
+                You need to enter your encryption password to access this
+                VaultSpace. This password is used to decrypt your files and is
+                not stored on the server.
+              </p>
+              <div class="form-group">
+                <label for="password-modal-password">Password</label>
+                <input
+                  id="password-modal-password"
+                  v-model="passwordModalPassword"
+                  type="password"
+                  class="form-input"
+                  placeholder="Enter your encryption password"
+                  :disabled="passwordModalLoading"
+                  @keyup.enter="handlePasswordModalSubmit"
+                  autofocus
+                />
+              </div>
+              <div v-if="passwordModalError" class="password-modal-error">
+                {{ passwordModalError }}
+              </div>
+            </div>
+            <div class="password-modal-footer">
+              <button
+                @click="closePasswordModal"
+                class="password-modal-btn password-modal-btn-cancel"
+                :disabled="passwordModalLoading"
+              >
+                Cancel
+              </button>
+              <button
+                @click="handlePasswordModalSubmit"
+                class="password-modal-btn password-modal-btn-unlock"
+                :disabled="passwordModalLoading || !passwordModalPassword"
+              >
+                {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Alert Modal (for better UX) -->
     <AlertModal
       :show="showAlertModal"
@@ -221,6 +288,7 @@ import {
   createVaultSpaceKey,
   clearUserMasterKey,
   getStoredSalt,
+  initializeUserMasterKey,
 } from "../services/keyManager";
 import { debounce } from "../utils/debounce";
 import { folderPicker } from "../utils/FolderPicker";
@@ -288,6 +356,10 @@ export default {
       revokeConfirmMessage: "",
       newlyCreatedFolderId: null,
       pendingRevokeCallback: null,
+      showPasswordModal: false,
+      passwordModalPassword: "",
+      passwordModalError: "",
+      passwordModalLoading: false,
     };
   },
   created() {
@@ -320,16 +392,29 @@ export default {
         // User can navigate to other pages or go to login to re-enter password
         return;
       } else {
-        // No salt and no master key - user is not authenticated or session expired
-        console.warn(
-          "User master key not available and no salt found. Redirecting to login.",
-        );
-        this.showError("You must be logged in to access this VaultSpace.");
-        setTimeout(() => {
-          auth.logout();
-          this.$router.push("/login");
-        }, 2000);
-        return;
+        // No salt and no master key
+        // Check if user is still authenticated (could be SSO user without password)
+        try {
+          const currentUser = await auth.getCurrentUser();
+          if (currentUser) {
+            // User is authenticated but has no master key or salt
+            // This is normal for SSO users - show password modal to derive master key
+            // Show password modal to allow them to enter password for master key derivation
+            this.showPasswordModal = true;
+            return;
+          }
+        } catch (err) {
+          // User is not authenticated - redirect to login
+          console.warn(
+            "User master key not available and user is not authenticated. Redirecting to login.",
+          );
+          this.showError("You must be logged in to access this VaultSpace.");
+          setTimeout(() => {
+            auth.logout();
+            this.$router.push("/login");
+          }, 2000);
+          return;
+        }
       }
     }
 
@@ -1717,6 +1802,87 @@ export default {
       }
     },
 
+    async handlePasswordModalSubmit() {
+      if (!this.passwordModalPassword) {
+        this.passwordModalError = "Password is required";
+        return;
+      }
+
+      this.passwordModalError = "";
+      this.passwordModalLoading = true;
+
+      try {
+        // Get master key salt from API
+        // Use direct fetch to avoid automatic logout on 401
+        const token = localStorage.getItem("jwt_token");
+        if (!token) {
+          throw new Error(
+            "No authentication token found. Please log in again.",
+          );
+        }
+
+        const response = await fetch("/api/auth/account/master-key-salt", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error("Authentication failed. Please log in again.");
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to get master key salt");
+        }
+
+        const data = await response.json();
+        const saltBase64 = data.master_key_salt;
+        if (!saltBase64) {
+          throw new Error("Master key salt not available");
+        }
+
+        // Convert base64 salt to Uint8Array
+        const saltStr = atob(saltBase64);
+        const salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
+
+        // Derive master key from password and salt
+        const masterKey = await initializeUserMasterKey(
+          this.passwordModalPassword,
+          salt,
+        );
+
+        if (!masterKey) {
+          throw new Error("Failed to derive master key");
+        }
+
+        // Close modal and clear password
+        this.showPasswordModal = false;
+        this.passwordModalPassword = "";
+        this.passwordModalError = "";
+
+        // Reload VaultSpace with the new master key
+        await this.loadVaultSpace();
+        await this.loadVaultSpaceKey();
+        await this.loadFiles();
+      } catch (err) {
+        logger.error("Failed to initialize master key:", err);
+        this.passwordModalError =
+          err.message || "Failed to initialize encryption. Please try again.";
+      } finally {
+        this.passwordModalLoading = false;
+      }
+    },
+
+    closePasswordModal() {
+      if (!this.passwordModalLoading) {
+        this.showPasswordModal = false;
+        this.passwordModalPassword = "";
+        this.passwordModalError = "";
+      }
+    },
+
     async handleInlineRename(item) {
       this.editingItemId = item.id;
     },
@@ -2514,5 +2680,269 @@ export default {
 .selected-files li {
   margin: 0.25rem 0;
   font-size: 0.9rem;
+}
+/* Password Modal Styles */
+.password-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(7, 14, 28, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.password-modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.password-modal-content {
+  background: linear-gradient(
+    135deg,
+    rgba(30, 41, 59, 0.85),
+    rgba(15, 23, 42, 0.95)
+  );
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  padding: 0;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.password-modal-content::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+}
+
+.password-modal-header {
+  padding: 2rem 2rem 1.5rem 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.password-modal-header h2 {
+  margin: 0;
+  color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.password-modal-close {
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.password-modal-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6eef6;
+}
+
+.password-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-modal-body {
+  padding: 2rem;
+  flex: 1;
+}
+
+.password-modal-description {
+  margin: 0 0 1.5rem 0;
+  color: #cbd5e1;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.password-modal-body .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.password-modal-body .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #cbd5e1;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.password-modal-body .form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.password-modal-body .form-input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+.password-modal-body .form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-modal-body .form-input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.password-modal-error {
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.5rem;
+  color: #fca5a5;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+  line-height: 1.5;
+}
+
+.password-modal-footer {
+  padding: 1.5rem 2rem 2rem 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.password-modal-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+  font-family: inherit;
+}
+
+.password-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.password-modal-btn-cancel {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e6eef6;
+}
+
+.password-modal-btn-cancel:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.password-modal-btn-unlock {
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  color: white;
+}
+
+.password-modal-btn-unlock:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .password-modal-container {
+    max-width: 100%;
+    margin: 0 1rem;
+  }
+
+  .password-modal-content {
+    border-radius: 1rem;
+  }
+
+  .password-modal-header,
+  .password-modal-body,
+  .password-modal-footer {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .password-modal-header {
+    padding-top: 1.5rem;
+  }
+
+  .password-modal-footer {
+    padding-bottom: 1.5rem;
+    flex-direction: column-reverse;
+  }
+
+  .password-modal-btn {
+    width: 100%;
+  }
 }
 </style>

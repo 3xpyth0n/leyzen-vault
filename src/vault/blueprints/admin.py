@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import smtplib
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
@@ -656,6 +657,10 @@ def manage_settings():
             settings_dict["allow_signup"] = str(vault_settings.allow_signup)
         # If allow_signup is in database, use database value (already in settings_dict)
 
+        # Password authentication enabled (default: true)
+        if "password_authentication_enabled" not in settings_dict:
+            settings_dict["password_authentication_enabled"] = "true"
+
         return jsonify({"settings": settings_dict}), 200
     else:
         data = request.get_json()
@@ -677,20 +682,80 @@ def manage_settings():
                 db.session.add(setting)
             db.session.commit()
 
+        # Update password_authentication_enabled
+        password_auth_enabled = data.get("password_authentication_enabled")
+        if password_auth_enabled is not None:
+            # Convert to boolean for validation
+            password_auth_enabled_bool = (
+                str(password_auth_enabled).lower() == "true"
+                if isinstance(password_auth_enabled, str)
+                else bool(password_auth_enabled)
+            )
+
+            # Validation: if disabling password auth, ensure SSO is available
+            if not password_auth_enabled_bool:
+                from vault.services.sso_service import SSOService
+                from vault.database.schema import SSOProviderType
+
+                sso_service = SSOService()
+                active_providers = sso_service.list_providers(active_only=True)
+
+                # Check if at least one SSO provider is active
+                if not active_providers:
+                    return (
+                        jsonify(
+                            {
+                                "error": "Cannot disable password authentication: at least one SSO provider must be active"
+                            }
+                        ),
+                        400,
+                    )
+
+                # Check if Email Magic Link is active
+                magic_link_active = any(
+                    p.provider_type == SSOProviderType.EMAIL_MAGIC_LINK and p.is_active
+                    for p in active_providers
+                )
+                if not magic_link_active:
+                    return (
+                        jsonify(
+                            {
+                                "error": "Cannot disable password authentication: Email Magic Link must be active"
+                            }
+                        ),
+                        400,
+                    )
+
+            # Save setting
+            setting = (
+                db.session.query(SystemSettings)
+                .filter_by(key="password_authentication_enabled")
+                .first()
+            )
+            if setting:
+                setting.value = str(password_auth_enabled_bool).lower()
+            else:
+                setting = SystemSettings(
+                    key="password_authentication_enabled",
+                    value=str(password_auth_enabled_bool).lower(),
+                )
+                db.session.add(setting)
+            db.session.commit()
+
         return jsonify({"message": "Settings updated successfully"}), 200
 
 
-@admin_api_bp.route("/sso-domains", methods=["GET", "POST"])
+@admin_api_bp.route("/domain-rules", methods=["GET", "POST"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def manage_sso_domains():
-    """List or create SSO domain rules (admin only)."""
-    from vault.services.sso_domain_service import SSODomainService
+def manage_domain_rules():
+    """List or create domain rules (admin only)."""
+    from vault.services.domain_service import DomainService
 
     if request.method == "GET":
-        sso_domain_service = SSODomainService()
-        rules = sso_domain_service.list_rules()
+        domain_service = DomainService()
+        rules = domain_service.list_rules()
         return jsonify({"rules": [rule.to_dict() for rule in rules]}), 200
     else:
         data = request.get_json()
@@ -704,10 +769,10 @@ def manage_sso_domains():
         if not domain_pattern:
             return jsonify({"error": "domain_pattern is required"}), 400
 
-        sso_domain_service = SSODomainService()
+        domain_service = DomainService()
 
         try:
-            rule = sso_domain_service.create_rule(
+            rule = domain_service.create_rule(
                 domain_pattern=domain_pattern,
                 sso_provider_id=sso_provider_id,
                 is_active=is_active,
@@ -717,13 +782,13 @@ def manage_sso_domains():
             return jsonify({"error": str(e)}), 400
 
 
-@admin_api_bp.route("/sso-domains/<rule_id>", methods=["PUT", "DELETE"])
+@admin_api_bp.route("/domain-rules/<rule_id>", methods=["PUT", "DELETE"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def manage_sso_domain(rule_id: str):
-    """Update or delete SSO domain rule (admin only)."""
-    from vault.services.sso_domain_service import SSODomainService
+def manage_domain_rule(rule_id: str):
+    """Update or delete domain rule (admin only)."""
+    from vault.services.domain_service import DomainService
 
     if request.method == "PUT":
         data = request.get_json()
@@ -734,10 +799,10 @@ def manage_sso_domain(rule_id: str):
         sso_provider_id = data.get("sso_provider_id", "").strip() or None
         is_active = data.get("is_active")
 
-        sso_domain_service = SSODomainService()
+        domain_service = DomainService()
 
         try:
-            rule = sso_domain_service.update_rule(
+            rule = domain_service.update_rule(
                 rule_id=rule_id,
                 domain_pattern=domain_pattern,
                 sso_provider_id=sso_provider_id,
@@ -750,13 +815,253 @@ def manage_sso_domain(rule_id: str):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
     else:
-        sso_domain_service = SSODomainService()
-        success = sso_domain_service.delete_rule(rule_id=rule_id)
+        domain_service = DomainService()
+        success = domain_service.delete_rule(rule_id=rule_id)
 
         if success:
             return jsonify({"message": "Rule deleted successfully"}), 200
         else:
             return jsonify({"error": "Rule not found"}), 404
+
+
+# SSO Provider management routes
+
+
+@admin_api_bp.route("/sso-providers", methods=["GET"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def list_sso_providers():
+    """List all SSO providers (admin only)."""
+    from vault.services.sso_service import SSOService
+
+    sso_service = SSOService()
+    # Admin needs to see all providers, including inactive ones
+    providers = sso_service.list_providers(active_only=False)
+    return jsonify({"providers": [provider.to_dict() for provider in providers]}), 200
+
+
+@admin_api_bp.route("/sso-providers", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def create_sso_provider():
+    """Create a new SSO provider (admin only).
+
+    Request body:
+        {
+            "name": "Provider name",
+            "provider_type": "saml" | "oauth2" | "oidc",
+            "config": { ... },  # Provider-specific configuration
+            "is_active": true
+        }
+    """
+    from vault.services.sso_service import SSOService
+    from vault.database.schema import SSOProviderType
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    name = data.get("name", "").strip()
+    provider_type_str = data.get("provider_type", "").strip().lower()
+    config = data.get("config", {})
+    # is_active is managed via toggle, not in create form
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    if not provider_type_str:
+        return jsonify({"error": "provider_type is required"}), 400
+
+    try:
+        provider_type = SSOProviderType(provider_type_str)
+    except ValueError:
+        return (
+            jsonify(
+                {"error": f"Invalid provider_type. Must be one of: saml, oauth2, oidc"}
+            ),
+            400,
+        )
+
+    # Validate config based on provider type
+    if provider_type == SSOProviderType.SAML:
+        required_fields = ["entity_id", "sso_url", "x509_cert"]
+        for field in required_fields:
+            if field not in config:
+                return jsonify({"error": f"config.{field} is required for SAML"}), 400
+    elif provider_type == SSOProviderType.OAUTH2:
+        required_fields = [
+            "client_id",
+            "client_secret",
+            "authorization_url",
+            "token_url",
+            "userinfo_url",
+        ]
+        for field in required_fields:
+            if field not in config:
+                return (
+                    jsonify({"error": f"config.{field} is required for OAuth2"}),
+                    400,
+                )
+    elif provider_type == SSOProviderType.OIDC:
+        required_fields = ["issuer_url", "client_id", "client_secret"]
+        for field in required_fields:
+            if field not in config:
+                return (
+                    jsonify({"error": f"config.{field} is required for OIDC"}),
+                    400,
+                )
+    elif provider_type == SSOProviderType.EMAIL_MAGIC_LINK:
+        # Email magic link only requires expiry_minutes (optional, defaults to 15)
+        # No required fields, but we validate expiry_minutes if provided
+        if "expiry_minutes" in config:
+            try:
+                expiry = int(config["expiry_minutes"])
+                if expiry < 5 or expiry > 1440:
+                    return (
+                        jsonify({"error": "expiry_minutes must be between 5 and 1440"}),
+                        400,
+                    )
+            except (ValueError, TypeError):
+                return (
+                    jsonify({"error": "expiry_minutes must be a valid number"}),
+                    400,
+                )
+
+    sso_service = SSOService()
+
+    try:
+        # Providers are created as active by default
+        provider = sso_service.create_provider(
+            name=name, provider_type=provider_type, config=config
+        )
+        return jsonify({"provider": provider.to_dict()}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error creating SSO provider: {e}")
+        return jsonify({"error": "Failed to create SSO provider"}), 500
+
+
+@admin_api_bp.route("/sso-providers/<provider_id>", methods=["GET"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def get_sso_provider(provider_id: str):
+    """Get a specific SSO provider (admin only)."""
+    from vault.services.sso_service import SSOService
+
+    sso_service = SSOService()
+    # Admin needs to access providers even if they're inactive
+    provider = sso_service.get_provider(provider_id, active_only=False)
+
+    if not provider:
+        return jsonify({"error": "SSO provider not found"}), 404
+
+    return jsonify({"provider": provider.to_dict()}), 200
+
+
+@admin_api_bp.route("/sso-providers/<provider_id>", methods=["PUT"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def update_sso_provider(provider_id: str):
+    """Update an SSO provider (admin only).
+
+    Request body:
+        {
+            "name": "Provider name" (optional),
+            "config": { ... } (optional),
+            "is_active": true/false (optional)
+        }
+    """
+    from vault.services.sso_service import SSOService
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    name = data.get("name")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            return jsonify({"error": "name cannot be empty"}), 400
+
+    config = data.get("config")
+    is_active = data.get("is_active")
+
+    sso_service = SSOService()
+    # Admin needs to access providers even if they're inactive
+    provider = sso_service.get_provider(provider_id, active_only=False)
+
+    if not provider:
+        return jsonify({"error": "SSO provider not found"}), 404
+
+    # If config is provided, validate it based on provider type
+    if config is not None:
+        if provider.provider_type.value == "saml":
+            required_fields = ["entity_id", "sso_url", "x509_cert"]
+            for field in required_fields:
+                if field not in config:
+                    return (
+                        jsonify({"error": f"config.{field} is required for SAML"}),
+                        400,
+                    )
+        elif provider.provider_type.value == "oauth2":
+            required_fields = [
+                "client_id",
+                "client_secret",
+                "authorization_url",
+                "token_url",
+                "userinfo_url",
+            ]
+            for field in required_fields:
+                if field not in config:
+                    return (
+                        jsonify({"error": f"config.{field} is required for OAuth2"}),
+                        400,
+                    )
+        elif provider.provider_type.value == "oidc":
+            required_fields = ["issuer_url", "client_id", "client_secret"]
+            for field in required_fields:
+                if field not in config:
+                    return (
+                        jsonify({"error": f"config.{field} is required for OIDC"}),
+                        400,
+                    )
+
+    try:
+        updated_provider = sso_service.update_provider(
+            provider_id=provider_id, name=name, config=config, is_active=is_active
+        )
+
+        if not updated_provider:
+            return jsonify({"error": "SSO provider not found"}), 404
+
+        return jsonify({"provider": updated_provider.to_dict()}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating SSO provider: {e}")
+        return jsonify({"error": "Failed to update SSO provider"}), 500
+
+
+@admin_api_bp.route("/sso-providers/<provider_id>", methods=["DELETE"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def delete_sso_provider(provider_id: str):
+    """Delete an SSO provider (admin only)."""
+    from vault.services.sso_service import SSOService
+
+    sso_service = SSOService()
+    success = sso_service.delete_provider(provider_id)
+
+    if success:
+        return jsonify({"message": "SSO provider deleted successfully"}), 200
+    else:
+        return jsonify({"error": "SSO provider not found"}), 404
 
 
 # API Key management routes
@@ -903,3 +1208,111 @@ def list_user_api_keys(user_id: str):
         ),
         200,
     )
+
+
+@admin_api_bp.route("/test-smtp", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def test_smtp():
+    """Test SMTP configuration by sending a test email to the current admin user.
+
+    Returns:
+        JSON with test result (success/error message)
+    """
+    from vault.services.email_service import EmailService
+
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    email_service = EmailService()
+
+    # Try to send a test email
+    test_subject = "Leyzen Vault - SMTP Configuration Test"
+    test_body_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .success { color: #28a745; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>SMTP Configuration Test</h1>
+            <p class="success">✓ Your SMTP configuration is working correctly!</p>
+            <p>This is a test email sent from Leyzen Vault to verify that your email (SMTP) settings are properly configured.</p>
+            <p>If you received this email, your SMTP configuration is valid and ready to use.</p>
+            <p>Best regards,<br>The Leyzen Vault Team</p>
+        </div>
+    </body>
+    </html>
+    """
+    test_body_text = """
+SMTP Configuration Test
+
+✓ Your SMTP configuration is working correctly!
+
+This is a test email sent from Leyzen Vault to verify that your email (SMTP) settings are properly configured.
+
+If you received this email, your SMTP configuration is valid and ready to use.
+
+Best regards,
+The Leyzen Vault Team
+    """
+
+    try:
+        success = email_service.send_email(
+            to_email=current_user.email,
+            subject=test_subject,
+            body_html=test_body_html,
+            body_text=test_body_text,
+        )
+
+        if success:
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "message": f"Test email sent successfully to {current_user.email}",
+                    }
+                ),
+                200,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Failed to send test email. Please check your SMTP configuration.",
+                    }
+                ),
+                400,
+            )
+
+    except smtplib.SMTPAuthenticationError as e:
+        return (
+            jsonify(
+                {"success": False, "error": f"SMTP authentication failed: {str(e)}"}
+            ),
+            400,
+        )
+    except smtplib.SMTPConnectError as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to connect to SMTP server: {str(e)}",
+                }
+            ),
+            400,
+        )
+    except smtplib.SMTPException as e:
+        return jsonify({"success": False, "error": f"SMTP error: {str(e)}"}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error testing SMTP: {e}")
+        return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500

@@ -64,6 +64,9 @@ class EmailService:
             current_app.logger.warning("SMTP not configured, cannot send email")
             return False
 
+        email_sent = False
+        server = None
+
         try:
             # Create message
             msg = MIMEMultipart("alternative")
@@ -81,21 +84,34 @@ class EmailService:
 
             # Send email
             if smtp_config.use_tls:
-                server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+                server = smtplib.SMTP(smtp_config.host, smtp_config.port, timeout=30)
                 server.starttls()
             else:
-                server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+                server = smtplib.SMTP(smtp_config.host, smtp_config.port, timeout=30)
 
             server.login(smtp_config.user, smtp_config.password)
             server.send_message(msg)
-            server.quit()
 
             current_app.logger.info(f"Email sent to {to_email}: {subject}")
-            return True
+            email_sent = True
 
         except Exception as e:
             current_app.logger.error(f"Failed to send email to {to_email}: {str(e)}")
             return False
+        finally:
+            # Always try to close the connection, even if there's an error
+            if server:
+                try:
+                    server.quit()
+                except Exception:
+                    # If quit() fails, try close() as fallback
+                    try:
+                        server.close()
+                    except Exception:
+                        # Ignore errors during cleanup - email may have been sent successfully
+                        pass
+
+        return email_sent
 
     def send_verification_email(
         self,

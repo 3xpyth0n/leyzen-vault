@@ -1,9 +1,9 @@
 <template>
   <AppLayout @logout="logout">
     <div class="dashboard">
-      <QuotaDisplay />
+      <div class="dashboard-main">
+        <QuotaDisplay />
 
-      <main class="dashboard-main">
         <div class="vaultspaces-section">
           <div class="vaultspaces-section-header">
             <h2>My VaultSpaces</h2>
@@ -98,7 +98,7 @@
             </div>
           </div>
         </div>
-      </main>
+      </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
@@ -388,6 +388,9 @@ export default {
   display: grid;
   grid-template-columns: 1fr;
   gap: 2rem;
+  width: 100%;
+  padding: 0 1rem;
+  box-sizing: border-box;
 }
 
 .vaultspaces-section {

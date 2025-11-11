@@ -142,6 +142,32 @@ def signup_status():
     return jsonify({"allow_signup": allow_signup}), 200
 
 
+@auth_api_bp.route("/password-auth-status", methods=["GET"])
+@csrf.exempt  # Public endpoint
+def password_auth_status():
+    """Check if password authentication is enabled.
+
+    Returns:
+        JSON with password_authentication_enabled status
+    """
+    from vault.database.schema import SystemSettings, db
+
+    # First, try to get from database (takes precedence over config)
+    setting = (
+        db.session.query(SystemSettings)
+        .filter_by(key="password_authentication_enabled")
+        .first()
+    )
+    if setting:
+        # Convert string to boolean
+        password_auth_enabled = setting.value.lower() == "true"
+    else:
+        # Default to True if not configured
+        password_auth_enabled = True
+
+    return jsonify({"password_authentication_enabled": password_auth_enabled}), 200
+
+
 @auth_api_bp.route("/signup", methods=["POST"])
 @csrf.exempt  # Public endpoint, CSRF not needed for JWT-based auth
 def signup():
@@ -210,11 +236,11 @@ def signup():
             403,
         )
 
-    # Validate email domain against SSO rules
-    from vault.services.sso_domain_service import SSODomainService
+    # Validate email domain against domain rules
+    from vault.services.domain_service import DomainService
 
-    sso_domain_service = SSODomainService()
-    is_allowed, error_message = sso_domain_service.validate_email_domain(email)
+    domain_service = DomainService()
+    is_allowed, error_message = domain_service.validate_email_domain(email)
     if not is_allowed:
         return jsonify({"error": error_message or "Domain not allowed"}), 403
 
@@ -296,6 +322,25 @@ def login():
         from common.captcha_helpers import (
             get_captcha_store_for_app,
         )
+        from vault.database.schema import SystemSettings, db
+
+        # Check if password authentication is enabled
+        setting = (
+            db.session.query(SystemSettings)
+            .filter_by(key="password_authentication_enabled")
+            .first()
+        )
+        password_auth_enabled = True  # Default
+        if setting:
+            password_auth_enabled = setting.value.lower() == "true"
+
+        if not password_auth_enabled:
+            return (
+                jsonify(
+                    {"error": "Password authentication is disabled. Please use SSO."}
+                ),
+                400,
+            )
 
         # Rate limiting: 5 attempts per minute per IP
         rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
@@ -759,6 +804,43 @@ def update_email():
         return jsonify({"error": "Failed to update email"}), 500
 
 
+@auth_api_bp.route("/account/master-key-salt", methods=["GET"])
+@jwt_required
+def get_master_key_salt():
+    """Get master key salt for current user.
+
+    This endpoint is used by SSO users to retrieve their salt
+    so they can derive their master key from their password.
+
+    Request headers:
+        Authorization: Bearer <token>
+
+    Returns:
+        JSON with master_key_salt
+    """
+    user = get_current_user()
+    if not user:
+        current_app.logger.warning(
+            "get_master_key_salt: User not found in g.current_user"
+        )
+        return jsonify({"error": "User not found"}), 404
+
+    if not user.master_key_salt:
+        current_app.logger.warning(
+            f"get_master_key_salt: Master key salt not available for user {user.id}"
+        )
+        return (
+            jsonify(
+                {
+                    "error": "Master key salt not available. Please contact your administrator."
+                }
+            ),
+            404,
+        )
+
+    return jsonify({"master_key_salt": user.master_key_salt}), 200
+
+
 @auth_api_bp.route("/account/password", methods=["POST"])
 @jwt_required
 def change_password():
@@ -961,47 +1043,62 @@ def resend_verification_email():
     if not user_id and not email:
         return jsonify({"error": "Either user_id or email is required"}), 400
 
-    # Find user by user_id or email
+    # SECURITY: Always return the same response to prevent account enumeration
+    # Log server-side for audit purposes
     user = None
-    if user_id:
-        user = db.session.query(User).filter_by(id=user_id).first()
-    elif email:
-        if not validate_email(email):
-            return jsonify({"error": "Invalid email format"}), 400
-        user = db.session.query(User).filter_by(email=email, is_active=True).first()
+    email_sent = False
 
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    try:
+        # Find user by user_id or email
+        if user_id:
+            user = db.session.query(User).filter_by(id=user_id).first()
+        elif email:
+            if not validate_email(email):
+                # Invalid email format - return uniform response
+                current_app.logger.info(
+                    f"Resend verification attempt with invalid email format: {email[:10]}..."
+                )
+                return (
+                    jsonify({"message": "A verification email has been sent"}),
+                    200,
+                )
+            user = db.session.query(User).filter_by(email=email, is_active=True).first()
 
-    if user.email_verified:
-        return jsonify({"error": "Email already verified"}), 400
+        # Only send email if user exists and is not verified
+        if user and not user.email_verified:
+            email_verification_service = EmailVerificationService()
+            # VAULT_URL from settings will be used automatically
+            email_sent = email_verification_service.send_verification_email(
+                user_id=user.id,
+                base_url=None,  # Will use VAULT_URL from settings
+            )
+            if email_sent:
+                current_app.logger.info(
+                    f"Verification email sent successfully for user_id: {user.id}"
+                )
+            else:
+                current_app.logger.warning(
+                    f"Failed to send verification email for user_id: {user.id}"
+                )
+        elif user and user.email_verified:
+            current_app.logger.info(
+                f"Resend verification attempt for already verified user_id: {user.id}"
+            )
+        else:
+            # User not found - log but don't reveal
+            current_app.logger.info(
+                f"Resend verification attempt for non-existent user: "
+                f"{'user_id=' + user_id[:10] + '...' if user_id else 'email=' + email[:10] + '...'}"
+            )
+    except Exception as e:
+        # Log error but still return uniform response
+        current_app.logger.error(f"Error in resend_verification_email: {e}")
 
-    email_verification_service = EmailVerificationService()
-    # VAULT_URL from settings will be used automatically
-    success = email_verification_service.send_verification_email(
-        user_id=user.id,  # Use user.id (found from user_id or email)
-        base_url=None,  # Will use VAULT_URL from settings or request.host_url as fallback
+    # SECURITY: Always return the same message to prevent account enumeration
+    return (
+        jsonify({"message": "A verification email has been sent"}),
+        200,
     )
-
-    if success:
-        return (
-            jsonify(
-                {
-                    "message": "Verification email resent successfully",
-                    "user_id": user.id,  # Return user_id in case it was requested by email
-                }
-            ),
-            200,
-        )
-    else:
-        return (
-            jsonify(
-                {
-                    "error": "Failed to send verification email. Please check SMTP configuration.",
-                }
-            ),
-            500,
-        )
 
 
 @auth_api_bp.route("/invitations/accept/<token>", methods=["GET", "POST"])

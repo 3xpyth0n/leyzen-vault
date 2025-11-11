@@ -1,22 +1,22 @@
-"""SSO domain rule service for managing domain-based SSO configuration."""
+"""Domain rule service for managing domain-based access configuration."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from vault.database.schema import SSODomainRule, SSOProvider, db
+from vault.database.schema import DomainRule, SSOProvider, db
 
 
-class SSODomainService:
-    """Service for managing SSO domain rules."""
+class DomainService:
+    """Service for managing domain rules."""
 
     def create_rule(
         self,
         domain_pattern: str,
         sso_provider_id: str | None = None,
         is_active: bool = True,
-    ) -> SSODomainRule:
-        """Create a new SSO domain rule.
+    ) -> DomainRule:
+        """Create a new domain rule.
 
         Args:
             domain_pattern: Domain pattern (e.g., "example.com" or "*.example.com")
@@ -24,7 +24,7 @@ class SSODomainService:
             is_active: Whether rule is active
 
         Returns:
-            SSODomainRule object
+            DomainRule object
 
         Raises:
             ValueError: If domain pattern is invalid or already exists
@@ -35,7 +35,7 @@ class SSODomainService:
 
         # Check if rule already exists
         existing = (
-            db.session.query(SSODomainRule)
+            db.session.query(DomainRule)
             .filter_by(domain_pattern=domain_pattern)
             .first()
         )
@@ -53,7 +53,7 @@ class SSODomainService:
                 raise ValueError(f"SSO provider {sso_provider_id} not found")
 
         # Create rule
-        rule = SSODomainRule(
+        rule = DomainRule(
             domain_pattern=domain_pattern,
             sso_provider_id=sso_provider_id,
             is_active=is_active,
@@ -69,8 +69,8 @@ class SSODomainService:
         domain_pattern: str | None = None,
         sso_provider_id: str | None = None,
         is_active: bool | None = None,
-    ) -> SSODomainRule | None:
-        """Update an SSO domain rule.
+    ) -> DomainRule | None:
+        """Update a domain rule.
 
         Args:
             rule_id: Rule ID
@@ -79,12 +79,12 @@ class SSODomainService:
             is_active: New active status (optional)
 
         Returns:
-            Updated SSODomainRule object or None if not found
+            Updated DomainRule object or None if not found
 
         Raises:
             ValueError: If domain pattern is invalid
         """
-        rule = db.session.query(SSODomainRule).filter_by(id=rule_id).first()
+        rule = db.session.query(DomainRule).filter_by(id=rule_id).first()
         if not rule:
             return None
 
@@ -94,9 +94,9 @@ class SSODomainService:
 
             # Check if another rule with this pattern exists
             existing = (
-                db.session.query(SSODomainRule)
+                db.session.query(DomainRule)
                 .filter_by(domain_pattern=domain_pattern)
-                .filter(SSODomainRule.id != rule_id)
+                .filter(DomainRule.id != rule_id)
                 .first()
             )
             if existing:
@@ -122,7 +122,7 @@ class SSODomainService:
         return rule
 
     def delete_rule(self, rule_id: str) -> bool:
-        """Delete an SSO domain rule.
+        """Delete a domain rule.
 
         Args:
             rule_id: Rule ID
@@ -130,7 +130,7 @@ class SSODomainService:
         Returns:
             True if deleted, False if not found
         """
-        rule = db.session.query(SSODomainRule).filter_by(id=rule_id).first()
+        rule = db.session.query(DomainRule).filter_by(id=rule_id).first()
         if not rule:
             return False
 
@@ -138,32 +138,32 @@ class SSODomainService:
         db.session.commit()
         return True
 
-    def get_rule(self, rule_id: str) -> SSODomainRule | None:
-        """Get an SSO domain rule by ID.
+    def get_rule(self, rule_id: str) -> DomainRule | None:
+        """Get a domain rule by ID.
 
         Args:
             rule_id: Rule ID
 
         Returns:
-            SSODomainRule object or None if not found
+            DomainRule object or None if not found
         """
-        return db.session.query(SSODomainRule).filter_by(id=rule_id).first()
+        return db.session.query(DomainRule).filter_by(id=rule_id).first()
 
     def list_rules(
         self,
         is_active: bool | None = None,
         sso_provider_id: str | None = None,
-    ) -> list[SSODomainRule]:
-        """List SSO domain rules with filters.
+    ) -> list[DomainRule]:
+        """List domain rules with filters.
 
         Args:
             is_active: Filter by active status
             sso_provider_id: Filter by SSO provider ID
 
         Returns:
-            List of SSODomainRule objects
+            List of DomainRule objects
         """
-        query = db.session.query(SSODomainRule)
+        query = db.session.query(DomainRule)
 
         if is_active is not None:
             query = query.filter_by(is_active=is_active)
@@ -171,16 +171,16 @@ class SSODomainService:
         if sso_provider_id is not None:
             query = query.filter_by(sso_provider_id=sso_provider_id)
 
-        return query.order_by(SSODomainRule.domain_pattern).all()
+        return query.order_by(DomainRule.domain_pattern).all()
 
-    def find_matching_rule(self, email: str) -> SSODomainRule | None:
-        """Find SSO domain rule matching email domain.
+    def find_matching_rule(self, email: str) -> DomainRule | None:
+        """Find domain rule matching email domain.
 
         Args:
             email: Email address to check
 
         Returns:
-            SSODomainRule object if match found, None otherwise
+            DomainRule object if match found, None otherwise
         """
         if "@" not in email:
             return None
@@ -196,7 +196,7 @@ class SSODomainService:
         return None
 
     def validate_email_domain(self, email: str) -> tuple[bool, str | None]:
-        """Validate email domain against SSO rules.
+        """Validate email domain against domain rules.
 
         Args:
             email: Email address to validate

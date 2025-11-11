@@ -115,51 +115,176 @@
             <div v-else-if="statsError" class="error glass glass-card">
               {{ statsError }}
             </div>
-            <div v-else-if="stats" class="stats-grid">
-              <div class="stat-card glass glass-card">
-                <h3>Users</h3>
-                <div class="stat-value">{{ stats.users.total }}</div>
-              </div>
-              <div class="stat-card glass glass-card">
-                <h3>Files</h3>
-                <div class="stat-value">{{ stats.files.total }}</div>
-                <div class="stat-details">
-                  <span class="stat-detail"
-                    >Deleted: {{ stats.files.deleted }}</span
+            <div v-else-if="stats" class="dashboard-content">
+              <!-- Header with refresh button -->
+              <div class="dashboard-header glass glass-card">
+                <h2>Dashboard Overview</h2>
+                <div class="header-actions">
+                  <span class="last-update" v-if="lastUpdateTime">
+                    Last updated: {{ formatTime(lastUpdateTime) }}
+                  </span>
+                  <button
+                    @click="loadStats"
+                    class="btn-refresh"
+                    title="Refresh"
                   >
+                    <Icon name="clock" :size="18" />
+                  </button>
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
-                <h3>VaultSpaces</h3>
-                <div class="stat-value">{{ stats.vaultspaces.total }}</div>
-                <div class="stat-details">
-                  <span class="stat-detail"
-                    >Personal: {{ stats.vaultspaces.personal }}</span
-                  >
+
+              <!-- Main Statistics Cards -->
+              <div class="stats-grid">
+                <div class="stat-card glass glass-card">
+                  <h3>Users</h3>
+                  <div class="stat-value">{{ stats.users.total }}</div>
+                  <div class="stat-details">
+                    <div class="stat-detail-row" v-if="stats.users.by_role">
+                      <span class="stat-detail-label">Regular:</span>
+                      <span class="stat-detail-value">{{
+                        stats.users.by_role.user || 0
+                      }}</span>
+                    </div>
+                    <div class="stat-detail-row" v-if="stats.users.by_role">
+                      <span class="stat-detail-label">Admins:</span>
+                      <span class="stat-detail-value">{{
+                        (stats.users.by_role.admin || 0) +
+                        (stats.users.by_role.superadmin || 0)
+                      }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="stat-card glass glass-card">
+                  <h3>Files</h3>
+                  <div class="stat-value">{{ stats.files.total }}</div>
+                  <div class="stat-details">
+                    <div class="stat-detail-row">
+                      <span class="stat-detail-label">Deleted:</span>
+                      <span class="stat-detail-value">{{
+                        stats.files.deleted
+                      }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="stat-card glass glass-card">
+                  <h3>VaultSpaces</h3>
+                  <div class="stat-value">{{ stats.vaultspaces.total }}</div>
+                  <div class="stat-details">
+                    <div
+                      class="stat-detail-row"
+                      v-if="stats.vaultspaces.avg_per_user"
+                    >
+                      <span class="stat-detail-label">Avg per user:</span>
+                      <span class="stat-detail-value">{{
+                        stats.vaultspaces.avg_per_user
+                      }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="stat-card glass glass-card">
+                  <h3>Disk Storage</h3>
+                  <div class="stat-value">
+                    {{ stats.disk ? stats.disk.used_gb : 0 }} GB
+                  </div>
+                  <div class="stat-details">
+                    <div class="storage-progress" v-if="stats.disk">
+                      <div class="progress-bar">
+                        <div
+                          class="progress-fill"
+                          :style="{
+                            width:
+                              Math.min(stats.disk.percentage || 0, 100) + '%',
+                          }"
+                          :class="{ 'high-usage': stats.disk.percentage >= 80 }"
+                        ></div>
+                      </div>
+                      <div class="progress-text">
+                        {{ Math.round(stats.disk.percentage || 0) }}% used
+                      </div>
+                    </div>
+                    <div class="stat-detail-row" v-if="stats.disk">
+                      <span class="stat-detail-label">Total:</span>
+                      <span class="stat-detail-value"
+                        >{{ stats.disk.total_gb }} GB</span
+                      >
+                    </div>
+                    <div class="stat-detail-row" v-if="stats.disk">
+                      <span class="stat-detail-label">Free:</span>
+                      <span class="stat-detail-value"
+                        >{{ stats.disk.free_gb }} GB</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="stat-card glass glass-card">
+                  <h3>Recent Activity</h3>
+                  <div class="stat-value">
+                    {{ stats.users.recent_activity }}
+                  </div>
+                  <div class="stat-details">
+                    <span class="stat-detail">Users (last 7 days)</span>
+                  </div>
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
-                <h3>Disk Storage</h3>
-                <div class="stat-value">
-                  {{ stats.disk ? stats.disk.total_gb : 0 }} GB
+
+              <!-- Activity and Overview Section -->
+              <div class="overview-section">
+                <div class="overview-left">
+                  <RecentActivityList
+                    :logs="stats.recent_audit_logs || []"
+                    :loading="statsLoading"
+                    @view-all="activeTab = 'audit'"
+                  />
                 </div>
-                <div class="stat-details">
-                  <span class="stat-detail" v-if="stats.disk"
-                    >Total: {{ stats.disk.total_mb }} MB</span
-                  >
-                  <span class="stat-detail" v-if="stats.disk"
-                    >Used: {{ stats.disk.used_mb }} MB</span
-                  >
-                  <span class="stat-detail" v-if="stats.disk"
-                    >Free: {{ stats.disk.free_mb }} MB</span
-                  >
+                <div class="overview-right">
+                  <TopUsersCard
+                    :users="stats.top_users || []"
+                    :loading="statsLoading"
+                    @view-all="activeTab = 'users'"
+                  />
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
-                <h3>Recent Activity</h3>
-                <div class="stat-value">{{ stats.users.recent_activity }}</div>
-                <div class="stat-details">
-                  <span class="stat-detail">Users (last 7 days)</span>
+
+              <!-- Alerts and Quick Stats Section -->
+              <div class="alerts-section">
+                <QuotaAlertsCard
+                  :alerts="stats.quota_alerts || []"
+                  :loading="statsLoading"
+                  @view-all="activeTab = 'quotas'"
+                />
+              </div>
+
+              <!-- Quick Stats Cards -->
+              <div class="quick-stats-grid">
+                <div
+                  class="quick-stat-card glass glass-card"
+                  @click="activeTab = 'api-keys'"
+                >
+                  <h4>API Keys</h4>
+                  <div class="quick-stat-value">
+                    {{ stats.api_keys?.total || 0 }}
+                  </div>
+                  <div class="quick-stat-detail">
+                    <span v-if="stats.api_keys?.with_usage">
+                      {{ stats.api_keys.with_usage }} active
+                    </span>
+                    <span v-else>No usage data</span>
+                  </div>
+                </div>
+                <div
+                  class="quick-stat-card glass glass-card"
+                  @click="activeTab = 'sso-providers'"
+                >
+                  <h4>Authentication</h4>
+                  <div class="quick-stat-value">
+                    {{ stats.sso_providers?.total || 0 }}
+                  </div>
+                  <div class="quick-stat-detail">
+                    <span v-if="stats.sso_providers?.active">
+                      {{ stats.sso_providers.active }} active
+                    </span>
+                    <span v-else>None configured</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -184,6 +309,11 @@
           <div v-if="activeTab === 'api-keys'">
             <ApiKeyManagement />
           </div>
+
+          <!-- SSO Providers Tab -->
+          <div v-if="activeTab === 'sso-providers'">
+            <AdminSSOProviders />
+          </div>
         </div>
       </main>
     </div>
@@ -198,6 +328,10 @@ import UserManagement from "../components/admin/UserManagement.vue";
 import QuotaManagement from "../components/admin/QuotaManagement.vue";
 import AuditLogViewer from "../components/admin/AuditLogViewer.vue";
 import ApiKeyManagement from "../components/admin/ApiKeyManagement.vue";
+import AdminSSOProviders from "./AdminSSOProviders.vue";
+import RecentActivityList from "../components/admin/RecentActivityList.vue";
+import TopUsersCard from "../components/admin/TopUsersCard.vue";
+import QuotaAlertsCard from "../components/admin/QuotaAlertsCard.vue";
 import Icon from "../components/Icon.vue";
 
 export default {
@@ -207,6 +341,10 @@ export default {
     QuotaManagement,
     AuditLogViewer,
     ApiKeyManagement,
+    AdminSSOProviders,
+    RecentActivityList,
+    TopUsersCard,
+    QuotaAlertsCard,
     Icon,
   },
   setup() {
@@ -215,6 +353,7 @@ export default {
     const stats = ref(null);
     const statsLoading = ref(false);
     const statsError = ref(null);
+    const lastUpdateTime = ref(null);
     const sidebarCollapsed = ref(false);
     const tabsContainer = ref(null);
     const indicator = ref(null);
@@ -230,6 +369,7 @@ export default {
       { id: "quotas", label: "Quotas" },
       { id: "audit", label: "Audit Logs" },
       { id: "api-keys", label: "API Keys" },
+      { id: "sso-providers", label: "Authentication" },
     ];
 
     const setTabRef = (el, tabId) => {
@@ -263,11 +403,17 @@ export default {
       statsError.value = null;
       try {
         stats.value = await admin.getStats();
+        lastUpdateTime.value = new Date();
       } catch (err) {
         statsError.value = err.message || "Failed to load statistics";
       } finally {
         statsLoading.value = false;
       }
+    };
+
+    const formatTime = (date) => {
+      if (!date) return "";
+      return new Date(date).toLocaleTimeString();
     };
 
     const handleLogout = () => {
@@ -325,6 +471,7 @@ export default {
       stats,
       statsLoading,
       statsError,
+      lastUpdateTime,
       sidebarCollapsed,
       tabsContainer,
       indicator,
@@ -333,6 +480,7 @@ export default {
       loadStats,
       handleLogout,
       toggleSidebar,
+      formatTime,
     };
   },
 };
@@ -699,6 +847,59 @@ export default {
   width: 100%;
 }
 
+.dashboard-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-radius: 1rem;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.last-update {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.btn-refresh {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh:hover {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #e6eef6;
+  transform: rotate(180deg);
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -744,13 +945,93 @@ export default {
 .stat-details {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.5rem;
   margin-top: 0.75rem;
 }
 
 .stat-detail {
   color: #94a3b8;
   font-size: 0.85rem;
+}
+
+.stat-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stat-detail-label {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.stat-detail-value {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.stat-growth {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.growth-indicator {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.growth-indicator.positive {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.growth-indicator.negative {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.growth-label {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.storage-progress {
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #60a5fa);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.high-usage {
+  background: linear-gradient(90deg, #f87171, #ef4444);
+}
+
+.progress-text {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 .loading,
@@ -764,5 +1045,60 @@ export default {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.overview-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .overview-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+.alerts-section {
+  width: 100%;
+}
+
+.quick-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.quick-stat-card {
+  padding: 1.5rem;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.quick-stat-card h4 {
+  margin: 0 0 0.75rem 0;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.quick-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-bottom: 0.5rem;
+}
+
+.quick-stat-detail {
+  color: #94a3b8;
+  font-size: 0.85rem;
 }
 </style>

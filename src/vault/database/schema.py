@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -45,6 +46,46 @@ class SSOProviderType(str, enum.Enum):
     SAML = "saml"
     OAUTH2 = "oauth2"
     OIDC = "oidc"
+    EMAIL_MAGIC_LINK = "email-magic-link"
+
+
+class SSOProviderTypeEnum(TypeDecorator):
+    """Custom type decorator to store enum values as strings.
+
+    This avoids issues with PostgreSQL enum types that may have been created
+    with member names instead of values. We store the enum value as a string.
+    """
+
+    impl = String(50)  # Store as string instead of native enum
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """Convert enum member to its value for database storage."""
+        if value is None:
+            return None
+        if isinstance(value, SSOProviderType):
+            return value.value
+        # If it's already a string, return as-is
+        return value
+
+    def process_result_value(self, value, dialect):
+        """Convert database value back to enum member."""
+        if value is None:
+            return None
+        if isinstance(value, SSOProviderType):
+            return value
+        # Convert string value to enum member
+        if isinstance(value, str):
+            try:
+                return SSOProviderType(value)
+            except ValueError:
+                # If value doesn't match any enum value, try to find by value
+                for member in SSOProviderType:
+                    if member.value == value:
+                        return member
+                # If still not found, return the string (shouldn't happen in normal operation)
+                return value
+        return value
 
 
 class SSOProvider(db.Model):
@@ -57,7 +98,7 @@ class SSOProvider(db.Model):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_type: Mapped[SSOProviderType] = mapped_column(
-        Enum(SSOProviderType), nullable=False
+        SSOProviderTypeEnum(), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Configuration stored as JSON (encrypted in production)
@@ -78,10 +119,17 @@ class SSOProvider(db.Model):
         """Convert to dictionary."""
         import json
 
+        # Handle both enum member and string (for backward compatibility)
+        provider_type_value = (
+            self.provider_type.value
+            if isinstance(self.provider_type, SSOProviderType)
+            else str(self.provider_type)
+        )
+
         return {
             "id": self.id,
             "name": self.name,
-            "provider_type": self.provider_type.value,
+            "provider_type": provider_type_value,
             "is_active": self.is_active,
             "config": json.loads(self.config) if self.config else {},
             "created_at": self.created_at.isoformat(),
@@ -89,7 +137,12 @@ class SSOProvider(db.Model):
         }
 
     def __repr__(self) -> str:
-        return f"<SSOProvider {self.name} ({self.provider_type.value})>"
+        provider_type_str = (
+            self.provider_type.value
+            if isinstance(self.provider_type, SSOProviderType)
+            else str(self.provider_type)
+        )
+        return f"<SSOProvider {self.name} ({provider_type_str})>"
 
 
 class User(db.Model):
@@ -1181,6 +1234,69 @@ class EmailVerificationToken(db.Model):
         return f"<EmailVerificationToken user={self.user_id}>"
 
 
+class MagicLinkToken(db.Model):
+    """Magic link token for SSO email authentication."""
+
+    __tablename__ = "magic_link_tokens"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("sso_providers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    provider: Mapped["SSOProvider"] = relationship("SSOProvider")
+
+    __table_args__ = (
+        Index("ix_magic_link_tokens_email", "email"),
+        Index("ix_magic_link_tokens_provider_id", "provider_id"),
+        Index("ix_magic_link_tokens_expires_at", "expires_at"),
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "provider_id": self.provider_id,
+            "expires_at": self.expires_at.isoformat(),
+            "used_at": self.used_at.isoformat() if self.used_at else None,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    def is_expired(self) -> bool:
+        """Check if token is expired."""
+        from datetime import timezone
+
+        now_utc = datetime.now(timezone.utc)
+        expires_utc = self.expires_at.astimezone(timezone.utc)
+        return now_utc > expires_utc
+
+    def is_used(self) -> bool:
+        """Check if token has been used."""
+        return self.used_at is not None
+
+    def __repr__(self) -> str:
+        return f"<MagicLinkToken {self.token[:8]}...>"
+
+
 class UserInvitation(db.Model):
     """User invitation model."""
 
@@ -1244,10 +1360,10 @@ class UserInvitation(db.Model):
         return f"<UserInvitation email={self.email} invited_by={self.invited_by}>"
 
 
-class SSODomainRule(db.Model):
-    """SSO domain rule model for domain-based SSO configuration."""
+class DomainRule(db.Model):
+    """Domain rule model for domain-based access configuration."""
 
-    __tablename__ = "sso_domain_rules"
+    __tablename__ = "domain_rules"
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
@@ -1315,7 +1431,7 @@ class SSODomainRule(db.Model):
         return False
 
     def __repr__(self) -> str:
-        return f"<SSODomainRule domain={self.domain_pattern}>"
+        return f"<DomainRule domain={self.domain_pattern}>"
 
 
 class SystemSettings(db.Model):
@@ -1399,6 +1515,175 @@ class ApiKey(db.Model):
         return f"<ApiKey {self.name} (user={self.user_id})>"
 
 
+def _migrate_convert_provider_type_to_string() -> None:
+    """Convert provider_type column from enum to VARCHAR.
+
+    This migration converts the provider_type column from PostgreSQL enum type
+    to VARCHAR(50) to avoid issues with enum values. The TypeDecorator will
+    handle the conversion between Python enum and string values.
+    """
+    from sqlalchemy import text, inspect
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        inspector = inspect(db.engine)
+
+        # Check if sso_providers table exists
+        if "sso_providers" not in inspector.get_table_names():
+            logger.debug(
+                "sso_providers table doesn't exist yet, will be created by db.create_all()"
+            )
+            return
+
+        # Check current column type
+        columns = inspector.get_columns("sso_providers")
+        provider_type_col = next(
+            (col for col in columns if col["name"] == "provider_type"), None
+        )
+
+        if not provider_type_col:
+            logger.debug("provider_type column doesn't exist yet")
+            return
+
+        # Check the actual PostgreSQL type by querying pg_type directly
+        type_check = db.session.execute(
+            text(
+                """
+                SELECT t.typname, t.typtype
+                FROM pg_type t
+                JOIN pg_attribute a ON a.atttypid = t.oid
+                JOIN pg_class c ON c.oid = a.attrelid
+                WHERE c.relname = 'sso_providers'
+                AND a.attname = 'provider_type'
+            """
+            )
+        ).fetchone()
+
+        if type_check:
+            type_name, type_type = type_check
+            # Check if it's already VARCHAR
+            if type_name == "varchar" or type_name.startswith("character varying"):
+                logger.info("provider_type column is already VARCHAR type")
+                return
+            # 'e' means enum type in PostgreSQL
+            if type_type == "e" or type_name == "ssoprovidertype":
+                logger.info(
+                    f"Detected enum type '{type_name}', converting to VARCHAR(50)"
+                )
+            else:
+                # Not an enum or varchar, might need conversion
+                logger.info(
+                    f"Column type is '{type_name}' (type code: {type_type}), converting to VARCHAR(50)"
+                )
+        else:
+            # Couldn't determine type, try conversion anyway
+            logger.info(
+                "Could not determine column type, attempting conversion to VARCHAR(50)"
+            )
+
+        # Column needs to be converted to VARCHAR (either enum or other non-string type)
+        logger.info("Converting provider_type column to VARCHAR(50)")
+
+        with db.engine.begin() as conn:
+            # Alter column type to VARCHAR(50) and convert enum values to their string equivalents
+            # The USING clause handles the conversion: enum values are converted to text
+            # SAML -> 'SAML' (we'll update these after conversion)
+            conn.execute(
+                text(
+                    "ALTER TABLE sso_providers ALTER COLUMN provider_type TYPE VARCHAR(50) USING provider_type::text"
+                )
+            )
+
+            # Now update the values to use lowercase (saml, oauth2, oidc) instead of uppercase (SAML, OAUTH2, OIDC)
+            conn.execute(
+                text(
+                    """
+                    UPDATE sso_providers 
+                    SET provider_type = CASE 
+                        WHEN provider_type = 'SAML' THEN 'saml'
+                        WHEN provider_type = 'OAUTH2' THEN 'oauth2'
+                        WHEN provider_type = 'OIDC' THEN 'oidc'
+                        WHEN provider_type = 'email-magic-link' THEN 'email-magic-link'
+                        ELSE provider_type
+                    END
+                """
+                )
+            )
+
+        logger.info("Successfully converted provider_type column to VARCHAR(50)")
+    except Exception as e:
+        # Log but don't fail - migration might not be needed or table might not exist
+        logger.warning(f"Failed to convert provider_type column to VARCHAR: {e}")
+
+
+def _migrate_create_magic_link_tokens_table() -> None:
+    """Create magic_link_tokens table if it doesn't exist.
+
+    This migration ensures the magic_link_tokens table exists for Email Magic Link SSO.
+    """
+    from sqlalchemy import text, inspect
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        inspector = inspect(db.engine)
+
+        # Check if table already exists
+        if "magic_link_tokens" in inspector.get_table_names():
+            logger.info("magic_link_tokens table already exists")
+            return
+
+        # Table doesn't exist, create it
+        logger.info("Creating magic_link_tokens table")
+
+        with db.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE magic_link_tokens (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        email VARCHAR(255) NOT NULL,
+                        provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
+                        token VARCHAR(255) NOT NULL UNIQUE,
+                        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                        used_at TIMESTAMP WITH TIME ZONE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                    )
+                """
+                )
+            )
+
+            # Create indexes
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_magic_link_tokens_email ON magic_link_tokens(email)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_magic_link_tokens_provider_id ON magic_link_tokens(provider_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_magic_link_tokens_expires_at ON magic_link_tokens(expires_at)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_magic_link_tokens_token ON magic_link_tokens(token)"
+                )
+            )
+
+        logger.info("Successfully created magic_link_tokens table")
+    except Exception as e:
+        # Log but don't fail - table might have been created by db.create_all() or other issue
+        logger.warning(f"Failed to create magic_link_tokens table: {e}")
+
+
 def init_db(app) -> None:
     """Initialize database with Flask app.
 
@@ -1452,6 +1737,24 @@ def init_db(app) -> None:
             # Log but don't fail - cleanup migrations are non-critical
             logger.debug(
                 f"Index cleanup migration error (non-fatal): {migration_error}"
+            )
+
+        # Convert provider_type column from enum to VARCHAR before creating tables
+        try:
+            _migrate_convert_provider_type_to_string()
+        except Exception as migration_error:
+            # Log but don't fail - migration is non-critical
+            logger.debug(
+                f"Provider type migration error (non-fatal): {migration_error}"
+            )
+
+        # Ensure magic_link_tokens table exists
+        try:
+            _migrate_create_magic_link_tokens_table()
+        except Exception as migration_error:
+            # Log but don't fail - migration is non-critical
+            logger.debug(
+                f"Magic link tokens table migration error (non-fatal): {migration_error}"
             )
 
         # Try to create all tables and indexes

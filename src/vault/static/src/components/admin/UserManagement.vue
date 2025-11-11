@@ -2,10 +2,6 @@
   <div class="user-management">
     <div class="section-header glass glass-card">
       <h2>User Management</h2>
-      <button @click="showCreateModal = true" class="btn btn-primary">
-        <span v-html="getIcon('plus', 16)"></span>
-        Create User
-      </button>
     </div>
 
     <div class="filters glass glass-card">
@@ -253,62 +249,6 @@
       </div>
     </div>
 
-    <!-- Create User Modal -->
-    <div
-      v-if="showCreateModal && !editingUser"
-      class="modal-overlay"
-      @click.self="closeModal"
-    >
-      <div class="modal glass glass-card modal-wide" @click.stop>
-        <div class="modal-header">
-          <h3>Create User</h3>
-          <button
-            @click="closeModal"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <form @submit.prevent="saveUser" class="modal-form">
-          <div class="form-group">
-            <label>Email:</label>
-            <input
-              v-model="userForm.email"
-              type="email"
-              required
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label>Password:</label>
-            <input
-              v-model="userForm.password"
-              type="password"
-              :required="!editingUser"
-              :placeholder="editingUser ? 'Leave empty to keep current' : ''"
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label>Role:</label>
-            <select v-model="userForm.global_role" required class="form-select">
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-              <option value="superadmin">Superadmin</option>
-            </select>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save</button>
-            <button type="button" @click="closeModal" class="btn btn-secondary">
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
     <!-- User Details Modal -->
     <div
       v-if="viewingUserDetails"
@@ -448,15 +388,8 @@ export default {
     const totalPages = ref(1);
     const searchQuery = ref("");
     const filterRole = ref("");
-    const showCreateModal = ref(false);
-    const editingUser = ref(null);
     const viewingUserDetails = ref(null);
     const userDetails = ref(null);
-    const userForm = ref({
-      email: "",
-      password: "",
-      global_role: "user",
-    });
     const showConfirmModal = ref(false);
     const confirmModalConfig = ref({
       title: "",
@@ -617,37 +550,6 @@ export default {
       openActionsModal(user);
     };
 
-    const saveUser = async () => {
-      try {
-        const data = {
-          email: userForm.value.email,
-          global_role: userForm.value.global_role,
-        };
-        if (userForm.value.password) {
-          data.password = userForm.value.password;
-        }
-
-        if (editingUser.value) {
-          await admin.updateUser(editingUser.value.id, data);
-        } else {
-          showAlert({
-            type: "info",
-            title: "Info",
-            message: "User creation via admin panel not yet implemented",
-          });
-          return;
-        }
-        closeModal();
-        loadUsers();
-      } catch (err) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Failed to save user: " + err.message,
-        });
-      }
-    };
-
     const openActionsModal = async (user) => {
       if (!currentUser.value) {
         await loadCurrentUser();
@@ -774,16 +676,6 @@ export default {
       return ["user", "admin"];
     });
 
-    const closeModal = () => {
-      showCreateModal.value = false;
-      editingUser.value = null;
-      userForm.value = {
-        email: "",
-        password: "",
-        global_role: "user",
-      };
-    };
-
     const showAlert = (config) => {
       alertModalConfig.value = {
         type: config.type || "error",
@@ -872,11 +764,8 @@ export default {
       totalPages,
       searchQuery,
       filterRole,
-      showCreateModal,
-      editingUser,
       viewingUserDetails,
       userDetails,
-      userForm,
       showActionsModal,
       actionsModalUser,
       actionsForm,
@@ -890,7 +779,6 @@ export default {
       debouncedSearch,
       changePage,
       viewUser,
-      saveUser,
       handleEditClick,
       openActionsModal,
       confirmDeleteUser,
@@ -898,7 +786,6 @@ export default {
       canChangeRole,
       canDeleteUser,
       availableRoles,
-      closeModal,
       showAlert,
       showConfirm,
       handleConfirmModalConfirm,
@@ -951,6 +838,8 @@ export default {
   color: #e6eef6;
   font-size: 0.95rem;
   transition: all 0.2s ease;
+  flex: 1;
+  min-width: 0;
 }
 
 .search-input:focus,
@@ -958,10 +847,6 @@ export default {
   outline: none;
   border-color: rgba(56, 189, 248, 0.5);
   background: rgba(30, 41, 59, 0.6);
-}
-
-.search-input {
-  flex: 1;
 }
 
 .search-input::placeholder {

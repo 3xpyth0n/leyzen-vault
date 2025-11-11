@@ -150,6 +150,62 @@ class FileStorage:
         """Compute SHA-256 hash of encrypted data."""
         return hashlib.sha256(data).hexdigest()
 
+    def _write_file_atomically(
+        self, file_path: Path, data: bytes, expected_hash: str, file_id: str
+    ) -> None:
+        """Write file atomically with integrity verification.
+
+        Writes data to a temporary file, verifies integrity using incremental hashing,
+        then atomically renames to the target path.
+
+        Args:
+            file_path: Target file path
+            data: Data to write
+            expected_hash: Expected SHA-256 hash of the data
+            file_id: File identifier for error messages
+
+        Raises:
+            IOError: If write fails or integrity check fails
+        """
+        import tempfile
+        import os
+
+        # Create temporary file in the same directory as target
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=file_path.parent, prefix=f".{file_path.name}.", suffix=".tmp"
+        )
+        temp_file_path = Path(temp_path)
+
+        try:
+            # Write data and compute hash incrementally to avoid re-reading
+            hasher = hashlib.sha256()
+            with os.fdopen(temp_fd, "wb") as temp_file:
+                temp_file.write(data)
+                hasher.update(data)
+                temp_file.flush()
+                os.fsync(temp_fd)  # Force write to disk
+
+            # Verify integrity using hash computed during write
+            actual_hash = hasher.hexdigest()
+
+            if actual_hash != expected_hash:
+                temp_file_path.unlink()
+                raise IOError(
+                    f"Integrity check failed for file {file_id}: "
+                    f"hash mismatch after write"
+                )
+
+            # Atomic rename
+            temp_file_path.rename(file_path)
+        except Exception as e:
+            # Cleanup temp file on error
+            try:
+                if temp_file_path.exists():
+                    temp_file_path.unlink()
+            except Exception:
+                pass
+            raise IOError(f"Failed to write file {file_id}: {e}") from e
+
     def save_file(self, file_id: str, encrypted_data: bytes) -> Path:
         """Save encrypted file data with integrity verification.
 
@@ -165,9 +221,6 @@ class FileStorage:
         Raises:
             IOError: If file write fails or integrity check fails
         """
-        import tempfile
-        import os
-
         # Compute hash before writing
         expected_hash = self.compute_hash(encrypted_data)
 
@@ -176,34 +229,14 @@ class FileStorage:
         files_dir.mkdir(parents=True, exist_ok=True)
         file_path = files_dir / file_id
 
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=files_dir, prefix=f".{file_id}.", suffix=".tmp"
-        )
         primary_saved = False
         source_saved = False
-        source_temp_path = None
 
         try:
-            # Write to primary storage
-            with os.fdopen(temp_fd, "wb") as temp_file:
-                temp_file.write(encrypted_data)
-                temp_file.flush()
-                os.fsync(temp_fd)  # Force write to disk
-
-            # Verify integrity after write
-            temp_file_path = Path(temp_path)
-            written_data = temp_file_path.read_bytes()
-            actual_hash = self.compute_hash(written_data)
-
-            if actual_hash != expected_hash:
-                temp_file_path.unlink()
-                raise IOError(
-                    f"Integrity check failed for file {file_id}: "
-                    f"hash mismatch after write"
-                )
-
-            # Atomic rename in primary storage
-            temp_file_path.rename(file_path)
+            # Write to primary storage atomically
+            self._write_file_atomically(
+                file_path, encrypted_data, expected_hash, file_id
+            )
             primary_saved = True
 
             # Also save to source storage (persistent) if configured
@@ -212,40 +245,13 @@ class FileStorage:
                 source_files_dir.mkdir(parents=True, exist_ok=True)
                 source_file_path = source_files_dir / file_id
 
-                # Copy to source storage atomically
-                source_temp_fd, source_temp_path = tempfile.mkstemp(
-                    dir=source_files_dir, prefix=f".{file_id}.", suffix=".tmp"
-                )
                 try:
-                    with os.fdopen(source_temp_fd, "wb") as source_temp_file:
-                        source_temp_file.write(encrypted_data)
-                        source_temp_file.flush()
-                        os.fsync(source_temp_fd)  # Force write to disk
-
-                    # Verify integrity in source storage
-                    source_temp_file_path = Path(source_temp_path)
-                    source_written_data = source_temp_file_path.read_bytes()
-                    source_actual_hash = self.compute_hash(source_written_data)
-
-                    if source_actual_hash != expected_hash:
-                        source_temp_file_path.unlink()
-                        raise IOError(
-                            f"Integrity check failed for file {file_id} in source storage: "
-                            f"hash mismatch after write"
-                        )
-
-                    # Atomic rename in source storage
-                    source_temp_file_path.rename(source_file_path)
+                    # Write to source storage atomically
+                    self._write_file_atomically(
+                        source_file_path, encrypted_data, expected_hash, file_id
+                    )
                     source_saved = True
                 except Exception as source_error:
-                    # Cleanup source temp file on error
-                    try:
-                        if source_temp_path:
-                            source_temp_file_path_obj = Path(source_temp_path)
-                            if source_temp_file_path_obj.exists():
-                                source_temp_file_path_obj.unlink()
-                    except Exception:
-                        pass
                     # Log error but don't fail if primary save succeeded
                     # Source storage is a backup, primary is required
                     import logging
@@ -259,14 +265,6 @@ class FileStorage:
             return file_path
 
         except Exception as e:
-            # Cleanup temp file on error
-            try:
-                temp_path_obj = Path(temp_path)
-                if temp_path_obj.exists():
-                    temp_path_obj.unlink()
-            except Exception:
-                pass
-
             # If primary save failed, cleanup source if it was saved
             if source_saved and self.source_dir:
                 try:
