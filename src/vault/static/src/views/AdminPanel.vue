@@ -291,8 +291,9 @@
           </div>
 
           <!-- Users Tab -->
-          <div v-if="activeTab === 'users'">
+          <div v-if="activeTab === 'users'" class="users-tab">
             <UserManagement />
+            <InvitationManagement />
           </div>
 
           <!-- Quotas Tab -->
@@ -325,6 +326,7 @@ import { ref, onMounted, watch, nextTick, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { admin, auth } from "../services/api";
 import UserManagement from "../components/admin/UserManagement.vue";
+import InvitationManagement from "../components/admin/InvitationManagement.vue";
 import QuotaManagement from "../components/admin/QuotaManagement.vue";
 import AuditLogViewer from "../components/admin/AuditLogViewer.vue";
 import ApiKeyManagement from "../components/admin/ApiKeyManagement.vue";
@@ -338,6 +340,7 @@ export default {
   name: "AdminPanel",
   components: {
     UserManagement,
+    InvitationManagement,
     QuotaManagement,
     AuditLogViewer,
     ApiKeyManagement,
@@ -845,6 +848,13 @@ export default {
 
 .dashboard-tab {
   width: 100%;
+}
+
+.users-tab {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
 .dashboard-content {

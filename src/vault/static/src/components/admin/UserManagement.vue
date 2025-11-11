@@ -2,6 +2,9 @@
   <div class="user-management">
     <div class="section-header glass glass-card">
       <h2>User Management</h2>
+      <button @click="showInviteModal = true" class="btn btn-primary">
+        Invite User
+      </button>
     </div>
 
     <div class="filters glass glass-card">
@@ -18,6 +21,15 @@
         <option value="admin">Admin</option>
         <option value="superadmin">Superadmin</option>
       </select>
+      <select
+        v-model="filterVerificationStatus"
+        @change="handleVerificationFilterChange"
+        class="filter-select"
+      >
+        <option value="">All Users</option>
+        <option value="verified">Verified</option>
+        <option value="unverified">Unverified</option>
+      </select>
     </div>
 
     <div v-if="loading" class="loading glass glass-card">
@@ -31,6 +43,7 @@
           <tr>
             <th>Email</th>
             <th>Role</th>
+            <th>Status</th>
             <th>Created</th>
             <th>Last Login</th>
             <th>Actions</th>
@@ -45,6 +58,17 @@
                 :class="`role-${user?.global_role || 'user'}`"
               >
                 {{ user?.global_role || "user" }}
+              </span>
+            </td>
+            <td>
+              <span
+                class="status-badge"
+                :class="{
+                  verified: user?.email_verified,
+                  unverified: !user?.email_verified,
+                }"
+              >
+                {{ user?.email_verified ? "Verified" : "Unverified" }}
               </span>
             </td>
             <td>{{ formatDate(user?.created_at) }}</td>
@@ -63,6 +87,14 @@
                 title="Edit"
                 :disabled="!user"
                 v-html="getIcon('edit', 18)"
+              ></button>
+              <button
+                v-if="!user?.email_verified"
+                @click.stop.prevent="sendVerificationEmail(user?.id)"
+                class="btn-icon"
+                title="Send Verification Email"
+                :disabled="!user?.id"
+                v-html="getIcon('mail', 18)"
               ></button>
             </td>
           </tr>
@@ -289,6 +321,20 @@
               </span>
             </div>
             <div class="detail-item">
+              <span class="detail-label">Status:</span>
+              <span
+                class="status-badge"
+                :class="{
+                  verified: userDetails.user?.email_verified,
+                  unverified: !userDetails.user?.email_verified,
+                }"
+              >
+                {{
+                  userDetails.user?.email_verified ? "Verified" : "Unverified"
+                }}
+              </span>
+            </div>
+            <div class="detail-item">
               <span class="detail-label">Created:</span>
               <span class="detail-value">{{
                 formatDate(userDetails.user?.created_at)
@@ -364,6 +410,67 @@
       @close="handleAlertModalClose"
       @ok="handleAlertModalClose"
     />
+
+    <!-- Invite User Modal -->
+    <div
+      v-if="showInviteModal"
+      class="modal-overlay"
+      @click.self="showInviteModal = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <div class="modal-header">
+          <h3>Invite User</h3>
+          <button
+            @click="closeInviteModal"
+            class="modal-close-btn"
+            aria-label="Close"
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <form @submit.prevent="handleInviteUser" class="modal-form">
+            <div class="form-group">
+              <label for="invite-email">Email Address:</label>
+              <input
+                id="invite-email"
+                v-model="inviteForm.email"
+                type="email"
+                required
+                :disabled="inviteForm.loading"
+                placeholder="user@example.com"
+                autofocus
+                class="form-input"
+              />
+            </div>
+            <div v-if="inviteForm.error" class="error-message">
+              {{ inviteForm.error }}
+            </div>
+            <div v-if="inviteForm.success" class="success-message">
+              {{ inviteForm.success }}
+            </div>
+            <div class="form-actions">
+              <button
+                type="button"
+                @click="closeInviteModal"
+                class="btn btn-secondary"
+                :disabled="inviteForm.loading"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="inviteForm.loading"
+                class="btn btn-primary"
+              >
+                {{ inviteForm.loading ? "Sending..." : "Send Invitation" }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -381,6 +488,7 @@ export default {
   },
   setup() {
     const users = ref([]);
+    const allFilteredUsers = ref([]); // Store all filtered users for client-side pagination
     const loading = ref(false);
     const error = ref(null);
     const page = ref(1);
@@ -388,6 +496,7 @@ export default {
     const totalPages = ref(1);
     const searchQuery = ref("");
     const filterRole = ref("");
+    const filterVerificationStatus = ref("");
     const viewingUserDetails = ref(null);
     const userDetails = ref(null);
     const showConfirmModal = ref(false);
@@ -409,6 +518,13 @@ export default {
     const actionsModalUser = ref(null);
     const actionsForm = ref({
       newRole: "user",
+    });
+    const showInviteModal = ref(false);
+    const inviteForm = ref({
+      email: "",
+      loading: false,
+      error: null,
+      success: null,
     });
 
     let searchTimeout = null;
@@ -432,10 +548,30 @@ export default {
       }
     };
 
+    const applyClientSidePagination = () => {
+      if (allFilteredUsers.value.length === 0) {
+        users.value = [];
+        totalPages.value = 1;
+        return;
+      }
+      const startIndex = (page.value - 1) * perPage.value;
+      const endIndex = startIndex + perPage.value;
+      const paginatedUsers = allFilteredUsers.value.slice(startIndex, endIndex);
+      users.value = paginatedUsers;
+      totalPages.value =
+        Math.ceil(allFilteredUsers.value.length / perPage.value) || 1;
+    };
+
     const loadUsers = async () => {
       loading.value = true;
       error.value = null;
       try {
+        // If filtering by verification status, load more users (client-side filtering)
+        // Otherwise use normal pagination
+        const needsClientSideFilter = filterVerificationStatus.value !== "";
+        const requestPerPage = needsClientSideFilter ? 1000 : perPage.value;
+        const requestPage = needsClientSideFilter ? 1 : page.value;
+
         const requestOptions = {
           query:
             searchQuery.value && searchQuery.value.trim()
@@ -446,16 +582,20 @@ export default {
               ? filterRole.value.trim()
               : undefined,
           page:
-            page.value && !isNaN(Number(page.value)) ? Number(page.value) : 1,
+            requestPage && !isNaN(Number(requestPage))
+              ? Number(requestPage)
+              : 1,
           per_page:
-            perPage.value && !isNaN(Number(perPage.value))
-              ? Number(perPage.value)
-              : 50,
+            requestPerPage && !isNaN(Number(requestPerPage))
+              ? Number(requestPerPage)
+              : needsClientSideFilter
+                ? 1000
+                : 50,
         };
 
         const result = await admin.listUsers(requestOptions);
 
-        const normalizedUsers = (result.users || [])
+        let normalizedUsers = (result.users || [])
           .map((user) => {
             if (!user) {
               return null;
@@ -466,15 +606,38 @@ export default {
               global_role: user.global_role || "user",
               created_at: user.created_at || null,
               last_login: user.last_login || null,
+              email_verified: user.email_verified || false,
               ...user,
             };
           })
           .filter((user) => user !== null && user.id !== null);
 
-        users.value = normalizedUsers;
+        // Filter by verification status if selected
+        if (filterVerificationStatus.value) {
+          if (filterVerificationStatus.value === "verified") {
+            normalizedUsers = normalizedUsers.filter(
+              (user) => user.email_verified === true,
+            );
+          } else if (filterVerificationStatus.value === "unverified") {
+            normalizedUsers = normalizedUsers.filter(
+              (user) => !user.email_verified || user.email_verified === false,
+            );
+          }
+        }
 
-        const pages = Number(result.pages);
-        totalPages.value = pages && pages > 0 && !isNaN(pages) ? pages : 1;
+        // Apply client-side pagination if filtering by verification status
+        if (needsClientSideFilter) {
+          // Store all filtered users
+          allFilteredUsers.value = normalizedUsers;
+          // Apply pagination to filtered users
+          applyClientSidePagination();
+        } else {
+          // Server-side pagination: clear stored filtered users and use server results
+          allFilteredUsers.value = [];
+          users.value = normalizedUsers;
+          const pages = Number(result.pages);
+          totalPages.value = pages && pages > 0 && !isNaN(pages) ? pages : 1;
+        }
       } catch (err) {
         console.error("Error in loadUsers:", err);
         error.value = err.message || "Failed to load users";
@@ -493,12 +656,26 @@ export default {
       }, 300);
     };
 
+    const handleVerificationFilterChange = () => {
+      page.value = 1;
+      loadUsers();
+    };
+
     const changePage = (newPage) => {
       const pageNum = Number(newPage);
       const maxPages = Number(totalPages.value) || 1;
       if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= maxPages) {
         page.value = pageNum;
-        loadUsers();
+        // If we have client-side filtered users, paginate them
+        if (
+          allFilteredUsers.value.length > 0 &&
+          filterVerificationStatus.value
+        ) {
+          applyClientSidePagination();
+        } else {
+          // Otherwise, reload from server
+          loadUsers();
+        }
       }
     };
 
@@ -711,6 +888,60 @@ export default {
       showAlertModal.value = false;
     };
 
+    const sendVerificationEmail = async (userId) => {
+      if (!userId) {
+        return;
+      }
+      try {
+        await admin.sendVerificationEmail(userId);
+        showAlert({
+          type: "success",
+          title: "Success",
+          message: "Verification email sent successfully",
+        });
+        // Reload users to update status
+        await loadUsers();
+      } catch (err) {
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to send verification email",
+        });
+      }
+    };
+
+    const handleInviteUser = async () => {
+      inviteForm.value.loading = true;
+      inviteForm.value.error = null;
+      inviteForm.value.success = null;
+
+      if (!inviteForm.value.email) {
+        inviteForm.value.error = "Please enter an email address";
+        inviteForm.value.loading = false;
+        return;
+      }
+
+      try {
+        await admin.createInvitation(inviteForm.value.email);
+        inviteForm.value.success = "Invitation sent successfully";
+        inviteForm.value.email = "";
+        setTimeout(() => {
+          closeInviteModal();
+        }, 1500);
+      } catch (err) {
+        inviteForm.value.error = err.message || "Failed to send invitation";
+      } finally {
+        inviteForm.value.loading = false;
+      }
+    };
+
+    const closeInviteModal = () => {
+      showInviteModal.value = false;
+      inviteForm.value.email = "";
+      inviteForm.value.error = null;
+      inviteForm.value.success = null;
+    };
+
     const formatDate = (dateString) => {
       if (!dateString || dateString === null || dateString === undefined) {
         return "Never";
@@ -764,6 +995,7 @@ export default {
       totalPages,
       searchQuery,
       filterRole,
+      filterVerificationStatus,
       viewingUserDetails,
       userDetails,
       showActionsModal,
@@ -777,6 +1009,7 @@ export default {
       getIcon,
       loadUsers,
       debouncedSearch,
+      handleVerificationFilterChange,
       changePage,
       viewUser,
       handleEditClick,
@@ -791,6 +1024,11 @@ export default {
       handleConfirmModalConfirm,
       handleConfirmModalCancel,
       handleAlertModalClose,
+      sendVerificationEmail,
+      showInviteModal,
+      inviteForm,
+      handleInviteUser,
+      closeInviteModal,
       formatDate,
       formatSize,
     };
@@ -907,6 +1145,26 @@ export default {
 }
 
 .role-superadmin {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-badge {
+  padding: 0.375rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.status-badge.verified {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-badge.unverified {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -1405,6 +1663,48 @@ export default {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.error-message {
+  color: #f87171;
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.success-message {
+  color: #86efac;
+  padding: 0.75rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.4);
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.form-input::placeholder {
+  color: #64748b;
 }
 
 /* Glass morphism effect - uses global styles from assets/styles.css */

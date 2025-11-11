@@ -19,6 +19,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Dashboard Refresh**: Added manual refresh button and last update timestamp indicator for real-time statistics monitoring.
 - **Improved UX**: Enhanced user experience with clickable cards, better visual hierarchy, and responsive grid layout for better information density.
 
+#### Admin Panel Migration
+
+- **User Management Migration**: Migrated all user management functionalities from `/account` page to the Admin Panel's "Users" tab..
+- **User Invitations Migration**: Migrated invitation management system from `/account` page to the Admin Panel's "Users" tab. Admins can now create, view, resend, and cancel user invitations directly from the centralized admin interface.
+- **Domain Rules Migration**: Migrated domain rules management from `/account` page to the Admin Panel's "Authentication" tab. Domain rules for SSO authentication are now managed alongside SSO provider configuration for better organization and workflow.
+- **Centralized Admin Interface**: Removed the "Administration" section from the `/account` page, centralizing all administrative actions in the dedicated Admin Panel for improved organization and user experience. All admin functionalities are now accessible through the Admin Panel's dedicated tabs.
+
 #### Single Sign-On (SSO)
 
 - **SSO Provider Management**: Complete SSO provider management system with support for multiple provider types (Google, Microsoft Entra, Slack, Discord, GitLab, OIDC Generic, SAML Generic, Email Magic Link). Admins can create, edit, activate/deactivate, and delete SSO providers through the admin panel.
@@ -28,6 +35,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Password Authentication Toggle**: System-wide toggle to disable password authentication and CAPTCHA. When disabled, requires at least one active SSO provider (including Email Magic Link). Existing users can authenticate via SSO providers that map to their email address.
 - **SSO Callback Handling**: Robust callback handling for all SSO provider types with proper error handling and user feedback. Automatic redirect to dashboard on successful authentication.
 - **SMTP Configuration Testing**: Built-in SMTP configuration testing for Email Magic Link providers with detailed error feedback and status indicators in the admin panel.
+
+### Changed
+
+- **Account Page Simplification**: Removed the "Administration" section from the `/account` page. All administrative functionalities (user management, invitations, domain rules) have been moved to the dedicated Admin Panel for better organization and separation of concerns. The account page now focuses solely on user account settings and profile management.
 
 ### Fixed
 

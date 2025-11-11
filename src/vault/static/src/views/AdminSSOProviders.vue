@@ -125,6 +125,65 @@
       </div>
     </div>
 
+    <!-- Domain Rules Section -->
+    <div class="domain-rules-section">
+      <div class="section-header">
+        <h2>Domain Rules</h2>
+        <div class="button-group">
+          <button @click="showDomainRuleModal = true" class="btn btn-primary">
+            Add Domain Rule
+          </button>
+          <button @click="loadDomainRules" class="btn btn-secondary">
+            Refresh Rules
+          </button>
+        </div>
+      </div>
+
+      <div v-if="domainRulesLoading" class="loading">
+        Loading domain rules...
+      </div>
+      <div v-else-if="domainRulesError" class="error">
+        {{ domainRulesError }}
+      </div>
+      <div v-else-if="domainRules.length === 0" class="empty-state">
+        <p>No domain rules configured</p>
+      </div>
+      <div v-else class="domain-rules-list">
+        <div
+          v-for="rule in domainRules"
+          :key="rule.id"
+          class="domain-rule-item"
+        >
+          <div class="domain-rule-info">
+            <span class="domain-rule-pattern">{{ rule.domain_pattern }}</span>
+            <span
+              class="domain-rule-status"
+              :class="{
+                active: rule.is_active,
+                inactive: !rule.is_active,
+              }"
+            >
+              {{ rule.is_active ? "Active" : "Inactive" }}
+            </span>
+          </div>
+          <div class="domain-rule-actions">
+            <button
+              @click="editDomainRule(rule)"
+              class="btn btn-small btn-secondary"
+            >
+              Edit
+            </button>
+            <button
+              @click="deleteDomainRule(rule.id)"
+              class="btn btn-small btn-danger"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create/Edit Modal -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
@@ -621,6 +680,82 @@
         </div>
       </div>
     </div>
+
+    <!-- Domain Rule Modal -->
+    <div
+      v-if="showDomainRuleModal"
+      class="modal-overlay"
+      @click.self="showDomainRuleModal = false"
+    >
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h2>
+          <button @click="closeDomainRuleModal" class="modal-close">
+            &times;
+          </button>
+        </div>
+        <form @submit.prevent="handleSaveDomainRule" class="provider-form">
+          <div class="form-group">
+            <label for="domain-rule-pattern">Domain Pattern:</label>
+            <input
+              id="domain-rule-pattern"
+              v-model="domainRuleForm.domain_pattern"
+              type="text"
+              required
+              :disabled="domainRuleForm.loading"
+              placeholder="example.com or *.example.com"
+              autofocus
+            />
+            <small>Use * for wildcards (e.g., *.example.com)</small>
+          </div>
+          <div v-if="domainRuleForm.error" class="error-message">
+            {{ domainRuleForm.error }}
+          </div>
+          <div v-if="domainRuleForm.success" class="success-message">
+            {{ domainRuleForm.success }}
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              @click="closeDomainRuleModal"
+              class="btn btn-secondary"
+              :disabled="domainRuleForm.loading"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              :disabled="domainRuleForm.loading"
+              class="btn btn-primary"
+            >
+              {{ domainRuleForm.loading ? "Saving..." : "Save" }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <ConfirmationModal
+      :show="showConfirmModal"
+      :title="confirmModalConfig.title"
+      :message="confirmModalConfig.message"
+      :confirmText="confirmModalConfig.confirmText"
+      :dangerous="confirmModalConfig.dangerous"
+      @confirm="handleConfirmModalConfirm"
+      @cancel="handleConfirmModalCancel"
+      @close="handleConfirmModalCancel"
+    />
+
+    <!-- Alert Modal -->
+    <AlertModal
+      :show="showAlertModal"
+      :type="alertModalConfig.type"
+      :title="alertModalConfig.title"
+      :message="alertModalConfig.message"
+      @close="handleAlertModalClose"
+      @ok="handleAlertModalClose"
+    />
   </div>
 </template>
 
@@ -628,6 +763,8 @@
 import { ref, onMounted } from "vue";
 import { admin } from "../services/api";
 import { logger } from "../utils/logger.js";
+import ConfirmationModal from "../components/ConfirmationModal.vue";
+import AlertModal from "../components/AlertModal.vue";
 
 const loading = ref(false);
 const error = ref("");
@@ -646,6 +783,31 @@ const loadingAllowSignup = ref(false);
 const showDeleteModal = ref(false);
 const providerToDelete = ref(null);
 const deletingProvider = ref(false);
+const domainRules = ref([]);
+const domainRulesLoading = ref(false);
+const domainRulesError = ref("");
+const showDomainRuleModal = ref(false);
+const editingDomainRule = ref(null);
+const domainRuleForm = ref({
+  domain_pattern: "",
+  loading: false,
+  error: null,
+  success: null,
+});
+const showConfirmModal = ref(false);
+const confirmModalConfig = ref({
+  title: "",
+  message: "",
+  confirmText: "Confirm",
+  dangerous: false,
+  onConfirm: null,
+});
+const showAlertModal = ref(false);
+const alertModalConfig = ref({
+  type: "error",
+  title: "Error",
+  message: "",
+});
 
 const form = ref({
   name: "",
@@ -749,6 +911,19 @@ const loadProviders = async () => {
     logger.error("Failed to load SSO providers:", err);
   } finally {
     loading.value = false;
+  }
+};
+
+const loadDomainRules = async () => {
+  domainRulesLoading.value = true;
+  domainRulesError.value = "";
+  try {
+    domainRules.value = await admin.listDomainRules();
+  } catch (err) {
+    domainRulesError.value = err.message || "Failed to load domain rules";
+    logger.error("Failed to load domain rules:", err);
+  } finally {
+    domainRulesLoading.value = false;
   }
 };
 
@@ -1251,8 +1426,121 @@ const onProviderTypeChange = () => {
   }
 };
 
+const handleSaveDomainRule = async () => {
+  domainRuleForm.value.loading = true;
+  domainRuleForm.value.error = null;
+  domainRuleForm.value.success = null;
+
+  if (!domainRuleForm.value.domain_pattern) {
+    domainRuleForm.value.error = "Please enter a domain pattern";
+    domainRuleForm.value.loading = false;
+    return;
+  }
+
+  try {
+    if (editingDomainRule.value) {
+      await admin.updateDomainRule(editingDomainRule.value.id, {
+        domain_pattern: domainRuleForm.value.domain_pattern,
+      });
+      domainRuleForm.value.success = "Domain rule updated successfully";
+    } else {
+      await admin.createDomainRule({
+        domain_pattern: domainRuleForm.value.domain_pattern,
+        is_active: true,
+      });
+      domainRuleForm.value.success = "Domain rule created successfully";
+    }
+    await loadDomainRules();
+    setTimeout(() => {
+      closeDomainRuleModal();
+    }, 1500);
+  } catch (err) {
+    domainRuleForm.value.error = err.message || "Failed to save domain rule";
+    logger.error("Failed to save domain rule:", err);
+  } finally {
+    domainRuleForm.value.loading = false;
+  }
+};
+
+const editDomainRule = (rule) => {
+  editingDomainRule.value = rule;
+  domainRuleForm.value.domain_pattern = rule.domain_pattern;
+  showDomainRuleModal.value = true;
+};
+
+const deleteDomainRule = (ruleId) => {
+  showConfirm({
+    title: "Delete Domain Rule",
+    message: "Are you sure you want to delete this domain rule?",
+    confirmText: "Delete",
+    dangerous: true,
+    onConfirm: async () => {
+      try {
+        await admin.deleteDomainRule(ruleId);
+        await loadDomainRules();
+        showAlert({
+          type: "success",
+          title: "Success",
+          message: "Domain rule deleted successfully",
+        });
+      } catch (err) {
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to delete domain rule",
+        });
+        logger.error("Failed to delete domain rule:", err);
+      }
+    },
+  });
+};
+
+const showAlert = (config) => {
+  alertModalConfig.value = {
+    type: config.type || "error",
+    title: config.title || "Alert",
+    message: config.message || "",
+  };
+  showAlertModal.value = true;
+};
+
+const showConfirm = (config) => {
+  confirmModalConfig.value = {
+    title: config.title || "Confirm Action",
+    message: config.message || "Are you sure you want to proceed?",
+    confirmText: config.confirmText || "Confirm",
+    dangerous: config.dangerous || false,
+    onConfirm: config.onConfirm || (() => {}),
+  };
+  showConfirmModal.value = true;
+};
+
+const handleConfirmModalConfirm = () => {
+  if (confirmModalConfig.value.onConfirm) {
+    confirmModalConfig.value.onConfirm();
+  }
+  showConfirmModal.value = false;
+};
+
+const handleConfirmModalCancel = () => {
+  showConfirmModal.value = false;
+};
+
+const handleAlertModalClose = () => {
+  showAlertModal.value = false;
+};
+
+const closeDomainRuleModal = () => {
+  showDomainRuleModal.value = false;
+  editingDomainRule.value = null;
+  domainRuleForm.value.domain_pattern = "";
+  domainRuleForm.value.error = null;
+  domainRuleForm.value.success = null;
+};
+
 onMounted(() => {
   loadProviders();
+  loadDomainRules();
 });
 </script>
 
@@ -1708,5 +1996,79 @@ h1 {
 .password-auth-card .provider-type {
   background: rgba(88, 166, 255, 0.3);
   color: #58a6ff;
+}
+
+.domain-rules-section {
+  margin-top: 2rem;
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.domain-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.domain-rule-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.domain-rule-item:hover {
+  background: rgba(15, 23, 42, 0.8);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.domain-rule-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.domain-rule-pattern {
+  font-weight: 500;
+  color: #e6eef6;
+  font-size: 1rem;
+}
+
+.domain-rule-status {
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  display: inline-block;
+  width: fit-content;
+}
+
+.domain-rule-status.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.domain-rule-status.inactive {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.domain-rule-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 </style>
