@@ -2534,7 +2534,7 @@ export default {
 }
 
 .modal-content {
-  padding: 0px 2.5rem 0rem !important;
+  padding: 1.5rem !important;
   flex: 1 !important;
 }
 

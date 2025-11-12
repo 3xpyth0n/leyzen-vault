@@ -216,15 +216,37 @@
       @close="handleAlertModalClose"
       @ok="handleAlertModalClose"
     />
+
+    <!-- Re-encryption Modal -->
+    <ReEncryptionModal
+      :show="showReEncryptionModal"
+      :progress="reEncryptionProgress"
+      :currentStep="reEncryptionStep"
+      :vaultspaceName="currentVaultspaceName"
+      :currentIndex="reEncryptionCurrentIndex"
+      :totalCount="reEncryptionTotalCount"
+      :error="reEncryptionError"
+      @cancel="handleReEncryptionCancel"
+    />
   </AppLayout>
 </template>
 
 <script>
-import { account, auth } from "../services/api";
+import { account, auth, vaultspaces } from "../services/api";
+import {
+  initializeUserMasterKey,
+  getStoredSalt,
+  decryptVaultSpaceKeyForUser,
+  clearAllCachedVaultSpaceKeys,
+  getUserMasterKey,
+} from "../services/keyManager";
+import { encryptVaultSpaceKey } from "../services/encryption";
+import { clearEncryptedMasterKey } from "../services/masterKeyStorage";
 import AppLayout from "../components/AppLayout.vue";
 import PasswordInput from "../components/PasswordInput.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
+import ReEncryptionModal from "../components/ReEncryptionModal.vue";
 
 export default {
   name: "AccountView",
@@ -233,6 +255,7 @@ export default {
     PasswordInput,
     ConfirmationModal,
     AlertModal,
+    ReEncryptionModal,
   },
   data() {
     return {
@@ -276,6 +299,15 @@ export default {
         title: "",
         message: "",
       },
+      // Re-encryption modal state
+      showReEncryptionModal: false,
+      reEncryptionProgress: 0,
+      reEncryptionStep: "Retrieving VaultSpaces...",
+      currentVaultspaceName: null,
+      reEncryptionCurrentIndex: 0,
+      reEncryptionTotalCount: 0,
+      reEncryptionError: null,
+      reEncryptionCancelled: false,
     };
   },
   async mounted() {
@@ -355,6 +387,8 @@ export default {
       this.passwordForm.loading = true;
       this.passwordForm.error = null;
       this.passwordForm.success = null;
+      this.reEncryptionError = null;
+      this.reEncryptionCancelled = false;
 
       if (
         !this.passwordForm.currentPassword ||
@@ -380,19 +414,415 @@ export default {
       }
 
       try {
+        // Get salt (from sessionStorage or server)
+        let salt = getStoredSalt();
+        if (!salt) {
+          try {
+            const saltBase64 = await auth.getMasterKeySalt();
+            if (saltBase64) {
+              const saltStr = atob(saltBase64);
+              salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
+            }
+          } catch (err) {
+            this.passwordForm.error =
+              "Failed to retrieve salt. Please try again.";
+            this.passwordForm.loading = false;
+            return;
+          }
+        }
+
+        if (!salt) {
+          this.passwordForm.error =
+            "Salt not available. Please log out and log back in.";
+          this.passwordForm.loading = false;
+          return;
+        }
+
+        // Derive old master key directly from currentPassword
+        const oldMasterKey = await initializeUserMasterKey(
+          this.passwordForm.currentPassword,
+          salt,
+        );
+
+        // Get current user ID
+        const currentUser = await auth.getCurrentUser();
+        if (!currentUser || !currentUser.id) {
+          throw new Error("Failed to get current user");
+        }
+
+        // List all VaultSpaces for verification
+        const vaultspacesList = await vaultspaces.list();
+
+        // Verification step: Verify that old master key can decrypt at least one VaultSpace key
+        // Also clear old master key from IndexedDB to prevent using stale key
+        if (vaultspacesList.length > 0) {
+          let canDecryptAtLeastOne = false;
+          for (const vs of vaultspacesList) {
+            try {
+              const vaultspaceKeyData = await vaultspaces.getKey(vs.id);
+              if (vaultspaceKeyData && vaultspaceKeyData.encrypted_key) {
+                // Try to decrypt with old master key
+                await decryptVaultSpaceKeyForUser(
+                  oldMasterKey,
+                  vaultspaceKeyData.encrypted_key,
+                );
+                canDecryptAtLeastOne = true;
+                break;
+              }
+            } catch (err) {
+              // Continue to next VaultSpace
+            }
+          }
+
+          if (!canDecryptAtLeastOne) {
+            this.showReEncryptionModal = false;
+            this.passwordForm.error =
+              "The current password is incorrect or cannot decrypt your VaultSpace keys. Please verify your current password and try again.";
+            this.passwordForm.loading = false;
+            return;
+          }
+        }
+
+        // Clear old master key from IndexedDB before proceeding
+        // This ensures we don't use a stale master key during re-encryption
+        const jwtToken = localStorage.getItem("jwt_token");
+        if (jwtToken) {
+          try {
+            await clearEncryptedMasterKey(jwtToken);
+          } catch (clearErr) {
+            // Continue even if clearing fails - will be overwritten anyway
+          }
+        }
+
+        // Show re-encryption modal
+        this.showReEncryptionModal = true;
+        this.reEncryptionProgress = 0;
+        this.reEncryptionStep = "Retrieving VaultSpaces...";
+        this.currentVaultspaceName = null;
+        this.reEncryptionCurrentIndex = 0;
+        this.reEncryptionTotalCount = 0;
+
+        // List all VaultSpaces (Step 1: 0-10%)
+        this.reEncryptionStep = "Retrieving VaultSpaces...";
+        this.reEncryptionProgress = 5;
+        this.reEncryptionTotalCount = vaultspacesList.length;
+        this.reEncryptionProgress = 10;
+
+        if (vaultspacesList.length === 0) {
+          // No VaultSpaces to re-encrypt, skip to password change
+          this.reEncryptionProgress = 95;
+          this.reEncryptionStep = "Finalizing...";
+          await account.changePassword(
+            this.passwordForm.currentPassword,
+            this.passwordForm.newPassword,
+          );
+          this.showReEncryptionModal = false;
+          this.passwordForm.success = "Password changed successfully";
+          this.passwordForm.currentPassword = "";
+          this.passwordForm.newPassword = "";
+          this.passwordForm.confirmPassword = "";
+          this.passwordForm.loading = false;
+          return;
+        }
+
+        // Step 2: Decrypt all keys (10-40%)
+        const decryptedKeys = new Map();
+        let decryptedCount = 0;
+        const decryptErrors = [];
+
+        for (let i = 0; i < vaultspacesList.length; i++) {
+          if (this.reEncryptionCancelled) {
+            throw new Error("Re-encryption cancelled by user");
+          }
+
+          const vs = vaultspacesList[i];
+          this.reEncryptionCurrentIndex = i;
+          this.currentVaultspaceName = vs.name;
+          this.reEncryptionStep = `Decrypting keys... ${i + 1}/${vaultspacesList.length}`;
+          this.reEncryptionProgress = 10 + (i / vaultspacesList.length) * 30;
+
+          try {
+            // Get encrypted key
+            const vaultspaceKeyData = await vaultspaces.getKey(vs.id);
+
+            if (!vaultspaceKeyData || !vaultspaceKeyData.encrypted_key) {
+              // VaultSpace has no encrypted key - skip it
+              continue;
+            }
+
+            // Decrypt with old master key
+            // Make key extractable so we can re-encrypt it with new master key
+            const decryptedKey = await decryptVaultSpaceKeyForUser(
+              oldMasterKey,
+              vaultspaceKeyData.encrypted_key,
+              true, // extractable = true for re-encryption
+            );
+
+            if (!decryptedKey) {
+              throw new Error("decryptVaultSpaceKeyForUser returned null");
+            }
+
+            decryptedKeys.set(vs.id, {
+              key: decryptedKey,
+              name: vs.name,
+            });
+            decryptedCount++;
+          } catch (err) {
+            // Decryption failed - abort the process
+            const errorMsg = err.message || String(err);
+            decryptErrors.push({
+              vaultspaceId: vs.id,
+              vaultspaceName: vs.name,
+              error: errorMsg,
+            });
+          }
+        }
+
+        // If decryption failed for any VaultSpace, abort the process
+        if (decryptErrors.length > 0) {
+          const errorDetails = decryptErrors
+            .map((e) => `- ${e.vaultspaceName || e.vaultspaceId}: ${e.error}`)
+            .join("\n");
+
+          this.showReEncryptionModal = false;
+          this.passwordForm.error = `Failed to decrypt VaultSpace keys with the current password. Password change cannot proceed to prevent data loss. Please verify your current password and try again.\n\nAffected VaultSpaces:\n${errorDetails}`;
+          this.passwordForm.loading = false;
+          return;
+        }
+
+        // Step 3: Derive new master key (40-45%)
+        this.reEncryptionProgress = 40;
+        this.reEncryptionStep = "Deriving new master key...";
+        this.currentVaultspaceName = null;
+
+        // Derive new master key from new password
+        // Note: Old master key was already cleared from IndexedDB after verification step
+        const newMasterKey = await initializeUserMasterKey(
+          this.passwordForm.newPassword,
+          salt,
+        );
+
+        this.reEncryptionProgress = 45;
+
+        // Step 4: Re-encrypt existing keys (45-75%)
+        const reencryptedKeys = new Map();
+        const reencryptErrors = [];
+        const totalToProcess = decryptedKeys.size;
+
+        this.reEncryptionProgress = 45;
+        let processedCount = 0;
+
+        // Re-encrypt existing keys
+        for (const [vsId, decryptedData] of decryptedKeys.entries()) {
+          if (this.reEncryptionCancelled) {
+            throw new Error("Re-encryption cancelled by user");
+          }
+
+          const vs = vaultspacesList.find((v) => v.id === vsId);
+          if (!vs) {
+            continue;
+          }
+
+          this.reEncryptionCurrentIndex = processedCount;
+          this.currentVaultspaceName = vs.name;
+          this.reEncryptionStep = `Re-encrypting keys... ${processedCount + 1}/${totalToProcess}`;
+          this.reEncryptionProgress =
+            45 + (processedCount / totalToProcess) * 30;
+          processedCount++;
+
+          try {
+            // Re-encrypt with new master key
+            const newEncryptedKey = await encryptVaultSpaceKey(
+              newMasterKey,
+              decryptedData.key,
+            );
+
+            if (!newEncryptedKey) {
+              throw new Error("encryptVaultSpaceKey returned null/undefined");
+            }
+
+            reencryptedKeys.set(vs.id, newEncryptedKey);
+          } catch (err) {
+            // Re-encryption failed - abort the process
+            const errorMsg = err.message || String(err);
+            const errorDetails = reencryptErrors
+              .map((e) => `- ${e.vaultspaceName || e.vaultspaceId}: ${e.error}`)
+              .concat(`- ${vs.name || vsId}: ${errorMsg}`)
+              .join("\n");
+
+            this.showReEncryptionModal = false;
+            this.passwordForm.error = `Failed to re-encrypt VaultSpace keys. Password change cannot proceed to prevent data loss. Please verify your current password and try again.\n\nAffected VaultSpaces:\n${errorDetails}`;
+            this.passwordForm.loading = false;
+            return;
+          }
+        }
+
+        // Verify that all keys were successfully re-encrypted
+        if (reencryptedKeys.size !== totalToProcess) {
+          const missingIds = Array.from(decryptedKeys.keys()).filter(
+            (id) => !reencryptedKeys.has(id),
+          );
+          const missingNames = missingIds
+            .map((id) => {
+              const vs = vaultspacesList.find((v) => v.id === id);
+              return vs?.name || id;
+            })
+            .join(", ");
+
+          this.showReEncryptionModal = false;
+          this.passwordForm.error = `Failed to re-encrypt all VaultSpace keys. Password change cannot proceed to prevent data loss. Missing keys for: ${missingNames}`;
+          this.passwordForm.loading = false;
+          return;
+        }
+
+        // Step 5: Update keys on server (75-95%)
+        let updatedCount = 0;
+        const updateErrors = [];
+
+        // Only process VaultSpaces that were successfully re-encrypted
+        for (const [vsId, newEncryptedKey] of reencryptedKeys.entries()) {
+          if (this.reEncryptionCancelled) {
+            throw new Error("Re-encryption cancelled by user");
+          }
+
+          const vs = vaultspacesList.find((v) => v.id === vsId);
+          if (!vs) {
+            continue;
+          }
+
+          this.reEncryptionCurrentIndex = updatedCount;
+          this.currentVaultspaceName = vs.name;
+          this.reEncryptionStep = `Updating on server... ${updatedCount + 1}/${reencryptedKeys.size}`;
+          this.reEncryptionProgress =
+            75 + (updatedCount / reencryptedKeys.size) * 20;
+
+          try {
+            // Update key on server (share with self to update own key)
+            // Note: The backend uses the authenticated user, not user_id from body
+            // The user_id parameter is sent but ignored by backend - it uses authenticated user
+            await vaultspaces.share(vs.id, currentUser.id, newEncryptedKey);
+            updatedCount++;
+          } catch (err) {
+            const errorMsg = err.message || String(err);
+            updateErrors.push({
+              vaultspaceId: vs.id,
+              vaultspaceName: vs.name,
+              error: errorMsg,
+            });
+            // Continue with other VaultSpaces
+          }
+        }
+
+        // Step 6: Finalize (95-100%)
+        this.reEncryptionProgress = 95;
+        this.reEncryptionStep = "Finalizing...";
+        this.currentVaultspaceName = null;
+
+        // Check if any keys were successfully updated
+        if (updatedCount === 0 && reencryptedKeys.size > 0) {
+          // No keys were successfully updated - build detailed error message
+          let errorMessage = `Failed to update any VaultSpace keys (${updateErrors.length} error(s)). Your password will not be changed to prevent data loss.\n\n`;
+          if (updateErrors.length > 0) {
+            errorMessage += "Errors:\n";
+            updateErrors.forEach((e, idx) => {
+              errorMessage += `${idx + 1}. ${e.vaultspaceName || e.vaultspaceId}: ${e.error}\n`;
+            });
+          }
+          errorMessage +=
+            "\nPlease check the browser console for more details and try again.";
+
+          this.showReEncryptionModal = false;
+          this.passwordForm.error = errorMessage;
+          this.passwordForm.loading = false;
+          return;
+        }
+
+        // Change password on server
         await account.changePassword(
           this.passwordForm.currentPassword,
           this.passwordForm.newPassword,
         );
+
+        // Verify that re-encrypted keys can be decrypted with the new master key
+        // This ensures the re-encryption worked correctly
+        if (reencryptedKeys.size > 0) {
+          const testVaultSpaceId = Array.from(reencryptedKeys.keys())[0];
+          try {
+            // Get the re-encrypted key from server
+            const testKeyData = await vaultspaces.getKey(testVaultSpaceId);
+            if (testKeyData && testKeyData.encrypted_key) {
+              // Try to decrypt with the new master key stored in IndexedDB
+              const storedMasterKey = await getUserMasterKey();
+              if (storedMasterKey) {
+                await decryptVaultSpaceKeyForUser(
+                  storedMasterKey,
+                  testKeyData.encrypted_key,
+                );
+              } else {
+                // Master key not in IndexedDB - re-store it
+                await initializeUserMasterKey(
+                  this.passwordForm.newPassword,
+                  salt,
+                );
+              }
+            }
+          } catch (verifyErr) {
+            // Verification failed - clear master key from IndexedDB and re-store it
+            // This ensures the master key is correctly stored
+            const jwtToken = localStorage.getItem("jwt_token");
+            if (jwtToken) {
+              await clearEncryptedMasterKey(jwtToken);
+            }
+            // Re-store the master key
+            await initializeUserMasterKey(this.passwordForm.newPassword, salt);
+          }
+        }
+
+        // Clear all cached VaultSpace keys to force reload with new master key
+        // This ensures the cached keys are cleared and will be reloaded with the new master key
+        clearAllCachedVaultSpaceKeys();
+
+        // Hide modal
+        this.reEncryptionProgress = 100;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        this.showReEncryptionModal = false;
+
+        // Show success message
         this.passwordForm.success = "Password changed successfully";
         this.passwordForm.currentPassword = "";
         this.passwordForm.newPassword = "";
         this.passwordForm.confirmPassword = "";
       } catch (err) {
-        this.passwordForm.error = err.message || "Failed to change password";
+        this.showReEncryptionModal = false;
+        if (this.reEncryptionCancelled) {
+          this.passwordForm.error =
+            "Re-encryption was cancelled. Your password has not been changed. Please try again.";
+        } else {
+          this.passwordForm.error = err.message || "Failed to change password";
+          // If re-encryption partially completed, inform user
+          if (
+            err.message &&
+            !err.message.includes("cancelled") &&
+            !err.message.includes("Master key not available")
+          ) {
+            this.passwordForm.error +=
+              " Some keys may have been updated. Please try changing your password again.";
+          }
+        }
       } finally {
         this.passwordForm.loading = false;
+        this.reEncryptionProgress = 0;
+        this.reEncryptionStep = "Retrieving VaultSpaces...";
+        this.currentVaultspaceName = null;
+        this.reEncryptionCurrentIndex = 0;
+        this.reEncryptionTotalCount = 0;
+        this.reEncryptionError = null;
+        this.reEncryptionCancelled = false;
       }
+    },
+    handleReEncryptionCancel() {
+      this.reEncryptionCancelled = true;
+      this.showReEncryptionModal = false;
     },
     async handleDeleteAccount() {
       this.deleteForm.loading = true;

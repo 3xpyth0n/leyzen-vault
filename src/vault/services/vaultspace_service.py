@@ -30,30 +30,40 @@ class VaultSpaceService:
         self.encryption_service = EncryptionService()
 
     def _check_duplicate_vaultspace_name(
-        self, name: str, exclude_vaultspace_id: str | None = None
+        self,
+        name: str,
+        owner_user_id: str,
+        exclude_vaultspace_id: str | None = None,
     ) -> bool:
-        """Check if a vaultspace with the same name already exists.
+        """Check if a vaultspace with the same name already exists for the same owner.
 
         Args:
             name: VaultSpace name to check
+            owner_user_id: Owner user ID to check duplicates for
             exclude_vaultspace_id: Optional VaultSpace ID to exclude from check (for renaming)
 
         Returns:
             True if a duplicate exists, False otherwise
         """
-        query = db.session.query(VaultSpace).filter_by(name=name)
+        query = db.session.query(VaultSpace).filter_by(
+            name=name, owner_user_id=owner_user_id
+        )
         if exclude_vaultspace_id:
             query = query.filter(VaultSpace.id != exclude_vaultspace_id)
         existing = query.first()
         return existing is not None
 
     def _validate_vaultspace_name(
-        self, name: str, exclude_vaultspace_id: str | None = None
+        self,
+        name: str,
+        owner_user_id: str,
+        exclude_vaultspace_id: str | None = None,
     ) -> None:
         """Validate vaultspace name format and check for duplicates.
 
         Args:
             name: VaultSpace name to validate
+            owner_user_id: Owner user ID to check duplicates for
             exclude_vaultspace_id: Optional VaultSpace ID to exclude from duplicate check
 
         Raises:
@@ -66,8 +76,10 @@ class VaultSpaceService:
         if not is_valid:
             raise ValueError(validation_error or "Invalid vaultspace name")
 
-        # Check for duplicate names globally
-        if self._check_duplicate_vaultspace_name(name, exclude_vaultspace_id):
+        # Check for duplicate names for the same owner
+        if self._check_duplicate_vaultspace_name(
+            name, owner_user_id, exclude_vaultspace_id
+        ):
             raise ValueError("A vaultspace with this name already exists")
 
     def create_vaultspace(
@@ -108,7 +120,7 @@ class VaultSpaceService:
             raise ValueError(f"User {owner_user_id} not found")
 
         # Validate vaultspace name (format and duplicates)
-        self._validate_vaultspace_name(name)
+        self._validate_vaultspace_name(name, owner_user_id)
 
         # Validate icon_name if provided
         if icon_name is not None:
@@ -271,7 +283,13 @@ class VaultSpaceService:
 
         if name is not None:
             # Validate vaultspace name (format and duplicates, excluding current vaultspace)
-            self._validate_vaultspace_name(name, exclude_vaultspace_id=vaultspace_id)
+            if not vaultspace.owner_user_id:
+                raise ValueError(
+                    f"VaultSpace {vaultspace_id} has no owner, cannot update name"
+                )
+            self._validate_vaultspace_name(
+                name, vaultspace.owner_user_id, exclude_vaultspace_id=vaultspace_id
+            )
             vaultspace.name = name
         if encrypted_metadata is not None:
             vaultspace.encrypted_metadata = encrypted_metadata

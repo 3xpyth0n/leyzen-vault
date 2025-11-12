@@ -115,9 +115,14 @@ export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
  *
  * @param {CryptoKey} userKey - User master key
  * @param {string} encryptedKey - Encrypted VaultSpace key (base64)
+ * @param {boolean} extractable - Whether the key should be extractable (default: false for security)
  * @returns {Promise<CryptoKey>} Decrypted VaultSpace key
  */
-export async function decryptVaultSpaceKey(userKey, encryptedKey) {
+export async function decryptVaultSpaceKey(
+  userKey,
+  encryptedKey,
+  extractable = false,
+) {
   // Decode base64
   const combined = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
 
@@ -143,7 +148,7 @@ export async function decryptVaultSpaceKey(userKey, encryptedKey) {
       name: "AES-GCM",
       length: 256,
     },
-    false,
+    extractable,
     ["encrypt", "decrypt"],
   );
 }

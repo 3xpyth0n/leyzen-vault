@@ -9,6 +9,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Password Change with Automatic Key Re-encryption
+
+- **Automatic VaultSpace Key Re-encryption**: Password change now automatically re-encrypts all VaultSpace keys with the new master key before updating the password. This ensures that all encrypted files remain accessible after password change.
+- **Password Verification**: Added verification step to ensure the current password can decrypt at least one VaultSpace key before proceeding with password change. Prevents password change with incorrect password.
+
 #### Admin Dashboard Enhancements
 
 - **Enhanced Dashboard Statistics**: Improved admin dashboard with enriched statistics including user role breakdown, storage usage progress bars, and average metrics per user. Added visual indicators for disk storage usage with percentage display and color-coded warnings.
@@ -44,6 +49,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **API Key Permissions**: Fixed security issue where admins could create API keys for any user, including super admins. Admins can now only create API keys for themselves, while super admins can create API keys for any user.
 - **SSO Error Handling**: Fixed SSO authentication error display on login page. Errors from SSO callbacks are now properly displayed to users with automatic URL cleanup.
+- **VaultSpace Name Duplicate Check**: Fixed VaultSpace name duplicate check to validate duplicates per owner instead of globally. Users can now create VaultSpaces with the same name as other users' VaultSpaces, but cannot create duplicate names within their own VaultSpaces.
 
 ---
 

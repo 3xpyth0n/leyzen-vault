@@ -216,10 +216,15 @@ export async function createVaultSpaceKey(userMasterKey) {
  *
  * @param {CryptoKey} userMasterKey - User master key
  * @param {string} encryptedKey - Encrypted VaultSpace key from server
+ * @param {boolean} extractable - Whether the key should be extractable (default: false for security)
  * @returns {Promise<CryptoKey>} Decrypted VaultSpace key
  */
-export async function decryptVaultSpaceKeyForUser(userMasterKey, encryptedKey) {
-  return await decryptVaultSpaceKey(userMasterKey, encryptedKey);
+export async function decryptVaultSpaceKeyForUser(
+  userMasterKey,
+  encryptedKey,
+  extractable = false,
+) {
+  return await decryptVaultSpaceKey(userMasterKey, encryptedKey, extractable);
 }
 
 /**
@@ -266,4 +271,30 @@ export function clearAllCachedVaultSpaceKeys() {
   if (window.__leyzenVaultSpaceKeys) {
     window.__leyzenVaultSpaceKeys.clear();
   }
+}
+
+/**
+ * Re-encrypt a VaultSpace key with a new master key.
+ * Decrypts the key with the old master key and encrypts it with the new one.
+ *
+ * @param {CryptoKey} oldMasterKey - Old master key for decryption
+ * @param {CryptoKey} newMasterKey - New master key for encryption
+ * @param {string} encryptedKey - Encrypted VaultSpace key (base64)
+ * @returns {Promise<string>} New encrypted VaultSpace key (base64)
+ */
+export async function reencryptVaultSpaceKey(
+  oldMasterKey,
+  newMasterKey,
+  encryptedKey,
+) {
+  // Decrypt with old master key
+  const decryptedKey = await decryptVaultSpaceKey(oldMasterKey, encryptedKey);
+
+  // Re-encrypt with new master key
+  const newEncryptedKey = await encryptVaultSpaceKey(
+    newMasterKey,
+    decryptedKey,
+  );
+
+  return newEncryptedKey;
 }

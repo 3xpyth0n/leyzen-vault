@@ -742,6 +742,7 @@ def setup():
 
 
 @auth_api_bp.route("/account/email", methods=["PUT"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 def update_email():
     """Update user email.
@@ -842,6 +843,7 @@ def get_master_key_salt():
 
 
 @auth_api_bp.route("/account/password", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 def change_password():
     """Change user password.

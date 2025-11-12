@@ -1,0 +1,438 @@
+<template>
+  <teleport to="body">
+    <div
+      v-if="show"
+      class="modal-overlay"
+      role="dialog"
+      aria-labelledby="reencryption-modal-title"
+      aria-modal="true"
+    >
+      <div class="modal-container" @click.stop>
+        <div class="modal-content">
+          <!-- Animated gradient background -->
+          <div class="gradient-background"></div>
+
+          <!-- Main content -->
+          <div class="modal-body">
+            <!-- Spinner -->
+            <div class="spinner-container" v-if="!error">
+              <div class="spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+              </div>
+            </div>
+
+            <!-- Error icon -->
+            <div class="error-icon" v-if="error">
+              <svg
+                width="64"
+                height="64"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+
+            <!-- Title -->
+            <h2 id="reencryption-modal-title" class="modal-title">
+              {{ error ? "Re-encryption Failed" : "Re-encrypting Keys" }}
+            </h2>
+
+            <!-- Current step -->
+            <p class="current-step">{{ currentStep }}</p>
+
+            <!-- VaultSpace name (if available) -->
+            <p class="vaultspace-name" v-if="vaultspaceName && !error">
+              {{ vaultspaceName }}
+            </p>
+
+            <!-- Progress percentage -->
+            <div class="progress-info" v-if="!error">
+              <span class="progress-percentage">{{ progress }}%</span>
+              <span class="progress-count" v-if="totalCount > 0">
+                ({{ currentIndex + 1 }} / {{ totalCount }})
+              </span>
+            </div>
+
+            <!-- Error message -->
+            <p class="error-message" v-if="error">{{ error }}</p>
+
+            <!-- Cancel button (only show if not in error state and not complete) -->
+            <div class="modal-actions" v-if="!error && progress < 100">
+              <button
+                class="cancel-btn"
+                @click="handleCancel"
+                :disabled="progress >= 100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </teleport>
+</template>
+
+<script>
+export default {
+  name: "ReEncryptionModal",
+  props: {
+    show: {
+      type: Boolean,
+      default: false,
+    },
+    progress: {
+      type: Number,
+      default: 0,
+      validator: (value) => value >= 0 && value <= 100,
+    },
+    currentStep: {
+      type: String,
+      default: "Processing...",
+    },
+    vaultspaceName: {
+      type: String,
+      default: null,
+    },
+    currentIndex: {
+      type: Number,
+      default: 0,
+    },
+    totalCount: {
+      type: Number,
+      default: 0,
+    },
+    error: {
+      type: String,
+      default: null,
+    },
+  },
+  emits: ["cancel"],
+  watch: {
+    show(newVal) {
+      if (newVal) {
+        document.body.style.overflow = "hidden";
+      } else {
+        document.body.style.overflow = "";
+      }
+    },
+  },
+  methods: {
+    handleCancel() {
+      this.$emit("cancel");
+    },
+  },
+  beforeUnmount() {
+    document.body.style.overflow = "";
+  },
+};
+</script>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(7, 14, 28, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  animation: slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  background: linear-gradient(
+    135deg,
+    rgba(30, 41, 59, 0.85),
+    rgba(15, 23, 42, 0.95)
+  );
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  padding: 3rem 2.5rem;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  position: relative;
+  overflow: hidden;
+}
+
+.modal-content::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(88, 166, 255, 0.4),
+    transparent
+  );
+}
+
+.gradient-background {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(88, 166, 255, 0.1) 0%,
+    transparent 70%
+  );
+  animation: rotate 20s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.modal-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.spinner-container {
+  margin-bottom: 2rem;
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.spinner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.spinner-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 3px solid transparent;
+  border-top-color: rgba(88, 166, 255, 0.8);
+  border-radius: 50%;
+  animation: spin 1.5s linear infinite;
+  box-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
+}
+
+.spinner-ring:nth-child(1) {
+  animation-delay: 0s;
+  border-top-color: rgba(88, 166, 255, 0.8);
+}
+
+.spinner-ring:nth-child(2) {
+  animation-delay: 0.5s;
+  border-top-color: rgba(136, 206, 255, 0.6);
+  width: 70%;
+  height: 70%;
+  top: 15%;
+  left: 15%;
+}
+
+.spinner-ring:nth-child(3) {
+  animation-delay: 1s;
+  border-top-color: rgba(56, 189, 248, 0.4);
+  width: 40%;
+  height: 40%;
+  top: 30%;
+  left: 30%;
+  animation-direction: reverse;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-icon {
+  margin-bottom: 1.5rem;
+  color: #ef4444;
+  filter: drop-shadow(0 4px 8px rgba(239, 68, 68, 0.3));
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.modal-title {
+  margin: 0 0 1rem 0;
+  color: #e6eef6;
+  font-size: 1.75rem;
+  font-weight: 600;
+  text-align: center;
+  background: linear-gradient(135deg, #58a6ff 0%, #88ceff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.current-step {
+  margin: 0 0 1rem 0;
+  color: #cbd5e1;
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.5;
+  min-height: 1.5em;
+}
+
+.vaultspace-name {
+  margin: 0 0 1.5rem 0;
+  color: #94a3b8;
+  font-size: 0.95rem;
+  font-style: italic;
+  text-align: center;
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.progress-percentage {
+  color: #58a6ff;
+  font-size: 2rem;
+  font-weight: 700;
+  text-shadow: 0 0 20px rgba(88, 166, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-count {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.error-message {
+  margin: 1rem 0 0 0;
+  color: #fca5a5;
+  font-size: 1rem;
+  text-align: center;
+  line-height: 1.5;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.5rem;
+  width: 100%;
+}
+
+.modal-actions {
+  margin-top: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.cancel-btn {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(148, 163, 184, 0.1);
+  color: #e6eef6;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.5);
+  transform: translateY(-1px);
+}
+
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Responsive design */
+@media (max-width: 640px) {
+  .modal-container {
+    max-width: 100%;
+  }
+
+  .modal-content {
+    padding: 2rem 1.5rem;
+  }
+
+  .modal-title {
+    font-size: 1.5rem;
+  }
+
+  .current-step {
+    font-size: 1rem;
+  }
+
+  .progress-percentage {
+    font-size: 1.5rem;
+  }
+}
+</style>

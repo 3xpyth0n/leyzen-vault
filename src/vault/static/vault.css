@@ -2729,14 +2729,10 @@ kbd {
 .modal-content {
   position: relative;
   z-index: 1;
-  background: var(--bg-glass);
-  backdrop-filter: var(--blur);
-  border: 1px solid var(--border-color);
   border-radius: 1rem;
   padding: 2rem;
   max-width: 500px;
   width: 100%;
-  box-shadow: var(--shadow-lg);
 }
 
 .modal-header {
