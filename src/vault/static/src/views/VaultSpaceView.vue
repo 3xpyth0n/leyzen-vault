@@ -102,6 +102,28 @@
         />
       </Teleport>
 
+      <!-- ZIP Progress Bar (Sticky at bottom) -->
+      <Teleport to="body">
+        <ProgressBar
+          v-if="zipping && zipProgress !== null"
+          :progress="zipProgress"
+          :file-name="zipMessage"
+          status="Zipping folder..."
+          :sticky="true"
+        />
+      </Teleport>
+
+      <!-- Extract Progress Bar (Sticky at bottom) -->
+      <Teleport to="body">
+        <ProgressBar
+          v-if="extracting && extractProgress !== null"
+          :progress="extractProgress"
+          :file-name="extractMessage"
+          status="Extracting ZIP..."
+          :sticky="true"
+        />
+      </Teleport>
+
       <!-- Batch Actions Bar -->
       <BatchActions
         v-if="selectedItems.length > 0"
@@ -139,27 +161,6 @@
         }
       "
     />
-
-    <!-- Error Modal (legacy, kept for backward compatibility) -->
-    <div
-      v-if="showErrorModal"
-      class="modal-overlay"
-      @click="showErrorModal = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <div class="modal-header">
-          <h2>Error</h2>
-        </div>
-        <div class="modal-content">
-          <p>{{ errorMessage }}</p>
-          <div class="form-actions">
-            <button @click="showErrorModal = false" class="btn btn-primary">
-              OK
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Password Modal for SSO Users -->
     <Teleport to="body">
@@ -294,6 +295,7 @@ import { debounce } from "../utils/debounce";
 import { folderPicker } from "../utils/FolderPicker";
 import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
+import { zipFolder, extractZip } from "../services/zipService.js";
 
 export default {
   name: "VaultSpaceView",
@@ -318,7 +320,6 @@ export default {
       loading: false,
       error: null,
       showDeleteConfirmModal: false,
-      showErrorModal: false,
       showAlertModal: false,
       alertModalConfig: {
         type: "error",
@@ -340,12 +341,17 @@ export default {
       downloadTimeRemaining: null,
       downloadFileName: "",
       deleting: false,
+      zipping: false,
+      zipProgress: null,
+      zipMessage: "",
+      extracting: false,
+      extractProgress: null,
+      extractMessage: "",
       selectedFiles: [], // Array of File objects for upload
       uploadedFileIds: [], // Array of file IDs uploaded in current batch (for verification)
       itemToDelete: null,
       uploadError: null,
       deleteError: null,
-      errorMessage: "",
       vaultspaceKey: null, // Decrypted VaultSpace key (stored in memory only)
       selectedItems: [], // Array of selected file/folder objects
       viewMode: "grid", // 'grid' or 'list'
@@ -385,9 +391,12 @@ export default {
           "User needs to re-enter password to access encrypted content.",
         );
         // Show error message but don't redirect - user can still navigate
-        this.showError(
-          "Your encryption session has expired. Please log in again to access encrypted content.",
-        );
+        this.showAlert({
+          type: "error",
+          title: "Session Expired",
+          message:
+            "Your encryption session has expired. Please log in again to access encrypted content.",
+        });
         // Don't load encrypted content, but don't disconnect user
         // User can navigate to other pages or go to login to re-enter password
         return;
@@ -408,7 +417,11 @@ export default {
           console.warn(
             "User master key not available and user is not authenticated. Redirecting to login.",
           );
-          this.showError("You must be logged in to access this VaultSpace.");
+          this.showAlert({
+            type: "error",
+            title: "Authentication Required",
+            message: "You must be logged in to access this VaultSpace.",
+          });
           setTimeout(() => {
             auth.logout();
             this.$router.push("/login");
@@ -456,7 +469,11 @@ export default {
         this.vaultspace = await vaultspaces.get(this.$route.params.id);
       } catch (err) {
         this.error = err.message;
-        this.showError("Failed to load VaultSpace: " + err.message);
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to load VaultSpace: " + err.message,
+        });
       }
     },
 
@@ -559,11 +576,14 @@ export default {
                 cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
 
                 // Show warning about existing files
-                this.showError(
-                  "Warning: A new VaultSpace key has been created. " +
+                this.showAlert({
+                  type: "warning",
+                  title: "Warning",
+                  message:
+                    "Warning: A new VaultSpace key has been created. " +
                     "Existing files encrypted with the old key will no longer be accessible. " +
                     "You can now use this VaultSpace normally.",
-                );
+                });
               } catch (recreateErr) {
                 console.error(
                   "Failed to recreate VaultSpace key:",
@@ -572,10 +592,13 @@ export default {
                 this.error =
                   "Unable to decrypt VaultSpace key and failed to create a new key. " +
                   "Please contact support.";
-                this.showError(
-                  "Error: Unable to decrypt existing VaultSpace key and failed to create a new key. " +
+                this.showAlert({
+                  type: "error",
+                  title: "Error",
+                  message:
+                    "Error: Unable to decrypt existing VaultSpace key and failed to create a new key. " +
                     "Please contact technical support.",
-                );
+                });
                 throw recreateErr;
               }
             } else {
@@ -640,7 +663,11 @@ export default {
         })
         .catch((err) => {
           this.error = err.message;
-          this.showError("Failed to load files: " + err.message);
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Failed to load files: " + err.message,
+          });
           throw err;
         })
         .finally(() => {
@@ -763,7 +790,11 @@ export default {
 
               // Clear any stale data and redirect to login
               clearUserMasterKey();
-              this.showError(errorMessage);
+              this.showAlert({
+                type: "error",
+                title: "Session Expired",
+                message: errorMessage,
+              });
               setTimeout(() => {
                 auth.logout();
                 this.$router.push("/login");
@@ -772,15 +803,22 @@ export default {
             }
           }
         } catch (err) {
-          this.showError("Failed to load VaultSpace key: " + err.message);
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Failed to load VaultSpace key: " + err.message,
+          });
           return;
         }
       }
 
       if (!this.vaultspaceKey) {
-        this.showError(
-          "The VaultSpace key could not be loaded. Please try again or refresh the page.",
-        );
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message:
+            "The VaultSpace key could not be loaded. Please try again or refresh the page.",
+        });
         return;
       }
 
@@ -1410,7 +1448,11 @@ export default {
     async downloadFile(file) {
       try {
         if (!this.vaultspaceKey) {
-          this.showError("VaultSpace key not loaded");
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "VaultSpace key not loaded",
+          });
           return;
         }
 
@@ -1478,7 +1520,11 @@ export default {
           this.downloadFileName = "";
         }, 1000);
       } catch (err) {
-        this.showError("Download failed: " + err.message);
+        this.showAlert({
+          type: "error",
+          title: "Download Failed",
+          message: "Download failed: " + err.message,
+        });
         this.downloadProgress = null;
         this.downloadSpeed = 0;
         this.downloadTimeRemaining = null;
@@ -1555,10 +1601,6 @@ export default {
       }
     },
 
-    showError(message) {
-      this.errorMessage = message;
-      this.showErrorModal = true;
-    },
     showAlert(config) {
       this.alertModalConfig = {
         type: config.type || "error",
@@ -1597,14 +1639,21 @@ export default {
             window.showShareModalAdvanced(fileId, "file");
           } else if (retries >= maxRetries) {
             clearInterval(checkInterval);
-            this.showError(
-              "Share functionality is not available. Please refresh the page.",
-            );
+            this.showAlert({
+              type: "error",
+              title: "Error",
+              message:
+                "Share functionality is not available. Please refresh the page.",
+            });
           }
         }, 100);
       } catch (err) {
         console.error("Error initializing sharing manager:", err);
-        this.showError("Failed to open share dialog. Please refresh the page.");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to open share dialog. Please refresh the page.",
+        });
       }
     },
 
@@ -1743,6 +1792,10 @@ export default {
           // Fallback: try to load sharing manager
           this.initSharingManager(item.id);
         }
+      } else if (action === "zip-folder") {
+        this.handleZipFolder(item);
+      } else if (action === "extract-zip") {
+        this.handleExtractZip(item);
       } else if (action === "cancel-rename") {
         this.editingItemId = null;
       }
@@ -1904,7 +1957,11 @@ export default {
         }
         this.editingItemId = null;
       } catch (err) {
-        this.showError(err.message || "Error renaming");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Error renaming",
+        });
         this.editingItemId = null;
       }
     },
@@ -1930,7 +1987,11 @@ export default {
           this.files = this.files.filter((f) => f.id !== item.id);
         }
       } catch (err) {
-        this.showError(err.message || "Error moving");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Error moving",
+        });
       }
     },
 
@@ -1966,7 +2027,11 @@ export default {
         }
       } catch (err) {
         console.error("Move action error:", err);
-        this.showError(err.message || "Failed to move item");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to move item",
+        });
       }
     },
 
@@ -2002,7 +2067,11 @@ export default {
         }
       } catch (err) {
         console.error("Copy action error:", err);
-        this.showError(err.message || "Failed to copy item");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to copy item",
+        });
       }
     },
 
@@ -2011,6 +2080,151 @@ export default {
       // For now, return the folders we already have loaded
       // In the future, we could recursively load all folders
       return this.folders;
+    },
+
+    async handleZipFolder(folder) {
+      try {
+        if (!this.vaultspaceKey) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "VaultSpace key not loaded",
+          });
+          return;
+        }
+
+        if (folder.mime_type !== "application/x-directory") {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Selected item is not a folder",
+          });
+          return;
+        }
+
+        // Initialize ZIP progress
+        this.zipping = true;
+        this.zipProgress = 0;
+        this.zipMessage = `Preparing ${folder.original_name}...`;
+
+        try {
+          // Zip the folder
+          const zipFileId = await zipFolder(
+            folder.id,
+            this.$route.params.id,
+            this.vaultspaceKey,
+            (current, total, message) => {
+              // Update progress
+              if (total > 0) {
+                this.zipProgress = Math.round((current / total) * 100);
+              } else {
+                this.zipProgress = current;
+              }
+              this.zipMessage = message || `Zipping ${folder.original_name}...`;
+            },
+          );
+
+          // Reload files to show the new ZIP file
+          await this.loadFiles();
+
+          // Show success message
+          if (window.Notifications) {
+            window.Notifications.success(
+              `Folder "${folder.original_name}" zipped successfully`,
+            );
+          }
+        } finally {
+          this.zipping = false;
+          this.zipProgress = null;
+          this.zipMessage = "";
+        }
+      } catch (err) {
+        logger.error("Failed to zip folder:", err);
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to zip folder. Please try again.",
+        });
+        this.zipping = false;
+        this.zipProgress = null;
+        this.zipMessage = "";
+      }
+    },
+
+    async handleExtractZip(zipFile) {
+      try {
+        if (!this.vaultspaceKey) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "VaultSpace key not loaded",
+          });
+          return;
+        }
+
+        const isZipFile =
+          zipFile.mime_type === "application/zip" ||
+          zipFile.mime_type === "application/x-zip-compressed";
+
+        if (!isZipFile) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Selected file is not a ZIP file",
+          });
+          return;
+        }
+
+        // Initialize extract progress
+        this.extracting = true;
+        this.extractProgress = 0;
+        this.extractMessage = `Preparing extraction of ${zipFile.original_name}...`;
+
+        try {
+          // Extract the ZIP file
+          const extractedFolderId = await extractZip(
+            zipFile.id,
+            this.$route.params.id,
+            this.vaultspaceKey,
+            this.currentParentId,
+            (current, total, message) => {
+              // Update progress
+              if (total > 0) {
+                this.extractProgress = Math.round((current / total) * 100);
+              } else {
+                this.extractProgress = current;
+              }
+              this.extractMessage =
+                message || `Extracting ${zipFile.original_name}...`;
+            },
+          );
+
+          // Reload files to show extracted files
+          await this.loadFiles();
+
+          // Show success message
+          if (window.Notifications) {
+            window.Notifications.success(
+              `ZIP file "${zipFile.original_name}" extracted successfully`,
+            );
+          }
+        } finally {
+          this.extracting = false;
+          this.extractProgress = null;
+          this.extractMessage = "";
+        }
+      } catch (err) {
+        logger.error("Failed to extract ZIP:", err);
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message:
+            err.message || "Failed to extract ZIP file. Please try again.",
+        });
+        this.extracting = false;
+        this.extractProgress = null;
+        this.extractMessage = "";
+      }
     },
 
     async handleCopy(item, newParentId, newName) {
@@ -2024,7 +2238,11 @@ export default {
         // Reload files to show the new copy
         await this.loadFiles();
       } catch (err) {
-        this.showError(err.message || "Error copying");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Error copying",
+        });
         throw err;
       }
     },
@@ -2063,7 +2281,11 @@ export default {
 
         await this.handleMove(sourceItem, targetFolderId);
       } catch (err) {
-        this.showError(err.message || "Error moving item");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Error moving item",
+        });
       }
     },
 
@@ -2126,7 +2348,11 @@ export default {
           }
         }
       } catch (err) {
-        this.showError(err.message || "Error pasting items");
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Error pasting items",
+        });
       }
     },
 
@@ -2148,7 +2374,11 @@ export default {
           this.files[fileIndex].is_starred = updatedFile.is_starred;
         }
       } catch (err) {
-        this.showError("Failed to toggle star: " + err.message);
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to toggle star: " + err.message,
+        });
       }
     },
 
@@ -2169,9 +2399,11 @@ export default {
       this.files = this.files.filter((f) => !deletedIds.has(f.id));
 
       if (result.errors.length > 0) {
-        this.showError(
-          `Some items could not be deleted: ${result.errors.map((e) => e.error).join(", ")}`,
-        );
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: `Some items could not be deleted: ${result.errors.map((e) => e.error).join(", ")}`,
+        });
       }
     },
 
@@ -2204,9 +2436,11 @@ export default {
       }
 
       if (result.errors.length > 0) {
-        this.showError(
-          `Some items could not be moved: ${result.errors.map((e) => e.error).join(", ")}`,
-        );
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: `Some items could not be moved: ${result.errors.map((e) => e.error).join(", ")}`,
+        });
       }
     },
 

@@ -9,6 +9,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### ZIP Folder Functionality
+
+- **Folder Zipping**: Users can now zip entire folders (including all subfolders and files) to create a single ZIP file. The ZIP file preserves the original folder structure and is encrypted like any other file in the system. The ZIP file can be shared via share links.
+- **ZIP Extraction**: Users can upload ZIP files and extract them to recreate the folder structure with all contained files. Each file is individually encrypted and uploaded to the VaultSpace.
+- **Client-Side Processing**: All ZIP operations (creation and extraction) are performed client-side. Files are decrypted, processed, and re-encrypted entirely in the browser for maximum security.
+- **Progress Tracking**: Real-time progress indicators for both zipping and extraction operations, showing current file being processed and overall progress.
+- **Error Handling**: Comprehensive error handling for quota limits, network errors, corrupted ZIP files, and missing encryption keys with user-friendly error messages.
+
 #### Password Change with Automatic Key Re-encryption
 
 - **Automatic VaultSpace Key Re-encryption**: Password change now automatically re-encrypts all VaultSpace keys with the new master key before updating the password. This ensures that all encrypted files remain accessible after password change.

@@ -40,6 +40,7 @@
               :key="file.id"
               class="file-card trash-item glass"
               :class="{ selected: isSelected(file.id) }"
+              @click="handleItemClick(file, $event)"
             >
               <input
                 type="checkbox"
@@ -78,27 +79,6 @@
                   v-html="getIcon('trash', 20)"
                 ></button>
               </div>
-            </div>
-          </div>
-
-          <!-- Batch Actions Bar -->
-          <div v-if="selectedItems.length > 0" class="batch-actions-bar glass">
-            <span class="selected-count"
-              >{{ selectedItems.length }} item(s) selected</span
-            >
-            <div class="actions">
-              <button @click="batchRestore" class="btn btn-primary btn-sm">
-                Restore Selected
-              </button>
-              <button
-                @click="batchPermanentDelete"
-                class="btn btn-danger btn-sm"
-              >
-                Delete Permanently
-              </button>
-              <button @click="clearSelection" class="btn btn-secondary btn-sm">
-                Clear Selection
-              </button>
             </div>
           </div>
         </div>
@@ -220,6 +200,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Batch Actions Bar -->
+    <BatchActionsTrash
+      :selectedItems="selectedItems"
+      :processing="restoring || deleting"
+      :actionType="restoring ? 'restore' : deleting ? 'delete' : null"
+      @restore="batchRestore"
+      @delete="batchPermanentDelete"
+      @clear="clearSelection"
+    />
   </AppLayout>
 </template>
 
@@ -228,11 +218,13 @@ import { ref, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { trash, auth } from "../services/api";
 import AppLayout from "../components/AppLayout.vue";
+import BatchActionsTrash from "../components/BatchActionsTrash.vue";
 
 export default {
   name: "TrashView",
   components: {
     AppLayout,
+    BatchActionsTrash,
   },
   setup() {
     const router = useRouter();
@@ -283,6 +275,61 @@ export default {
       } else {
         selectedItems.value.push(file);
       }
+    };
+
+    const handleItemClick = (file, event) => {
+      // If clicking checkbox, don't process card click
+      if (event.target.type === "checkbox") {
+        return;
+      }
+
+      // If clicking action buttons, don't process card click
+      if (
+        event.target.closest(".file-actions") ||
+        event.target.closest(".btn-icon")
+      ) {
+        return;
+      }
+
+      // If Ctrl/Cmd key is pressed, toggle selection
+      if (event.ctrlKey || event.metaKey) {
+        toggleSelection(file);
+        return;
+      }
+
+      // If Shift key is pressed, select range
+      if (event.shiftKey && selectedItems.value.length > 0) {
+        // Select range from last selected to current
+        const lastSelectedIndex = trashFiles.value.findIndex(
+          (i) =>
+            i.id === selectedItems.value[selectedItems.value.length - 1].id,
+        );
+        const currentIndex = trashFiles.value.findIndex(
+          (i) => i.id === file.id,
+        );
+
+        if (lastSelectedIndex >= 0 && currentIndex >= 0) {
+          const start = Math.min(lastSelectedIndex, currentIndex);
+          const end = Math.max(lastSelectedIndex, currentIndex);
+          const range = trashFiles.value.slice(start, end + 1);
+          // Merge with existing selection, avoiding duplicates
+          const newSelection = [...selectedItems.value];
+          range.forEach((item) => {
+            if (!newSelection.some((s) => s.id === item.id)) {
+              newSelection.push(item);
+            }
+          });
+          selectedItems.value = newSelection;
+        }
+        return;
+      }
+
+      // Normal click: select item (clear other selections first if not already selected)
+      if (!isSelected(file.id)) {
+        clearSelection();
+        toggleSelection(file);
+      }
+      // If already selected, do nothing (keep selection) - matches VaultSpaceView behavior
     };
 
     const clearSelection = () => {
@@ -480,6 +527,7 @@ export default {
       refreshTrash,
       isSelected,
       toggleSelection,
+      handleItemClick,
       clearSelection,
       restoreFile,
       confirmRestore,
@@ -637,25 +685,6 @@ export default {
 
 .btn-icon svg {
   display: block;
-}
-
-.batch-actions-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  margin-top: 2rem;
-  border-radius: var(--radius-md, 8px);
-}
-
-.selected-count {
-  font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
-}
-
-.actions {
-  display: flex;
-  gap: 0.75rem;
 }
 
 .modal-overlay {

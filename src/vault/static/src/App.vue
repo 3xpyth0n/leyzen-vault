@@ -16,7 +16,6 @@
 <script setup>
 // Main Vue app component
 </script>
-
 <style>
 /* Global styles */
 </style>

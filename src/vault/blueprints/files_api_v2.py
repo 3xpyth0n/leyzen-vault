@@ -11,6 +11,7 @@ from vault.middleware import get_current_user, jwt_required
 from vault.services.encryption_service import EncryptionService
 from vault.services.file_service import AdvancedFileService
 from vault.services.quota_service import QuotaService
+from vault.services.zip_service import ZipService
 from vault.storage import FileStorage
 from vault.blueprints.validators import (
     validate_vaultspace_id,
@@ -44,6 +45,11 @@ def _get_storage() -> FileStorage:
 def _get_quota_service() -> QuotaService:
     """Get QuotaService instance."""
     return QuotaService()
+
+
+def _get_zip_service() -> ZipService:
+    """Get ZipService instance."""
+    return ZipService()
 
 
 def _validate_encrypted_key(encrypted_key: str) -> tuple[bool, str]:
@@ -1113,3 +1119,152 @@ def toggle_star_file(file_id: str):
         return jsonify({"file": file_obj.to_dict()}), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 403
+
+
+@files_api_bp.route("/zip/prepare", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def prepare_zip():
+    """Prepare folder tree for zipping.
+
+    Request body:
+        {
+            "folder_id": "folder-uuid",
+            "vaultspace_id": "vaultspace-uuid"
+        }
+
+    Returns:
+        JSON with folder tree including files with encrypted keys
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    folder_id = data.get("folder_id")
+    vaultspace_id = data.get("vaultspace_id")
+
+    if not folder_id:
+        return jsonify({"error": "folder_id is required"}), 400
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_file_id(folder_id):
+        return jsonify({"error": "Invalid folder_id format"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    zip_service = _get_zip_service()
+
+    try:
+        folder_tree = zip_service.get_folder_tree(
+            folder_id=folder_id,
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+        )
+
+        return jsonify(folder_tree), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/zip/extract", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def prepare_extract():
+    """Prepare ZIP file for extraction.
+
+    Request body:
+        {
+            "zip_file_id": "file-uuid",
+            "vaultspace_id": "vaultspace-uuid",
+            "target_parent_id": "parent-folder-uuid" (optional)
+        }
+
+    Returns:
+        JSON with ZIP file info and encrypted file key
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    zip_file_id = data.get("zip_file_id")
+    vaultspace_id = data.get("vaultspace_id")
+    target_parent_id = data.get("target_parent_id")
+
+    if not zip_file_id:
+        return jsonify({"error": "zip_file_id is required"}), 400
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_file_id(zip_file_id):
+        return jsonify({"error": "Invalid zip_file_id format"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    if target_parent_id and not validate_file_id(target_parent_id):
+        return jsonify({"error": "Invalid target_parent_id format"}), 400
+
+    file_service = _get_file_service()
+    encryption_service = _get_encryption_service()
+
+    try:
+        # Get file with permissions check
+        file_obj, permissions = file_service.get_file_with_permissions(
+            zip_file_id, user.id
+        )
+
+        if not file_obj:
+            return jsonify({"error": "ZIP file not found"}), 404
+
+        if file_obj.vaultspace_id != vaultspace_id:
+            return (
+                jsonify({"error": "ZIP file does not belong to specified VaultSpace"}),
+                400,
+            )
+
+        # Check if it's actually a ZIP file
+        if file_obj.mime_type not in (
+            "application/zip",
+            "application/x-zip-compressed",
+        ):
+            return jsonify({"error": "File is not a ZIP file"}), 400
+
+        # Check permissions
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Get encrypted file key
+        file_key = encryption_service.get_file_key(zip_file_id, vaultspace_id)
+
+        if not file_key:
+            return jsonify({"error": "FileKey not found for ZIP file"}), 404
+
+        return (
+            jsonify(
+                {
+                    "file": file_obj.to_dict(),
+                    "file_key": file_key.to_dict(),
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400

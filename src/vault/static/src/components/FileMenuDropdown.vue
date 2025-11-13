@@ -60,6 +60,9 @@ export default {
       if (!this.item) return [];
 
       const isFolder = this.item.mime_type === "application/x-directory";
+      const isZipFile =
+        this.item.mime_type === "application/zip" ||
+        this.item.mime_type === "application/x-zip-compressed";
       const options = [];
 
       options.push({
@@ -88,6 +91,25 @@ export default {
           action: "share",
           label: "Share",
           icon: "link",
+          disabled: false,
+        });
+      }
+
+      // Add ZIP-specific actions
+      if (isFolder) {
+        options.push({
+          action: "zip-folder",
+          label: "Zip Folder",
+          icon: "file",
+          disabled: false,
+        });
+      }
+
+      if (isZipFile) {
+        options.push({
+          action: "extract-zip",
+          label: "Extract ZIP",
+          icon: "folder",
           disabled: false,
         });
       }
