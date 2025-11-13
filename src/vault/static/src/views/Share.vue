@@ -57,6 +57,10 @@
                 shareInfo.max_downloads - shareInfo.download_count
               }}</span>
             </span>
+            <span v-if="shareInfo.has_password" class="meta-item">
+              <span class="meta-label">Protection:</span>
+              <span class="meta-value">Password protected</span>
+            </span>
           </div>
         </div>
       </div>
@@ -69,6 +73,66 @@
       <!-- Error Message (for download errors) -->
       <div v-if="error && !isExpired" class="error-message glass">
         <p>{{ error }}</p>
+      </div>
+
+      <!-- Password Input (if password protected) -->
+      <div
+        v-if="shareInfo?.has_password && isAvailable"
+        class="password-section glass"
+      >
+        <label for="share-password-input" class="password-label">
+          <span class="password-icon" v-html="getIcon('lock', 16)"></span>
+          This share link is password protected
+        </label>
+        <div class="password-input-wrapper">
+          <input
+            id="share-password-input"
+            v-model="sharePassword"
+            :type="showPassword ? 'text' : 'password'"
+            class="password-input"
+            placeholder="Enter password"
+            @keyup.enter="downloadFile"
+          />
+          <button
+            type="button"
+            class="password-toggle"
+            :class="{ 'is-visible': showPassword }"
+            :aria-label="showPassword ? 'Hide password' : 'Show password'"
+            @click="togglePassword"
+          >
+            <svg
+              class="password-toggle-icon password-toggle-icon--hide"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <path
+                d="M8 12.5c0 .5.5 1.5 4 1.5s4-1 4-1.5"
+                stroke-linecap="round"
+              ></path>
+            </svg>
+            <svg
+              class="password-toggle-icon password-toggle-icon--show"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Download Progress Bar -->
@@ -135,11 +199,17 @@ const route = useRoute();
 const loading = ref(true);
 const error = ref("");
 const shareInfo = ref(null);
+const sharePassword = ref("");
+const showPassword = ref(false);
 const downloadLoading = ref(false);
 const downloadProgress = ref(null);
 const downloadSpeed = ref(0);
 const downloadTimeRemaining = ref(null);
 const downloadStatus = ref("");
+
+const togglePassword = () => {
+  showPassword.value = !showPassword.value;
+};
 
 const formatSize = (bytes) => {
   if (bytes === 0) return "0 B";
@@ -211,16 +281,56 @@ const loadShareInfo = async () => {
 
   try {
     // Migrate to API v2 - use public-links endpoint
+    // First try without password to check if password is required
     const response = await fetch(`/api/v2/sharing/public-links/${token}`);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      error.value = errorData.error || "Failed to load share information";
+      if (response.status === 403 && errorData.error === "Invalid password") {
+        // Password required but not provided or incorrect
+        // The share link exists but requires password
+        // We need to get the share link info to show password field
+        // Use the verify endpoint which doesn't require password to check if link exists
+        try {
+          const verifyResponse = await fetch(
+            `/api/v2/sharing/public-links/${token}/verify`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({}),
+            },
+          );
+          if (verifyResponse.ok) {
+            const verifyData = await verifyResponse.json();
+            if (verifyData.share_link?.has_password) {
+              shareInfo.value = {
+                has_password: true,
+                error: "Password required",
+                filename: verifyData.share_link.resource_id,
+              };
+              error.value = "";
+              loading.value = false;
+              return;
+            }
+          }
+        } catch (verifyErr) {
+          logger.debug("Failed to verify share link:", verifyErr);
+        }
+        error.value = "Password required";
+      } else {
+        error.value = errorData.error || "Failed to load share information";
+      }
       loading.value = false;
       return;
     }
     const data = await response.json();
     // API v2 returns data in legacy format for compatibility
     // Store shareInfo even if invalid/expired to show status
+    // Check if has_password is in share_link or directly in data
+    if (data.share_link && data.share_link.has_password !== undefined) {
+      data.has_password = data.share_link.has_password;
+    }
     shareInfo.value = data;
 
     // Track access to the share link (increment access count)
@@ -252,6 +362,13 @@ const downloadFile = async () => {
 
   // Clear previous errors
   error.value = "";
+
+  // Check if password is required
+  if (shareInfo.value?.has_password && !sharePassword.value) {
+    error.value = "Password is required to download this file";
+    return;
+  }
+
   downloadLoading.value = true;
 
   // Get decryption key from URL fragment
@@ -346,7 +463,19 @@ const downloadFile = async () => {
             if (xhr.status === 404) {
               reject(new Error("File not found"));
             } else if (xhr.status === 403) {
-              reject(new Error(errorData.error || "Access denied"));
+              const errorMsg = errorData.error || "Access denied";
+              if (
+                errorMsg === "Invalid password" ||
+                errorMsg.includes("password")
+              ) {
+                reject(
+                  new Error(
+                    "Invalid password. Please check your password and try again.",
+                  ),
+                );
+              } else {
+                reject(new Error(errorMsg));
+              }
             } else {
               reject(new Error(errorData.error || "Failed to download file"));
             }
@@ -354,7 +483,9 @@ const downloadFile = async () => {
             if (xhr.status === 404) {
               reject(new Error("File not found"));
             } else if (xhr.status === 403) {
-              reject(new Error("Access denied"));
+              reject(
+                new Error("Access denied. Invalid password or link expired."),
+              );
             } else {
               reject(new Error(`Download failed: ${xhr.status}`));
             }
@@ -371,7 +502,11 @@ const downloadFile = async () => {
       });
 
       // Migrate to API v2 - use public-links download endpoint
-      const url = `/api/v2/sharing/public-links/${token}/download`;
+      // Include password in query parameter if provided
+      let url = `/api/v2/sharing/public-links/${token}/download`;
+      if (shareInfo.value?.has_password && sharePassword.value) {
+        url += `?password=${encodeURIComponent(sharePassword.value)}`;
+      }
       logger.debug(
         `Downloading file via share link: token=${token.substring(0, 20)}...`,
       );
@@ -673,6 +808,118 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   color: currentColor;
+}
+
+.password-section {
+  padding: 1.5rem;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.password-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary, #f1f5f9);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.password-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-blue, #38bdf8);
+}
+
+.password-input-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.password-input {
+  width: 100%;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.5rem;
+  color: var(--text-primary, #f1f5f9);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.password-input:focus {
+  outline: none;
+  border-color: var(--accent-blue, #38bdf8);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+}
+
+.password-input::placeholder {
+  color: var(--text-muted, #94a3b8);
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  margin-top: -12px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease;
+  z-index: 1;
+  box-sizing: border-box;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.password-toggle:hover {
+  opacity: 1;
+  color: var(--text-primary, #f1f5f9);
+  margin-top: -12px;
+}
+
+.password-toggle:active {
+  opacity: 0.8;
+  margin-top: -12px;
+}
+
+.password-toggle:focus {
+  outline: none;
+  margin-top: -12px;
+}
+
+.password-toggle-icon {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.password-toggle-icon--show {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--hide {
+  display: none;
+}
+
+.password-toggle.is-visible .password-toggle-icon--show {
+  display: block;
 }
 
 @media (max-width: 768px) {

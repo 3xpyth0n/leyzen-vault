@@ -30,6 +30,33 @@ export default defineConfig({
         entryFileNames: "assets/[name]-[hash].js",
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash].[ext]",
+        manualChunks(id) {
+          // Vendor dependencies
+          if (id.includes("node_modules")) {
+            // Core Vue framework
+            if (
+              id.includes("vue") ||
+              id.includes("vue-router") ||
+              id.includes("pinia")
+            ) {
+              return "vendor-core";
+            }
+            // HTTP client
+            if (id.includes("axios")) {
+              return "vendor-utils";
+            }
+            // ZIP library (only used in VaultSpaceView, will be lazy-loaded)
+            if (id.includes("jszip")) {
+              return "vendor-zip";
+            }
+            // Other node_modules dependencies
+            return "vendor-common";
+          }
+          // Shared components (excluding admin-specific components)
+          if (id.includes("/components/") && !id.includes("/admin/")) {
+            return "shared-components";
+          }
+        },
       },
       onwarn(warning, warn) {
         // Suppress warnings about static scripts that are served by Flask

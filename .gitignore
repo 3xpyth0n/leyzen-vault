@@ -23,6 +23,7 @@ Thumbs.db
 
 # Development
 *cache*
+dist/
 .coverage
 htmlcov/
 .tox/

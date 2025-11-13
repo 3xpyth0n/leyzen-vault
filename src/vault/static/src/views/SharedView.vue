@@ -67,6 +67,7 @@
                     <span v-else>
                       • {{ link.access_count || 0 }} accesses
                     </span>
+                    <span v-if="link.has_password"> • Password protected </span>
                   </div>
                   <div class="link-status">
                     <span
@@ -211,6 +212,7 @@ export default {
             share_url:
               link.share_url ||
               `${window.location.origin}/share/${link.token || link.id}`,
+            has_password: link.has_password || false,
           };
 
           filesMap.get(fileId).share_links.push(shareLinkData);

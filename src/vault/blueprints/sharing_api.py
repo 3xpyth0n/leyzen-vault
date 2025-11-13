@@ -303,6 +303,7 @@ def get_public_link(token: str):
                 "is_expired": not share_link.can_access(),
                 "is_valid": True,
                 "error": None,
+                "has_password": share_link.password_hash is not None,
             }
             return jsonify(response_data), 200
     elif share_link.resource_type == "vaultspace":

@@ -1,19 +1,4 @@
 import { createRouter, createWebHistory } from "vue-router";
-import Login from "../views/Login.vue";
-import Setup from "../views/Setup.vue";
-import Dashboard from "../views/Dashboard.vue";
-import VaultSpaceView from "../views/VaultSpaceView.vue";
-import TrashView from "../views/TrashView.vue";
-import StarredView from "../views/StarredView.vue";
-import RecentView from "../views/RecentView.vue";
-import Share from "../views/Share.vue";
-import SharedView from "../views/SharedView.vue";
-import Register from "../views/Register.vue";
-import AccountView from "../views/AccountView.vue";
-import EmailVerification from "../views/EmailVerification.vue";
-import AcceptInvitation from "../views/AcceptInvitation.vue";
-import AdminPanel from "../views/AdminPanel.vue";
-import SSOCallback from "../views/SSOCallback.vue";
 import { getUserMasterKey, getStoredSalt } from "../services/keyManager";
 import { auth } from "../services/api";
 
@@ -145,7 +130,7 @@ const routes = [
   {
     path: "/setup",
     name: "Setup",
-    component: Setup,
+    component: () => import("../views/Setup.vue"),
     beforeEnter: async (to, from, next) => {
       // Check if user is authenticated
       if (isAuthenticated()) {
@@ -171,7 +156,7 @@ const routes = [
   {
     path: "/login",
     name: "Login",
-    component: Login,
+    component: () => import("../views/Login.vue"),
     beforeEnter: async (to, from, next) => {
       // Check if user is authenticated
       if (isAuthenticated()) {
@@ -198,7 +183,7 @@ const routes = [
   {
     path: "/register",
     name: "Register",
-    component: Register,
+    component: () => import("../views/Register.vue"),
     beforeEnter: async (to, from, next) => {
       // Check if user is authenticated first
       if (isAuthenticated()) {
@@ -224,74 +209,74 @@ const routes = [
   {
     path: "/verify-email",
     name: "EmailVerification",
-    component: EmailVerification,
+    component: () => import("../views/EmailVerification.vue"),
     beforeEnter: requireGuest,
   },
   {
     path: "/accept-invitation",
     name: "AcceptInvitation",
-    component: AcceptInvitation,
+    component: () => import("../views/AcceptInvitation.vue"),
     beforeEnter: requireGuest,
   },
   {
     path: "/sso/callback/:providerId",
     name: "SSOCallback",
-    component: SSOCallback,
+    component: () => import("../views/SSOCallback.vue"),
     beforeEnter: requireGuest,
     props: true,
   },
   {
     path: "/share/:token",
     name: "Share",
-    component: Share,
+    component: () => import("../views/Share.vue"),
   },
   {
     path: "/dashboard",
     name: "Dashboard",
-    component: Dashboard,
+    component: () => import("../views/Dashboard.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/vaultspace/:id",
     name: "VaultSpaceView",
-    component: VaultSpaceView,
+    component: () => import("../views/VaultSpaceView.vue"),
     beforeEnter: requireAuth,
     props: true,
   },
   {
     path: "/trash",
     name: "Trash",
-    component: TrashView,
+    component: () => import("../views/TrashView.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/starred",
     name: "Starred",
-    component: StarredView,
+    component: () => import("../views/StarredView.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/recent",
     name: "Recent",
-    component: RecentView,
+    component: () => import("../views/RecentView.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/shared",
     name: "Shared",
-    component: SharedView,
+    component: () => import("../views/SharedView.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/account",
     name: "Account",
-    component: AccountView,
+    component: () => import("../views/AccountView.vue"),
     beforeEnter: requireAuth,
   },
   {
     path: "/admin",
     name: "Admin",
-    component: AdminPanel,
+    component: () => import("../views/AdminPanel.vue"),
     beforeEnter: requireAdmin,
   },
   {

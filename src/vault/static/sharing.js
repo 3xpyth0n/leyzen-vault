@@ -32,6 +32,8 @@ class SharingManager {
       createBtn: null,
       linkExpiresCheckbox: null,
       linkMaxDownloadsCheckbox: null,
+      linkPasswordCheckbox: null,
+      passwordToggle: null,
       modal: null,
       escapeKey: null,
     };
@@ -129,6 +131,59 @@ class SharingManager {
                       placeholder="Number of downloads"
                       min="1"
                     />
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <input type="checkbox" id="share-link-password" />
+                      <span>Protect with password</span>
+                    </label>
+                    <div class="share-password-input-wrapper hidden" id="share-link-password-wrapper">
+                      <input 
+                        type="password" 
+                        id="share-link-password-input" 
+                        class="share-password-input" 
+                        placeholder="Enter password"
+                      />
+                      <button
+                        type="button"
+                        class="password-toggle"
+                        id="share-link-password-toggle"
+                        aria-label="Show password"
+                        data-password-toggle
+                      >
+                        <svg
+                          class="password-toggle-icon password-toggle-icon--hide"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <path
+                            d="M8 12.5c0 .5.5 1.5 4 1.5s4-1 4-1.5"
+                            stroke-linecap="round"
+                          ></path>
+                        </svg>
+                        <svg
+                          class="password-toggle-icon password-toggle-icon--show"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div class="share-actions">
@@ -252,6 +307,7 @@ class SharingManager {
     const linkMaxDownloadsCheckbox = document.getElementById(
       "share-link-max-downloads",
     );
+    const linkPasswordCheckbox = document.getElementById("share-link-password");
 
     // Remove existing listeners if they exist
     if (closeBtn && this.eventHandlers.closeBtn) {
@@ -283,6 +339,25 @@ class SharingManager {
       this.eventHandlers.linkMaxDownloadsCheckbox = null;
     }
 
+    if (linkPasswordCheckbox && this.eventHandlers.linkPasswordCheckbox) {
+      linkPasswordCheckbox.removeEventListener(
+        "change",
+        this.eventHandlers.linkPasswordCheckbox,
+      );
+      this.eventHandlers.linkPasswordCheckbox = null;
+    }
+
+    const passwordToggle = document.getElementById(
+      "share-link-password-toggle",
+    );
+    if (passwordToggle && this.eventHandlers.passwordToggle) {
+      passwordToggle.removeEventListener(
+        "click",
+        this.eventHandlers.passwordToggle,
+      );
+      this.eventHandlers.passwordToggle = null;
+    }
+
     if (modal && this.eventHandlers.modal) {
       modal.removeEventListener("click", this.eventHandlers.modal);
       this.eventHandlers.modal = null;
@@ -308,6 +383,7 @@ class SharingManager {
     const linkMaxDownloadsCheckbox = document.getElementById(
       "share-link-max-downloads",
     );
+    const linkPasswordCheckbox = document.getElementById("share-link-password");
 
     if (closeBtn) {
       // Remove any existing handler first
@@ -401,6 +477,73 @@ class SharingManager {
         "change",
         this.eventHandlers.linkMaxDownloadsCheckbox,
       );
+    }
+
+    if (linkPasswordCheckbox) {
+      this.eventHandlers.linkPasswordCheckbox = (e) => {
+        const passwordWrapper = document.getElementById(
+          "share-link-password-wrapper",
+        );
+        if (passwordWrapper) {
+          passwordWrapper.classList.toggle("hidden", !e.target.checked);
+          if (!e.target.checked) {
+            const passwordInput = document.getElementById(
+              "share-link-password-input",
+            );
+            if (passwordInput) {
+              passwordInput.value = "";
+              passwordInput.type = "password";
+            }
+            const passwordToggle = document.getElementById(
+              "share-link-password-toggle",
+            );
+            if (passwordToggle) {
+              passwordToggle.classList.remove("is-visible");
+              passwordToggle.setAttribute("aria-label", "Show password");
+            }
+          }
+        }
+      };
+      linkPasswordCheckbox.addEventListener(
+        "change",
+        this.eventHandlers.linkPasswordCheckbox,
+      );
+    }
+
+    // Setup password toggle functionality
+    const passwordToggle = document.getElementById(
+      "share-link-password-toggle",
+    );
+    const passwordInput = document.getElementById("share-link-password-input");
+
+    if (passwordToggle && passwordInput) {
+      const showIcon = passwordToggle.querySelector(
+        ".password-toggle-icon--show",
+      );
+      const hideIcon = passwordToggle.querySelector(
+        ".password-toggle-icon--hide",
+      );
+
+      if (showIcon && hideIcon) {
+        this.eventHandlers.passwordToggle = (event) => {
+          event.preventDefault();
+          const isPassword = passwordInput.type === "password";
+
+          if (isPassword) {
+            passwordInput.type = "text";
+            passwordToggle.setAttribute("aria-label", "Hide password");
+            passwordToggle.classList.add("is-visible");
+          } else {
+            passwordInput.type = "password";
+            passwordToggle.setAttribute("aria-label", "Show password");
+            passwordToggle.classList.remove("is-visible");
+          }
+        };
+        passwordToggle.addEventListener(
+          "click",
+          this.eventHandlers.passwordToggle,
+        );
+      }
     }
 
     // Close on overlay click (click outside modal content)
@@ -1049,12 +1192,14 @@ class SharingManager {
         // Map API v2 format to legacy format if needed
         const mappedLinks = links.map((link) => ({
           link_id: link.token || link.link_id,
+          token: link.token,
           expires_at: link.expires_at,
           max_downloads: link.max_downloads,
           download_count: link.download_count || 0,
           is_active: link.is_active,
           is_expired: link.is_expired || false,
           share_url: link.share_url,
+          has_password: link.has_password || false,
         }));
         this.renderActiveLinks(mappedLinks, fileId);
       } else {
@@ -1115,6 +1260,10 @@ class SharingManager {
       const maxDownloadsInput = document.getElementById(
         "share-link-max-downloads-input",
       );
+      const passwordCheckbox = document.getElementById("share-link-password");
+      const passwordInput = document.getElementById(
+        "share-link-password-input",
+      );
 
       let expiresInHours = null;
       if (
@@ -1145,6 +1294,20 @@ class SharingManager {
           maxDownloads = num;
         }
       }
+
+      let password = null;
+      if (
+        passwordCheckbox &&
+        passwordCheckbox.checked &&
+        passwordInput &&
+        passwordInput.value
+      ) {
+        password = passwordInput.value.trim();
+        if (password === "") {
+          password = null;
+        }
+      }
+
       const jwtToken = localStorage.getItem("jwt_token");
 
       if (!jwtToken) {
@@ -1169,6 +1332,7 @@ class SharingManager {
         body: JSON.stringify({
           resource_id: this.currentFileId,
           resource_type: "file",
+          password: password,
           expires_in_days: expiresInDays,
           max_downloads: maxDownloads,
           allow_download: true,
@@ -1233,6 +1397,18 @@ class SharingManager {
       const maxDownloadsInputReset = document.getElementById(
         "share-link-max-downloads-input",
       );
+      const passwordCheckboxReset = document.getElementById(
+        "share-link-password",
+      );
+      const passwordWrapperReset = document.getElementById(
+        "share-link-password-wrapper",
+      );
+      const passwordInputReset = document.getElementById(
+        "share-link-password-input",
+      );
+      const passwordToggleReset = document.getElementById(
+        "share-link-password-toggle",
+      );
 
       if (expiresCheckboxReset) expiresCheckboxReset.checked = false;
       if (expiresDateInputReset) {
@@ -1243,6 +1419,18 @@ class SharingManager {
       if (maxDownloadsInputReset) {
         maxDownloadsInputReset.value = "";
         maxDownloadsInputReset.classList.add("hidden");
+      }
+      if (passwordCheckboxReset) passwordCheckboxReset.checked = false;
+      if (passwordWrapperReset) {
+        passwordWrapperReset.classList.add("hidden");
+      }
+      if (passwordInputReset) {
+        passwordInputReset.value = "";
+        passwordInputReset.type = "password";
+      }
+      if (passwordToggleReset) {
+        passwordToggleReset.classList.remove("is-visible");
+        passwordToggleReset.setAttribute("aria-label", "Show password");
       }
     } catch (error) {
       console.error("Error creating share link:", error);
@@ -1304,8 +1492,10 @@ class SharingManager {
       .map((link) => {
         // Use share_url from backend (includes VAULT_URL if configured)
         // Fallback to window.location.origin if not provided
+        // Use token if available, otherwise fallback to link_id
+        const linkToken = link.token || link.link_id;
         const linkUrl =
-          link.share_url || `${window.location.origin}/share/${link.link_id}`;
+          link.share_url || `${window.location.origin}/share/${linkToken}`;
 
         // Always include key and file ID in the URL fragment for E2EE
         let fullUrl = linkUrl;
@@ -1331,12 +1521,20 @@ class SharingManager {
         const downloadsText = link.max_downloads
           ? `${link.download_count || 0}/${link.max_downloads} downloads`
           : `${link.download_count || 0} downloads`;
+        const passwordText = link.has_password ? "Password protected" : "";
+
+        // Build meta text with proper spacing
+        const metaParts = [expiresText, downloadsText];
+        if (passwordText) {
+          metaParts.push(passwordText);
+        }
+        const metaText = metaParts.join(" • ");
 
         return `
           <div class="active-link-item">
             <div class="active-link-info">
               <div class="active-link-url">${this.escapeHtml(fullUrl)}</div>
-              <div class="active-link-meta">${expiresText} • ${downloadsText}</div>
+              <div class="active-link-meta">${this.escapeHtml(metaText)}</div>
             </div>
             <div class="active-link-actions">
               <button class="btn btn-small copy-link-btn" data-url="${this.escapeHtml(fullUrl)}">Copy</button>

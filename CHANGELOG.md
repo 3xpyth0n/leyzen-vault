@@ -9,6 +9,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Share Link Password Protection
+
+- **Password-Protected Share Links**: Users can now protect share links with a password when creating them. The password is optional and can be set via a checkbox in the share link creation modal.
+- **Password Validation on Download**: When accessing a password-protected share link, users are required to enter the password before downloading the file. The password is validated server-side before file access is granted.
+- **Password Error Handling**: Comprehensive error handling for invalid passwords with clear error messages. Users receive feedback when the password is incorrect or missing.
+- **Backend Password Support**: Full backend support for password-protected share links using secure password hashing (Argon2). The `has_password` flag is included in all API responses to indicate password protection status.
+
 #### ZIP Folder Functionality
 
 - **Folder Zipping**: Users can now zip entire folders (including all subfolders and files) to create a single ZIP file. The ZIP file preserves the original folder structure and is encrypted like any other file in the system. The ZIP file can be shared via share links.
