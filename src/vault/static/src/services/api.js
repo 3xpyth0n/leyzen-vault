@@ -72,29 +72,114 @@ export async function parseErrorResponse(response) {
  *
  * @param {string} endpoint - API endpoint
  * @param {object} options - Fetch options
+ * @param {boolean} options.skipAutoRefresh - If true, skip automatic token refresh and redirect
  * @returns {Promise<Response>} Fetch response
  */
 export async function apiRequest(endpoint, options = {}) {
+  const { skipAutoRefresh = false, ...fetchOptions } = options;
   const token = getToken();
   const url = `${API_BASE_URL}${endpoint}`;
 
   const headers = {
     "Content-Type": "application/json",
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
+  let response = await fetch(url, {
+    ...fetchOptions,
     headers,
     credentials: "same-origin", // Include cookies (session) in requests
   });
 
-  // Handle token refresh if needed
-  if (response.status === 401) {
+  // Handle token refresh if needed (for 401 errors)
+  if (response.status === 401 && token && !skipAutoRefresh) {
+    try {
+      // Try to refresh the token before giving up
+      // Call refresh endpoint directly to avoid circular dependency
+      const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ token }),
+      });
+
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+
+        if (refreshData.token) {
+          // Store new token
+          setToken(refreshData.token);
+
+          // Retry the original request with new token
+          headers["Authorization"] = `Bearer ${refreshData.token}`;
+          response = await fetch(url, {
+            ...fetchOptions,
+            headers,
+            credentials: "same-origin",
+          });
+
+          // If still 401 after refresh, token is truly invalid
+          if (response.status === 401) {
+            // Don't redirect for critical operations - let caller handle it
+            if (
+              fetchOptions.method === "POST" ||
+              fetchOptions.method === "DELETE"
+            ) {
+              return response; // Return response so caller can handle error
+            }
+            removeToken();
+            window.location.href = "/login";
+            throw new Error("Unauthorized");
+          }
+        } else {
+          // Refresh failed - don't redirect for critical operations
+          if (
+            fetchOptions.method === "POST" ||
+            fetchOptions.method === "DELETE"
+          ) {
+            return response;
+          }
+          removeToken();
+          window.location.href = "/login";
+          throw new Error("Unauthorized");
+        }
+      } else {
+        // Refresh failed - don't redirect for critical operations
+        if (
+          fetchOptions.method === "POST" ||
+          fetchOptions.method === "DELETE"
+        ) {
+          return response; // Return response so caller can handle error
+        }
+        removeToken();
+        window.location.href = "/login";
+        throw new Error("Unauthorized");
+      }
+    } catch (refreshError) {
+      // Refresh failed - don't redirect for critical operations
+      if (fetchOptions.method === "POST" || fetchOptions.method === "DELETE") {
+        return response; // Return response so caller can handle error
+      }
+      removeToken();
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+  } else if (response.status === 401) {
+    // No token at all or skipAutoRefresh is true
+    if (
+      skipAutoRefresh ||
+      fetchOptions.method === "POST" ||
+      fetchOptions.method === "DELETE"
+    ) {
+      return response; // Return response so caller can handle error
+    }
     removeToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");
@@ -851,7 +936,7 @@ export const files = {
   async move(fileId, newParentId = null) {
     const response = await apiRequest(`/v2/files/${fileId}/move`, {
       method: "PUT",
-      body: JSON.stringify({ new_parent_id: newParentId }),
+      body: JSON.stringify({ parent_id: newParentId }),
     });
 
     if (!response.ok) {

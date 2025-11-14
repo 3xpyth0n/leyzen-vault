@@ -90,8 +90,14 @@ function escapeHtml(text) {
 function getFileIcon(fileName) {
   const ext = fileName.split(".").pop()?.toLowerCase() || "";
   // Use SVG icons from Icons system
-  if (window.Icons && window.Icons.file) {
-    return window.Icons.file(24, "currentColor");
+  if (window.Icons) {
+    // Check if file is a ZIP archive
+    if (ext === "zip" && window.Icons.zip) {
+      return window.Icons.zip(24, "currentColor");
+    }
+    if (window.Icons.file) {
+      return window.Icons.file(24, "currentColor");
+    }
   }
   // Fallback to text if icons not available
   return "📄";
@@ -514,7 +520,7 @@ function renderFilteredFiles() {
 }
 
 // Load files from API
-async function loadFiles() {
+async function loadFiles(cacheBust = false) {
   try {
     // Get current folder ID from folders.js if available
     const folderId = window.Folders
@@ -565,6 +571,13 @@ async function loadFiles() {
       viewType !== "trash"
     ) {
       params.append("parent_id", folderId);
+    }
+
+    // Add cache-busting parameter if requested
+    if (cacheBust) {
+      const timestamp = Date.now();
+      const highResTime = performance.now ? performance.now() : 0;
+      params.append("_t", `${timestamp}_${highResTime.toFixed(3)}`);
     }
 
     if (params.toString()) {
@@ -1328,7 +1341,8 @@ async function deleteFile(fileId) {
 
           if (!response.ok) throw new Error("Delete failed");
 
-          await loadFiles();
+          // Reload files with cache-busting to ensure immediate visibility
+          await loadFiles(true);
 
           if (window.Notifications) {
             window.Notifications.success(

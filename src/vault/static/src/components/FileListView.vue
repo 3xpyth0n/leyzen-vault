@@ -724,6 +724,18 @@ export default {
       if (item.mime_type === "application/x-directory") {
         return window.Icons.folder(iconSize, "currentColor");
       }
+
+      // Check if file is a ZIP archive
+      const isZipFile =
+        item.mime_type === "application/zip" ||
+        item.mime_type === "application/x-zip-compressed" ||
+        (item.original_name &&
+          item.original_name.toLowerCase().endsWith(".zip"));
+
+      if (isZipFile && window.Icons.zip) {
+        return window.Icons.zip(iconSize, "currentColor");
+      }
+
       return window.Icons.file(iconSize, "currentColor");
     };
 

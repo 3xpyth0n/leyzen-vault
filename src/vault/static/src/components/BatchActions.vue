@@ -12,13 +12,6 @@
         Delete
       </button>
       <button
-        @click="showMoveModal = true"
-        class="btn btn-secondary btn-sm"
-        :disabled="processing"
-      >
-        Move
-      </button>
-      <button
         @click="handleDownload"
         class="btn btn-secondary btn-sm"
         :disabled="processing"
@@ -51,49 +44,6 @@
       @close="showAlertModal = false"
       @ok="showAlertModal = false"
     />
-
-    <!-- Move Modal -->
-    <div
-      v-if="showMoveModal"
-      class="modal-overlay"
-      @click="showMoveModal = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <h2>Move Selected Items</h2>
-        <div v-if="moveError" class="error-message glass">{{ moveError }}</div>
-        <div class="form-group">
-          <label>Destination Folder:</label>
-          <select v-model="selectedDestination" class="input">
-            <option :value="null">Root</option>
-            <option
-              v-for="folder in availableFolders"
-              :key="folder.id"
-              :value="folder.id"
-            >
-              {{ folder.name }}
-            </option>
-          </select>
-        </div>
-        <div class="form-actions">
-          <button
-            @click="handleMove"
-            :disabled="processing"
-            class="btn btn-primary"
-          >
-            {{ processing ? "Moving..." : "Move" }}
-          </button>
-          <button
-            @click="
-              showMoveModal = false;
-              moveError = null;
-            "
-            class="btn btn-secondary"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -119,13 +69,10 @@ export default {
       default: () => [],
     },
   },
-  emits: ["delete", "move", "download", "clear"],
+  emits: ["delete", "download", "clear"],
   setup(props, { emit }) {
     const processing = ref(false);
     const showDeleteConfirm = ref(false);
-    const showMoveModal = ref(false);
-    const moveError = ref(null);
-    const selectedDestination = ref(null);
     const showAlertModal = ref(false);
     const alertModalConfig = ref({
       type: "error",
@@ -164,27 +111,6 @@ export default {
       }
     };
 
-    const handleMove = async () => {
-      processing.value = true;
-      moveError.value = null;
-
-      try {
-        const fileIds = props.selectedItems.map((item) => item.id);
-        const result = await files.batchMove(
-          fileIds,
-          selectedDestination.value,
-        );
-        emit("move", result);
-        showMoveModal.value = false;
-        emit("clear");
-      } catch (err) {
-        console.error("Batch move error:", err);
-        moveError.value = err.message || "Failed to move items";
-      } finally {
-        processing.value = false;
-      }
-    };
-
     const handleDownload = async () => {
       // For now, download files individually
       // In the future, we could create a ZIP file on the server
@@ -211,14 +137,10 @@ export default {
     return {
       processing,
       showDeleteConfirm,
-      showMoveModal,
-      moveError,
-      selectedDestination,
       selectedCount,
       showAlertModal,
       alertModalConfig,
       confirmDelete,
-      handleMove,
       handleDownload,
       clearSelection,
     };

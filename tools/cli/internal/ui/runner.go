@@ -144,6 +144,10 @@ func (r *Runner) build(writer *actionWriter) error {
 }
 
 func (r *Runner) buildWithServices(writer *actionWriter, services []string) error {
+	// Stop containers before building
+	if err := r.stopWithServices(writer, services); err != nil {
+		return err
+	}
 	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
 		return err
 	}

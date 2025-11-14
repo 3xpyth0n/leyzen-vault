@@ -79,13 +79,6 @@ export default {
         disabled: false,
       });
 
-      options.push({
-        action: "move",
-        label: "Move",
-        icon: "folder",
-        disabled: false,
-      });
-
       if (!isFolder) {
         options.push({
           action: "share",
@@ -100,7 +93,7 @@ export default {
         options.push({
           action: "zip-folder",
           label: "Zip Folder",
-          icon: "file",
+          icon: "zip",
           disabled: false,
         });
       }

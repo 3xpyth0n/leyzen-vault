@@ -106,18 +106,34 @@
     {% block extra_scripts %}{% endblock %}
     <script nonce="{{ csp_nonce }}">
       // Handle logout button with styled modal
-      document.addEventListener("DOMContentLoaded", function () {
+      function attachLogoutListener() {
         const logoutBtn = document.getElementById("logout-btn");
-        if (logoutBtn && window.showLogoutModal) {
-          logoutBtn.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+        if (logoutBtn) {
+          // Remove existing listeners to avoid duplicates
+          const newLogoutBtn = logoutBtn.cloneNode(true);
+          logoutBtn.parentNode.replaceChild(newLogoutBtn, logoutBtn);
 
-            // Show styled logout modal
-            window.showLogoutModal();
-          });
+          if (window.showLogoutModal) {
+            newLogoutBtn.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              // Show styled logout modal
+              window.showLogoutModal();
+            });
+          }
         }
-      });
+      }
+
+      // Attach on DOMContentLoaded
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", attachLogoutListener);
+      } else {
+        // DOM already loaded
+        attachLogoutListener();
+      }
+
+      // Also attach after a short delay to handle Vue Router navigation
+      setTimeout(attachLogoutListener, 100);
     </script>
   </body>
 </html>

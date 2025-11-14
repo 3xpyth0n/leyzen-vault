@@ -254,6 +254,36 @@ class AdvancedSharingService:
         db.session.commit()
         return True
 
+    def revoke_all_links_for_file(
+        self, resource_id: str, resource_type: str = "file"
+    ) -> int:
+        """Revoke all active share links for a file or resource.
+
+        Args:
+            resource_id: Resource ID (file or vaultspace)
+            resource_type: Resource type ('file' or 'vaultspace'), defaults to 'file'
+
+        Returns:
+            Number of links revoked
+        """
+        # Find all active links for this resource
+        active_links = (
+            db.session.query(PublicShareLink)
+            .filter_by(resource_id=resource_id, resource_type=resource_type)
+            .filter_by(is_active=True)
+            .all()
+        )
+
+        # Revoke all active links
+        count = len(active_links)
+        for link in active_links:
+            link.is_active = False
+
+        if count > 0:
+            db.session.commit()
+
+        return count
+
     def update_public_link(
         self,
         link_id: str,

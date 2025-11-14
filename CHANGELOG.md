@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### UI Enhancements
+
+- **ZIP Archive Icon**: Added dedicated ZIP archive icon for ZIP files and the "Zip Folder" menu option. ZIP files now display a distinctive archive icon instead of the generic file icon, making them easily identifiable in file listings and context menus.
+
 #### Share Link Password Protection
 
 - **Password-Protected Share Links**: Users can now protect share links with a password when creating them. The password is optional and can be set via a checkbox in the share link creation modal.
@@ -65,6 +69,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **API Key Permissions**: Fixed security issue where admins could create API keys for any user, including super admins. Admins can now only create API keys for themselves, while super admins can create API keys for any user.
 - **SSO Error Handling**: Fixed SSO authentication error display on login page. Errors from SSO callbacks are now properly displayed to users with automatic URL cleanup.
 - **VaultSpace Name Duplicate Check**: Fixed VaultSpace name duplicate check to validate duplicates per owner instead of globally. Users can now create VaultSpaces with the same name as other users' VaultSpaces, but cannot create duplicate names within their own VaultSpaces.
+- **File Reappearance After Deletion**: Fixed issue where deleted or moved files would reappear after page refresh. Improved cache invalidation mechanism to invalidate all cache entries for a vaultspace and user after any modifying operation (delete, move, rename, create folder), ensuring all pages and parent folders are properly refreshed.
+- **POST Buttons Malfunction After Container Restart**: Fixed issue where all POST request buttons (move, copy, delete, logout) would stop functioning after container rebuild or restart. Implemented automatic JWT token refresh mechanism that attempts to refresh expired tokens before redirecting to login, preventing UI elements from becoming unresponsive due to expired JWTs.
 
 ---
 

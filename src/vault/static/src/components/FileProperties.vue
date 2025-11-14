@@ -86,48 +86,6 @@
             }}</span>
           </div>
         </div>
-
-        <div class="properties-section">
-          <h3>Actions</h3>
-          <div class="action-buttons">
-            <button
-              @click="handleAction('download')"
-              class="btn btn-primary btn-sm"
-            >
-              Download
-            </button>
-            <button
-              @click="handleAction('rename')"
-              class="btn btn-secondary btn-sm"
-            >
-              Rename
-            </button>
-            <button
-              @click="handleAction('move')"
-              class="btn btn-secondary btn-sm"
-            >
-              Move
-            </button>
-            <button
-              @click="handleAction('copy')"
-              class="btn btn-secondary btn-sm"
-            >
-              Copy
-            </button>
-            <button
-              @click="handleAction('share')"
-              class="btn btn-secondary btn-sm"
-            >
-              Share
-            </button>
-            <button
-              @click="handleAction('delete')"
-              class="btn btn-danger btn-sm"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -153,7 +111,7 @@ export default {
       required: true,
     },
   },
-  emits: ["close", "action"],
+  emits: ["close"],
   setup(props, { emit }) {
     const loading = ref(false);
     const error = ref(null);
@@ -189,10 +147,6 @@ export default {
 
     const close = () => {
       emit("close");
-    };
-
-    const handleAction = (action) => {
-      emit("action", action, file.value);
     };
 
     const formatSize = (bytes) => {
@@ -358,7 +312,6 @@ export default {
       permissions,
       loadProperties,
       close,
-      handleAction,
       formatSize,
       formatDateTime,
       getFileType,
@@ -502,19 +455,6 @@ export default {
   min-width: 0;
   line-height: 1.5;
   margin-left: auto;
-}
-
-.action-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.btn-sm {
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
 }
 
 .loading,

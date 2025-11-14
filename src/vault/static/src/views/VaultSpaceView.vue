@@ -22,15 +22,28 @@
           v-if="breadcrumbs.length > 0 || currentParentId"
           class="breadcrumbs glass"
         >
-          <button
-            @click="loadFiles(null)"
-            class="breadcrumb-link"
-            v-if="currentParentId"
-          >
+          <button @click="navigateToFolder(null)" class="breadcrumb-link">
             {{ vaultspace?.name || "Home" }}
           </button>
-          <span v-if="currentParentId" class="breadcrumb-separator">/</span>
-          <span class="breadcrumb-active">Current Folder</span>
+          <template v-if="breadcrumbs.length > 0">
+            <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
+              <span class="breadcrumb-separator">/</span>
+              <button
+                v-if="index < breadcrumbs.length - 1"
+                @click="navigateToFolder(crumb.id)"
+                class="breadcrumb-link"
+              >
+                {{ crumb.name }}
+              </button>
+              <span v-else class="breadcrumb-active">
+                {{ crumb.name }}
+              </span>
+            </template>
+          </template>
+          <template v-else-if="currentParentId">
+            <span class="breadcrumb-separator">/</span>
+            <span class="breadcrumb-active">Loading...</span>
+          </template>
         </div>
 
         <div v-if="loading" class="loading">Loading files...</div>
@@ -130,7 +143,6 @@
         :selectedItems="selectedItems"
         :availableFolders="allFolders"
         @delete="handleBatchDelete"
-        @move="handleBatchMove"
         @download="handleBatchDownload"
         @clear="clearSelection"
       />
@@ -248,7 +260,6 @@
         showProperties = false;
         propertiesFileId = null;
       "
-      @action="handlePropertiesAction"
     />
 
     <!-- Confirmation Modal for share link revocation -->
@@ -316,7 +327,7 @@ export default {
       folders: [],
       filesList: [],
       currentParentId: null,
-      breadcrumbs: [],
+      breadcrumbs: [], // Array of { id, name } for breadcrumb path
       loading: false,
       error: null,
       showDeleteConfirmModal: false,
@@ -434,7 +445,20 @@ export default {
     // Master key is available, proceed with loading
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
-    await this.loadFiles();
+
+    // Check if folder parameter is in URL query string
+    // This handles direct navigation to a folder (e.g., from favorites)
+    const folderIdFromQuery = this.$route.query.folder;
+    if (folderIdFromQuery) {
+      // Load the specific folder immediately (bypass debounce for initial load)
+      // Set currentParentId first to ensure state is correct
+      this.currentParentId = folderIdFromQuery;
+      await this.loadFilesInternal(folderIdFromQuery, false);
+    } else {
+      // Load root folder immediately (bypass debounce for initial load)
+      this.currentParentId = null;
+      await this.loadFilesInternal(null, false);
+    }
 
     // Setup keyboard shortcuts
     this.setupKeyboardShortcuts();
@@ -461,6 +485,29 @@ export default {
     allFolders() {
       // Return all folders for move destination selection
       return this.folders;
+    },
+  },
+  watch: {
+    "$route.query.folder": {
+      handler(newFolderId, oldFolderId) {
+        // Load files when folder parameter changes
+        // This handles browser back/forward navigation and external navigation (from starred/recent)
+        if (this.vaultspace) {
+          const folderId = newFolderId || null;
+          // Only load if folder ID actually changed to avoid unnecessary reloads
+          // Also check if currentParentId doesn't match to avoid double loading
+          // Skip if this is the initial load (oldFolderId is undefined and we're already loading)
+          if (
+            newFolderId !== oldFolderId &&
+            this.currentParentId !== folderId &&
+            oldFolderId !== undefined
+          ) {
+            // Use loadFilesInternal directly to bypass debounce for route changes
+            this.loadFilesInternal(folderId, false);
+          }
+        }
+      },
+      immediate: false,
     },
   },
   methods: {
@@ -629,10 +676,15 @@ export default {
     loadFilesInternal(parentId = null, cacheBust = false) {
       this.loading = true;
       this.error = null;
+
+      // Ensure parentId is set correctly before loading
+      // This prevents state inconsistencies
+      const targetParentId = parentId || null;
+
       return files
         .list(
           this.$route.params.id,
-          parentId,
+          targetParentId,
           this.currentPage,
           this.perPage,
           cacheBust,
@@ -651,11 +703,16 @@ export default {
           );
 
           this.files = allItems;
-          this.currentParentId = parentId;
+          // Always set currentParentId to match what was requested
+          // This ensures state consistency
+          this.currentParentId = targetParentId;
 
           // Update breadcrumbs if in a folder
-          if (parentId) {
-            this.updateBreadcrumbs(parentId);
+          // Use nextTick to ensure folders are loaded before updating breadcrumbs
+          if (targetParentId) {
+            this.$nextTick(() => {
+              this.updateBreadcrumbs(targetParentId);
+            });
           } else {
             this.breadcrumbs = [];
           }
@@ -663,6 +720,8 @@ export default {
         })
         .catch((err) => {
           this.error = err.message;
+          // Don't reset currentParentId on error - keep it as requested
+          // Only show error, don't revert to root
           this.showAlert({
             type: "error",
             title: "Error",
@@ -688,7 +747,7 @@ export default {
       parentId = null,
       uploadedFileIds = [],
       maxRetries = 3,
-      initialDelay = 300,
+      initialDelay = 100,
     ) {
       if (!uploadedFileIds || uploadedFileIds.length === 0) {
         // No files to verify, just reload once
@@ -702,7 +761,7 @@ export default {
 
       while (retryCount <= maxRetries && !allFilesFound) {
         // Wait before reloading (longer delay on first attempt)
-        const delay = retryCount === 0 ? initialDelay : 200;
+        const delay = retryCount === 0 ? initialDelay : 50;
         await new Promise((resolve) => setTimeout(resolve, delay));
 
         try {
@@ -751,13 +810,224 @@ export default {
     },
 
     async navigateToFolder(folderId) {
-      await this.loadFiles(folderId);
+      // Update URL with folder parameter
+      const currentFolderId = this.$route.query.folder || null;
+      const newFolderId = folderId || null;
+
+      // Build new query object
+      const newQuery = { ...this.$route.query };
+      if (newFolderId) {
+        newQuery.folder = newFolderId;
+      } else {
+        // Remove folder parameter if navigating to root
+        delete newQuery.folder;
+      }
+
+      // Build URL string for direct manipulation
+      const queryString =
+        Object.keys(newQuery).length > 0
+          ? "?" + new URLSearchParams(newQuery).toString()
+          : "";
+      const newUrl = `${this.$route.path}${queryString}`;
+
+      // Always update URL first using direct history manipulation
+      // This ensures the URL is updated immediately
+      window.history.replaceState(
+        { ...window.history.state, query: newQuery },
+        "",
+        newUrl,
+      );
+
+      // Then update Vue Router's internal state
+      // This ensures Vue Router knows about the change
+      this.$router
+        .replace({
+          path: this.$route.path,
+          query: newQuery,
+        })
+        .catch(() => {
+          // Ignore navigation errors - URL is already updated
+        });
+
+      // Load files immediately
+      await this.loadFiles(newFolderId);
     },
 
     async updateBreadcrumbs(folderId) {
-      // For now, we'll build breadcrumbs from the current path
-      // In a full implementation, we'd fetch folder details recursively
-      this.breadcrumbs = [];
+      if (!folderId) {
+        this.breadcrumbs = [];
+        return;
+      }
+
+      try {
+        // Build breadcrumbs by traversing up the parent chain
+        // Key insight: the current folder is not in this.folders (which contains its children)
+        // We need to load it from its parent, but we don't know the parent_id
+        // Solution: use a recursive approach - load each folder from its parent
+
+        const pathFolders = [];
+        let currentFolderId = folderId;
+        const visited = new Set();
+        const maxDepth = 50;
+        let depth = 0;
+
+        // Helper to load a folder by searching in a specific parent
+        const loadFolderFromParent = async (
+          folderIdToFind,
+          parentIdToSearch,
+        ) => {
+          try {
+            const response = await files.list(
+              this.$route.params.id,
+              parentIdToSearch,
+              1,
+              100,
+            );
+            return (response.files || []).find(
+              (f) =>
+                f.id === folderIdToFind &&
+                f.mime_type === "application/x-directory",
+            );
+          } catch (err) {
+            return null;
+          }
+        };
+
+        // Build path from current folder up to root
+        while (currentFolderId && depth < maxDepth) {
+          if (visited.has(currentFolderId)) {
+            break;
+          }
+          visited.add(currentFolderId);
+
+          let currentFolder = null;
+
+          // Try to find in loaded data first
+          currentFolder =
+            this.folders.find((f) => f.id === currentFolderId) ||
+            this.files.find((f) => f.id === currentFolderId) ||
+            this.filesList.find((f) => f.id === currentFolderId);
+
+          // If not found, we need to load it
+          if (!currentFolder) {
+            if (pathFolders.length === 0) {
+              // First iteration: looking for current folder
+              // The current folder is not in this.folders (which contains its children)
+              // Solution: use files.get() to get folder info directly
+              try {
+                const folderData = await files.get(
+                  currentFolderId,
+                  this.$route.params.id,
+                );
+                if (folderData && folderData.file) {
+                  currentFolder = {
+                    id: folderData.file.id,
+                    name: folderData.file.name || folderData.file.original_name,
+                    parent_id: folderData.file.parent_id,
+                    mime_type: folderData.file.mime_type,
+                  };
+                }
+              } catch (err) {
+                // If files.get() fails, try loading from root
+                currentFolder = await loadFolderFromParent(
+                  currentFolderId,
+                  null,
+                );
+              }
+            } else {
+              // Subsequent iterations: looking for parent of previous folder
+              // The previous folder's parent_id is currentFolderId
+              // To find currentFolderId, we need to search in its parent
+              // The key insight: if previousFolder.parent_id = currentFolderId,
+              // then to find currentFolderId, we load the contents of currentFolderId's parent
+              // But we don't know currentFolderId's parent_id yet...
+
+              // Solution: use files.get() to get the folder info directly
+              // This gives us the parent_id, which we can then use to find it
+              try {
+                const folderData = await files.get(
+                  currentFolderId,
+                  this.$route.params.id,
+                );
+                if (folderData && folderData.file) {
+                  currentFolder = {
+                    id: folderData.file.id,
+                    name: folderData.file.name || folderData.file.original_name,
+                    parent_id: folderData.file.parent_id,
+                    mime_type: folderData.file.mime_type,
+                  };
+                }
+              } catch (err) {
+                // If files.get() fails, try loading from root
+                currentFolder = await loadFolderFromParent(
+                  currentFolderId,
+                  null,
+                );
+
+                // If not in root, try searching in each known parent folder
+                if (!currentFolder) {
+                  for (const knownFolder of pathFolders) {
+                    currentFolder = await loadFolderFromParent(
+                      currentFolderId,
+                      knownFolder.id,
+                    );
+                    if (currentFolder) break;
+                  }
+                }
+              }
+            }
+          }
+
+          if (currentFolder && currentFolder.name) {
+            pathFolders.push({
+              id: currentFolderId,
+              name: currentFolder.name,
+              parent_id: currentFolder.parent_id || null,
+            });
+
+            if (currentFolder.parent_id) {
+              currentFolderId = currentFolder.parent_id;
+            } else {
+              break; // Reached root
+            }
+          } else if (pathFolders.length === 0) {
+            // First iteration failed - can't find current folder
+            // This means the folder is not in root and we don't know its parent_id
+            // We can't construct the breadcrumb without at least the current folder name
+            //
+            // Last resort: try to get folder name from a different source
+            // Actually, we could try to use the files.get() API if it exists for folders
+            // But for now, we'll just break and let the template show "Loading..."
+            // This happens when the folder is nested and we can't find it in root
+            break;
+          } else {
+            // Can't find parent folder, stop here
+            break;
+          }
+
+          depth++;
+        }
+
+        // Reverse to get root -> current order
+        this.breadcrumbs = pathFolders.reverse();
+
+        // If still no breadcrumbs, at least try to show current folder
+        // by getting its name from a child folder's parent reference
+        if (this.breadcrumbs.length === 0) {
+          // Try to find a child folder that references this as parent
+          const childFolder = this.folders.find(
+            (f) => f.parent_id === folderId,
+          );
+          if (childFolder) {
+            // We know we're in folderId, but we don't have its name
+            // We can't infer it from children...
+            // So we'll just show an empty breadcrumb or try one more API call
+          }
+        }
+      } catch (error) {
+        console.error("Error updating breadcrumbs:", error);
+        this.breadcrumbs = [];
+      }
     },
 
     async handleUploadClick() {
@@ -1040,8 +1310,11 @@ export default {
             normalizedParentId,
           );
 
-          // Add to UI
+          // Add to UI (optimistic update)
           addFolderToUI(folder);
+
+          // Refresh from server with cache-busting to ensure consistency
+          await this.loadFilesInternal(normalizedParentId, true);
 
           // Success - exit
           return;
@@ -1575,7 +1848,7 @@ export default {
       try {
         await files.delete(itemToDelete.id);
 
-        // Remove from appropriate list
+        // Remove from appropriate list (optimistic update)
         if (itemToDelete.mime_type === "application/x-directory") {
           this.folders = this.folders.filter((f) => f.id !== itemToDelete.id);
         } else {
@@ -1584,6 +1857,12 @@ export default {
           );
         }
         this.files = this.files.filter((f) => f.id !== itemToDelete.id);
+
+        // Small delay to ensure cache invalidation is complete on server side
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Refresh from server with cache-busting to ensure consistency
+        await this.loadFilesInternal(this.currentParentId, true);
 
         this.showDeleteConfirmModal = false;
         this.itemToDelete = null;
@@ -1596,6 +1875,11 @@ export default {
         }
       } catch (err) {
         this.deleteError = err.message || "Failed to move to trash";
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: err.message || "Failed to move to trash",
+        });
       } finally {
         this.deleting = false;
       }
@@ -1748,6 +2032,7 @@ export default {
 
       // Normal click: navigate for folders, select for files
       if (item.mime_type === "application/x-directory") {
+        // navigateToFolder will update the URL
         this.navigateToFolder(item.id);
       } else {
         // For files, toggle selection if not already selected
@@ -1775,8 +2060,6 @@ export default {
           // Start editing
           this.editingItemId = item.id;
         }
-      } else if (action === "move") {
-        this.handleMoveAction(item);
       } else if (action === "copy") {
         this.handleCopyAction(item);
       } else if (action === "share") {
@@ -1811,34 +2094,6 @@ export default {
     showFileProperties(fileId) {
       this.propertiesFileId = fileId;
       this.showProperties = true;
-    },
-
-    handlePropertiesAction(action, file) {
-      this.showProperties = false;
-      if (action === "download") {
-        this.downloadFile(file);
-      } else if (action === "rename") {
-        this.editingItemId = file.id;
-      } else if (action === "move") {
-        this.handleMoveAction(file);
-      } else if (action === "copy") {
-        this.handleCopyAction(file);
-      } else if (action === "share") {
-        // Open share modal using SharingManager
-        if (window.sharingManager) {
-          window.sharingManager.showShareModal(
-            file.id,
-            "file",
-            this.$route.params.id,
-            this.vaultspaceKey,
-          );
-        } else {
-          // Fallback: try to load sharing manager
-          this.initSharingManager(file.id);
-        }
-      } else if (action === "delete") {
-        this.showDeleteConfirm(file);
-      }
     },
 
     logout() {
@@ -1943,6 +2198,8 @@ export default {
     async handleRename(item, newName) {
       try {
         await files.rename(item.id, newName);
+
+        // Optimistic update for immediate UI feedback
         const index = this.filesList.findIndex((f) => f.id === item.id);
         if (index >= 0) {
           this.filesList[index].original_name = newName;
@@ -1955,6 +2212,10 @@ export default {
         if (fileIndex >= 0) {
           this.files[fileIndex].original_name = newName;
         }
+
+        // Refresh from server with cache-busting to ensure consistency
+        await this.loadFilesInternal(this.currentParentId, true);
+
         this.editingItemId = null;
       } catch (err) {
         this.showAlert({
@@ -1969,6 +2230,8 @@ export default {
     async handleMove(item, newParentId) {
       try {
         const updatedFile = await files.move(item.id, newParentId);
+
+        // Optimistic update for immediate UI feedback
         const index = this.filesList.findIndex((f) => f.id === item.id);
         if (index >= 0) {
           this.filesList[index] = updatedFile;
@@ -1986,59 +2249,45 @@ export default {
           this.filesList = this.filesList.filter((f) => f.id !== item.id);
           this.files = this.files.filter((f) => f.id !== item.id);
         }
+
+        // Small delay to ensure cache invalidation is complete on server side
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Refresh from server with cache-busting to ensure consistency
+        await this.loadFilesInternal(this.currentParentId, true);
       } catch (err) {
         this.showAlert({
           type: "error",
           title: "Error",
           message: err.message || "Error moving",
         });
-      }
-    },
-
-    async handleMoveAction(item) {
-      try {
-        // Get all folders in the vaultspace for the picker
-        const allFolders = await this.getAllFolders();
-
-        // Show folder picker
-        const selectedFolderId = await folderPicker.show(
-          allFolders,
-          this.currentParentId,
-          this.$route.params.id,
-          item.mime_type === "application/x-directory" ? item.id : null,
-        );
-
-        // User cancelled
-        if (selectedFolderId === undefined) {
-          return;
-        }
-
-        // Perform move
-        await this.handleMove(item, selectedFolderId);
-
-        // Reload files to reflect changes
-        await this.loadFiles();
-
-        // Show success message
-        if (window.Notifications) {
-          window.Notifications.success(
-            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
-          );
-        }
-      } catch (err) {
-        console.error("Move action error:", err);
-        this.showAlert({
-          type: "error",
-          title: "Error",
-          message: err.message || "Failed to move item",
-        });
+        throw err; // Re-throw to allow caller to handle
       }
     },
 
     async handleCopyAction(item) {
       try {
-        // Get all folders in the vaultspace for the picker
-        const allFolders = await this.getAllFolders();
+        // Verify folderPicker is available
+        if (!folderPicker) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Folder picker is not available. Please refresh the page.",
+          });
+          return;
+        }
+
+        // Get folders at the same level as the current item
+        const itemParentId = item.parent_id || this.currentParentId;
+        const allFolders = await this.getAllFolders(itemParentId);
+
+        if (allFolders.length === 0) {
+          this.showAlert({
+            type: "info",
+            title: "No Folders",
+            message: "No folders available. You can only copy to the root.",
+          });
+        }
 
         // Show folder picker
         const selectedFolderId = await folderPicker.show(
@@ -2066,7 +2315,6 @@ export default {
           );
         }
       } catch (err) {
-        console.error("Copy action error:", err);
         this.showAlert({
           type: "error",
           title: "Error",
@@ -2075,11 +2323,49 @@ export default {
       }
     },
 
-    async getAllFolders() {
-      // Get all folders in the current vaultspace
-      // For now, return the folders we already have loaded
-      // In the future, we could recursively load all folders
-      return this.folders;
+    async getAllFolders(parentId = null) {
+      // Get folders at the same level (same parent_id) as the current item
+      // Only return sibling folders, not root and not subfolders
+      try {
+        if (!this.$route.params.id) {
+          return [];
+        }
+
+        // Use the provided parentId or currentParentId
+        const targetParentId =
+          parentId !== undefined ? parentId : this.currentParentId;
+
+        // Load folders from the same parent, paginating if necessary
+        const allFolders = [];
+        let page = 1;
+        const perPage = 100; // API maximum
+        let hasMorePages = true;
+
+        while (hasMorePages) {
+          const result = await files.list(
+            this.$route.params.id,
+            targetParentId,
+            page,
+            perPage,
+            true, // cache-bust to ensure fresh data
+          );
+
+          const folders = (result.files || []).filter(
+            (f) => f.mime_type === "application/x-directory",
+          );
+
+          allFolders.push(...folders);
+
+          // Check if there are more pages
+          const totalPages = result.pagination?.pages || 1;
+          hasMorePages = page < totalPages;
+          page++;
+        }
+
+        return allFolders;
+      } catch (err) {
+        return [];
+      }
     },
 
     async handleZipFolder(folder) {
@@ -2235,8 +2521,8 @@ export default {
           newName: newName, // Keep same name unless specified
         });
 
-        // Reload files to show the new copy
-        await this.loadFiles();
+        // Reload files to show the new copy with cache-busting
+        await this.loadFilesInternal(this.currentParentId, true);
       } catch (err) {
         this.showAlert({
           type: "error",
@@ -2261,6 +2547,8 @@ export default {
 
     async handleDrop(targetFolder, event) {
       event.preventDefault();
+      event.stopPropagation(); // Prevent other handlers from intercepting
+
       try {
         const dragData = JSON.parse(
           event.dataTransfer.getData("application/json"),
@@ -2279,7 +2567,25 @@ export default {
           return; // Can't drop on itself
         }
 
-        await this.handleMove(sourceItem, targetFolderId);
+        // Clear clipboard to prevent copy operation
+        if (clipboardManager) {
+          clipboardManager.clear();
+        }
+
+        // Perform move (not copy)
+        try {
+          await this.handleMove(sourceItem, targetFolderId);
+
+          // Show success notification
+          if (window.Notifications) {
+            window.Notifications.success(
+              `${sourceItem.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
+            );
+          }
+        } catch (moveErr) {
+          // Error is already handled in handleMove
+          throw moveErr; // Re-throw to be caught by outer catch
+        }
       } catch (err) {
         this.showAlert({
           type: "error",
@@ -2403,43 +2709,6 @@ export default {
           type: "error",
           title: "Error",
           message: `Some items could not be deleted: ${result.errors.map((e) => e.error).join(", ")}`,
-        });
-      }
-    },
-
-    async handleBatchMove(result) {
-      // Update moved items in lists
-      const movedIds = new Set(result.moved_files?.map((f) => f.id) || []);
-
-      result.moved_files?.forEach((movedFile) => {
-        const index = this.folders.findIndex((f) => f.id === movedFile.id);
-        if (index >= 0) {
-          this.folders[index] = movedFile;
-        } else {
-          const fileIndex = this.filesList.findIndex(
-            (f) => f.id === movedFile.id,
-          );
-          if (fileIndex >= 0) {
-            this.filesList[fileIndex] = movedFile;
-          }
-        }
-      });
-
-      // Remove items that were successfully moved to a different parent
-      if (this.currentParentId) {
-        this.folders = this.folders.filter(
-          (f) => !movedIds.has(f.id) || f.parent_id === this.currentParentId,
-        );
-        this.filesList = this.filesList.filter(
-          (f) => !movedIds.has(f.id) || f.parent_id === this.currentParentId,
-        );
-      }
-
-      if (result.errors.length > 0) {
-        this.showAlert({
-          type: "error",
-          title: "Error",
-          message: `Some items could not be moved: ${result.errors.map((e) => e.error).join(", ")}`,
         });
       }
     },

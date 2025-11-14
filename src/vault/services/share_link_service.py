@@ -178,6 +178,32 @@ class ShareService:
             share_link_model.is_active = False
             db.session.commit()
 
+    def revoke_all_links_for_file(self, file_id: str) -> int:
+        """Revoke all active share links for a file.
+
+        Args:
+            file_id: File ID
+
+        Returns:
+            Number of links revoked
+        """
+        # Find all active links for this file
+        active_links = (
+            db.session.query(ShareLinkModel)
+            .filter_by(file_id=file_id, is_active=True)
+            .all()
+        )
+
+        # Deactivate all active links
+        count = len(active_links)
+        for link in active_links:
+            link.is_active = False
+
+        if count > 0:
+            db.session.commit()
+
+        return count
+
     def list_links_for_file(self, file_id: str) -> list[ShareLink]:
         """List all share links for a file."""
         share_link_models = (

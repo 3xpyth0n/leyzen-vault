@@ -332,11 +332,54 @@ class AdvancedFileService:
         for version in versions:
             db.session.delete(version)
 
+        # Store parent_id and vaultspace_id before deletion for cache invalidation
+        parent_id = file_obj.parent_id
+        vaultspace_id = file_obj.vaultspace_id
+        owner_user_id = file_obj.owner_user_id
+
         # Soft delete: set deleted_at timestamp instead of hard delete
         from datetime import datetime, timezone
 
         file_obj.deleted_at = datetime.now(timezone.utc)
         db.session.commit()
+
+        # Invalidate cache for the parent folder to ensure fresh data
+        # The cache key format is: "files:vaultspace_id:user_id:parent_id:page:per_page"
+        cache = get_cache_service()
+        # Invalidate all cache entries for this vaultspace and user to ensure consistency
+        # This covers all parent folders and all pages
+        vaultspace_pattern = f"files:{vaultspace_id}:{owner_user_id}:"
+        invalidated_count = cache.invalidate_pattern(vaultspace_pattern)
+        logger.debug(
+            f"Invalidated {invalidated_count} cache entries for vaultspace {vaultspace_id} after file deletion"
+        )
+
+        # Revoke all share links for this file
+        try:
+            from vault.services.advanced_sharing_service import AdvancedSharingService
+            from vault.services.share_link_service import ShareService
+
+            sharing_service = AdvancedSharingService()
+            share_service = ShareService()
+
+            # Revoke PublicShareLink (new sharing system)
+            public_links_revoked = sharing_service.revoke_all_links_for_file(
+                resource_id=file_id, resource_type="file"
+            )
+            if public_links_revoked > 0:
+                logger.info(
+                    f"Revoked {public_links_revoked} public share link(s) for file {file_id}"
+                )
+
+            # Revoke ShareLink (legacy sharing system)
+            legacy_links_revoked = share_service.revoke_all_links_for_file(file_id)
+            if legacy_links_revoked > 0:
+                logger.info(
+                    f"Revoked {legacy_links_revoked} legacy share link(s) for file {file_id}"
+                )
+        except Exception as e:
+            # Log warning but don't fail the operation if share link revocation fails
+            logger.warning(f"Failed to revoke share links for file {file_id}: {e}")
 
         # Remove from search index
         if self.search_service.index_service:
@@ -634,19 +677,14 @@ class AdvancedFileService:
         db.session.commit()
 
         # Invalidate cache for this vaultspace to ensure fresh data
-        # The cache key format is: "files:vaultspace_id:user_id:parent_id:page:per_page"
-        # We need to invalidate all pages and per_page combinations for this parent
         cache = get_cache_service()
-        # Create a base pattern that matches the beginning of cache keys
-        # This will match all pages and per_page values
-        base_pattern = (
-            f"files:{vaultspace_id}:{user_id}:{parent_id if parent_id else 'None'}"
+        # Invalidate all cache entries for this vaultspace and user to ensure consistency
+        # This covers all parent folders and all pages after folder creation
+        vaultspace_pattern = f"files:{vaultspace_id}:{user_id}:"
+        invalidated_count = cache.invalidate_pattern(vaultspace_pattern)
+        logger.debug(
+            f"Invalidated {invalidated_count} cache entries for vaultspace {vaultspace_id} after folder creation"
         )
-        cache.invalidate_pattern(base_pattern)
-        # Also invalidate root parent cache in case parent_id is None
-        if parent_id is not None:
-            base_pattern_root = f"files:{vaultspace_id}:{user_id}:None"
-            cache.invalidate_pattern(base_pattern_root)
 
         return folder
 
@@ -702,14 +740,15 @@ class AdvancedFileService:
 
         # Invalidate cache for this vaultspace/parent to ensure fresh data
         cache = get_cache_service()
-        parent_id = file_obj.parent_id
         vaultspace_id = file_obj.vaultspace_id
         user_id = file_obj.owner_user_id
-        # Create a base pattern that matches all pages and per_page values
-        base_pattern = (
-            f"files:{vaultspace_id}:{user_id}:{parent_id if parent_id else 'None'}"
+        # Invalidate all cache entries for this vaultspace and user to ensure consistency
+        # This covers all parent folders and all pages after rename operation
+        vaultspace_pattern = f"files:{vaultspace_id}:{user_id}:"
+        invalidated_count = cache.invalidate_pattern(vaultspace_pattern)
+        logger.debug(
+            f"Invalidated {invalidated_count} cache entries for vaultspace {vaultspace_id} after file rename"
         )
-        cache.invalidate_pattern(base_pattern)
 
         # Re-index file after rename
         self.search_service.index_file(file_obj)
@@ -763,19 +802,23 @@ class AdvancedFileService:
                 if self._would_create_cycle(file_id, new_parent_id):
                     raise ValueError("Moving folder would create a cycle")
 
+        # Store old parent_id before moving for cache invalidation
+        old_parent_id = file_obj.parent_id
+        vaultspace_id = file_obj.vaultspace_id
+        user_id = file_obj.owner_user_id
+
         file_obj.parent_id = new_parent_id
         db.session.commit()
 
         # Invalidate cache for this vaultspace to ensure fresh data
         cache = get_cache_service()
-        vaultspace_id = file_obj.vaultspace_id
-        user_id = file_obj.owner_user_id
-        # Invalidate cache for new parent (all pages and per_page values)
-        base_pattern_new = f"files:{vaultspace_id}:{user_id}:{new_parent_id if new_parent_id else 'None'}"
-        cache.invalidate_pattern(base_pattern_new)
-        # Also invalidate root cache in case file was moved to/from root
-        base_pattern_root = f"files:{vaultspace_id}:{user_id}:None"
-        cache.invalidate_pattern(base_pattern_root)
+        # Invalidate all cache entries for this vaultspace and user to ensure consistency
+        # This covers all parent folders and all pages after move operation
+        vaultspace_pattern = f"files:{vaultspace_id}:{user_id}:"
+        invalidated_count = cache.invalidate_pattern(vaultspace_pattern)
+        logger.debug(
+            f"Invalidated {invalidated_count} cache entries for vaultspace {vaultspace_id} after file move"
+        )
 
         # Re-index file after move
         self.search_service.index_file(file_obj)
@@ -1248,7 +1291,7 @@ class AdvancedFileService:
             },
         }
 
-        # Cache result for 30 seconds
-        cache.set(cache_key_str, result, ttl=30)
+        # Cache result for 10 seconds (reduced from 30 to prevent stale data)
+        cache.set(cache_key_str, result, ttl=10)
 
         return result

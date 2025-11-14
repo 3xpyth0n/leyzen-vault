@@ -55,7 +55,34 @@ class FolderPicker {
       this.rejectPromise = reject;
       this.createModal();
       this.renderFolders();
-      this.modal.classList.remove("hidden");
+
+      // Ensure modal is visible
+      if (this.modal) {
+        this.modal.classList.remove("hidden");
+
+        // Force display styles to ensure visibility
+        const modalOverlay = this.modal;
+
+        if (modalOverlay) {
+          // Ensure modal is always centered
+          modalOverlay.style.position = "fixed";
+          modalOverlay.style.top = "0";
+          modalOverlay.style.left = "0";
+          modalOverlay.style.right = "0";
+          modalOverlay.style.bottom = "0";
+          modalOverlay.style.display = "flex";
+          modalOverlay.style.alignItems = "center";
+          modalOverlay.style.justifyContent = "center";
+          modalOverlay.style.visibility = "visible";
+          modalOverlay.style.opacity = "1";
+          modalOverlay.style.zIndex = "10000";
+        }
+
+        // Verify modal is in DOM
+        if (!document.body.contains(this.modal)) {
+          document.body.appendChild(this.modal);
+        }
+      }
     });
   }
 
@@ -78,10 +105,6 @@ class FolderPicker {
           </div>
           <div class="modal-content">
             <div class="folder-picker-options">
-              <button class="folder-picker-option" data-folder-id="root">
-                <span class="folder-icon"></span>
-                <span>Root (Current Location)</span>
-              </button>
               <div id="folder-picker-list" class="folder-picker-list"></div>
             </div>
             <div class="modal-actions">
@@ -95,20 +118,16 @@ class FolderPicker {
 
     // Use safe HTML insertion with Trusted Types
     // Create a temporary container, set its innerHTML with Trusted Types, then append the modal
-    const tempContainer = document.createElement("div");
-    setInnerHTML(tempContainer, modalHTML);
-    const modalElement = tempContainer.firstElementChild;
-    if (modalElement) {
-      document.body.appendChild(modalElement);
-    }
-    this.modal = document.getElementById("folder-picker-modal");
-
-    // Setup root folder icon
-    const rootFolderIcon = document.querySelector(
-      ".folder-picker-option[data-folder-id='root'] .folder-icon",
-    );
-    if (rootFolderIcon && window.Icons && window.Icons.folder) {
-      setInnerHTML(rootFolderIcon, window.Icons.folder(20, "currentColor"));
+    try {
+      const tempContainer = document.createElement("div");
+      setInnerHTML(tempContainer, modalHTML);
+      const modalElement = tempContainer.firstElementChild;
+      if (modalElement) {
+        document.body.appendChild(modalElement);
+        this.modal = document.getElementById("folder-picker-modal");
+      }
+    } catch (error) {
+      throw error;
     }
 
     // Setup event listeners
@@ -202,8 +221,7 @@ class FolderPicker {
     // Add click handlers
     list.querySelectorAll(".folder-picker-option").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const folderId =
-          btn.dataset.folderId === "root" ? null : btn.dataset.folderId;
+        const folderId = btn.dataset.folderId;
 
         // Update selection
         list.querySelectorAll(".folder-picker-option").forEach((b) => {
@@ -219,23 +237,6 @@ class FolderPicker {
         }
       });
     });
-
-    // Handle root option
-    const rootOption = this.modal.querySelector('[data-folder-id="root"]');
-    if (rootOption) {
-      rootOption.addEventListener("click", () => {
-        this.modal.querySelectorAll(".folder-picker-option").forEach((b) => {
-          b.classList.remove("selected");
-        });
-        rootOption.classList.add("selected");
-        this.selectedFolderId = null;
-
-        const confirmBtn = document.getElementById("folder-picker-confirm");
-        if (confirmBtn) {
-          confirmBtn.disabled = false;
-        }
-      });
-    }
   }
 
   /**

@@ -314,19 +314,22 @@ class DragDropManager {
    * Move file to folder
    */
   async moveFile(fileId, folderId) {
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
+    // Migrate to API v2 - requires JWT authentication
+    const jwtToken = localStorage.getItem("jwt_token");
+    if (!jwtToken) {
+      throw new Error("Authentication required");
+    }
 
-    const response = await fetch(`/api/files/${fileId}/move`, {
+    // Use the move endpoint with new_parent_id (API v2)
+    const response = await fetch(`/api/v2/files/${fileId}/move`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+        Authorization: `Bearer ${jwtToken}`,
       },
       credentials: "same-origin",
       body: JSON.stringify({
-        folder_id: folderId || null,
+        parent_id: folderId || null,
       }),
     });
 
@@ -374,7 +377,7 @@ class DragDropManager {
       },
       credentials: "same-origin",
       body: JSON.stringify({
-        parent_id: parentId || null,
+        new_parent_id: parentId || null,
       }),
     });
 
