@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The Leyzen Vault project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2025-11-15
 
 ### Added
 
