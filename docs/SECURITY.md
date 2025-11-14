@@ -109,4 +109,4 @@ If you suspect a security incident or credential compromise:
 ## Additional Reading
 
 For runtime hardening details, see [`docs/SECURITY_RUNTIME.md`](SECURITY_RUNTIME.md). Operational practices and CLI usage
-are documented in the [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) and [`leyzenctl`](https://github.com/3xpyth0n/leyzen-vault/wiki/leyzenctl) wiki pages.
+are documented in the [Quickstart](https://docs.leyzen.com/getting-started/quickstart) and [`leyzenctl`](https://docs.leyzen.com/cli/leyzenctl) documentation pages.

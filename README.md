@@ -51,25 +51,25 @@ He created **Leyzen Vault** as a personal initiative to explore advanced moving-
 
 **Documentation Map**: Leyzen Vault maintains two types of documentation:
 
-- **GitHub Wiki** - For operators, users, and day-to-day usage. Contains guides on installation, configuration, CLI usage, architecture overview, and operational procedures.
+- **📚 Official Documentation** - For operators, users, and day-to-day usage. Contains guides on installation, configuration, CLI usage, architecture overview, and operational procedures. Available at [https://docs.leyzen.com](https://docs.leyzen.com).
 - **Repository `docs/` directory** - For developers and contributors. Contains coding standards, security policies, contribution guidelines, and code-level implementation details.
 
-If you're **using** Leyzen Vault, start with the [GitHub Wiki Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart). If you're **contributing** code, start with [`docs/AGENTS.md`](docs/AGENTS.md) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
+If you're **using** Leyzen Vault, start with the [Quickstart guide](https://docs.leyzen.com/getting-started/quickstart). If you're **contributing** code, start with [`docs/AGENTS.md`](docs/AGENTS.md) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 
-### GitHub Wiki (User & Operational Guides)
+### 📚 Official Documentation (User & Operational Guides)
 
-Primary user-facing and operational documentation is maintained in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki):
+Primary user-facing and operational documentation is maintained at [https://docs.leyzen.com](https://docs.leyzen.com):
 
-- [Home](https://github.com/3xpyth0n/leyzen-vault/wiki/Home)
-- [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart)
-- [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture)
-- [Security Model](https://github.com/3xpyth0n/leyzen-vault/wiki/Security-Model)
-- [`leyzenctl` CLI](https://github.com/3xpyth0n/leyzen-vault/wiki/leyzenctl)
-- [Vault](https://github.com/3xpyth0n/leyzen-vault/wiki/Vault)
-- [Telemetry](https://github.com/3xpyth0n/leyzen-vault/wiki/Telemetry)
-- [CI/CD](https://github.com/3xpyth0n/leyzen-vault/wiki/CI-CD)
-- [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide)
-- [FAQ](https://github.com/3xpyth0n/leyzen-vault/wiki/FAQ)
+- [Home](https://docs.leyzen.com/)
+- [Quickstart](https://docs.leyzen.com/getting-started/quickstart)
+- [Architecture Overview](https://docs.leyzen.com/architecture/overview)
+- [Security Model](https://docs.leyzen.com/security/security-model)
+- [`leyzenctl` CLI](https://docs.leyzen.com/cli/leyzenctl)
+- [Vault Service & VaultSpaces](https://docs.leyzen.com/vaultspaces/vault)
+- [Telemetry & Monitoring](https://docs.leyzen.com/orchestrator/telemetry)
+- [CI/CD Workflows](https://docs.leyzen.com/ci-cd)
+- [Developer Guide](https://docs.leyzen.com/developer-guide)
+- [FAQ](https://docs.leyzen.com/faq)
 
 ### Repository Documentation (Code & Policies)
 
@@ -88,7 +88,7 @@ Repository-level documentation for developers and contributors:
 
 ## Getting Started
 
-Clone the repository, copy `env.template` to `.env`, and build the CLI with `./install.sh`. Full installation, configuration, and first-run steps are documented in the [Quickstart guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart).
+Clone the repository, copy `env.template` to `.env`, and build the CLI with `./install.sh`. Full installation, configuration, and first-run steps are documented in the [Quickstart guide](https://docs.leyzen.com/getting-started/quickstart).
 
 ```bash
 git clone https://github.com/3xpyth0n/leyzen-vault.git
@@ -118,15 +118,15 @@ Leyzen Vault v2.0.0 comprises:
 - **Flask Orchestrator** with rotation telemetry and SSE streaming
 - **PostgreSQL** database for all metadata, users, and system data
 
-Review the [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) page for diagrams, rotation flow, and component responsibilities. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for detailed technical documentation.
+Review the [Architecture Overview](https://docs.leyzen.com/architecture/overview) page for diagrams, rotation flow, and component responsibilities. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for detailed technical documentation.
 
 ## Security & Compliance
 
-Security disclosures follow the process documented in [`docs/SECURITY.md`](docs/SECURITY.md). Runtime protections—including CSP enforcement, captcha, CSRF, proxy trust, and Docker proxy allowlists—are detailed in the [Security Model](https://github.com/3xpyth0n/leyzen-vault/wiki/Security-Model).
+Security disclosures follow the process documented in [`docs/SECURITY.md`](docs/SECURITY.md). Runtime protections—including CSP enforcement, captcha, CSRF, proxy trust, and Docker proxy allowlists—are detailed in the [Security Model](https://docs.leyzen.com/security/security-model).
 
 ## Contributing
 
-We welcome pull requests and feature ideas! Start with the [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
+We welcome pull requests and feature ideas! Start with the [Developer Guide](https://docs.leyzen.com/developer-guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
 
 ## License
 

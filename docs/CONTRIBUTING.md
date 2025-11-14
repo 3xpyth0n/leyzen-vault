@@ -21,8 +21,8 @@ Keeping each branch scoped to a single improvement helps reviewers merge your wo
 - Use `./leyzenctl` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
 - Install and use pre-commit hooks for automatic code quality checks (see [Pre-commit Hooks](#pre-commit-hooks) below).
   manual invocations of the Compose builder are unsupported and may leave the generated artifacts inconsistent.
-- Review the [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) for day-to-day usage tips and the
-  [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) guide for implementation details.
+- Review the [Quickstart](https://docs.leyzen.com/getting-started/quickstart) for day-to-day usage tips and the
+  [Architecture Overview](https://docs.leyzen.com/architecture/overview) guide for implementation details.
 
 ## Pre-commit Hooks
 
@@ -66,7 +66,7 @@ Before submitting a pull request:
   configurations and verify the stack boots without errors.
 - Inspect the regenerated `docker-generated.yml` and `haproxy/haproxy.cfg` when your change impacts
   routing or environment handling.
-- Update relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki) when behavior or workflows change.
+- Update relevant pages in the [official documentation](https://docs.leyzen.com) when behavior or workflows change.
 
 ## Commit Message Convention
 
@@ -114,7 +114,7 @@ Security issues should be reported privately following the [Security Policy](doc
 
 ## Additional Resources
 
-- [Developer Guide](https://github.com/3xpyth0n/leyzen-vault/wiki/Developer-Guide) — contributing to Leyzen Vault.
-- [Maintainer guidance](https://github.com/3xpyth0n/leyzen-vault/wiki/CI-CD) — triage, reviews, and releases.
-- [Architecture](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture) — runtime internals.
-- [Quickstart](https://github.com/3xpyth0n/leyzen-vault/wiki/Quickstart) — operating the stack with `leyzenctl`.
+- [Developer Guide](https://docs.leyzen.com/developer-guide) — contributing to Leyzen Vault.
+- [CI/CD Workflows](https://docs.leyzen.com/ci-cd) — triage, reviews, and releases.
+- [Architecture Overview](https://docs.leyzen.com/architecture/overview) — runtime internals.
+- [Quickstart](https://docs.leyzen.com/getting-started/quickstart) — operating the stack with `leyzenctl`.

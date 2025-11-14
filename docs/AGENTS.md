@@ -319,7 +319,7 @@ Leyzen Vault uses different authentication mechanisms for the Vault application 
 ## Documentation & operational notes
 
 - Update `README.md` for user-facing changes. For operational or security
-  adjustments, update the relevant pages in the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki).
+  adjustments, update the relevant pages in the [official documentation](https://docs.leyzen.com).
 - Security-sensitive tweaks (auth flow, captcha, CSP reporting) should include a
   short rationale in commit messages or doc updates.
 - See [`docs/README.md`](README.md) for a complete documentation map and links to all documentation files.

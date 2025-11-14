@@ -1,6 +1,6 @@
 # Leyzen Vault Documentation
 
-This directory contains developer documentation and policies for the Leyzen Vault project. For user-facing and operational documentation, see the [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki).
+This directory contains developer documentation and policies for the Leyzen Vault project. For user-facing and operational documentation, see the [official documentation](https://docs.leyzen.com).
 
 ## Documentation Map
 
@@ -86,9 +86,9 @@ This directory contains developer documentation and policies for the Leyzen Vaul
 
 ## Documentation Organization
 
-### GitHub Wiki (User & Operational Guides)
+### Official Documentation (User & Operational Guides)
 
-The [GitHub Wiki](https://github.com/3xpyth0n/leyzen-vault/wiki) contains user-facing and operational documentation:
+The [official documentation](https://docs.leyzen.com) contains user-facing and operational documentation:
 
 - Quickstart guides
 - Installation instructions
@@ -114,7 +114,7 @@ This directory contains developer-focused documentation:
 
 ### When to Update Documentation
 
-- **User-facing changes**: Update GitHub Wiki and README.md
+- **User-facing changes**: Update official documentation and README.md
 - **Code changes**: Update AGENTS.md, ARCHITECTURE.md, or API_DOCUMENTATION.md
 - **Security changes**: Update SECURITY.md or SECURITY_RUNTIME.md
 - **Process changes**: Update CONTRIBUTING.md or CODE_OF_CONDUCT.md
@@ -133,11 +133,11 @@ This directory contains developer-focused documentation:
 2. Add an entry to this README.md
 3. Update relevant cross-references
 4. Update the main README.md if it's user-facing
-5. Update the GitHub Wiki if it's operational documentation
+5. Update the official documentation if it's operational documentation
 
 ## Quick Links
 
-- [GitHub Wiki Home](https://github.com/3xpyth0n/leyzen-vault/wiki)
+- [Official Documentation](https://docs.leyzen.com)
 - [Main README](../README.md)
 - [CHANGELOG](../CHANGELOG.md)
 - [License](../LICENSE)

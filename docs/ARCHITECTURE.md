@@ -1,6 +1,6 @@
 # Leyzen Vault Architecture
 
-**Note for developers**: This document provides detailed technical architecture documentation for developers and contributors. For a user-friendly overview, see the [GitHub Wiki Architecture page](https://github.com/3xpyth0n/leyzen-vault/wiki/Architecture).
+**Note for developers**: This document provides detailed technical architecture documentation for developers and contributors. For a user-friendly overview, see the [Architecture Overview](https://docs.leyzen.com/architecture/overview) page.
 
 This document describes the high-level architecture of Leyzen Vault, including service components, startup order, container rotation flow, and inter-component communication.
 
