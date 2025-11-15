@@ -493,66 +493,6 @@ class FileKey(db.Model):
         return f"<FileKey file={self.file_id} vaultspace={self.vaultspace_id}>"
 
 
-class FileVersion(db.Model):
-    """File version with branch support (advanced versioning)."""
-
-    __tablename__ = "file_versions"
-
-    id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
-    )
-    file_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("files.id", ondelete="CASCADE"), nullable=False
-    )
-    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    branch_name: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="main"
-    )
-    encrypted_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    storage_ref: Mapped[str] = mapped_column(String(500), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[str | None] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    change_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    parent_version_id: Mapped[str | None] = mapped_column(
-        UUID(as_uuid=False),
-        ForeignKey("file_versions.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-    # Relationships
-    file: Mapped["File"] = relationship("File")
-    creator: Mapped["User | None"] = relationship("User", foreign_keys=[created_by])
-    parent_version: Mapped["FileVersion | None"] = relationship(
-        "FileVersion", remote_side=[id], foreign_keys=[parent_version_id]
-    )
-
-    __table_args__ = (
-        Index(
-            "ix_file_versions_file_branch", "file_id", "branch_name", "version_number"
-        ),
-        Index("ix_file_versions_created_by", "created_by"),
-    )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "id": self.id,
-            "file_id": self.file_id,
-            "version_number": self.version_number,
-            "branch_name": self.branch_name,
-            "encrypted_hash": self.encrypted_hash,
-            "storage_ref": self.storage_ref,
-            "created_at": self.created_at.isoformat(),
-            "created_by": self.created_by,
-            "change_description": self.change_description,
-            "parent_version_id": self.parent_version_id,
-        }
-
-
 class Webhook(db.Model):
     """Webhook for external integrations."""
 
@@ -1515,180 +1455,109 @@ class ApiKey(db.Model):
         return f"<ApiKey {self.name} (user={self.user_id})>"
 
 
-def _migrate_convert_provider_type_to_string() -> None:
-    """Convert provider_type column from enum to VARCHAR.
+class UploadSession(db.Model):
+    """Upload session model for chunked file uploads."""
 
-    This migration converts the provider_type column from PostgreSQL enum type
-    to VARCHAR(50) to avoid issues with enum values. The TypeDecorator will
-    handle the conversion between Python enum and string values.
-    """
-    from sqlalchemy import text, inspect
-    import logging
+    __tablename__ = "upload_sessions"
 
-    logger = logging.getLogger(__name__)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    vaultspace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("vaultspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    file_id: Mapped[str] = mapped_column(
+        String(500), nullable=False
+    )  # Generated upfront for the file being uploaded (storage_ref format)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    total_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    chunk_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_chunks: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending"
+    )  # 'pending', 'uploading', 'completed', 'failed', 'expired'
+    encrypted_file_key: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("files.id", ondelete="SET NULL"), nullable=True
+    )
+    encrypted_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
-    try:
-        inspector = inspect(db.engine)
+    # Relationships
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    vaultspace: Mapped["VaultSpace"] = relationship(
+        "VaultSpace", foreign_keys=[vaultspace_id]
+    )
+    parent: Mapped["File | None"] = relationship(
+        "File", foreign_keys=[parent_id], remote_side="File.id"
+    )
 
-        # Check if sso_providers table exists
-        if "sso_providers" not in inspector.get_table_names():
-            logger.debug(
-                "sso_providers table doesn't exist yet, will be created by db.create_all()"
-            )
-            return
+    # Indexes for efficient queries
+    __table_args__ = (
+        Index("ix_upload_sessions_user_id", "user_id"),
+        Index("ix_upload_sessions_file_id", "file_id"),
+        Index("ix_upload_sessions_status", "status"),
+        Index("ix_upload_sessions_expires_at", "expires_at"),
+        Index("ix_upload_sessions_vaultspace_id", "vaultspace_id"),
+    )
 
-        # Check current column type
-        columns = inspector.get_columns("sso_providers")
-        provider_type_col = next(
-            (col for col in columns if col["name"] == "provider_type"), None
-        )
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "vaultspace_id": self.vaultspace_id,
+            "file_id": self.file_id,
+            "original_name": self.original_name,
+            "total_size": self.total_size,
+            "uploaded_size": self.uploaded_size,
+            "chunk_size": self.chunk_size,
+            "total_chunks": self.total_chunks,
+            "uploaded_chunks": self.uploaded_chunks,
+            "status": self.status,
+            "parent_id": self.parent_id,
+            "mime_type": self.mime_type,
+            "expires_at": self.expires_at.isoformat(),
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
 
-        if not provider_type_col:
-            logger.debug("provider_type column doesn't exist yet")
-            return
+    def is_expired(self) -> bool:
+        """Check if session is expired."""
+        from datetime import timezone
 
-        # Check the actual PostgreSQL type by querying pg_type directly
-        type_check = db.session.execute(
-            text(
-                """
-                SELECT t.typname, t.typtype
-                FROM pg_type t
-                JOIN pg_attribute a ON a.atttypid = t.oid
-                JOIN pg_class c ON c.oid = a.attrelid
-                WHERE c.relname = 'sso_providers'
-                AND a.attname = 'provider_type'
-            """
-            )
-        ).fetchone()
+        now_utc = datetime.now(timezone.utc)
+        expires_utc = self.expires_at.astimezone(timezone.utc)
+        return now_utc > expires_utc
 
-        if type_check:
-            type_name, type_type = type_check
-            # Check if it's already VARCHAR
-            if type_name == "varchar" or type_name.startswith("character varying"):
-                logger.info("provider_type column is already VARCHAR type")
-                return
-            # 'e' means enum type in PostgreSQL
-            if type_type == "e" or type_name == "ssoprovidertype":
-                logger.info(
-                    f"Detected enum type '{type_name}', converting to VARCHAR(50)"
-                )
-            else:
-                # Not an enum or varchar, might need conversion
-                logger.info(
-                    f"Column type is '{type_name}' (type code: {type_type}), converting to VARCHAR(50)"
-                )
-        else:
-            # Couldn't determine type, try conversion anyway
-            logger.info(
-                "Could not determine column type, attempting conversion to VARCHAR(50)"
-            )
-
-        # Column needs to be converted to VARCHAR (either enum or other non-string type)
-        logger.info("Converting provider_type column to VARCHAR(50)")
-
-        with db.engine.begin() as conn:
-            # Alter column type to VARCHAR(50) and convert enum values to their string equivalents
-            # The USING clause handles the conversion: enum values are converted to text
-            # SAML -> 'SAML' (we'll update these after conversion)
-            conn.execute(
-                text(
-                    "ALTER TABLE sso_providers ALTER COLUMN provider_type TYPE VARCHAR(50) USING provider_type::text"
-                )
-            )
-
-            # Now update the values to use lowercase (saml, oauth2, oidc) instead of uppercase (SAML, OAUTH2, OIDC)
-            conn.execute(
-                text(
-                    """
-                    UPDATE sso_providers 
-                    SET provider_type = CASE 
-                        WHEN provider_type = 'SAML' THEN 'saml'
-                        WHEN provider_type = 'OAUTH2' THEN 'oauth2'
-                        WHEN provider_type = 'OIDC' THEN 'oidc'
-                        WHEN provider_type = 'email-magic-link' THEN 'email-magic-link'
-                        ELSE provider_type
-                    END
-                """
-                )
-            )
-
-        logger.info("Successfully converted provider_type column to VARCHAR(50)")
-    except Exception as e:
-        # Log but don't fail - migration might not be needed or table might not exist
-        logger.warning(f"Failed to convert provider_type column to VARCHAR: {e}")
-
-
-def _migrate_create_magic_link_tokens_table() -> None:
-    """Create magic_link_tokens table if it doesn't exist.
-
-    This migration ensures the magic_link_tokens table exists for Email Magic Link SSO.
-    """
-    from sqlalchemy import text, inspect
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        inspector = inspect(db.engine)
-
-        # Check if table already exists
-        if "magic_link_tokens" in inspector.get_table_names():
-            logger.info("magic_link_tokens table already exists")
-            return
-
-        # Table doesn't exist, create it
-        logger.info("Creating magic_link_tokens table")
-
-        with db.engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    CREATE TABLE magic_link_tokens (
-                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                        email VARCHAR(255) NOT NULL,
-                        provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
-                        token VARCHAR(255) NOT NULL UNIQUE,
-                        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                        used_at TIMESTAMP WITH TIME ZONE,
-                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-                    )
-                """
-                )
-            )
-
-            # Create indexes
-            conn.execute(
-                text(
-                    "CREATE INDEX ix_magic_link_tokens_email ON magic_link_tokens(email)"
-                )
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX ix_magic_link_tokens_provider_id ON magic_link_tokens(provider_id)"
-                )
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX ix_magic_link_tokens_expires_at ON magic_link_tokens(expires_at)"
-                )
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX ix_magic_link_tokens_token ON magic_link_tokens(token)"
-                )
-            )
-
-        logger.info("Successfully created magic_link_tokens table")
-    except Exception as e:
-        # Log but don't fail - table might have been created by db.create_all() or other issue
-        logger.warning(f"Failed to create magic_link_tokens table: {e}")
+    def __repr__(self) -> str:
+        return f"<UploadSession {self.id} ({self.status})>"
 
 
 def init_db(app) -> None:
     """Initialize database with Flask app.
 
-    Creates all tables and indexes. Handles cases where objects already exist
-    gracefully (e.g., when database was previously initialized).
+    Creates all tables and indexes using SQLAlchemy. Handles cases where objects
+    already exist gracefully (e.g., when database was previously initialized).
 
     This function will not raise exceptions for duplicate index/table errors,
     as these are expected when the database schema already exists.
@@ -1696,8 +1565,6 @@ def init_db(app) -> None:
     db.init_app(app)
     with app.app_context():
         import logging
-        from sqlalchemy.exc import ProgrammingError, OperationalError, StatementError
-        from sqlalchemy import inspect, text
 
         logger = logging.getLogger(__name__)
 
@@ -1729,35 +1596,7 @@ def init_db(app) -> None:
 
             return False
 
-        # First, run cleanup migrations to remove duplicate indexes
-        # This should be done before create_all() to avoid conflicts
-        try:
-            _migrate_remove_duplicate_indexes()
-        except Exception as migration_error:
-            # Log but don't fail - cleanup migrations are non-critical
-            logger.debug(
-                f"Index cleanup migration error (non-fatal): {migration_error}"
-            )
-
-        # Convert provider_type column from enum to VARCHAR before creating tables
-        try:
-            _migrate_convert_provider_type_to_string()
-        except Exception as migration_error:
-            # Log but don't fail - migration is non-critical
-            logger.debug(
-                f"Provider type migration error (non-fatal): {migration_error}"
-            )
-
-        # Ensure magic_link_tokens table exists
-        try:
-            _migrate_create_magic_link_tokens_table()
-        except Exception as migration_error:
-            # Log but don't fail - migration is non-critical
-            logger.debug(
-                f"Magic link tokens table migration error (non-fatal): {migration_error}"
-            )
-
-        # Try to create all tables and indexes
+        # Create all tables and indexes using SQLAlchemy
         # If objects already exist, that's fine - database is already initialized
         try:
             db.create_all()
@@ -1794,224 +1633,3 @@ def init_db(app) -> None:
                         exc_info=True,
                     )
                     raise
-
-        # Run other migrations for existing databases (these handle existence checks internally)
-        try:
-            _migrate_add_icon_name_column()
-            _migrate_extend_rate_limit_ip_address()
-        except Exception as migration_error:
-            # Log migration errors but don't fail initialization
-            # Migrations should handle their own existence checks
-            logger.warning(
-                f"Migration error (non-fatal): {migration_error}",
-                exc_info=True,
-            )
-
-
-def _migrate_remove_duplicate_indexes() -> None:
-    """Remove duplicate indexes that may have been created in previous versions.
-
-    This migration removes indexes that are now created automatically by constraints
-    (e.g., unique constraints automatically create indexes).
-
-    Specifically, removes ix_user_invitations_token if it exists, since the token
-    column has unique=True which creates an index automatically.
-    """
-    from sqlalchemy import text, inspect
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        inspector = inspect(db.engine)
-
-        # Check if user_invitations table exists
-        if "user_invitations" not in inspector.get_table_names():
-            return
-
-        # List of duplicate indexes to remove
-        # These indexes are now redundant because they're created automatically by constraints
-        # or were removed from the model definition
-        duplicate_indexes_to_remove = [
-            "ix_user_invitations_token",  # Created automatically by unique=True on token column
-            # Note: If email had index=True and also an explicit index, we would list it here too
-            # But currently email only has the explicit index, so no duplication
-        ]
-
-        # Get existing indexes on user_invitations table
-        indexes = inspector.get_indexes("user_invitations")
-        existing_index_names = {idx["name"] for idx in indexes}
-
-        # Remove duplicate indexes if they exist
-        for index_name in duplicate_indexes_to_remove:
-            # Validate index name to prevent SQL injection (alphanumeric and underscores only)
-            if not index_name.replace("_", "").isalnum():
-                logger.warning(
-                    f"Skipping invalid index name (potential security risk): {index_name}"
-                )
-                continue
-
-            if index_name in existing_index_names:
-                try:
-                    with db.engine.begin() as conn:
-                        # Use IF EXISTS to avoid errors if index was already removed
-                        # Use SQLAlchemy's identifier quoting for safety
-                        from sqlalchemy import quoted_name
-                        from sqlalchemy.sql import Identifier
-
-                        # Index name is validated above (alphanumeric + underscores only)
-                        # Use quoted_name to safely quote the identifier
-                        quoted_index_name = quoted_name(index_name, True)
-                        # PostgreSQL doesn't support parameterized identifiers in DROP INDEX
-                        # So we validate strictly above and use quoted_name for safe quoting
-                        # The validation ensures only safe characters (alphanumeric + underscore)
-                        conn.execute(text(f"DROP INDEX IF EXISTS {quoted_index_name}"))
-                    logger.info(f"Removed duplicate index: {index_name}")
-                except Exception as e:
-                    # Log but don't fail - index might have been removed already
-                    logger.debug(
-                        f"Could not remove index {index_name} (may not exist): {e}"
-                    )
-
-    except Exception as e:
-        # Log but don't fail - this is a cleanup migration
-        # Errors here are non-critical
-        logger.debug(f"Error during index cleanup migration (non-fatal): {e}")
-
-
-def _migrate_add_icon_name_column() -> None:
-    """Add icon_name column to vaultspaces table if it doesn't exist.
-
-    This migration adds the icon_name column to support custom VaultSpace icons.
-    """
-    from sqlalchemy import text
-    import logging
-
-    try:
-        # Check if table exists using parameterized query
-        table_result = db.session.execute(
-            text(
-                """
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_name = :table_name
-            """
-            ).bindparams(table_name="vaultspaces")
-        )
-        table_exists = table_result.fetchone() is not None
-
-        if not table_exists:
-            # Table doesn't exist yet, db.create_all() will create it with the column
-            return
-
-        # Check if column exists using parameterized query
-        column_result = db.session.execute(
-            text(
-                """
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = :table_name AND column_name = :column_name
-            """
-            ).bindparams(table_name="vaultspaces", column_name="icon_name")
-        )
-        column_exists = column_result.fetchone() is not None
-
-        if not column_exists:
-            # Add the column - table and column names are hardcoded, safe to use text()
-            # But we still use parameterized queries for consistency
-            db.session.execute(
-                text(
-                    """
-                    ALTER TABLE vaultspaces 
-                    ADD COLUMN icon_name VARCHAR(50) NULL
-                """
-                )
-            )
-            db.session.commit()
-            logging.info("Successfully added icon_name column to vaultspaces table")
-    except Exception as e:
-        # If migration fails, rollback and log error
-        db.session.rollback()
-        # Don't raise exception - allow app to start even if migration fails
-        # The column will be added on next startup if it still doesn't exist
-        logging.warning(f"Failed to add icon_name column to vaultspaces table: {e}")
-
-
-def _migrate_extend_rate_limit_ip_address() -> None:
-    """Extend ip_address column in rate_limit_tracking table to support IPv6 + action_name suffix.
-
-    This migration extends the ip_address column from VARCHAR(45) to VARCHAR(100) to support
-    IPv6 addresses (up to 39 characters) combined with action name suffixes (e.g., :auth_login).
-    """
-    from sqlalchemy import text
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        # Check if table exists using parameterized query
-        table_result = db.session.execute(
-            text(
-                """
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_name = :table_name
-            """
-            ).bindparams(table_name="rate_limit_tracking")
-        )
-        table_exists = table_result.fetchone() is not None
-
-        if not table_exists:
-            # Table doesn't exist yet, db.create_all() will create it with the correct size
-            return
-
-        # Check current column definition using parameterized query
-        column_result = db.session.execute(
-            text(
-                """
-                SELECT character_maximum_length
-                FROM information_schema.columns
-                WHERE table_name = :table_name 
-                AND column_name = :column_name
-            """
-            ).bindparams(table_name="rate_limit_tracking", column_name="ip_address")
-        )
-        column_info = column_result.fetchone()
-
-        if column_info is None:
-            # Column doesn't exist (shouldn't happen, but handle gracefully)
-            logger.warning("ip_address column not found in rate_limit_tracking table")
-            return
-
-        current_max_length = column_info[0]
-
-        # Only migrate if current size is less than 100
-        if current_max_length is None or current_max_length < 100:
-            # Extend the column to VARCHAR(100) - table/column names are hardcoded, safe
-            db.session.execute(
-                text(
-                    """
-                    ALTER TABLE rate_limit_tracking 
-                    ALTER COLUMN ip_address TYPE VARCHAR(100)
-                """
-                )
-            )
-            db.session.commit()
-            logger.info(
-                f"Successfully extended ip_address column in rate_limit_tracking table "
-                f"from {current_max_length} to 100 characters"
-            )
-        else:
-            # Column is already large enough
-            logger.debug(
-                f"ip_address column in rate_limit_tracking table already has size {current_max_length}, "
-                f"no migration needed"
-            )
-    except Exception as e:
-        # If migration fails, rollback and log error
-        db.session.rollback()
-        # Don't raise exception - allow app to start even if migration fails
-        # The migration will be retried on next startup if it still needs to be applied
-        logger.warning(
-            f"Failed to extend ip_address column in rate_limit_tracking table: {e}"
-        )

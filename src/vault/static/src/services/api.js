@@ -1172,6 +1172,267 @@ export const files = {
     const data = await response.json();
     return data.file;
   },
+
+  /**
+   * Create an upload session for chunked file uploads.
+   *
+   * @param {object} fileData - File upload data
+   * @param {string} fileData.vaultspaceId - VaultSpace ID
+   * @param {string} fileData.originalName - Original filename
+   * @param {number} fileData.totalSize - Total file size in bytes
+   * @param {number} fileData.chunkSize - Chunk size in bytes (default 5MB)
+   * @param {string} fileData.encryptedFileKey - Encrypted file key
+   * @param {string|null} fileData.parentId - Parent folder ID (optional)
+   * @param {string|null} fileData.encryptedMetadata - Encrypted metadata (optional)
+   * @param {string|null} fileData.mimeType - MIME type (optional)
+   * @returns {Promise<object>} Session info with session_id and file_id
+   */
+  async createUploadSession(fileData) {
+    const response = await apiRequest("/v2/files/upload/session", {
+      method: "POST",
+      body: JSON.stringify({
+        vaultspace_id: fileData.vaultspaceId,
+        original_name: fileData.originalName,
+        total_size: fileData.totalSize,
+        chunk_size: fileData.chunkSize || 5 * 1024 * 1024, // Default 5MB
+        encrypted_file_key: fileData.encryptedFileKey,
+        parent_id: fileData.parentId || null,
+        encrypted_metadata: fileData.encryptedMetadata || null,
+        mime_type: fileData.mimeType || null,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to create upload session");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Upload a single chunk for chunked file uploads.
+   *
+   * @param {string} sessionId - Upload session ID
+   * @param {number} chunkIndex - Zero-based chunk index
+   * @param {Blob} chunk - Chunk data as Blob
+   * @param {string|null} sessionData - Optional JSON string with session data for fallback recreation
+   * @param {function} onProgress - Optional progress callback (uploadedSize, totalSize)
+   * @returns {object} Object with `promise` and `cancel` function
+   */
+  uploadChunk(
+    sessionId,
+    chunkIndex,
+    chunk,
+    sessionData = null,
+    onProgress = null,
+  ) {
+    const formData = new FormData();
+    formData.append("session_id", sessionId);
+    formData.append("chunk_index", chunkIndex.toString());
+    formData.append("chunk", chunk);
+    if (sessionData) {
+      formData.append("session_data", sessionData);
+    }
+
+    const token = getToken();
+    const url = `${API_BASE_URL}/v2/files/upload/chunk`;
+
+    let xhr = null;
+    let isCancelled = false;
+
+    let resolvePromise, rejectPromise;
+    const promise = new Promise((resolve, reject) => {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+
+    xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress && !isCancelled) {
+        onProgress(e.loaded, e.total);
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (isCancelled) {
+        return;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        // Check if response is empty
+        if (!xhr.responseText || xhr.responseText.trim() === "") {
+          console.error("Empty response from server for chunk upload");
+          if (rejectPromise)
+            rejectPromise(new Error("Empty response from server"));
+          return;
+        }
+
+        try {
+          const data = JSON.parse(xhr.responseText);
+          // Validate response structure
+          if (!data || typeof data !== "object") {
+            console.error(
+              "Invalid chunk upload response:",
+              data,
+              "Raw:",
+              xhr.responseText,
+            );
+            if (rejectPromise)
+              rejectPromise(new Error("Invalid response format from server"));
+            return;
+          }
+          if (resolvePromise) {
+            resolvePromise(data);
+            // Clear references to prevent double resolution
+            resolvePromise = null;
+            rejectPromise = null;
+          }
+        } catch (e) {
+          console.error(
+            "Failed to parse chunk upload response:",
+            e,
+            "Raw response:",
+            xhr.responseText,
+          );
+          if (rejectPromise)
+            rejectPromise(new Error(`Invalid response format: ${e.message}`));
+        }
+      } else {
+        // Handle error responses
+        try {
+          if (xhr.responseText) {
+            const errorData = JSON.parse(xhr.responseText);
+            if (rejectPromise)
+              rejectPromise(
+                new Error(errorData.error || "Failed to upload chunk"),
+              );
+          } else {
+            if (rejectPromise) {
+              rejectPromise(
+                new Error(
+                  `Upload chunk failed with status ${xhr.status}: No response body`,
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          console.error(
+            "Failed to parse error response:",
+            e,
+            "Status:",
+            xhr.status,
+            "Response:",
+            xhr.responseText,
+          );
+          if (rejectPromise) {
+            rejectPromise(
+              new Error(
+                `Upload chunk failed: HTTP ${xhr.status} - ${xhr.statusText || "Unknown error"}`,
+              ),
+            );
+          }
+        }
+      }
+    });
+
+    xhr.addEventListener("error", (event) => {
+      if (!isCancelled) {
+        console.error("Network error during chunk upload:", event);
+        if (rejectPromise)
+          rejectPromise(new Error("Network error during chunk upload"));
+      }
+    });
+
+    xhr.addEventListener("timeout", () => {
+      if (!isCancelled) {
+        console.error("Timeout during chunk upload");
+        if (rejectPromise) rejectPromise(new Error("Upload timeout"));
+      }
+    });
+
+    xhr.addEventListener("abort", () => {
+      isCancelled = true;
+      if (rejectPromise) rejectPromise(new Error("Chunk upload cancelled"));
+    });
+
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.send(formData);
+
+    const cancel = () => {
+      if (xhr && xhr.readyState !== XMLHttpRequest.DONE) {
+        isCancelled = true;
+        xhr.abort();
+      }
+    };
+
+    return {
+      promise,
+      cancel,
+    };
+  },
+
+  /**
+   * Complete chunked upload and create File record.
+   *
+   * @param {string} sessionId - Upload session ID
+   * @param {string|null} encryptedHash - Optional encrypted hash (computed if not provided)
+   * @returns {Promise<object>} File info and FileKey
+   */
+  async completeUpload(sessionId, encryptedHash = null) {
+    const response = await apiRequest("/v2/files/upload/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: sessionId,
+        encrypted_hash: encryptedHash,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to complete upload");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Get upload session status.
+   *
+   * @param {string} sessionId - Upload session ID
+   * @returns {Promise<object>} Session status and progress
+   */
+  async getUploadStatus(sessionId) {
+    const response = await apiRequest(`/v2/files/upload/session/${sessionId}`, {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to get upload status");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Cancel upload session and delete temporary file.
+   *
+   * @param {string} sessionId - Upload session ID
+   * @returns {Promise<void>}
+   */
+  async cancelUpload(sessionId) {
+    const response = await apiRequest(`/v2/files/upload/session/${sessionId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to cancel upload");
+    }
+  },
 };
 
 /**
@@ -1922,9 +2183,6 @@ export { search } from "./search";
 
 // Export preview service
 export { preview } from "./preview";
-
-// Export versions service
-export { versions } from "./versions";
 
 // Export trash service
 export { trash } from "./trash";

@@ -10,7 +10,6 @@ from typing import Any
 from vault.database.schema import (
     File,
     FileKey,
-    FileVersion,
     User,
     VaultSpace,
     VaultSpaceType,
@@ -168,132 +167,10 @@ class AdvancedFileService:
             encrypted_key=encrypted_file_key,
         )
 
-        # Create initial version
-        version = FileVersion(
-            id=str(uuid.uuid4()),
-            file_id=file_obj.id,
-            version_number=1,
-            branch_name="main",
-            encrypted_hash=encrypted_hash,
-            storage_ref=storage_ref,
-            created_by=user_id,
-        )
-        db.session.add(version)
-        db.session.commit()
-
         # Index file for search (outside transaction to avoid blocking)
         self.search_service.index_file(file_obj)
 
         return file_obj, file_key
-
-    def create_version(
-        self,
-        file_id: str,
-        encrypted_hash: str,
-        storage_ref: str,
-        created_by: str,
-        branch_name: str = "main",
-        change_description: str | None = None,
-        parent_version_id: str | None = None,
-    ) -> FileVersion:
-        """Create a new version of a file.
-
-        Args:
-            file_id: File ID
-            encrypted_hash: Hash of encrypted version data
-            storage_ref: Storage reference
-            created_by: User ID creating version
-            branch_name: Branch name (default: "main")
-            change_description: Description of changes
-            parent_version_id: Parent version ID (for branching)
-
-        Returns:
-            FileVersion object
-        """
-        # Get latest version number for branch
-        latest_version = (
-            db.session.query(FileVersion)
-            .filter_by(file_id=file_id, branch_name=branch_name)
-            .order_by(FileVersion.version_number.desc())
-            .first()
-        )
-
-        version_number = latest_version.version_number + 1 if latest_version else 1
-
-        version = FileVersion(
-            id=str(uuid.uuid4()),
-            file_id=file_id,
-            version_number=version_number,
-            branch_name=branch_name,
-            encrypted_hash=encrypted_hash,
-            storage_ref=storage_ref,
-            created_by=created_by,
-            change_description=change_description,
-            parent_version_id=parent_version_id,
-        )
-        db.session.add(version)
-        db.session.commit()
-
-        return version
-
-    def get_file_versions(
-        self,
-        file_id: str,
-        branch_name: str | None = None,
-    ) -> list[FileVersion]:
-        """Get file versions.
-
-        Args:
-            file_id: File ID
-            branch_name: Optional branch name filter
-
-        Returns:
-            List of FileVersion objects
-        """
-        query = db.session.query(FileVersion).filter_by(file_id=file_id)
-        if branch_name:
-            query = query.filter_by(branch_name=branch_name)
-        return query.order_by(FileVersion.version_number.desc()).all()
-
-    def create_branch(
-        self,
-        file_id: str,
-        branch_name: str,
-        from_version_id: str,
-        created_by: str,
-    ) -> FileVersion:
-        """Create a new branch from a version.
-
-        Args:
-            file_id: File ID
-            branch_name: New branch name
-            from_version_id: Version ID to branch from
-            created_by: User ID creating branch
-
-        Returns:
-            FileVersion object (first version in new branch)
-        """
-        parent_version = (
-            db.session.query(FileVersion).filter_by(id=from_version_id).first()
-        )
-        if not parent_version:
-            raise ValueError(f"Version {from_version_id} not found")
-
-        # Create first version in new branch
-        version = FileVersion(
-            id=str(uuid.uuid4()),
-            file_id=file_id,
-            version_number=1,
-            branch_name=branch_name,
-            encrypted_hash=parent_version.encrypted_hash,
-            storage_ref=parent_version.storage_ref,
-            created_by=created_by,
-            parent_version_id=from_version_id,
-        )
-        db.session.add(version)
-        db.session.commit()
-
-        return version
 
     def delete_file(
         self,
@@ -326,11 +203,6 @@ class AdvancedFileService:
         file_keys = self.encryption_service.get_all_file_keys(file_id)
         for fk in file_keys:
             db.session.delete(fk)
-
-        # Delete all FileVersions
-        versions = db.session.query(FileVersion).filter_by(file_id=file_id).all()
-        for version in versions:
-            db.session.delete(version)
 
         # Store parent_id and vaultspace_id before deletion for cache invalidation
         parent_id = file_obj.parent_id
@@ -464,11 +336,6 @@ class AdvancedFileService:
         file_keys = self.encryption_service.get_all_file_keys(file_id)
         for fk in file_keys:
             db.session.delete(fk)
-
-        # Delete all FileVersions
-        versions = db.session.query(FileVersion).filter_by(file_id=file_id).all()
-        for version in versions:
-            db.session.delete(version)
 
         # Hard delete file
         db.session.delete(file_obj)

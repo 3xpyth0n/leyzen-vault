@@ -36,7 +36,6 @@ from .blueprints.sso_api import sso_api_bp  # noqa: E402
 from .blueprints.thumbnail_api import thumbnail_api_bp  # noqa: E402
 from .blueprints.trash_api import trash_api_bp  # noqa: E402
 from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
-from .blueprints.versions_api import versions_api_bp  # noqa: E402
 from .config import (
     VaultSettings,
     get_postgres_url,
@@ -216,6 +215,9 @@ def create_app(
             postgres_url = get_postgres_url(env_values)
             app.config["SQLALCHEMY_DATABASE_URI"] = postgres_url
             app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+            app.config["SQLALCHEMY_COMMIT_ON_TEARDOWN"] = (
+                False  # Explicitly disable auto-commit on teardown
+            )
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
 
@@ -409,10 +411,17 @@ def create_app(
     )  # Legacy auth (session-based, for CAPTCHA/logout until fully migrated)
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
+
+    # Debug: Log upload routes registration
+    import logging
+
+    logger = logging.getLogger(__name__)
+    upload_routes = [r.rule for r in app.url_map.iter_rules() if "upload" in r.rule]
+    if upload_routes:
+        logger.info(f"Registered upload routes: {upload_routes}")
     app.register_blueprint(internal_api_bp)  # Internal API for orchestrator
     app.register_blueprint(search_api_bp)  # Search API
     app.register_blueprint(sso_api_bp)  # SSO API (SAML, OAuth2, OIDC)
-    app.register_blueprint(versions_api_bp)  # Versions API v2
     app.register_blueprint(trash_api_bp)  # Trash API v2
     app.register_blueprint(quota_api_v2_bp)  # Quota API v2
     app.register_blueprint(sharing_api_bp)  # Advanced Sharing API v2
@@ -470,6 +479,18 @@ def create_app(
         # Import secrets here to avoid importing at module level if not needed
         import secrets
         from flask import g
+
+        # Debug: Log API upload requests to see if they reach Flask
+        from flask import request
+
+        if request.path.startswith("/api/") and "upload" in request.path:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"API upload request received: {request.method} {request.path}, "
+                f"Content-Length: {request.headers.get('Content-Length', 'unknown')}"
+            )
 
         # Generate a secure random nonce (base64url encoded, 16 bytes = 128 bits)
         g.csp_nonce = secrets.token_urlsafe(16)
@@ -657,7 +678,13 @@ def create_app(
                 file=sys.stderr,
             )
             current_app.logger.error(
-                f"404 for API endpoint: {request.path} {request.method}"
+                f"404 for API endpoint: {request.path} {request.method}",
+                extra={
+                    "path": request.path,
+                    "method": request.method,
+                    "full_url": request.url,
+                    "headers": dict(request.headers),
+                },
             )
             # Check if route exists in url_map
             matching_rules = [

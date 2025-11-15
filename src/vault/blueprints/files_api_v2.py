@@ -1,11 +1,11 @@
-"""Advanced file API routes with versioning and collaboration."""
+"""Advanced file API routes."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, current_app, jsonify, request
 
-from vault.database.schema import File, db
+from vault.database.schema import File, UploadSession, db
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.encryption_service import EncryptionService
@@ -1268,3 +1268,512 @@ def prepare_extract():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/upload/session", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def create_upload_session():
+    """Create an upload session for chunked file uploads.
+
+    Request body:
+        {
+            "vaultspace_id": "vaultspace-uuid",
+            "original_name": "file.txt",
+            "total_size": 10485760,  # Expected total file size in bytes
+            "chunk_size": 5242880,  # Chunk size in bytes (default 5MB)
+            "encrypted_file_key": "encrypted-key",
+            "parent_id": "parent-folder-uuid" (optional),
+            "encrypted_metadata": "encrypted-metadata" (optional),
+            "mime_type": "text/plain" (optional)
+        }
+
+    Returns:
+        JSON with session_id and file_id
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+    vaultspace_id = data.get("vaultspace_id")
+    original_name = data.get("original_name")
+    total_size = data.get("total_size")
+    chunk_size = data.get("chunk_size", 5 * 1024 * 1024)  # Default 5MB
+    encrypted_file_key = data.get("encrypted_file_key")
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    if not original_name:
+        return jsonify({"error": "original_name is required"}), 400
+
+    if not total_size or not isinstance(total_size, int) or total_size <= 0:
+        return jsonify({"error": "total_size must be a positive integer"}), 400
+
+    if not encrypted_file_key:
+        return jsonify({"error": "encrypted_file_key is required"}), 400
+
+    # Validate encrypted key format
+    is_valid, error_msg = _validate_encrypted_key(encrypted_file_key)
+    if not is_valid:
+        return jsonify({"error": f"Invalid encrypted_file_key: {error_msg}"}), 400
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+    quota_service = _get_quota_service()
+
+    try:
+        # Verify user has access to VaultSpace
+        from vault.services.vaultspace_service import VaultSpaceService
+
+        vaultspace_service = VaultSpaceService()
+        vaultspace = vaultspace_service.get_vaultspace(vaultspace_id)
+        if not vaultspace:
+            return jsonify({"error": "VaultSpace not found"}), 404
+
+        if vaultspace.owner_user_id != user.id:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Check storage quota
+        # Estimate encrypted size (add ~33% overhead for AES-GCM)
+        estimated_encrypted_size = int(total_size * 1.33)
+        has_storage_quota, storage_quota_info = quota_service.check_user_quota(
+            user.id, estimated_encrypted_size
+        )
+        if not has_storage_quota:
+            return (
+                jsonify(
+                    {
+                        "error": "Storage quota exceeded",
+                        "quota_info": storage_quota_info,
+                    }
+                ),
+                403,
+            )
+
+        # Check file quota
+        has_file_quota, file_quota_info = quota_service.check_user_file_quota(
+            user.id, additional_files=1
+        )
+        if not has_file_quota:
+            return (
+                jsonify(
+                    {
+                        "error": "File quota exceeded",
+                        "quota_info": file_quota_info,
+                    }
+                ),
+                403,
+            )
+
+        # Generate file ID upfront
+        file_id = storage.generate_file_id()
+
+        # Calculate total chunks
+        total_chunks = (total_size + chunk_size - 1) // chunk_size  # Ceiling division
+
+        # Set expiration to 24 hours from now
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+
+        # Create upload session
+        session = UploadSession(
+            user_id=user.id,
+            vaultspace_id=vaultspace_id,
+            file_id=file_id,
+            original_name=original_name,
+            total_size=total_size,
+            uploaded_size=0,
+            chunk_size=chunk_size,
+            total_chunks=total_chunks,
+            uploaded_chunks=0,
+            status="pending",
+            encrypted_file_key=encrypted_file_key,
+            parent_id=data.get("parent_id"),
+            encrypted_metadata=data.get("encrypted_metadata"),
+            mime_type=data.get("mime_type"),
+            expires_at=expires_at,
+        )
+
+        # Add session to database and commit
+        db.session.add(session)
+        db.session.flush()  # Flush to get the ID without committing
+
+        try:
+            db.session.commit()
+        except Exception as commit_error:
+            db.session.rollback()
+            raise
+
+        current_app.logger.info(
+            f"create_upload_session: Created session_id={session.id}, user_id={user.id}, "
+            f"file_id={file_id}, total_chunks={total_chunks}"
+        )
+
+        # Return session info including all necessary data to recreate session if needed
+        return (
+            jsonify(
+                {
+                    "session_id": session.id,
+                    "file_id": file_id,
+                    "total_chunks": total_chunks,
+                    "chunk_size": chunk_size,
+                    "vaultspace_id": vaultspace_id,
+                    "original_name": original_name,
+                    "total_size": total_size,
+                    "encrypted_file_key": encrypted_file_key,
+                    "parent_id": data.get("parent_id"),
+                    "mime_type": data.get("mime_type"),
+                    "expires_at": expires_at.isoformat(),
+                }
+            ),
+            201,
+        )
+    except ValueError as e:
+        db.session.rollback()  # Ensure rollback on error
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/upload/chunk", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def upload_chunk():
+    """Upload a chunk for chunked file uploads.
+
+    Request form data:
+        - session_id: Upload session ID (required)
+        - chunk_index: Zero-based chunk index (required)
+        - chunk: Chunk data (binary, required)
+
+    Returns:
+        JSON with progress info
+    """
+    user = get_current_user()
+    if not user:
+        current_app.logger.warning("upload_chunk: Authentication required")
+        return jsonify({"error": "Authentication required"}), 401
+
+    session_id = request.form.get("session_id")
+
+    # Session data from client for validation and progress tracking
+    session_data_from_client = request.form.get("session_data")
+
+    chunk_index_str = request.form.get("chunk_index")
+
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+
+    if chunk_index_str is None:
+        return jsonify({"error": "chunk_index is required"}), 400
+
+    try:
+        chunk_index = int(chunk_index_str)
+        if chunk_index < 0:
+            return jsonify({"error": "chunk_index must be non-negative"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "chunk_index must be an integer"}), 400
+
+    if "chunk" not in request.files:
+        return jsonify({"error": "chunk is required"}), 400
+
+    chunk_file = request.files["chunk"]
+    if chunk_file.filename == "":
+        return jsonify({"error": "chunk is required"}), 400
+
+    # Read chunk data
+    chunk_data = chunk_file.read()
+
+    storage = _get_storage()
+
+    try:
+        # File-based progress tracking: determine progress from the actual file on disk
+        # This makes the system resilient to DB rollback issues between workers
+
+        if not session_data_from_client:
+            return jsonify({"error": "session_data is required for chunk upload"}), 400
+
+        import json
+
+        client_session_data = json.loads(session_data_from_client)
+
+        # Validate required fields from client
+        total_size = client_session_data.get("total_size")
+        chunk_size = client_session_data.get("chunk_size", 5 * 1024 * 1024)
+        total_chunks = client_session_data.get("total_chunks")
+
+        if not all([total_size, chunk_size, total_chunks]):
+            return (
+                jsonify({"error": "Invalid session_data: missing required fields"}),
+                400,
+            )
+
+        # Determine actual progress by checking temp file size on disk
+        temp_file_path = storage.get_temp_file_path(session_id)
+        uploaded_size = 0
+        uploaded_chunks = 0
+
+        if temp_file_path.exists():
+            uploaded_size = temp_file_path.stat().st_size
+            # Calculate uploaded chunks from file size
+            uploaded_chunks = uploaded_size // chunk_size
+
+        # Validate chunk_index matches expected next chunk based on file size
+        expected_chunk_index = uploaded_chunks
+        if chunk_index != expected_chunk_index:
+            return (
+                jsonify(
+                    {
+                        "error": f"Expected chunk {expected_chunk_index}, got chunk {chunk_index}",
+                        "expected_chunk_index": expected_chunk_index,
+                    }
+                ),
+                400,
+            )
+
+        # Validate chunk size (except for last chunk)
+        is_last_chunk = chunk_index == total_chunks - 1
+        if not is_last_chunk and len(chunk_data) != chunk_size:
+            return (
+                jsonify(
+                    {
+                        "error": f"Chunk size mismatch: expected {chunk_size}, got {len(chunk_data)}",
+                    }
+                ),
+                400,
+            )
+
+        # Save chunk to temporary file
+        storage.save_chunk(session_id, chunk_index, chunk_data)
+
+        # Re-check file size after writing to get actual progress
+        if temp_file_path.exists():
+            uploaded_size = temp_file_path.stat().st_size
+            uploaded_chunks = chunk_index + 1
+        else:
+            uploaded_size = len(chunk_data)
+            uploaded_chunks = chunk_index + 1
+
+        # Check if all chunks are uploaded
+        # We've uploaded chunk_index, so if chunk_index is the last chunk (total_chunks - 1), we're complete
+        is_complete = chunk_index >= total_chunks - 1
+
+        response_data = {
+            "uploaded_size": uploaded_size,
+            "total_size": total_size,
+            "uploaded_chunks": uploaded_chunks,
+            "total_chunks": total_chunks,
+            "next_chunk_index": uploaded_chunks if not is_complete else None,
+            "is_complete": is_complete,
+        }
+        return (
+            jsonify(response_data),
+            200,
+        )
+    except ValueError as e:
+        current_app.logger.error(f"ValueError in upload_chunk: {e}")
+        return jsonify({"error": str(e)}), 400
+    except IOError as e:
+        current_app.logger.error(
+            f"IOError: Failed to save chunk {chunk_index} for session {session_id}: {e}"
+        )
+        return jsonify({"error": f"Failed to save chunk: {str(e)}"}), 500
+    except Exception as e:
+        current_app.logger.error(
+            f"Unexpected error in upload_chunk for session {session_id}, chunk {chunk_index}: {e}",
+            exc_info=True,
+        )
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+@files_api_bp.route("/upload/complete", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def complete_upload():
+    """Complete chunked upload and create File record.
+
+    Request body:
+        {
+            "session_id": "session-uuid",
+            "encrypted_hash": "sha256-hash" (optional, computed if not provided)
+        }
+
+    Returns:
+        JSON with file info and FileKey
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    session_id = data.get("session_id")
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+
+    encrypted_hash = data.get("encrypted_hash")  # Optional, computed if not provided
+
+    file_service = _get_file_service()
+    storage = _get_storage()
+
+    try:
+        # Get session
+        session = db.session.query(UploadSession).filter_by(id=session_id).first()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        # Verify session belongs to user
+        if session.user_id != user.id:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Check if session is expired
+        if session.is_expired() or session.status == "expired":
+            session.status = "expired"
+            db.session.commit()
+            return jsonify({"error": "Session expired"}), 410
+
+        # Verify all chunks are uploaded by checking the actual file on disk
+        # Don't rely on session.uploaded_chunks as it may not be updated due to rollback issues
+        temp_file_path = storage.get_temp_file_path(session_id)
+        if not temp_file_path.exists():
+            return jsonify({"error": "Temporary file not found"}), 404
+
+        actual_file_size = temp_file_path.stat().st_size
+
+        # Verify uploaded size matches total size (within tolerance for last chunk)
+        if abs(actual_file_size - session.total_size) > 1024:  # 1KB tolerance
+            return (
+                jsonify(
+                    {
+                        "error": f"Size mismatch: uploaded {actual_file_size}, expected {session.total_size}",
+                    }
+                ),
+                400,
+            )
+
+        # Complete chunked upload and move to final location
+        # This calculates hash if not provided
+        try:
+            file_path = storage.complete_chunked_upload(
+                session_id, session.file_id, encrypted_hash
+            )
+
+            # Get actual hash for database
+            import hashlib
+
+            encrypted_data = storage.read_file(session.file_id)
+            final_hash = hashlib.sha256(encrypted_data).hexdigest()
+
+            # Create File record
+            file_obj, file_key = file_service.upload_file(
+                vaultspace_id=session.vaultspace_id,
+                user_id=user.id,
+                original_name=session.original_name,
+                encrypted_data=encrypted_data,
+                encrypted_hash=final_hash,
+                storage_ref=session.file_id,
+                encrypted_file_key=session.encrypted_file_key,
+                mime_type=session.mime_type,
+                parent_id=session.parent_id,
+                encrypted_metadata=session.encrypted_metadata,
+            )
+
+            # Mark session as completed and delete
+            session.status = "completed"
+            db.session.delete(session)
+            db.session.commit()
+
+            return (
+                jsonify(
+                    {
+                        "file": file_obj.to_dict(),
+                        "file_key": file_key.to_dict(),
+                    }
+                ),
+                201,
+            )
+        except FileNotFoundError as e:
+            return jsonify({"error": f"Temporary file not found: {str(e)}"}), 404
+        except IOError as e:
+            # Mark session as failed for debugging
+            session.status = "failed"
+            db.session.commit()
+            current_app.logger.error(
+                f"Failed to complete upload for session {session_id}: {e}"
+            )
+            return jsonify({"error": f"Failed to complete upload: {str(e)}"}), 500
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/upload/session/<session_id>", methods=["GET"])
+@jwt_required
+def get_upload_status(session_id: str):
+    """Get upload session status.
+
+    Returns:
+        JSON with session status and progress
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    try:
+        session = db.session.query(UploadSession).filter_by(id=session_id).first()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        # Verify session belongs to user
+        if session.user_id != user.id:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Check if session is expired
+        if session.is_expired() or session.status == "expired":
+            session.status = "expired"
+            db.session.commit()
+
+        return jsonify(session.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@files_api_bp.route("/upload/session/<session_id>", methods=["DELETE"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def cancel_upload(session_id: str):
+    """Cancel upload session and delete temporary file.
+
+    Returns:
+        JSON with success message
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    storage = _get_storage()
+
+    try:
+        session = db.session.query(UploadSession).filter_by(id=session_id).first()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        # Verify session belongs to user
+        if session.user_id != user.id:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Delete temporary file
+        storage.delete_temp_file(session_id)
+
+        # Delete session
+        db.session.delete(session)
+        db.session.commit()
+
+        return jsonify({"message": "Upload session cancelled successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

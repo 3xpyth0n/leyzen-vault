@@ -255,16 +255,139 @@ class KeyboardShortcuts {
   }
 
   /**
+   * Get item objects from selected IDs
+   */
+  async getSelectedItems() {
+    if (!window.selectionManager) {
+      return [];
+    }
+
+    const selectedIds = window.selectionManager.getSelectedIds();
+    if (selectedIds.length === 0) {
+      return [];
+    }
+
+    const items = [];
+    const filesList = window.filesList || [];
+    const foldersList = window.foldersList || [];
+
+    for (const id of selectedIds) {
+      // Try to find in filesList
+      let item =
+        filesList.find((f) => f.id === id || f.file_id === id) ||
+        foldersList.find((f) => f.id === id || f.folder_id === id);
+
+      // If not found in lists, try to get from DOM
+      if (!item) {
+        const fileElement = document.querySelector(
+          `[data-file-id="${id}"], [data-id="${id}"]`,
+        );
+        const folderElement = document.querySelector(
+          `[data-folder-id="${id}"], [data-id="${id}"]`,
+        );
+
+        if (fileElement) {
+          item = {
+            id: id,
+            file_id: id,
+            original_name:
+              fileElement.dataset.name ||
+              fileElement.querySelector(".file-name, .file-row-name")
+                ?.textContent ||
+              "Unknown",
+            mime_type:
+              fileElement.dataset.mimeType || "application/octet-stream",
+            vaultspace_id:
+              fileElement.dataset.vaultspaceId || window.currentVaultspaceId,
+            parent_id: fileElement.dataset.parentId || null,
+          };
+        } else if (folderElement) {
+          item = {
+            id: id,
+            folder_id: id,
+            original_name:
+              folderElement.dataset.name ||
+              folderElement.querySelector(".folder-name, .folder-row-name")
+                ?.textContent ||
+              "Unknown",
+            mime_type: "application/x-directory",
+            vaultspace_id:
+              folderElement.dataset.vaultspaceId || window.currentVaultspaceId,
+            parent_id: folderElement.dataset.parentId || null,
+          };
+        }
+      }
+
+      if (item) {
+        items.push(item);
+      }
+    }
+
+    return items;
+  }
+
+  /**
    * Copy selected items
    */
-  copy() {
-    // TODO: Implement copy to clipboard
-    if (window.selectionManager) {
-      const selectedIds = window.selectionManager.getSelectedIds();
-      if (selectedIds.length > 0) {
+  async copy() {
+    if (!window.selectionManager) {
+      return;
+    }
+
+    const selectedIds = window.selectionManager.getSelectedIds();
+    if (selectedIds.length === 0) {
+      if (window.Notifications) {
+        window.Notifications.info("No items selected");
+      }
+      return;
+    }
+
+    try {
+      // Get item objects
+      const items = await this.getSelectedItems();
+      if (items.length === 0) {
         if (window.Notifications) {
-          window.Notifications.info("Copy functionality coming soon");
+          window.Notifications.error("Could not find selected items");
         }
+        return;
+      }
+
+      // Load clipboard manager
+      let clipboardManager;
+      try {
+        const clipboardModule = await import(
+          window.location.origin + "/static/src/utils/clipboard.js"
+        );
+        clipboardManager = clipboardModule.clipboardManager;
+      } catch (e1) {
+        try {
+          const clipboardModule2 = await import("../src/utils/clipboard.js");
+          clipboardManager = clipboardModule2.clipboardManager;
+        } catch (e2) {
+          console.error("Failed to load clipboard manager:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Clipboard manager not available. Please refresh the page.",
+            );
+          }
+          return;
+        }
+      }
+
+      // Copy to clipboard
+      clipboardManager.copy(items);
+
+      if (window.Notifications) {
+        window.Notifications.success(
+          `${items.length} item${items.length > 1 ? "s" : ""} copied`,
+        );
+      }
+    } catch (error) {
+      console.error("Copy error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to copy: ${error.message || "Unknown error"}`,
+        );
       }
     }
   }
@@ -272,14 +395,65 @@ class KeyboardShortcuts {
   /**
    * Cut selected items
    */
-  cut() {
-    // TODO: Implement cut
-    if (window.selectionManager) {
-      const selectedIds = window.selectionManager.getSelectedIds();
-      if (selectedIds.length > 0) {
+  async cut() {
+    if (!window.selectionManager) {
+      return;
+    }
+
+    const selectedIds = window.selectionManager.getSelectedIds();
+    if (selectedIds.length === 0) {
+      if (window.Notifications) {
+        window.Notifications.info("No items selected");
+      }
+      return;
+    }
+
+    try {
+      // Get item objects
+      const items = await this.getSelectedItems();
+      if (items.length === 0) {
         if (window.Notifications) {
-          window.Notifications.info("Cut functionality coming soon");
+          window.Notifications.error("Could not find selected items");
         }
+        return;
+      }
+
+      // Load clipboard manager
+      let clipboardManager;
+      try {
+        const clipboardModule = await import(
+          window.location.origin + "/static/src/utils/clipboard.js"
+        );
+        clipboardManager = clipboardModule.clipboardManager;
+      } catch (e1) {
+        try {
+          const clipboardModule2 = await import("../src/utils/clipboard.js");
+          clipboardManager = clipboardModule2.clipboardManager;
+        } catch (e2) {
+          console.error("Failed to load clipboard manager:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Clipboard manager not available. Please refresh the page.",
+            );
+          }
+          return;
+        }
+      }
+
+      // Cut to clipboard
+      clipboardManager.cut(items);
+
+      if (window.Notifications) {
+        window.Notifications.success(
+          `${items.length} item${items.length > 1 ? "s" : ""} cut`,
+        );
+      }
+    } catch (error) {
+      console.error("Cut error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to cut: ${error.message || "Unknown error"}`,
+        );
       }
     }
   }
@@ -287,10 +461,178 @@ class KeyboardShortcuts {
   /**
    * Paste items
    */
-  paste() {
-    // TODO: Implement paste
-    if (window.Notifications) {
-      window.Notifications.info("Paste functionality coming soon");
+  async paste() {
+    try {
+      // Load clipboard manager
+      let clipboardManager;
+      try {
+        const clipboardModule = await import(
+          window.location.origin + "/static/src/utils/clipboard.js"
+        );
+        clipboardManager = clipboardModule.clipboardManager;
+      } catch (e1) {
+        try {
+          const clipboardModule2 = await import("../src/utils/clipboard.js");
+          clipboardManager = clipboardModule2.clipboardManager;
+        } catch (e2) {
+          console.error("Failed to load clipboard manager:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Clipboard manager not available. Please refresh the page.",
+            );
+          }
+          return;
+        }
+      }
+
+      // Check if clipboard has items
+      if (!clipboardManager.hasItems()) {
+        if (window.Notifications) {
+          window.Notifications.info("Clipboard is empty");
+        }
+        return;
+      }
+
+      const clipboardItems = clipboardManager.getItems();
+      if (clipboardItems.length === 0) {
+        if (window.Notifications) {
+          window.Notifications.info("Clipboard is empty");
+        }
+        return;
+      }
+
+      // Get vaultspace ID
+      const vaultspaceId =
+        clipboardItems[0].vaultspaceId ||
+        window.currentVaultspaceId ||
+        (() => {
+          const match = window.location.pathname.match(/\/vaultspace\/([^/]+)/);
+          return match
+            ? match[1]
+            : localStorage.getItem("current_vaultspace_id");
+        })();
+
+      if (!vaultspaceId) {
+        if (window.Notifications) {
+          window.Notifications.error("Cannot paste: VaultSpace ID not found");
+        }
+        return;
+      }
+
+      // Load files API
+      let files;
+      try {
+        const apiModule = await import(
+          window.location.origin + "/static/src/services/api.js"
+        );
+        files = apiModule.files;
+      } catch (e1) {
+        try {
+          const apiModule2 = await import("../src/services/api.js");
+          files = apiModule2.files;
+        } catch (e2) {
+          console.error("Failed to load files API:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Files API not available. Please refresh the page.",
+            );
+          }
+          return;
+        }
+      }
+
+      // Load folder picker
+      const folders = window.foldersList || [];
+      const currentFolderId = window.currentFolderId || null;
+      let folderPicker = window.folderPicker;
+      if (!folderPicker) {
+        try {
+          const folderPickerModule = await import(
+            window.location.origin + "/static/src/utils/FolderPicker.js"
+          );
+          folderPicker = folderPickerModule.folderPicker;
+          window.folderPicker = folderPicker;
+        } catch (e1) {
+          try {
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
+            folderPicker = folderPickerModule2.folderPicker;
+            window.folderPicker = folderPicker;
+          } catch (e2) {
+            console.error("Failed to load folder picker:", e1, e2);
+            if (window.Notifications) {
+              window.Notifications.error(
+                "Folder picker not available. Please refresh the page.",
+              );
+            }
+            return;
+          }
+        }
+      }
+
+      // Show folder picker to select destination
+      const selectedFolderId = await folderPicker.show(
+        folders,
+        currentFolderId,
+        vaultspaceId,
+        null,
+      );
+
+      if (selectedFolderId === undefined) {
+        // User cancelled
+        return;
+      }
+
+      const isCut = clipboardManager.isCut();
+      const itemIds = clipboardItems.map((item) => item.id);
+
+      if (isCut) {
+        // Move items
+        await files.batchMove(itemIds, selectedFolderId || null);
+
+        if (window.Notifications) {
+          window.Notifications.success(
+            `${clipboardItems.length} item${clipboardItems.length > 1 ? "s" : ""} moved`,
+          );
+        }
+
+        // Clear clipboard after move
+        clipboardManager.clear();
+      } else {
+        // Copy items
+        const copyPromises = clipboardItems.map((item) =>
+          files.copy(item.id, {
+            newParentId: selectedFolderId || null,
+          }),
+        );
+        await Promise.all(copyPromises);
+
+        if (window.Notifications) {
+          window.Notifications.success(
+            `${clipboardItems.length} item${clipboardItems.length > 1 ? "s" : ""} copied`,
+          );
+        }
+      }
+
+      // Reload files
+      if (window.loadFiles) {
+        await window.loadFiles();
+      } else if (window.Folders && window.Folders.loadFolderContents) {
+        await window.Folders.loadFolderContents(
+          selectedFolderId || currentFolderId,
+        );
+      } else {
+        // Fallback: reload page
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("Paste error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to paste: ${error.message || "Unknown error"}`,
+        );
+      }
     }
   }
 

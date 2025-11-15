@@ -292,7 +292,7 @@ class AuthService:
 
         # Hard delete: permanently delete user and all associated data
         # First, delete all physical files owned by the user
-        from vault.database.schema import File, FileVersion
+        from vault.database.schema import File
         from flask import current_app
         from vault.services.thumbnail_service import ThumbnailService
 
@@ -328,22 +328,6 @@ class AuthService:
                     f"Failed to delete thumbnails for file {file_obj.id}: {e}"
                 )
 
-            # Delete all file versions and their storage
-            file_versions = (
-                db.session.query(FileVersion).filter_by(file_id=file_obj.id).all()
-            )
-            for version in file_versions:
-                if storage and version.storage_ref:
-                    try:
-                        storage.delete_file(version.storage_ref)
-                    except Exception as e:
-                        import logging
-
-                        logger = logging.getLogger(__name__)
-                        logger.warning(
-                            f"Failed to delete version file {version.storage_ref} from storage: {e}"
-                        )
-
         # Delete user from database
         # Cascades will automatically delete:
         # - VaultSpaces (owner_user_id)
@@ -362,7 +346,6 @@ class AuthService:
         # - PublicShareLinks (created_by)
         # - ShareLinks (via Files)
         # - AuditLogEntry (via file_id, but file_id is SET NULL, so logs remain)
-        # - FileVersion (created_by is SET NULL, so versions remain but orphaned)
 
         db.session.delete(user)
         db.session.commit()

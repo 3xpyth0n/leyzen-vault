@@ -1430,36 +1430,181 @@ export default {
             combined.set(new Uint8Array(encrypted), iv.length);
             const encryptedDataBlob = new Blob([combined]);
 
+            // Check if file is large enough for chunked upload (5MB threshold)
+            const CHUNK_SIZE_THRESHOLD = 5 * 1024 * 1024; // 5MB
+            const encryptedSize = encryptedDataBlob.size;
+
             // Calculate base progress for files already uploaded
             const baseProgress = (uploadedCount / totalFiles) * 100;
             const fileProgressWeight = (1 / totalFiles) * 100;
 
-            // Upload to server with progress callback
-            const uploadResult = files.upload(
-              {
-                file: encryptedDataBlob,
-                originalName: file.name,
+            let result;
+
+            // Use chunked upload for large files
+            if (encryptedSize > CHUNK_SIZE_THRESHOLD) {
+              // Create upload session
+              const sessionInfo = await files.createUploadSession({
                 vaultspaceId: this.$route.params.id,
+                originalName: file.name,
+                totalSize: encryptedSize,
+                chunkSize: CHUNK_SIZE_THRESHOLD,
                 encryptedFileKey: encryptedFileKey,
                 parentId: this.currentParentId,
-              },
-              (loaded, total, speed, timeRemaining) => {
-                // Only update progress if not cancelled
-                if (!this.uploadCancelled) {
-                  // Calculate overall progress across all files
-                  const fileProgress = (loaded / total) * fileProgressWeight;
-                  this.uploadProgress = Math.round(baseProgress + fileProgress);
-                  this.uploadSpeed = speed || 0;
-                  this.uploadTimeRemaining = timeRemaining;
+                mimeType: file.type || null,
+              });
+
+              const sessionId = sessionInfo.session_id;
+              const chunkSize = sessionInfo.chunk_size;
+              const totalChunks = sessionInfo.total_chunks;
+
+              // Store session data to send with chunks (workaround for rollback issue)
+              const sessionDataForChunks = JSON.stringify({
+                vaultspace_id: sessionInfo.vaultspace_id,
+                file_id: sessionInfo.file_id,
+                original_name: sessionInfo.original_name,
+                total_size: sessionInfo.total_size,
+                chunk_size: sessionInfo.chunk_size,
+                total_chunks: sessionInfo.total_chunks,
+                encrypted_file_key: sessionInfo.encrypted_file_key,
+                parent_id: sessionInfo.parent_id,
+                mime_type: sessionInfo.mime_type,
+                expires_at: sessionInfo.expires_at,
+              });
+
+              // Split encrypted data into chunks
+              const chunks = [];
+              for (let i = 0; i < encryptedSize; i += chunkSize) {
+                chunks.push(encryptedDataBlob.slice(i, i + chunkSize));
+              }
+
+              // Upload chunks sequentially with progress tracking
+              for (
+                let chunkIndex = 0;
+                chunkIndex < chunks.length;
+                chunkIndex++
+              ) {
+                // Check if upload was cancelled
+                if (this.uploadCancelled) {
+                  // Cancel upload session
+                  try {
+                    await files.cancelUpload(sessionId);
+                  } catch (e) {
+                    console.warn("Failed to cancel upload session:", e);
+                  }
+                  throw new Error("Upload cancelled");
                 }
-              },
-            );
 
-            // Store cancel function
-            this.uploadCancelFunctions.push(uploadResult.cancel);
+                const chunk = chunks[chunkIndex];
+                const chunkProgressBase =
+                  (chunkIndex / chunks.length) * fileProgressWeight;
 
-            // Wait for upload to complete
-            const result = await uploadResult.promise;
+                try {
+                  // Upload chunk with progress tracking
+                  const chunkResult = files.uploadChunk(
+                    sessionId,
+                    chunkIndex,
+                    chunk,
+                    sessionDataForChunks,
+                    (loaded, total) => {
+                      if (!this.uploadCancelled) {
+                        const chunkProgress =
+                          (loaded / total) *
+                          (fileProgressWeight / chunks.length);
+                        this.uploadProgress = Math.round(
+                          baseProgress + chunkProgressBase + chunkProgress,
+                        );
+                      }
+                    },
+                  );
+
+                  // Store cancel function
+                  this.uploadCancelFunctions.push(chunkResult.cancel);
+
+                  // Wait for chunk upload to complete
+                  const chunkResponse = await chunkResult.promise;
+
+                  // Check if response is valid
+                  if (!chunkResponse || typeof chunkResponse !== "object") {
+                    console.error(
+                      "Invalid chunk response:",
+                      chunkResponse,
+                      "Type:",
+                      typeof chunkResponse,
+                    );
+                    throw new Error("Invalid response from server");
+                  }
+
+                  // Update progress
+                  if (!this.uploadCancelled) {
+                    const uploadedSize =
+                      chunkResponse.uploaded_size !== undefined
+                        ? chunkResponse.uploaded_size
+                        : 0;
+                    const totalSize =
+                      chunkResponse.total_size !== undefined
+                        ? chunkResponse.total_size
+                        : encryptedSize;
+                    const fileProgress =
+                      (uploadedSize / totalSize) * fileProgressWeight;
+                    this.uploadProgress = Math.round(
+                      baseProgress + fileProgress,
+                    );
+                  }
+
+                  // Check if all chunks are uploaded
+                  if (chunkResponse.is_complete === true) {
+                    break;
+                  }
+                } catch (chunkError) {
+                  console.error(
+                    `Failed to upload chunk ${chunkIndex}:`,
+                    chunkError,
+                  );
+                  // Cancel upload session on error
+                  try {
+                    await files.cancelUpload(sessionId);
+                  } catch (cancelError) {
+                    console.warn(
+                      "Failed to cancel upload session:",
+                      cancelError,
+                    );
+                  }
+                  throw chunkError;
+                }
+              }
+
+              // Complete upload
+              result = await files.completeUpload(sessionId);
+            } else {
+              // Use regular upload for small files
+              const uploadResult = files.upload(
+                {
+                  file: encryptedDataBlob,
+                  originalName: file.name,
+                  vaultspaceId: this.$route.params.id,
+                  encryptedFileKey: encryptedFileKey,
+                  parentId: this.currentParentId,
+                },
+                (loaded, total, speed, timeRemaining) => {
+                  // Only update progress if not cancelled
+                  if (!this.uploadCancelled) {
+                    // Calculate overall progress across all files
+                    const fileProgress = (loaded / total) * fileProgressWeight;
+                    this.uploadProgress = Math.round(
+                      baseProgress + fileProgress,
+                    );
+                    this.uploadSpeed = speed || 0;
+                    this.uploadTimeRemaining = timeRemaining;
+                  }
+                },
+              );
+
+              // Store cancel function
+              this.uploadCancelFunctions.push(uploadResult.cancel);
+
+              // Wait for upload to complete
+              result = await uploadResult.promise;
+            }
 
             // Check if upload was cancelled
             if (this.uploadCancelled) {

@@ -368,3 +368,155 @@ class FileStorage:
             return False, "File not found"
         except Exception as exc:
             return False, f"Error during integrity check: {exc}"
+
+    def get_temp_file_path(self, session_id: str) -> Path:
+        """Get the path to a temporary file for a session.
+
+        Args:
+            session_id: Upload session ID
+
+        Returns:
+            Path to the temporary file
+        """
+        uploads_dir = self.storage_dir / "uploads" / "sessions"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        return uploads_dir / session_id
+
+    def save_chunk(self, session_id: str, chunk_index: int, chunk_data: bytes) -> None:
+        """Append chunk to temporary file for chunked upload.
+
+        Args:
+            session_id: Upload session ID
+            chunk_index: Zero-based chunk index (for validation)
+            chunk_data: Chunk data to append
+
+        Raises:
+            IOError: If chunk write fails
+            ValueError: If chunk_index doesn't match expected next chunk
+        """
+        import os
+
+        temp_file_path = self.get_temp_file_path(session_id)
+        temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Check if file exists and validate chunk_index matches expected position
+        if temp_file_path.exists():
+            existing_size = temp_file_path.stat().st_size
+            # Verify we're appending in order (rough check)
+            # This is a basic validation; full validation happens during completion
+            if chunk_index > 0 and existing_size == 0:
+                raise ValueError(
+                    f"Expected chunk {chunk_index} but file is empty. Chunks must be uploaded in order."
+                )
+        elif chunk_index != 0:
+            raise ValueError(
+                f"Expected chunk 0 but got chunk {chunk_index}. Chunks must start with index 0."
+            )
+
+        try:
+            # Append chunk to temporary file
+            # Use 'ab' mode to append in binary mode
+            with temp_file_path.open("ab") as temp_file:
+                temp_file.write(chunk_data)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())  # Force write to disk
+        except Exception as e:
+            raise IOError(
+                f"Failed to save chunk {chunk_index} for session {session_id}: {e}"
+            ) from e
+
+    def complete_chunked_upload(
+        self, session_id: str, file_id: str, expected_hash: str | None = None
+    ) -> Path:
+        """Move temporary file to final location and verify integrity.
+
+        Args:
+            session_id: Upload session ID
+            file_id: Final file identifier
+            expected_hash: Optional expected SHA-256 hash for verification
+
+        Returns:
+            Path to the saved file in primary storage
+
+        Raises:
+            IOError: If file move fails or integrity check fails
+            FileNotFoundError: If temporary file doesn't exist
+        """
+        import os
+        import shutil
+
+        temp_file_path = self.get_temp_file_path(session_id)
+
+        if not temp_file_path.exists():
+            raise FileNotFoundError(
+                f"Temporary file for session {session_id} not found"
+            )
+
+        # Read temporary file data
+        encrypted_data = temp_file_path.read_bytes()
+
+        # Compute hash if not provided
+        if expected_hash is None:
+            expected_hash = self.compute_hash(encrypted_data)
+        else:
+            # Verify hash matches
+            actual_hash = self.compute_hash(encrypted_data)
+            if actual_hash != expected_hash:
+                # Cleanup temp file
+                try:
+                    temp_file_path.unlink()
+                except Exception:
+                    pass
+                raise IOError(
+                    f"Integrity check failed for session {session_id}: hash mismatch"
+                )
+
+        # Save to final location using existing save_file method
+        # This handles both primary and source storage
+        try:
+            file_path = self.save_file(file_id, encrypted_data)
+
+            # Cleanup temporary file after successful save
+            try:
+                temp_file_path.unlink()
+            except Exception:
+                # Log warning but don't fail if cleanup fails
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Failed to delete temporary file for session {session_id}"
+                )
+
+            return file_path
+        except Exception as e:
+            # If save failed, keep temp file for potential retry
+            # But log the error
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to complete chunked upload for session {session_id}: {e}"
+            )
+            raise IOError(
+                f"Failed to complete chunked upload for session {session_id}: {e}"
+            ) from e
+
+    def delete_temp_file(self, session_id: str) -> None:
+        """Delete temporary file for a session.
+
+        Args:
+            session_id: Upload session ID
+        """
+        temp_file_path = self.get_temp_file_path(session_id)
+        try:
+            if temp_file_path.exists():
+                temp_file_path.unlink()
+        except Exception as e:
+            # Log warning but don't raise - cleanup is best effort
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to delete temporary file for session {session_id}: {e}"
+            )

@@ -7,6 +7,7 @@ class ClipboardManager {
   constructor() {
     this.items = [];
     this.listeners = new Set();
+    this.isCutMode = false; // Flag to distinguish copy vs cut
   }
 
   /**
@@ -25,6 +26,28 @@ class ClipboardManager {
       vaultspaceId: item.vaultspace_id,
       parentId: item.parent_id,
     }));
+    this.isCutMode = false;
+
+    this.notifyListeners();
+  }
+
+  /**
+   * Cut items to clipboard (for move operation)
+   * @param {Array} items - Array of items to cut (files/folders)
+   */
+  cut(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return;
+    }
+
+    this.items = items.map((item) => ({
+      id: item.id,
+      type: item.mime_type === "application/x-directory" ? "folder" : "file",
+      name: item.original_name,
+      vaultspaceId: item.vaultspace_id,
+      parentId: item.parent_id,
+    }));
+    this.isCutMode = true;
 
     this.notifyListeners();
   }
@@ -50,7 +73,16 @@ class ClipboardManager {
    */
   clear() {
     this.items = [];
+    this.isCutMode = false;
     this.notifyListeners();
+  }
+
+  /**
+   * Check if clipboard is in cut mode
+   * @returns {boolean}
+   */
+  isCut() {
+    return this.isCutMode;
   }
 
   /**

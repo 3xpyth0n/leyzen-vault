@@ -12,29 +12,6 @@ from typing import Any
 
 
 @dataclass
-class FileVersion:
-    """Version of a file with encryption."""
-
-    version_id: str
-    file_id: str
-    version_number: int
-    encrypted_hash: str  # Hash of encrypted version data
-    created_at: datetime
-    created_by: str | None  # User ID who created this version
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "version_id": self.version_id,
-            "file_id": self.file_id,
-            "version_number": self.version_number,
-            "encrypted_hash": self.encrypted_hash,
-            "created_at": self.created_at.isoformat(),
-            "created_by": self.created_by,
-        }
-
-
-@dataclass
 class User:
     """User model for multi-user support."""
 
@@ -218,5 +195,4 @@ __all__ = [
     "ShareLink",
     "Folder",
     "User",
-    "FileVersion",
 ]

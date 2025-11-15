@@ -333,17 +333,205 @@ class SelectionManager {
   /**
    * Handle move action
    */
-  handleMove(ids) {
-    // TODO: Implement folder picker modal
-    alert("Move functionality coming soon");
+  async handleMove(ids) {
+    if (ids.length === 0) return;
+
+    try {
+      // Get current folders and vaultspace info
+      const folders = window.foldersList || [];
+      const currentFolderId = window.currentFolderId || null;
+      const vaultspaceId =
+        window.currentVaultspaceId ||
+        (() => {
+          // Try to extract from URL
+          const match = window.location.pathname.match(/\/vaultspace\/([^/]+)/);
+          return match
+            ? match[1]
+            : localStorage.getItem("current_vaultspace_id");
+        })();
+
+      if (!vaultspaceId) {
+        if (window.Notifications) {
+          window.Notifications.error("Cannot move: VaultSpace ID not found");
+        } else {
+          alert("Cannot move: VaultSpace ID not found");
+        }
+        return;
+      }
+
+      // Get folder picker - try global first, then load dynamically
+      let folderPicker = window.folderPicker;
+      if (!folderPicker) {
+        try {
+          const folderPickerModule = await import(
+            window.location.origin + "/static/src/utils/FolderPicker.js"
+          );
+          folderPicker = folderPickerModule.folderPicker;
+          window.folderPicker = folderPicker;
+        } catch (e1) {
+          try {
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
+            folderPicker = folderPickerModule2.folderPicker;
+            window.folderPicker = folderPicker;
+          } catch (e2) {
+            console.error("Failed to load folder picker:", e1, e2);
+            if (window.Notifications) {
+              window.Notifications.error(
+                "Folder picker not available. Please refresh the page.",
+              );
+            } else {
+              alert("Folder picker not available. Please refresh the page.");
+            }
+            return;
+          }
+        }
+      }
+
+      // Get files API
+      let files;
+      try {
+        const apiModule = await import(
+          window.location.origin + "/static/src/services/api.js"
+        );
+        files = apiModule.files;
+      } catch (e1) {
+        try {
+          const apiModule2 = await import("../src/services/api.js");
+          files = apiModule2.files;
+        } catch (e2) {
+          console.error("Failed to load files API:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Files API not available. Please refresh the page.",
+            );
+          } else {
+            alert("Files API not available. Please refresh the page.");
+          }
+          return;
+        }
+      }
+
+      // Determine if any selected item is a folder (to exclude from picker)
+      let excludeFolderId = null;
+      for (const id of ids) {
+        const folderElement = document.querySelector(
+          `[data-folder-id="${id}"]`,
+        );
+        if (folderElement) {
+          excludeFolderId = id;
+          break;
+        }
+      }
+
+      // Show folder picker
+      const selectedFolderId = await folderPicker.show(
+        folders,
+        currentFolderId,
+        vaultspaceId,
+        excludeFolderId,
+      );
+
+      if (selectedFolderId === undefined) {
+        // User cancelled
+        return;
+      }
+
+      // Perform batch move
+      await files.batchMove(ids, selectedFolderId || null);
+
+      if (window.Notifications) {
+        window.Notifications.success(
+          `${ids.length} item${ids.length > 1 ? "s" : ""} moved successfully`,
+        );
+      }
+
+      // Reload files
+      if (window.loadFiles) {
+        await window.loadFiles();
+      } else if (window.Folders && window.Folders.loadFolderContents) {
+        await window.Folders.loadFolderContents(currentFolderId);
+      } else {
+        // Fallback: reload page
+        window.location.reload();
+      }
+
+      this.deselectAll();
+    } catch (error) {
+      console.error("Move error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to move: ${error.message || "Unknown error"}`,
+        );
+      } else {
+        alert(`Failed to move: ${error.message || "Unknown error"}`);
+      }
+    }
   }
 
   /**
    * Handle star action
    */
-  handleStar(ids) {
-    // TODO: Implement star/unstar
-    alert("Star functionality coming soon");
+  async handleStar(ids) {
+    if (ids.length === 0) return;
+
+    try {
+      // Get files API
+      let files;
+      try {
+        const apiModule = await import(
+          window.location.origin + "/static/src/services/api.js"
+        );
+        files = apiModule.files;
+      } catch (e1) {
+        try {
+          const apiModule2 = await import("../src/services/api.js");
+          files = apiModule2.files;
+        } catch (e2) {
+          console.error("Failed to load files API:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Files API not available. Please refresh the page.",
+            );
+          } else {
+            alert("Files API not available. Please refresh the page.");
+          }
+          return;
+        }
+      }
+
+      // Toggle star for each selected item
+      const promises = ids.map((id) => files.toggleStar(id));
+      await Promise.all(promises);
+
+      if (window.Notifications) {
+        window.Notifications.success(
+          `${ids.length} item${ids.length > 1 ? "s" : ""} star status updated`,
+        );
+      }
+
+      // Reload files to update UI
+      if (window.loadFiles) {
+        await window.loadFiles();
+      } else if (window.Folders && window.Folders.loadFolderContents) {
+        const currentFolderId = window.currentFolderId || null;
+        await window.Folders.loadFolderContents(currentFolderId);
+      }
+
+      this.deselectAll();
+    } catch (error) {
+      console.error("Star error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to update star status: ${error.message || "Unknown error"}`,
+        );
+      } else {
+        alert(
+          `Failed to update star status: ${error.message || "Unknown error"}`,
+        );
+      }
+    }
   }
 }
 

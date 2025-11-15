@@ -1,4 +1,4 @@
-/** @file sharing.js - Share file with download links (Lufi-style) */
+/** @file sharing.js - Share file with download links */
 
 // Helper function to safely set innerHTML with Trusted Types
 function setInnerHTML(element, html) {

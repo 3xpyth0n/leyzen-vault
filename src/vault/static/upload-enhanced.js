@@ -382,17 +382,319 @@ class UploadManager {
    * Upload file in chunks (large files)
    */
   async uploadChunked(upload) {
-    // For now, encrypt and upload as single file
-    // Future: implement actual chunked upload with resume support
-    return this.uploadSingle(upload);
+    // Encrypt entire file client-side first (required for integrity)
+    const { encryptedData, key } = await VaultCrypto.encryptFile(upload.file);
+
+    // Get vaultspace_id and parent_id from upload object or current context
+    const vaultspaceId = upload.vaultspaceId || this.getCurrentVaultspaceId();
+    const parentId = upload.folderId || this.getCurrentFolderId();
+    const mimeType = upload.file.type || "application/octet-stream";
+
+    if (!vaultspaceId) {
+      throw new Error("vaultspace_id is required for chunked upload");
+    }
+
+    // Get encrypted file key (encrypted with VaultSpace key)
+    // This should be passed in upload object or obtained from VaultCrypto
+    let encryptedFileKey = upload.encryptedFileKey;
+    if (!encryptedFileKey) {
+      // Try to get from VaultCrypto or generate
+      // For now, assume it's passed in upload object
+      throw new Error("encrypted_file_key is required for chunked upload");
+    }
+
+    // Access files API (assume it's available globally or via window)
+    const filesAPI =
+      window.files ||
+      (window.api && window.api.files) ||
+      (typeof window !== "undefined" && window.files);
+
+    if (!filesAPI) {
+      throw new Error("Files API not available. Please ensure API is loaded.");
+    }
+
+    // Split encrypted data into chunks
+    const chunks = [];
+    for (let i = 0; i < encryptedData.length; i += this.chunkSize) {
+      chunks.push(encryptedData.slice(i, i + this.chunkSize));
+    }
+
+    // Create upload session
+    const sessionInfo = await filesAPI.createUploadSession({
+      vaultspaceId: vaultspaceId,
+      originalName: upload.file.name,
+      totalSize: encryptedData.length,
+      chunkSize: this.chunkSize,
+      encryptedFileKey: encryptedFileKey,
+      parentId: parentId,
+      encryptedMetadata: upload.encryptedMetadata || null,
+      mimeType: mimeType,
+    });
+
+    const sessionId = sessionInfo.session_id;
+    const fileId = sessionInfo.file_id;
+
+    // Store session info for potential resume
+    this.uploadResumeData.set(upload.id, {
+      sessionId: sessionId,
+      fileId: fileId,
+      uploadedChunks: 0,
+      totalChunks: chunks.length,
+      timestamp: Date.now(),
+    });
+    this.saveResumeData();
+
+    // Upload chunks sequentially
+    const cancelFunctions = [];
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      // Check if upload was paused
+      if (upload.paused) {
+        throw new Error("Upload paused");
+      }
+
+      const chunk = chunks[chunkIndex];
+      const chunkBlob = new Blob([chunk], { type: "application/octet-stream" });
+
+      // Calculate progress for this chunk
+      const baseProgress = (chunkIndex / chunks.length) * 100;
+
+      // Upload chunk with progress tracking
+      const chunkResult = filesAPI.uploadChunk(
+        sessionId,
+        chunkIndex,
+        chunkBlob,
+        (loaded, total) => {
+          // Update upload progress
+          const chunkProgress = (loaded / total) * (100 / chunks.length);
+          upload.progress = Math.round(baseProgress + chunkProgress);
+          upload.uploadedBytes = chunkIndex * this.chunkSize + loaded;
+          this.updateQueueUI();
+        },
+      );
+
+      cancelFunctions.push(chunkResult.cancel);
+
+      // Wait for chunk upload to complete
+      const chunkResponse = await chunkResult.promise;
+
+      // Update resume data
+      const resumeData = this.uploadResumeData.get(upload.id);
+      if (resumeData) {
+        resumeData.uploadedChunks = chunkResponse.uploaded_chunks;
+        this.saveResumeData();
+      }
+
+      // Update progress
+      upload.uploadedBytes = chunkResponse.uploaded_size;
+      upload.progress = Math.round(
+        (chunkResponse.uploaded_size / chunkResponse.total_size) * 100,
+      );
+      this.updateQueueUI();
+
+      // Check if all chunks are uploaded
+      if (chunkResponse.is_complete) {
+        break;
+      }
+    }
+
+    // Complete upload
+    const result = await filesAPI.completeUpload(sessionId);
+
+    // Store file key if available
+    if (window.storeFileKey && result.file_id) {
+      window.storeFileKey(result.file_id, key);
+    }
+
+    // Remove resume data
+    this.uploadResumeData.delete(upload.id);
+    this.saveResumeData();
+
+    return result;
   }
 
   /**
    * Upload file with resume support
    */
   async uploadChunkedWithResume(upload, resumeData) {
-    // Future: implement resume from resumeData
-    return this.uploadSingle(upload);
+    // Encrypt entire file client-side first (required for integrity)
+    const { encryptedData, key } = await VaultCrypto.encryptFile(upload.file);
+
+    // Get vaultspace_id and parent_id from upload object or current context
+    const vaultspaceId = upload.vaultspaceId || this.getCurrentVaultspaceId();
+    const parentId = upload.folderId || this.getCurrentFolderId();
+    const mimeType = upload.file.type || "application/octet-stream";
+
+    if (!vaultspaceId) {
+      throw new Error("vaultspace_id is required for chunked upload");
+    }
+
+    // Get encrypted file key
+    let encryptedFileKey = upload.encryptedFileKey;
+    if (!encryptedFileKey) {
+      throw new Error("encrypted_file_key is required for chunked upload");
+    }
+
+    // Access files API
+    const filesAPI =
+      window.files ||
+      (window.api && window.api.files) ||
+      (typeof window !== "undefined" && window.files);
+
+    if (!filesAPI) {
+      throw new Error("Files API not available. Please ensure API is loaded.");
+    }
+
+    let sessionId = resumeData.sessionId;
+    let uploadedChunks = resumeData.uploadedChunks || 0;
+
+    // Check if session is still valid
+    try {
+      const sessionStatus = await filesAPI.getUploadStatus(sessionId);
+      if (
+        sessionStatus.status === "expired" ||
+        sessionStatus.status === "failed"
+      ) {
+        // Session expired or failed, create new session
+        sessionId = null;
+        uploadedChunks = 0;
+      } else {
+        // Resume from last uploaded chunk
+        uploadedChunks = sessionStatus.uploaded_chunks;
+      }
+    } catch (e) {
+      // Session not found or error, create new session
+      sessionId = null;
+      uploadedChunks = 0;
+    }
+
+    // Create new session if needed
+    if (!sessionId) {
+      const sessionInfo = await filesAPI.createUploadSession({
+        vaultspaceId: vaultspaceId,
+        originalName: upload.file.name,
+        totalSize: encryptedData.length,
+        chunkSize: this.chunkSize,
+        encryptedFileKey: encryptedFileKey,
+        parentId: parentId,
+        encryptedMetadata: upload.encryptedMetadata || null,
+        mimeType: mimeType,
+      });
+
+      sessionId = sessionInfo.session_id;
+      uploadedChunks = 0;
+    }
+
+    // Split encrypted data into chunks
+    const chunks = [];
+    for (let i = 0; i < encryptedData.length; i += this.chunkSize) {
+      chunks.push(encryptedData.slice(i, i + this.chunkSize));
+    }
+
+    // Update resume data
+    this.uploadResumeData.set(upload.id, {
+      sessionId: sessionId,
+      fileId: resumeData.fileId || null,
+      uploadedChunks: uploadedChunks,
+      totalChunks: chunks.length,
+      timestamp: Date.now(),
+    });
+    this.saveResumeData();
+
+    // Upload remaining chunks
+    for (
+      let chunkIndex = uploadedChunks;
+      chunkIndex < chunks.length;
+      chunkIndex++
+    ) {
+      // Check if upload was paused
+      if (upload.paused) {
+        throw new Error("Upload paused");
+      }
+
+      const chunk = chunks[chunkIndex];
+      const chunkBlob = new Blob([chunk], { type: "application/octet-stream" });
+
+      // Calculate progress for this chunk
+      const baseProgress = (chunkIndex / chunks.length) * 100;
+
+      // Upload chunk with progress tracking
+      const chunkResult = filesAPI.uploadChunk(
+        sessionId,
+        chunkIndex,
+        chunkBlob,
+        (loaded, total) => {
+          // Update upload progress
+          const chunkProgress = (loaded / total) * (100 / chunks.length);
+          upload.progress = Math.round(baseProgress + chunkProgress);
+          upload.uploadedBytes = chunkIndex * this.chunkSize + loaded;
+          this.updateQueueUI();
+        },
+      );
+
+      // Wait for chunk upload to complete
+      const chunkResponse = await chunkResult.promise;
+
+      // Update resume data
+      const resumeData = this.uploadResumeData.get(upload.id);
+      if (resumeData) {
+        resumeData.uploadedChunks = chunkResponse.uploaded_chunks;
+        this.saveResumeData();
+      }
+
+      // Update progress
+      upload.uploadedBytes = chunkResponse.uploaded_size;
+      upload.progress = Math.round(
+        (chunkResponse.uploaded_size / chunkResponse.total_size) * 100,
+      );
+      this.updateQueueUI();
+
+      // Check if all chunks are uploaded
+      if (chunkResponse.is_complete) {
+        break;
+      }
+    }
+
+    // Complete upload
+    const result = await filesAPI.completeUpload(sessionId);
+
+    // Store file key if available
+    if (window.storeFileKey && result.file_id) {
+      window.storeFileKey(result.file_id, key);
+    }
+
+    // Remove resume data
+    this.uploadResumeData.delete(upload.id);
+    this.saveResumeData();
+
+    return result;
+  }
+
+  /**
+   * Get current VaultSpace ID (helper method)
+   */
+  getCurrentVaultspaceId() {
+    // Try to get from various sources
+    if (window.VaultSpaces && window.VaultSpaces.getCurrentVaultspaceId) {
+      return window.VaultSpaces.getCurrentVaultspaceId();
+    }
+    if (window.vaultSpaceId) {
+      return window.vaultSpaceId;
+    }
+    return null;
+  }
+
+  /**
+   * Get current folder ID (helper method)
+   */
+  getCurrentFolderId() {
+    // Try to get from various sources
+    if (window.Folders && window.Folders.getCurrentFolderId) {
+      return window.Folders.getCurrentFolderId();
+    }
+    if (window.folderId) {
+      return window.folderId;
+    }
+    return null;
   }
 
   /**

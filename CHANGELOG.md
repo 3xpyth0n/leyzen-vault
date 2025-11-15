@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The Leyzen Vault project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Chunked File Upload**: Added chunked upload system for large files. Files larger than 5MB are automatically split into chunks and uploaded sequentially, preventing memory issues and enabling upload of files of any size.
+
 ## [2.1.0] - 2025-11-15
 
 ### Added

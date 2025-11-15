@@ -169,16 +169,10 @@ class ContextMenu {
         }
         break;
       case "rename":
-        // TODO: Implement rename functionality
-        if (window.Notifications) {
-          window.Notifications.info("Rename functionality coming soon");
-        }
+        this.handleRename(id, target, type);
         break;
       case "properties":
-        // TODO: Implement properties modal
-        if (window.Notifications) {
-          window.Notifications.info("Properties functionality coming soon");
-        }
+        this.handleProperties(id, target, type);
         break;
       case "delete":
         if (type === "file" && window.deleteFile) {
@@ -191,6 +185,175 @@ class ContextMenu {
           window.Folders.deleteFolder(id);
         }
         break;
+    }
+  }
+
+  /**
+   * Handle rename action
+   */
+  async handleRename(id, target, type) {
+    try {
+      // Get current name
+      let currentName = "";
+      const filesList = window.filesList || [];
+      const foldersList = window.foldersList || [];
+
+      if (type === "file") {
+        const file =
+          filesList.find((f) => f.id === id || f.file_id === id) ||
+          filesList.find((f) => f.file_id === id);
+        currentName = file?.original_name || file?.name || "";
+      } else {
+        const folder =
+          foldersList.find((f) => f.id === id || f.folder_id === id) ||
+          foldersList.find((f) => f.folder_id === id);
+        currentName = folder?.original_name || folder?.name || "";
+      }
+
+      // Fallback: try to get from DOM
+      if (!currentName) {
+        const nameElement = target.querySelector(
+          ".file-name, .folder-name, .file-row-name, .folder-row-name",
+        );
+        currentName = nameElement?.textContent?.trim() || "";
+      }
+
+      if (!currentName) {
+        currentName = type === "file" ? "Untitled" : "Untitled Folder";
+      }
+
+      // Prompt for new name
+      const newName = prompt(`Enter new name:`, currentName);
+      if (!newName || newName.trim() === "" || newName === currentName) {
+        return; // User cancelled or didn't change name
+      }
+
+      // Load files API
+      let files;
+      try {
+        const apiModule = await import(
+          window.location.origin + "/static/src/services/api.js"
+        );
+        files = apiModule.files;
+      } catch (e1) {
+        try {
+          const apiModule2 = await import("../src/services/api.js");
+          files = apiModule2.files;
+        } catch (e2) {
+          console.error("Failed to load files API:", e1, e2);
+          if (window.Notifications) {
+            window.Notifications.error(
+              "Files API not available. Please refresh the page.",
+            );
+          } else {
+            alert("Files API not available. Please refresh the page.");
+          }
+          return;
+        }
+      }
+
+      // Rename file or folder
+      await files.rename(id, newName.trim());
+
+      if (window.Notifications) {
+        window.Notifications.success(
+          `${type === "file" ? "File" : "Folder"} renamed successfully`,
+        );
+      }
+
+      // Reload files
+      if (window.loadFiles) {
+        await window.loadFiles();
+      } else if (window.Folders && window.Folders.loadFolderContents) {
+        const currentFolderId = window.currentFolderId || null;
+        await window.Folders.loadFolderContents(currentFolderId);
+      } else {
+        // Fallback: reload page
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("Rename error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to rename: ${error.message || "Unknown error"}`,
+        );
+      } else {
+        alert(`Failed to rename: ${error.message || "Unknown error"}`);
+      }
+    }
+  }
+
+  /**
+   * Handle properties action
+   */
+  async handleProperties(id, target, type) {
+    try {
+      // Get vaultspace ID
+      const vaultspaceId =
+        target.getAttribute("data-vaultspace-id") ||
+        window.currentVaultspaceId ||
+        (() => {
+          const match = window.location.pathname.match(/\/vaultspace\/([^/]+)/);
+          return match
+            ? match[1]
+            : localStorage.getItem("current_vaultspace_id");
+        })();
+
+      // Try to find file/folder in lists to get vaultspace ID
+      let fileVaultspaceId = vaultspaceId;
+      if (!fileVaultspaceId) {
+        const filesList = window.filesList || [];
+        const foldersList = window.foldersList || [];
+        const file = filesList.find((f) => f.id === id || f.file_id === id);
+        const folder = foldersList.find(
+          (f) => f.id === id || f.folder_id === id,
+        );
+        fileVaultspaceId = file?.vaultspace_id || folder?.vaultspace_id || null;
+      }
+
+      if (!fileVaultspaceId) {
+        if (window.Notifications) {
+          window.Notifications.error(
+            "Cannot show properties: VaultSpace ID not found",
+          );
+        } else {
+          alert("Cannot show properties: VaultSpace ID not found");
+        }
+        return;
+      }
+
+      // Try to use global showFileProperties function if available
+      if (window.showFileProperties) {
+        window.showFileProperties(id, fileVaultspaceId);
+        return;
+      }
+
+      // Try to dispatch custom event that Vue components can listen to
+      const propertiesEvent = new CustomEvent("showFileProperties", {
+        detail: {
+          fileId: id,
+          vaultspaceId: fileVaultspaceId,
+          type: type,
+        },
+      });
+      document.dispatchEvent(propertiesEvent);
+
+      // If still no handler, try to trigger via Vue component if available
+      // This is a fallback for Vue components that might be listening
+      if (window.Notifications) {
+        window.Notifications.info(
+          "Properties modal should appear. If not, please use the file menu.",
+        );
+      }
+    } catch (error) {
+      console.error("Properties error:", error);
+      if (window.Notifications) {
+        window.Notifications.error(
+          `Failed to show properties: ${error.message || "Unknown error"}`,
+        );
+      } else {
+        alert(`Failed to show properties: ${error.message || "Unknown error"}`);
+      }
     }
   }
 }
