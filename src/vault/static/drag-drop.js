@@ -358,9 +358,7 @@ class DragDropManager {
    * Move folder to parent folder
    */
   async moveFolder(folderId, parentId) {
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
+    // CSRF token not needed - using JWT authentication
 
     // Migrate to API v2 - requires JWT authentication
     const jwtToken = localStorage.getItem("jwt_token");

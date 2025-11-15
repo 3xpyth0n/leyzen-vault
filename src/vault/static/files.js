@@ -647,13 +647,7 @@ async function uploadFile(file) {
     formData.append("file", encryptedBlob, file.name);
     formData.append("original_size", file.size.toString());
 
-    // Add CSRF token
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
-    if (csrfToken) {
-      formData.append("csrf_token", csrfToken);
-    }
+    // CSRF token not needed - using JWT authentication
 
     // Get current folder ID for upload
     const folderId = window.Folders
@@ -1040,11 +1034,7 @@ async function shareFile(fileId, key = null) {
 
   // Load existing share links
   try {
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
-
-    // Migrate to API v2 - requires JWT authentication
+    // Using JWT authentication - no CSRF token needed
     const jwtToken = localStorage.getItem("jwt_token");
     if (!jwtToken) {
       console.error("JWT token not found, cannot load share links");
@@ -1106,11 +1096,7 @@ async function shareFile(fileId, key = null) {
 
   // Create share link via API (without expiration/limits for now, can be extended)
   try {
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
-
-    // Migrate to API v2 - requires JWT authentication
+    // Using JWT authentication - no CSRF token needed
     const jwtToken = localStorage.getItem("jwt_token");
     if (!jwtToken) {
       throw new Error("Authentication required");
@@ -1253,17 +1239,29 @@ async function revokeShareLink(fileId, linkToken) {
     ) {
       const key = currentShareKey || getFileKey(fileId);
       if (key) {
-        const linksResponse = await fetch(`/api/share/${fileId}/links`, {
-          method: "GET",
-          headers: {
-            ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+        // Use JWT authentication - no CSRF needed
+        const jwtToken = localStorage.getItem("jwt_token");
+        if (!jwtToken) {
+          console.error("JWT token not found");
+          return;
+        }
+
+        const linksResponse = await fetch(
+          `/api/v2/sharing/public-links?resource_id=${fileId}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+            },
+            credentials: "same-origin",
           },
-          credentials: "same-origin",
-        });
+        );
 
         if (linksResponse.ok) {
           const linksData = await linksResponse.json();
-          const activeLinks = linksData.links.filter(
+          // API v2 returns share_links array
+          const shareLinks = linksData.share_links || [];
+          const activeLinks = shareLinks.filter(
             (link) => link.is_active && !link.is_expired,
           );
 

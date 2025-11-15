@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from ..extensions import csrf
 from ..services.audit import AuditService
 from ..services.auth_service import AuthService
+from ..services.rate_limiter import RateLimiter
 from ..utils.password_validator import validate_password_strength
-from .utils import get_client_ip, get_current_user_id, login_required
+from ..middleware.jwt_auth import jwt_required, get_current_user
+from .utils import get_client_ip
 
 account_bp = Blueprint("account", __name__)
 
@@ -24,12 +25,17 @@ def _get_auth_service() -> AuthService:
     return AuthService(secret_key)
 
 
+def _get_rate_limiter() -> RateLimiter:
+    """Get rate limiter instance from Flask config."""
+    return current_app.config.get("VAULT_RATE_LIMITER")
+
+
 # All frontend routes are handled by Vue.js SPA
 # Only API routes remain here
 
 
 @account_bp.route("/api/users/<user_id>", methods=["GET"])
-@login_required
+@jwt_required
 def get_user(user_id: str):
     """Get user information by ID."""
     from vault.database.schema import User, db
@@ -55,7 +61,7 @@ def get_user(user_id: str):
 
 
 @account_bp.route("/api/users/search", methods=["GET"])
-@login_required
+@jwt_required
 def search_users():
     """Search users by username or email."""
     from vault.database.schema import User, db
@@ -101,32 +107,16 @@ def search_users():
 
 
 @account_bp.route("/api/account", methods=["GET"])
-@login_required
+@jwt_required
 def get_account():
     """Get current user account information."""
     from vault.database.schema import User, db
 
-    user_id = get_current_user_id()
-    username = session.get("username")
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
-    # Handle legacy mode (user_id is None but logged_in is True)
-    if not user_id:
-        # Legacy mode - return basic info from session
-        return (
-            jsonify(
-                {
-                    "user_id": None,
-                    "username": username or "Unknown",
-                    "email": None,
-                    "created_at": None,
-                    "last_login": None,
-                    "is_active": True,
-                }
-            ),
-            200,
-        )
-
-    user_obj = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    user_obj = db.session.query(User).filter_by(id=user.id, is_active=True).first()
     if not user_obj:
         return jsonify({"error": "User not found"}), 404
 
@@ -134,23 +124,55 @@ def get_account():
 
 
 @account_bp.route("/api/account/password", methods=["POST"])
-@login_required
+@jwt_required
 def change_password():
     """Change user password."""
     from vault.database.schema import User, db
 
-    user_ip = get_client_ip() or "unknown"
-    audit = _get_audit()
-    user_id = get_current_user_id()
-
-    if not user_id:
+    user = get_current_user()
+    if not user:
         return jsonify({"error": "Not authenticated"}), 401
+
+    user_id = user.id
+    user_ip = get_client_ip() or "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    origin = request.headers.get("Origin", "unknown")
+
+    audit = _get_audit()
+
+    # Enhanced rate limiting for sensitive operations
+    rate_limiter = _get_rate_limiter()
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            user_id,
+            max_attempts=5,
+            window_seconds=3600,  # 1 hour window
+            action_name="password_change",
+        )
+        if not is_allowed:
+            audit.log_action(
+                "password_change",
+                user_ip,
+                {
+                    "error": "Rate limit exceeded",
+                    "user_id": user_id,
+                    "user_agent": user_agent,
+                    "origin": origin,
+                },
+                False,
+            )
+            return jsonify({"error": error_msg or "Rate limit exceeded"}), 429
 
     if not request.is_json:
         audit.log_action(
             "password_change",
             user_ip,
-            {"error": "Request must be JSON", "user_id": user_id},
+            {
+                "error": "Request must be JSON",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "Request must be JSON"}), 400
@@ -163,7 +185,12 @@ def change_password():
         audit.log_action(
             "password_change",
             user_ip,
-            {"error": "Missing passwords", "user_id": user_id},
+            {
+                "error": "Missing passwords",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "current_password and new_password are required"}), 400
@@ -180,7 +207,12 @@ def change_password():
         audit.log_action(
             "password_change",
             user_ip,
-            {"error": "Invalid current password", "user_id": user_id},
+            {
+                "error": "Invalid current password",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "Invalid current password"}), 403
@@ -194,6 +226,8 @@ def change_password():
             {
                 "error": error_message or "Password validation failed",
                 "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
             },
             False,
         )
@@ -206,7 +240,12 @@ def change_password():
             audit.log_action(
                 "password_change",
                 user_ip,
-                {"error": "Failed to update password", "user_id": user_id},
+                {
+                    "error": "Failed to update password",
+                    "user_id": user_id,
+                    "user_agent": user_agent,
+                    "origin": origin,
+                },
                 False,
             )
             return jsonify({"error": "Failed to update password"}), 500
@@ -214,7 +253,12 @@ def change_password():
         audit.log_action(
             "password_change",
             user_ip,
-            {"error": str(e), "user_id": user_id},
+            {
+                "error": str(e),
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": str(e)}), 400
@@ -222,7 +266,11 @@ def change_password():
     audit.log_action(
         "password_change",
         user_ip,
-        {"user_id": user_id},
+        {
+            "user_id": user_id,
+            "user_agent": user_agent,
+            "origin": origin,
+        },
         True,
     )
 
@@ -233,23 +281,55 @@ def change_password():
 
 
 @account_bp.route("/api/account", methods=["DELETE"])
-@login_required
+@jwt_required
 def delete_account():
     """Delete user account."""
     from vault.database.schema import User, db
 
-    user_ip = get_client_ip() or "unknown"
-    audit = _get_audit()
-    user_id = get_current_user_id()
-
-    if not user_id:
+    user = get_current_user()
+    if not user:
         return jsonify({"error": "Not authenticated"}), 401
+
+    user_id = user.id
+    user_ip = get_client_ip() or "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    origin = request.headers.get("Origin", "unknown")
+
+    audit = _get_audit()
+
+    # Enhanced rate limiting for sensitive operations
+    rate_limiter = _get_rate_limiter()
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            user_id,
+            max_attempts=3,
+            window_seconds=3600,  # 1 hour window
+            action_name="account_delete",
+        )
+        if not is_allowed:
+            audit.log_action(
+                "account_delete",
+                user_ip,
+                {
+                    "error": "Rate limit exceeded",
+                    "user_id": user_id,
+                    "user_agent": user_agent,
+                    "origin": origin,
+                },
+                False,
+            )
+            return jsonify({"error": error_msg or "Rate limit exceeded"}), 429
 
     if not request.is_json:
         audit.log_action(
             "account_delete",
             user_ip,
-            {"error": "Request must be JSON", "user_id": user_id},
+            {
+                "error": "Request must be JSON",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "Request must be JSON"}), 400
@@ -261,7 +341,12 @@ def delete_account():
         audit.log_action(
             "account_delete",
             user_ip,
-            {"error": "Missing password", "user_id": user_id},
+            {
+                "error": "Missing password",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "Password is required"}), 400
@@ -278,7 +363,12 @@ def delete_account():
         audit.log_action(
             "account_delete",
             user_ip,
-            {"error": "Invalid password", "user_id": user_id},
+            {
+                "error": "Invalid password",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
         )
         return jsonify({"error": "Invalid password"}), 403
@@ -290,11 +380,15 @@ def delete_account():
     audit.log_action(
         "account_delete",
         user_ip,
-        {"user_id": user_id},
+        {
+            "user_id": user_id,
+            "user_agent": user_agent,
+            "origin": origin,
+        },
         True,
     )
 
-    # Clear session
+    # Clear session (for backward compatibility)
     session.clear()
 
     return (

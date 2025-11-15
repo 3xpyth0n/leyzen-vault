@@ -7,7 +7,8 @@ from flask import Blueprint, current_app, jsonify
 
 from ..database.schema import File, db
 from ..services.audit import AuditService
-from .utils import _settings, get_client_ip, login_required
+from ..middleware.jwt_auth import jwt_required
+from .utils import _settings, get_client_ip
 
 security_bp = Blueprint("security", __name__, url_prefix="/security")
 
@@ -17,7 +18,7 @@ security_bp = Blueprint("security", __name__, url_prefix="/security")
 
 
 @security_bp.route("/api/stats", methods=["GET"])
-@login_required
+@jwt_required
 def get_stats():
     """Get security and storage statistics."""
     audit = current_app.config["VAULT_AUDIT"]

@@ -5,10 +5,10 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, send_file
 from pathlib import Path
 
-from ..extensions import csrf
 from ..storage import FileStorage
 from ..services.preview import PreviewService
-from .utils import get_client_ip, login_required
+from ..middleware.jwt_auth import jwt_required
+from .utils import get_client_ip
 
 preview_bp = Blueprint("preview", __name__)
 
@@ -28,7 +28,7 @@ def _get_preview_service() -> PreviewService:
 
 
 @preview_bp.route("/api/files/<file_id>/thumbnail", methods=["GET"])
-@login_required
+@jwt_required
 def get_thumbnail(file_id: str):
     """Get thumbnail for a file."""
     from vault.database.schema import File, db
@@ -55,7 +55,7 @@ def get_thumbnail(file_id: str):
 
 
 @preview_bp.route("/api/files/<file_id>/preview", methods=["GET"])
-@login_required
+@jwt_required
 def get_preview(file_id: str):
     """Get preview information for a file."""
     from vault.database.schema import File, db

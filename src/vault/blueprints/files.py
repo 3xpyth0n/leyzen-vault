@@ -9,14 +9,13 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from ..extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from ..models import FileMetadata
 from ..services.audit import AuditService
 from ..services.rate_limiter import RateLimiter
 from ..services.share_link_service import ShareService
 from ..storage import FileStorage
-from .utils import get_client_ip, get_current_user_id, login_required
+from .utils import get_client_ip
 
 files_bp = Blueprint("files", __name__)
 
@@ -45,7 +44,7 @@ def _get_rate_limiter() -> RateLimiter:
 
 
 @files_bp.route("/api/files", methods=["POST"])
-@login_required
+@jwt_required
 def upload_file():
     """Upload an encrypted file."""
     user_ip = get_client_ip() or "unknown"
@@ -252,7 +251,10 @@ def upload_file():
         current_time = datetime.now(timezone.utc)
 
     # Get current user ID
-    current_user_id = get_current_user_id()
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    current_user_id = user.id
 
     # Check for duplicate names in the same folder
     existing_file = (
@@ -676,12 +678,10 @@ def download_file(file_id: str):
     share_service = _get_share_service()
     storage = _get_storage()
 
-    # Check if user is logged in
-    from flask import session
-    from .utils import get_current_user_id
-
-    user_id = get_current_user_id()
-    is_logged_in = session.get("logged_in", False)
+    # Check if user is authenticated via JWT
+    user = get_current_user()
+    user_id = user.id if user else None
+    is_logged_in = user is not None
 
     # Check if this is a share link download
     link_token = request.args.get("token")
@@ -878,7 +878,7 @@ def download_file(file_id: str):
 
 
 @files_bp.route("/api/files", methods=["GET"])
-@login_required
+@jwt_required
 def list_files():
     """List files (metadata only), optionally filtered by folder and view type."""
     user_ip = get_client_ip() or "unknown"
@@ -899,9 +899,8 @@ def list_files():
 
         # Get current user ID
         # SECURITY: Admins can only see their own files - no admin bypass
-        current_user_id = get_current_user_id()
-
-        if not current_user_id:
+        user = get_current_user()
+        if not user:
             audit.log_action(
                 "list_files",
                 user_ip,
@@ -909,6 +908,7 @@ def list_files():
                 False,
             )
             return jsonify({"error": "Authentication required"}), 401
+        current_user_id = user.id
 
         # List files in the specified folder (or all files if parent_id is None)
         # Only show files owned by the current user
@@ -1289,12 +1289,45 @@ def revoke_share_link(link_token: str):
 
 
 @files_bp.route("/api/files/<file_id>", methods=["DELETE"])
-@login_required
+@jwt_required
 def delete_file(file_id: str):
     """Delete a file."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    user_id = user.id
     user_ip = get_client_ip() or "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    origin = request.headers.get("Origin", "unknown")
+
     audit = _get_audit()
     storage = _get_storage()
+
+    # Enhanced rate limiting for delete operations
+    rate_limiter = _get_rate_limiter()
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            user_id,
+            max_attempts=50,  # Allow reasonable batch deletes
+            window_seconds=3600,  # 1 hour window
+            action_name="file_delete",
+        )
+        if not is_allowed:
+            audit.log_action(
+                "delete",
+                user_ip,
+                {
+                    "error": "Rate limit exceeded",
+                    "file_id": file_id,
+                    "user_id": user_id,
+                    "user_agent": user_agent,
+                    "origin": origin,
+                },
+                False,
+                file_id=file_id,
+            )
+            return jsonify({"error": error_msg or "Rate limit exceeded"}), 429
 
     from vault.database.schema import File, db
 
@@ -1305,7 +1338,12 @@ def delete_file(file_id: str):
         audit.log_action(
             "delete",
             user_ip,
-            {"error": "File not found"},
+            {
+                "error": "File not found",
+                "user_id": user_id,
+                "user_agent": user_agent,
+                "origin": origin,
+            },
             False,
             file_id=file_id,
         )
@@ -1318,13 +1356,16 @@ def delete_file(file_id: str):
     # Also delete from storage
     storage.delete_file(file_id)
 
-    # Log successful deletion
+    # Log successful deletion with enhanced context
     audit.log_action(
         "delete",
         user_ip,
         {
             "file_id": file_id,
             "filename": file_obj.original_name,
+            "user_id": user_id,
+            "user_agent": user_agent,
+            "origin": origin,
         },
         True,
         file_id=file_id,
@@ -1333,7 +1374,7 @@ def delete_file(file_id: str):
 
 
 @files_bp.route("/api/files/<file_id>/move", methods=["PUT"])
-@login_required
+@jwt_required
 def move_file(file_id: str):
     """Move a file to a different folder."""
     user_ip = get_client_ip() or "unknown"

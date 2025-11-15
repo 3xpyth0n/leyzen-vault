@@ -160,16 +160,25 @@ export default {
       this.showLogoutModal = true;
     },
     async performLogout() {
-      // Clear service worker cache if available
-      if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: "CLEAR_CACHE",
-        });
-      }
+      try {
+        // Clear service worker cache if available
+        if (
+          "serviceWorker" in navigator &&
+          navigator.serviceWorker.controller
+        ) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "CLEAR_CACHE",
+          });
+        }
 
-      await auth.logout();
-      this.$router.push("/login");
-      this.$emit("logout");
+        await auth.logout();
+        this.$router.push("/login");
+        this.$emit("logout");
+      } catch (error) {
+        // Still redirect even if logout API call fails
+        this.$router.push("/login");
+        this.$emit("logout");
+      }
     },
   },
   async mounted() {

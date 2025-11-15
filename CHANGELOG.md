@@ -11,6 +11,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Chunked File Upload**: Added chunked upload system for large files. Files larger than 5MB are automatically split into chunks and uploaded sequentially, preventing memory issues and enabling upload of files of any size.
 
+### Changed
+
+- **Authentication Migration**: Migrated from hybrid session/CSRF authentication to JWT-only authentication. CSRF protection has been removed as JWT tokens in Authorization headers are already protected by Same-Origin Policy. This provides a cleaner and more secure authentication approach for API endpoints while maintaining defense-in-depth security through Origin/Referer header validation and Content-Type validation.
+
+### Fixed
+
+- **Modal Display After Page Refresh**: Fixed issue where confirmation modals (logout, delete, etc.) would not appear after page refresh. The issue was caused by CSS conflicts where global styles were hiding modal overlays.
+
 ## [2.1.0] - 2025-11-15
 
 ### Added

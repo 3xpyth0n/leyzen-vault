@@ -43,7 +43,9 @@ from .config import (
     load_settings,
 )  # noqa: E402
 from .database import db, init_db  # noqa: E402
-from .extensions import csrf  # noqa: E402
+
+# CSRF disabled - using JWT-only authentication
+# from .extensions import csrf  # noqa: E402
 
 from .services.audit import AuditService  # noqa: E402
 from common.services.logging import FileLogger  # noqa: E402
@@ -294,14 +296,10 @@ def create_app(
         )
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
-    # Initialize CSRF protection
-    csrf.init_app(app)
-
-    # Enable CSRF check by default for security
-    app.config["WTF_CSRF_CHECK_DEFAULT"] = True
-
-    # Configure CSRF to accept tokens in FormData for multipart/form-data requests
-    # Flask-WTF automatically checks request.form for CSRF tokens in POST requests
+    # CSRF protection disabled - using JWT-only authentication
+    # JWT tokens in Authorization headers are protected by Same-Origin Policy
+    # Additional security provided by Origin/Referer validation in jwt_required decorator
+    # csrf.init_app(app)  # Disabled - not needed for JWT-based API
     # No additional configuration needed for FormData uploads
 
     # Default paths - ensure they are Path objects

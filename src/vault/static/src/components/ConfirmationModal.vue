@@ -2,7 +2,9 @@
   <teleport to="body">
     <div
       v-if="show"
+      ref="modalOverlay"
       class="modal-overlay"
+      :aria-hidden="!show"
       @click="handleBackdropClick"
       role="dialog"
       aria-labelledby="modal-title"
@@ -129,16 +131,18 @@ export default {
 
 <style scoped>
 .modal-overlay {
-  position: fixed;
-  inset: 0;
+  position: fixed !important;
+  inset: 0 !important;
   z-index: 100000 !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(7, 14, 28, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1rem !important;
+  background: rgba(7, 14, 28, 0.85) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
   animation: fadeIn 0.2s ease;
 }
 

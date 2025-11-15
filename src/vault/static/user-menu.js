@@ -2,10 +2,11 @@
 
 // Create dropdown HTML content
 function createDropdownHTML() {
-  const csrfToken =
-    document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content") || "";
+  // CSRF token not needed - using JWT authentication
+  // const csrfToken =
+  //   document
+  //     .querySelector('meta[name="csrf-token"]')
+  //     ?.getAttribute("content") || "";
   const userIcon = window.Icons?.user
     ? window.Icons.user(16, "currentColor")
     : "👤";

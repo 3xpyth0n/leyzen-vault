@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
-from ..extensions import csrf
 from ..services.audit import AuditService
 from ..storage import FileStorage
-from .utils import get_client_ip, get_current_user_id, login_required
+from ..middleware.jwt_auth import jwt_required, get_current_user
+from .utils import get_client_ip
 
 folders_bp = Blueprint("folders", __name__)
 
@@ -67,7 +67,7 @@ def _check_duplicate_folder_name(
 
 
 @folders_bp.route("/api/folders", methods=["POST"])
-@login_required
+@jwt_required
 def create_folder():
     """Create a new folder."""
     user_ip = get_client_ip() or "unknown"
@@ -141,7 +141,10 @@ def create_folder():
         current_time = datetime.now(timezone.utc)
 
     # Get current user ID
-    current_user_id = get_current_user_id()
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    current_user_id = user.id
 
     # Check for duplicate folder names in the same parent (using name hash)
     if _check_duplicate_folder_name(vaultspace_id, parent_id, name_hash):
@@ -214,7 +217,7 @@ def create_folder():
 
 
 @folders_bp.route("/api/folders/<folder_id>", methods=["GET"])
-@login_required
+@jwt_required
 def get_folder(folder_id: str):
     """Get folder contents (files and subfolders)."""
     from vault.database.schema import File, User, GlobalRole, db
@@ -228,14 +231,17 @@ def get_folder(folder_id: str):
         return jsonify({"error": "Folder not found"}), 404
 
     # Get current user ID and check if admin
-    current_user_id = get_current_user_id()
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    current_user_id = user.id
+    # Check if user is admin
+    user_obj = (
+        db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
+    )
     is_admin = False
-    if current_user_id:
-        user = (
-            db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
-        )
-        if user:
-            is_admin = user.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)
+    if user_obj:
+        is_admin = user_obj.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)
 
     # Get files in this folder (non-directory files)
     files_query = (
@@ -314,7 +320,7 @@ def get_folder(folder_id: str):
 
 
 @folders_bp.route("/api/folders/<folder_id>", methods=["PUT"])
-@login_required
+@jwt_required
 def update_folder(folder_id: str):
     """Update folder metadata (rename or move)."""
     user_ip = get_client_ip() or "unknown"
@@ -488,7 +494,7 @@ def update_folder(folder_id: str):
 
 
 @folders_bp.route("/api/folders/<folder_id>", methods=["DELETE"])
-@login_required
+@jwt_required
 def delete_folder(folder_id: str):
     """Delete a folder."""
     user_ip = get_client_ip() or "unknown"
@@ -554,7 +560,7 @@ def delete_folder(folder_id: str):
 
 
 @folders_bp.route("/api/folders/<folder_id>/path", methods=["GET"])
-@login_required
+@jwt_required
 def get_folder_path(folder_id: str):
     """Get the path from root to the specified folder."""
     from vault.database.schema import File, db
@@ -604,7 +610,7 @@ def get_folder_path(folder_id: str):
 
 
 @folders_bp.route("/api/folders", methods=["GET"])
-@login_required
+@jwt_required
 def list_folders():
     """List folders, optionally filtered by parent."""
     from vault.database.schema import File, User, GlobalRole, db
@@ -614,14 +620,17 @@ def list_folders():
         parent_id = None
 
     # Get current user ID and check if admin
-    current_user_id = get_current_user_id()
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    current_user_id = user.id
+    # Check if user is admin
+    user_obj = (
+        db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
+    )
     is_admin = False
-    if current_user_id:
-        user = (
-            db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
-        )
-        if user:
-            is_admin = user.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)
+    if user_obj:
+        is_admin = user_obj.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)
 
     # Query folders (files with mime_type='application/x-directory')
     query = db.session.query(File).filter_by(

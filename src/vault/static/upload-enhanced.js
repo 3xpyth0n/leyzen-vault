@@ -298,12 +298,7 @@ class UploadManager {
     formData.append("file", encryptedBlob, upload.file.name);
     formData.append("original_size", upload.file.size.toString());
 
-    const csrfToken = document
-      .querySelector('meta[name="csrf-token"]')
-      ?.getAttribute("content");
-    if (csrfToken) {
-      formData.append("csrf_token", csrfToken);
-    }
+    // CSRF token not needed - using JWT authentication
 
     if (upload.folderId) {
       formData.append("folder_id", upload.folderId);
@@ -369,11 +364,16 @@ class UploadManager {
         reject(new Error("Upload cancelled")),
       );
 
-      xhr.open("POST", "/api/files");
-      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-      if (csrfToken) {
-        xhr.setRequestHeader("X-CSRFToken", csrfToken);
+      // Use API v2 with JWT authentication
+      const jwtToken = localStorage.getItem("jwt_token");
+      if (!jwtToken) {
+        reject(new Error("Authentication required"));
+        return;
       }
+
+      xhr.open("POST", "/api/v2/files");
+      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+      xhr.setRequestHeader("Authorization", `Bearer ${jwtToken}`);
       xhr.send(formData);
     });
   }

@@ -365,16 +365,17 @@ class FileMenuManager {
         return;
       }
 
-      // Perform copy
-      const csrfToken = document
-        .querySelector('meta[name="csrf-token"]')
-        ?.getAttribute("content");
+      // Perform copy - using JWT authentication
+      const jwtToken = localStorage.getItem("jwt_token");
+      if (!jwtToken) {
+        throw new Error("Authentication required");
+      }
 
-      const response = await fetch(`/v2/files/${fileId}/copy`, {
+      const response = await fetch(`/api/v2/files/${fileId}/copy`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+          Authorization: `Bearer ${jwtToken}`,
         },
         credentials: "same-origin",
         body: JSON.stringify({
@@ -472,18 +473,20 @@ class FileMenuManager {
         return;
       }
 
-      // Perform move
-      const csrfToken = document
-        .querySelector('meta[name="csrf-token"]')
-        ?.getAttribute("content");
+      // Perform move - using JWT authentication
+      const jwtToken = localStorage.getItem("jwt_token");
+      if (!jwtToken) {
+        throw new Error("Authentication required");
+      }
 
       let response;
       if (fileType === "file") {
-        response = await fetch(`/api/files/${fileId}/move`, {
+        // Use API v2 for file move
+        response = await fetch(`/api/v2/files/${fileId}/move`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+            Authorization: `Bearer ${jwtToken}`,
           },
           credentials: "same-origin",
           body: JSON.stringify({
@@ -491,12 +494,7 @@ class FileMenuManager {
           }),
         });
       } else {
-        // Move folder
-        // Migrate to API v2 - requires JWT authentication
-        const jwtToken = localStorage.getItem("jwt_token");
-        if (!jwtToken) {
-          throw new Error("Authentication required");
-        }
+        // Move folder - using API v2 with JWT authentication
 
         response = await fetch(`/api/v2/files/${fileId}/move`, {
           method: "PUT",

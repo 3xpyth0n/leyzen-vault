@@ -33,6 +33,8 @@ from flask import (
     url_for,
 )
 
+from vault.middleware.jwt_auth import jwt_required
+
 from vault.services.auth_service import AuthService
 
 from common.captcha_helpers import (
@@ -320,42 +322,55 @@ def logout_get():
 
 
 @auth_bp.route("/logout", methods=["POST"])
+@jwt_required
 def logout():
-    """Logout user - clear session."""
-    # Clear all session data
-    session.clear()
-    # Also clear user_id explicitly
-    session.pop("user_id", None)
-    session.pop("username", None)
-    session.pop("logged_in", None)
-    session.pop("captcha_nonce", None)
-    session.pop("captcha_text", None)
-    # Force session regeneration by marking it as modified and clearing
-    session.modified = True
+    """Logout user - blacklist JWT token.
 
-    # Return JSON response (Vue.js will handle redirect)
+    Note: This endpoint now uses JWT authentication instead of session-based auth.
+    The client should discard the token after calling this endpoint.
+    """
     from flask import jsonify
+    from vault.middleware.jwt_auth import get_current_user
+    from vault.services.auth_service import AuthService
+    import jwt
+    from datetime import datetime, timezone
 
-    response = jsonify({"status": "success", "message": "Logged out successfully"})
-    # Force delete the session cookie
-    session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
-    session_cookie_path = current_app.config.get("SESSION_COOKIE_PATH", "/")
-    session_cookie_domain = current_app.config.get("SESSION_COOKIE_DOMAIN")
-    session_cookie_secure = current_app.config.get("SESSION_COOKIE_SECURE", False)
-    session_cookie_httponly = current_app.config.get("SESSION_COOKIE_HTTPONLY", True)
-    session_cookie_samesite = current_app.config.get("SESSION_COOKIE_SAMESITE", "Lax")
+    # Get token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
 
-    response.set_cookie(
-        session_cookie_name,
-        "",
-        max_age=0,
-        path=session_cookie_path,
-        domain=session_cookie_domain,
-        secure=session_cookie_secure,
-        httponly=session_cookie_httponly,
-        samesite=session_cookie_samesite,
-    )
-    return response
+        # Get current user (already validated by jwt_required)
+        user = get_current_user()
+
+        if user and token:
+            # Blacklist the token
+            secret_key = current_app.config.get("SECRET_KEY")
+            if secret_key:
+                try:
+                    # Decode token to get expiration
+                    payload = jwt.decode(
+                        token,
+                        secret_key,
+                        algorithms=["HS256"],
+                        options={"verify_signature": False, "verify_exp": False},
+                    )
+                    expiration_time = datetime.fromtimestamp(
+                        payload.get("exp", 0), tz=timezone.utc
+                    )
+
+                    # Blacklist token
+                    auth_service = AuthService(secret_key)
+                    auth_service.blacklist_token(token, expiration_time)
+                except Exception:
+                    # If token decode fails, still return success
+                    # (token might already be invalid)
+                    pass
+
+    # Clear any session data (for backward compatibility)
+    session.clear()
+
+    return jsonify({"status": "success", "message": "Logged out successfully"}), 200
 
 
 __all__ = [
