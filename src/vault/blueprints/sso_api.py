@@ -319,8 +319,7 @@ def handle_callback(provider_id: str):
 
         if not result:
             # Authentication failed - user may not exist
-            # Users must register with a password first before using SSO
-            error_msg = "Account not found. Please register with a password first, then you can use SSO to login."
+            error_msg = "Account not found. Please register first."
             # Redirect to SSO callback page with error (which will show error and redirect to login)
             frontend_url = f"/sso/callback/{provider_id}?error={quote(error_msg)}"
             return redirect(frontend_url)

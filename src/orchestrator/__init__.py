@@ -60,8 +60,8 @@ def create_app(settings: Settings | None = None) -> Flask:
     def add_csp_headers(response):
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self'",
+            "script-src 'self' https://static.cloudflareinsights.com",
+            "style-src 'self' https://fonts.googleapis.com",
             "img-src 'self' data: blob:",
             "font-src 'self' https://fonts.gstatic.com",
             "connect-src 'self'",

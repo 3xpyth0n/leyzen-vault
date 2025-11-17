@@ -5,18 +5,24 @@
     <title>Login - Leyzen Orchestrator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/orchestrator/static/login.css" />
-    <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
+    <link rel="icon" type="image/png" href="/favicon.ico" />
     <script src="/orchestrator/static/login.js" defer></script>
   </head>
-  <body>
-    <div class="login-page">
-      <div class="login-container">
-        <div class="login-header">
-          <h1>Login</h1>
-          <p>Sign in to Leyzen Orchestrator</p>
-        </div>
+  <body class="vault-login">
+    <div class="background-bubbles" aria-hidden="true">
+      <span class="bubble bubble-1"></span>
+      <span class="bubble bubble-2"></span>
+      <span class="bubble bubble-3"></span>
+      <span class="bubble bubble-4"></span>
+      <span class="bubble bubble-5"></span>
+    </div>
+    <main class="login-wrapper">
+      <section class="login-content" aria-labelledby="login-title">
+        <h1 id="login-title">Leyzen Orchestrator</h1>
         {% if error %}
-        <div class="error-message">Authentication failed: {{ error }}</div>
+        <div class="error-message" role="alert">
+          Authentication failed: {{ error }}
+        </div>
         {% endif %}
         <form method="post" action="/orchestrator/login" class="login-form">
           <input
@@ -37,7 +43,7 @@
               type="text"
               id="username"
               name="username"
-              placeholder="username"
+              placeholder="Username or Email"
               autocomplete="username"
               maxlength="128"
               required
@@ -50,7 +56,7 @@
                 type="password"
                 id="password"
                 name="password"
-                placeholder="••••••"
+                placeholder="••••••••"
                 autocomplete="current-password"
                 maxlength="128"
                 required
@@ -95,9 +101,8 @@
               </button>
             </div>
           </div>
-          <div class="form-group">
-            <label for="captcha">Security code</label>
-            <div class="captcha-display">
+          <div class="captcha-section">
+            <div class="captcha-image-wrapper">
               <img
                 src="{{ url_for('auth.captcha_image') }}?nonce={{ captcha_nonce }}"
                 alt="Captcha image"
@@ -120,7 +125,8 @@
               type="text"
               id="captcha"
               name="captcha"
-              placeholder="Enter code from image"
+              class="captcha-input"
+              placeholder="ENTER CAPTCHA"
               autocomplete="off"
               inputmode="latin-prose"
               pattern="[A-Za-z0-9]{4,10}"
@@ -129,12 +135,12 @@
             />
           </div>
           <button type="submit" id="login-submit-btn">
-            <span class="btn-text">Log In</span>
-            <span class="btn-spinner hidden">⏳</span>
+            <span class="btn-text">Login</span>
+            <span class="btn-spinner hidden" aria-hidden="true">⏳</span>
           </button>
         </form>
-      </div>
-    </div>
+      </section>
+    </main>
     <div class="captcha-overlay" aria-hidden="true" data-captcha-overlay>
       <img
         src=""

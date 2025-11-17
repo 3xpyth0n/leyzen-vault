@@ -13,6 +13,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Orchestrator UI Style**: Updated orchestrator UI styling to match the vault's design system for consistent user experience across the application.
 - **Authentication Migration**: Migrated from hybrid session/CSRF authentication to JWT-only authentication. CSRF protection has been removed as JWT tokens in Authorization headers are already protected by Same-Origin Policy. This provides a cleaner and more secure authentication approach for API endpoints while maintaining defense-in-depth security through Origin/Referer header validation and Content-Type validation.
 
 ### Fixed

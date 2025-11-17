@@ -83,7 +83,7 @@
               :src="captchaImageUrl"
               alt="CAPTCHA"
               class="captcha-image"
-              @click="refreshCaptcha"
+              @click="showCaptchaOverlay"
             />
             <button
               type="button"
@@ -112,11 +112,26 @@
         <router-link to="/register">Register here</router-link>
       </p>
     </div>
+    <div
+      class="captcha-overlay"
+      :class="{ 'captcha-overlay--visible': showOverlay }"
+      :aria-hidden="!showOverlay"
+      data-captcha-overlay
+      @click="handleOverlayClick"
+    >
+      <img
+        :src="captchaImageUrl"
+        alt="Captcha enlarged"
+        class="captcha-overlay__image"
+        data-captcha-overlay-image
+        @click.stop
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { auth, sso } from "../services/api";
 import {
@@ -145,6 +160,28 @@ const magicLinkLoading = ref(false);
 const magicLinkSuccess = ref(false);
 
 const captchaImageUrl = ref("");
+const showOverlay = ref(false);
+
+// Handle Escape key to close overlay
+let handleKeyDown = null;
+
+const showCaptchaOverlay = () => {
+  if (captchaImageUrl.value) {
+    showOverlay.value = true;
+    document.body.classList.add("captcha-overlay-open");
+  }
+};
+
+const hideCaptchaOverlay = () => {
+  showOverlay.value = false;
+  document.body.classList.remove("captcha-overlay-open");
+};
+
+const handleOverlayClick = (event) => {
+  if (event.target === event.currentTarget) {
+    hideCaptchaOverlay();
+  }
+};
 
 const refreshCaptcha = async () => {
   try {
@@ -191,6 +228,10 @@ const refreshCaptcha = async () => {
   }
   // Clear the captcha response input
   captchaResponse.value = "";
+  // Sync overlay image if visible
+  if (showOverlay.value) {
+    // Image will update automatically via :src binding
+  }
 };
 
 onMounted(async () => {
@@ -227,6 +268,22 @@ onMounted(async () => {
     logger.error("Failed to load SSO providers:", err);
     // Don't show error to user, just log it
   }
+
+  // Handle Escape key to close overlay
+  handleKeyDown = (event) => {
+    if (event.key === "Escape" && showOverlay.value) {
+      hideCaptchaOverlay();
+    }
+  };
+  document.addEventListener("keydown", handleKeyDown);
+});
+
+onUnmounted(() => {
+  // Clean up event listener and body class
+  if (handleKeyDown) {
+    document.removeEventListener("keydown", handleKeyDown);
+  }
+  document.body.classList.remove("captcha-overlay-open");
 });
 
 const handleLogin = async () => {
@@ -435,7 +492,6 @@ button[type="submit"]:disabled {
 }
 
 .captcha-image {
-  width: 100%;
   height: auto;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -448,7 +504,7 @@ button[type="submit"]:disabled {
   background: rgba(0, 0, 0, 0.6);
   color: #e6eef6;
   border: none;
-  border-radius: 4px;
+  border-radius: 999px;
   width: 2rem;
   height: 2rem;
   display: flex;
@@ -618,5 +674,46 @@ p a:hover {
 .separator span {
   padding: 0 1rem;
   font-size: 0.9rem;
+}
+
+/* Captcha overlay styles - matching orchestrator */
+:global(.captcha-overlay) {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.25rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 500ms ease;
+  z-index: 1050;
+}
+
+:global(.captcha-overlay--visible) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:global(.captcha-overlay__image) {
+  max-width: min(90vw, 480px);
+  max-height: 80vh;
+  width: auto;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(56, 189, 248, 0.8);
+  background: rgba(30, 41, 59, 0.4);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+  transform: scale(0.95);
+  transition: transform 500ms ease;
+}
+
+:global(.captcha-overlay--visible .captcha-overlay__image) {
+  transform: scale(1.5);
+}
+
+:global(body.captcha-overlay-open) {
+  overflow: hidden;
 }
 </style>

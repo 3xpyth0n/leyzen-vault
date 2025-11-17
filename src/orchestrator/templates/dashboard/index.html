@@ -18,7 +18,7 @@
       content="{{ initial_snapshot|tojson }}"
     />
     <title>Vault Orchestrator — Dashboard</title>
-    <link rel="icon" type="image/png" href="/orchestrator/favicon.png" />
+    <link rel="icon" type="image/png" href="/favicon.ico" />
     <link rel="stylesheet" href="/orchestrator/static/tailwind.css" />
     <link rel="stylesheet" href="/orchestrator/static/index.css" />
     <link rel="stylesheet" href="/orchestrator/static/dashboard.css" />
@@ -36,10 +36,7 @@
       src="/orchestrator/static/js/vendor/chartjs-plugin-streaming.min.js"
       defer
     ></script>
-    <script
-      type="module"
-      src="/orchestrator/static/js/dashboard.js?v={{ asset_version }}"
-    ></script>
+    <script type="module" src="/orchestrator/static/js/dashboard.js"></script>
   </head>
   <body>
     <!-- Animated background bubbles -->
@@ -54,7 +51,7 @@
     <div id="app">
       <header class="dashboard-header">
         <div class="brand">
-          <img src="/orchestrator/favicon.png" alt="logo" class="brand-logo" />
+          <img src="/favicon.ico" alt="logo" class="brand-logo" />
           <div>
             <h1 class="brand-title">Vault Orchestrator</h1>
             <p class="brand-subtitle">
