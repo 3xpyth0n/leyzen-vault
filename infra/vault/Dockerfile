@@ -69,5 +69,6 @@ HEALTHCHECK --interval=1s --timeout=5s --retries=10 \
 ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 
 # Run the application
-CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:80", "--workers", "2", "--timeout", "120", "--chdir", "/app/src", "vault.app:application"]
+# Use shell form to allow environment variable expansion with default value
+CMD python -m gunicorn --bind 0.0.0.0:80 --workers ${VAULT_WORKERS:-2} --timeout 120 --chdir /app/src vault.app:application
 
