@@ -164,7 +164,11 @@ class AuditService:
 
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to cleanup old audit logs: {e}")
-            db.session.rollback()
+            try:
+                db.session.rollback()
+            except Exception:
+                # Ignore rollback errors (might be outside application context)
+                pass
             return 0
 
 

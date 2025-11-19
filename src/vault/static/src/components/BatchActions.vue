@@ -158,7 +158,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
   z-index: 1000;
   min-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -203,7 +203,7 @@ export default {
   padding: 2rem;
   min-width: 400px;
   max-width: 90vw;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
 }
 
 .modal h2 {

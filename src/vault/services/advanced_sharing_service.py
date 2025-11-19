@@ -33,7 +33,6 @@ class AdvancedSharingService:
         max_downloads: int | None = None,
         max_access_count: int | None = None,
         allow_download: bool = True,
-        allow_preview: bool = True,
         permission_type: str = "read",
     ) -> PublicShareLink:
         """Create a public share link.
@@ -47,7 +46,6 @@ class AdvancedSharingService:
             max_downloads: Optional maximum download count
             max_access_count: Optional maximum access count
             allow_download: Whether download is allowed
-            allow_preview: Whether preview is allowed
             permission_type: Permission type (read, write, admin)
 
         Returns:
@@ -71,7 +69,7 @@ class AdvancedSharingService:
             raise ValueError(f"Invalid resource_type: {resource_type}")
 
         # Verify user exists
-        user = db.session.query(User).filter_by(id=created_by, is_active=True).first()
+        user = db.session.query(User).filter_by(id=created_by).first()
         if not user:
             raise ValueError(f"User {created_by} not found")
 
@@ -90,6 +88,7 @@ class AdvancedSharingService:
 
         # Create share link
         share_link = PublicShareLink(
+            id=str(uuid.uuid4()),
             resource_id=resource_id,
             resource_type=resource_type,
             created_by=created_by,
@@ -99,7 +98,6 @@ class AdvancedSharingService:
             max_downloads=max_downloads,
             max_access_count=max_access_count,
             allow_download=allow_download,
-            allow_preview=allow_preview,
             permission_type=permission_type,
         )
 
@@ -250,7 +248,7 @@ class AdvancedSharingService:
         if share_link.created_by != user_id:
             return False
 
-        share_link.is_active = False
+        db.session.delete(share_link)
         db.session.commit()
         return True
 
@@ -266,23 +264,16 @@ class AdvancedSharingService:
         Returns:
             Number of links revoked
         """
-        # Find all active links for this resource
-        active_links = (
+        deleted_count = (
             db.session.query(PublicShareLink)
             .filter_by(resource_id=resource_id, resource_type=resource_type)
-            .filter_by(is_active=True)
-            .all()
+            .delete(synchronize_session=False)
         )
 
-        # Revoke all active links
-        count = len(active_links)
-        for link in active_links:
-            link.is_active = False
-
-        if count > 0:
+        if deleted_count:
             db.session.commit()
 
-        return count
+        return int(deleted_count)
 
     def update_public_link(
         self,
@@ -292,8 +283,6 @@ class AdvancedSharingService:
         max_downloads: int | None = None,
         max_access_count: int | None = None,
         allow_download: bool | None = None,
-        allow_preview: bool | None = None,
-        is_active: bool | None = None,
     ) -> PublicShareLink | None:
         """Update a public share link.
 
@@ -304,8 +293,6 @@ class AdvancedSharingService:
             max_downloads: Optional new max downloads
             max_access_count: Optional new max access count
             allow_download: Optional new allow_download setting
-            allow_preview: Optional new allow_preview setting
-            is_active: Optional new is_active setting
 
         Returns:
             Updated PublicShareLink object or None if not found/unauthorized
@@ -335,12 +322,6 @@ class AdvancedSharingService:
 
         if allow_download is not None:
             share_link.allow_download = allow_download
-
-        if allow_preview is not None:
-            share_link.allow_preview = allow_preview
-
-        if is_active is not None:
-            share_link.is_active = is_active
 
         db.session.commit()
         return share_link

@@ -189,8 +189,14 @@ def signup():
     rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
     if rate_limiter:
         client_ip = get_client_ip() or "unknown"
+        # For signup, we can't use user_id yet, but we can track by email
+        # This provides some protection against distributed attacks
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            client_ip, max_attempts=5, window_seconds=60, action_name="auth_signup"
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="auth_signup",
+            user_id=None,
         )
         if not is_allowed:
             return (
@@ -342,12 +348,35 @@ def login():
                 400,
             )
 
-        # Rate limiting: 5 attempts per minute per IP
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request"}), 400
+
+        username_or_email = (
+            data.get("email", "").strip() or data.get("username", "").strip()
+        )
+        password = data.get("password", "").strip()
+
+        # Rate limiting: 5 attempts per minute per IP and user
         rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
         if rate_limiter:
             client_ip = get_client_ip() or "unknown"
+            # Try to get user_id from email if user exists (for multi-factor rate limiting)
+            user_id_for_rate_limit = None
+            if username_or_email:
+                from vault.database.schema import User, db
+
+                existing_user = (
+                    db.session.query(User).filter_by(email=username_or_email).first()
+                )
+                if existing_user:
+                    user_id_for_rate_limit = existing_user.id
             is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-                client_ip, max_attempts=5, window_seconds=60, action_name="auth_login"
+                client_ip,
+                max_attempts=5,
+                window_seconds=60,
+                action_name="auth_login",
+                user_id=user_id_for_rate_limit,
             )
             if not is_allowed:
                 return (
@@ -359,15 +388,6 @@ def login():
                     ),
                     429,
                 )
-
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid request"}), 400
-
-        username_or_email = (
-            data.get("email", "").strip() or data.get("username", "").strip()
-        )
-        password = data.get("password", "").strip()
         captcha_nonce = data.get("captcha_nonce", "").strip()
         # Get captcha response - can be None if not provided in request
         captcha_response_raw = data.get("captcha")
@@ -1064,7 +1084,7 @@ def resend_verification_email():
                     jsonify({"message": "A verification email has been sent"}),
                     200,
                 )
-            user = db.session.query(User).filter_by(email=email, is_active=True).first()
+            user = db.session.query(User).filter_by(email=email).first()
 
         # Only send email if user exists and is not verified
         if user and not user.email_verified:

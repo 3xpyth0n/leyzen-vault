@@ -116,41 +116,20 @@ def upload_file():
         return jsonify({"error": "Empty file"}), 400
 
     # Check file size limit
+    # SECURITY: Always use actual encrypted data size, never trust client-provided size
     if settings:
         max_size_bytes = settings.max_file_size_mb * 1024 * 1024
-        original_size = request.form.get("original_size")
-        if original_size:
-            try:
-                original_size = int(original_size)
-                if original_size > max_size_bytes:
-                    audit.log_action(
-                        "upload",
-                        user_ip,
-                        {
-                            "error": "file_too_large",
-                            "filename": original_name,
-                        },
-                        False,
-                    )
-                    return (
-                        jsonify(
-                            {
-                                "error": f"File too large: maximum {settings.max_file_size_mb}MB allowed"
-                            }
-                        ),
-                        413,
-                    )
-            except ValueError:
-                pass
+        encrypted_size = len(encrypted_data)
 
-        # Also check encrypted size as fallback
-        if len(encrypted_data) > max_size_bytes:
+        # Validate encrypted size first (this is what we actually store)
+        if encrypted_size > max_size_bytes:
             audit.log_action(
                 "upload",
                 user_ip,
                 {
                     "error": "encrypted_file_too_large",
                     "filename": original_name,
+                    "encrypted_size": encrypted_size,
                 },
                 False,
             )
@@ -162,6 +141,24 @@ def upload_file():
                 ),
                 413,
             )
+
+        # If original_size is provided, validate it for consistency but don't trust it
+        # This helps detect potential client-side issues or attacks
+        original_size_param = request.form.get("original_size")
+        if original_size_param:
+            try:
+                declared_original_size = int(original_size_param)
+                # Encrypted data should be larger than original (due to encryption overhead)
+                # But not suspiciously larger (allow up to 2x for encryption overhead)
+                if declared_original_size > encrypted_size * 2:
+                    current_app.logger.warning(
+                        f"Suspicious original_size declared: {declared_original_size} "
+                        f"vs encrypted_size: {encrypted_size} for file {original_name}"
+                    )
+                    # Don't block, but log for investigation
+            except ValueError:
+                # Invalid original_size format, ignore
+                pass
 
     storage = _get_storage()
 
@@ -186,16 +183,23 @@ def upload_file():
         )
         return safe_error_response("internal_error", 500, str(e))
 
-    # Get original size from request if provided, otherwise use encrypted size
-    # Note: The client should send the original size in a header or form field
-    original_size = request.form.get("original_size")
-    if original_size:
+    # Determine original size for metadata
+    # SECURITY: Use encrypted size as authoritative, but try to get declared original size
+    # for display purposes (already validated above for consistency)
+    encrypted_size = len(encrypted_data)
+    original_size = encrypted_size  # Default to encrypted size
+
+    original_size_param = request.form.get("original_size")
+    if original_size_param:
         try:
-            original_size = int(original_size)
+            declared_size = int(original_size_param)
+            # Only use declared size if it's reasonable (not larger than encrypted size)
+            # Encrypted data should be larger due to encryption overhead
+            if declared_size <= encrypted_size:
+                original_size = declared_size
         except ValueError:
-            original_size = len(encrypted_data)
-    else:
-        original_size = len(encrypted_data)  # Fallback
+            # Invalid format, use encrypted size
+            pass
 
     # Get folder_id (parent_id) from form data if provided
     parent_id = request.form.get("folder_id")
@@ -808,7 +812,7 @@ def download_file(file_id: str):
         # Check if limit reached after increment
         updated_link = share_service.get_share_link(link_token)
         if updated_link and updated_link.has_reached_limit():
-            share_service.deactivate_link(link_token)
+            share_service.revoke_link(link_token)
 
     # Use storage_ref if available, otherwise fallback to file_id
     # For files uploaded via old system, storage_ref might not be set, so use file_id
@@ -974,9 +978,7 @@ def list_files():
                         file_metadata.file_id
                     )
                     active_links = [
-                        link
-                        for link in share_links
-                        if link.is_active and not link.is_expired()
+                        link for link in share_links if not link.is_expired()
                     ]
                     # Include files with active share links
                     if len(active_links) > 0:
@@ -999,11 +1001,9 @@ def list_files():
                     share_links = share_service.list_links_for_file(
                         file_metadata.file_id
                     )
-                    # Filter to only active, non-expired links
+                    # Filter to only non-expired links
                     active_links = [
-                        link
-                        for link in share_links
-                        if link.is_active and not link.is_expired()
+                        link for link in share_links if not link.is_expired()
                     ]
                     file_dict["has_active_share"] = len(active_links) > 0
                     file_dict["active_share_count"] = len(active_links)
@@ -1092,24 +1092,21 @@ def list_shared_files():
                 share_links = share_service.list_links_for_file(file_obj.id)
                 active_links = []
                 for link in share_links:
-                    # Check if link is active and not expired
-                    if link.is_active:
-                        if link.expires_at:
-                            # Compare with current time
-                            from datetime import timezone
+                    # Check if link is not expired
+                    if link.expires_at:
+                        # Compare with current time
+                        from datetime import timezone
 
-                            now_utc = datetime.now(timezone.utc)
-                            if link.expires_at.tzinfo:
-                                expires_utc = link.expires_at.astimezone(timezone.utc)
-                            else:
-                                expires_utc = link.expires_at.replace(
-                                    tzinfo=timezone.utc
-                                )
-                            if now_utc <= expires_utc:
-                                active_links.append(link)
+                        now_utc = datetime.now(timezone.utc)
+                        if link.expires_at.tzinfo:
+                            expires_utc = link.expires_at.astimezone(timezone.utc)
                         else:
-                            # No expiration date
+                            expires_utc = link.expires_at.replace(tzinfo=timezone.utc)
+                        if now_utc <= expires_utc:
                             active_links.append(link)
+                    else:
+                        # No expiration date
+                        active_links.append(link)
 
                 if len(active_links) > 0:
                     # Convert File to dict format compatible with frontend
@@ -1269,8 +1266,8 @@ def revoke_share_link(link_token: str):
         )
         return safe_error_response("file_not_found", 404)
 
-    # Deactivate the share link
-    share_service.deactivate_link(link_token)
+    # Revoke (permanently delete) the share link
+    share_service.revoke_link(link_token)
 
     # Log successful revocation
     audit.log_action(
@@ -1307,11 +1304,15 @@ def delete_file(file_id: str):
     # Enhanced rate limiting for delete operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
+        from vault.blueprints.utils import get_client_ip
+
+        client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            user_id,
+            client_ip,
             max_attempts=50,  # Allow reasonable batch deletes
             window_seconds=3600,  # 1 hour window
             action_name="file_delete",
+            user_id=user_id,
         )
         if not is_allowed:
             audit.log_action(

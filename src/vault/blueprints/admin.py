@@ -204,8 +204,8 @@ def delete_user(user_id: str):
                     400,
                 )
 
-    # Hard delete: permanently remove user and all data
-    success = auth_service.delete_user(user_id, hard_delete=True)
+    # Permanently delete user and all data
+    success = auth_service.delete_user(user_id)
 
     if not success:
         return jsonify({"error": "User not found"}), 404
@@ -1128,9 +1128,9 @@ def create_api_key():
         return jsonify({"error": "name is required"}), 400
 
     # Get target user
-    target_user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    target_user = db.session.query(User).filter_by(id=user_id).first()
     if not target_user:
-        return jsonify({"error": "User not found or inactive"}), 404
+        return jsonify({"error": "User not found"}), 404
 
     # Security checks based on current user's role
     if current_user.global_role == GlobalRole.ADMIN:

@@ -298,37 +298,46 @@ a:hover {
   margin-bottom: 1rem;
 }
 
-/* Modal styles - Global for Teleport compatibility */
+/* Modal styles - Global for Teleport compatibility - True glassmorphism effect */
 .modal-overlay {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  background: rgba(0, 0, 0, 0.7) !important;
-  backdrop-filter: blur(4px) !important;
+  background: rgba(7, 14, 28, 0.4) !important;
+  backdrop-filter: blur(15px) !important;
+  -webkit-backdrop-filter: blur(15px) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 10000 !important;
+  padding: 2rem !important;
+  overflow-y: auto !important;
 }
 
 .modal {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   ) !important;
-  backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
-  padding: 2.5rem !important;
-  border-radius: 1.25rem !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 2rem !important;
+  border-radius: 2rem !important;
   min-width: 400px !important;
   max-width: 90vw !important;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6) !important;
+  max-height: 90vh !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   position: relative !important;
   z-index: 10001 !important;
-  color: #e6eef6 !important;
+  color: var(--text-primary, #f1f5f9) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
 }
 
 /* Folder picker modal specific styles */

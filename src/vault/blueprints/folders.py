@@ -236,9 +236,7 @@ def get_folder(folder_id: str):
         return jsonify({"error": "Not authenticated"}), 401
     current_user_id = user.id
     # Check if user is admin
-    user_obj = (
-        db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
-    )
+    user_obj = db.session.query(User).filter_by(id=current_user_id).first()
     is_admin = False
     if user_obj:
         is_admin = user_obj.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)
@@ -625,9 +623,7 @@ def list_folders():
         return jsonify({"error": "Not authenticated"}), 401
     current_user_id = user.id
     # Check if user is admin
-    user_obj = (
-        db.session.query(User).filter_by(id=current_user_id, is_active=True).first()
-    )
+    user_obj = db.session.query(User).filter_by(id=current_user_id).first()
     is_admin = False
     if user_obj:
         is_admin = user_obj.global_role in (GlobalRole.ADMIN, GlobalRole.SUPERADMIN)

@@ -105,7 +105,7 @@
   --info: #3b82f6;
   --info-dark: #2563eb;
 
-  --blur: blur(16px);
+  --blur: blur(8px);
 }
 
 /* Light Theme */
@@ -2778,7 +2778,7 @@ kbd {
   font-size: 0.875rem;
 }
 
-/* Confirmation Modal Styles */
+/* Global Modal Styles - True glassmorphism effect */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -2787,17 +2787,89 @@ kbd {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(7, 14, 28, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  opacity: 0;
-  visibility: hidden;
+  background: rgba(7, 14, 28, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  overflow-y: auto;
+}
+
+/* Standard modal container - True glassmorphism effect */
+.modal {
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
+  padding: 2rem;
+  min-width: 400px;
+  max-width: 90vw;
+  max-height: 90vh;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* Modal header */
+.modal-header {
+  padding: 1.5rem;
+  margin-bottom: 0rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.modal-header h2,
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-primary, #f1f5f9);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* Modal body/content */
+.modal-body,
+.modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  color: var(--text-primary, #f1f5f9);
+}
+
+/* Modal form */
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0;
+}
+
+/* Form actions - ensure buttons have proper spacing */
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+/* Confirmation Modal Styles - for modals with aria-hidden attribute */
+.modal-overlay[aria-hidden="false"] {
+  opacity: 1;
+  visibility: visible;
   transition:
     opacity 0.3s ease,
     visibility 0.3s ease;
 }
 
-.modal-overlay[aria-hidden="false"] {
+.modal-overlay:not([aria-hidden]) {
   opacity: 1;
   visibility: visible;
 }
@@ -2816,19 +2888,16 @@ kbd {
 
 .modal-content-confirm {
   background: linear-gradient(
-    135deg,
-    rgba(30, 41, 59, 0.85),
-    rgba(15, 23, 42, 0.95)
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   );
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1.5rem;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   padding: 2rem;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
 }
@@ -3557,14 +3626,15 @@ body.modal-open {
 .modal-content-share {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   );
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 1.25rem;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   padding: 0;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
 }

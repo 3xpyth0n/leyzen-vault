@@ -3,7 +3,6 @@
     <div class="section-header glass glass-card">
       <h2>Quota Management</h2>
       <button @click="showCreateModal = true" class="btn btn-primary">
-        <span v-html="getIcon('plus', 16)"></span>
         Set Quota
       </button>
     </div>
@@ -651,8 +650,9 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -664,25 +664,24 @@ export default {
 .modal {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   );
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  padding: 0;
-  border-radius: 1.25rem;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 2rem;
+  border-radius: 2rem;
   min-width: 400px;
   max-width: 90vw;
   max-height: 90vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   margin: auto;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   position: relative;
+  overflow-y: auto;
 }
 
 .modal-wide {
@@ -806,8 +805,9 @@ export default {
   justify-content: flex-end;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid var(--border-color);
   width: 100%;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 </style>

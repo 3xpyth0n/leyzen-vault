@@ -222,7 +222,6 @@ def verify_credentials(username: str, password: str) -> tuple[bool, User | None]
                     email=user_model.email,
                     created_at=user_model.created_at,
                     last_login=user_model.last_login,
-                    is_active=user_model.is_active,
                     is_admin=user_model.global_role.value == "admin",
                 )
         except ValueError as e:

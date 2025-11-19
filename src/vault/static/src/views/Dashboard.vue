@@ -1,141 +1,134 @@
 <template>
-  <AppLayout @logout="logout">
-    <div class="dashboard">
-      <div class="dashboard-main">
-        <QuotaDisplay />
+  <div class="dashboard">
+    <div class="dashboard-main">
+      <QuotaDisplay />
 
-        <div class="vaultspaces-section">
-          <div class="vaultspaces-section-header">
-            <h2>My VaultSpaces</h2>
+      <div class="vaultspaces-section">
+        <div class="vaultspaces-section-header">
+          <h2>My VaultSpaces</h2>
+          <button @click="createVaultSpaceDirect" class="create-vaultspace-btn">
+            <span v-html="getIcon('plus', 18)"></span>
+            <span>Create VaultSpace</span>
+          </button>
+        </div>
+
+        <div v-if="loading" class="loading">Loading...</div>
+        <div v-else-if="error" class="error">{{ error }}</div>
+
+        <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
+          <div class="empty-vaultspaces-content">
+            <Icon name="folder" :size="64" />
+            <h3>No VaultSpaces yet</h3>
+            <p>Create your first VaultSpace to start organizing your files</p>
             <button
               @click="createVaultSpaceDirect"
-              class="create-vaultspace-btn"
+              class="create-vaultspace-btn-empty"
             >
               <span v-html="getIcon('plus', 18)"></span>
               <span>Create VaultSpace</span>
             </button>
           </div>
-
-          <div v-if="loading" class="loading">Loading...</div>
-          <div v-else-if="error" class="error">{{ error }}</div>
-
-          <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
-            <div class="empty-vaultspaces-content">
-              <Icon name="folder" :size="64" />
-              <h3>No VaultSpaces yet</h3>
-              <p>Create your first VaultSpace to start organizing your files</p>
-              <button
-                @click="createVaultSpaceDirect"
-                class="create-vaultspace-btn-empty"
-              >
-                <span v-html="getIcon('plus', 18)"></span>
-                <span>Create VaultSpace</span>
-              </button>
-            </div>
-          </div>
-          <div v-else class="vaultspaces-grid">
+        </div>
+        <div v-else class="vaultspaces-grid">
+          <div
+            v-for="vaultspace in vaultspaces"
+            :key="vaultspace.id"
+            class="vaultspace-card"
+            :class="{
+              'vaultspace-card-new': vaultspace.id === newlyCreatedVaultspaceId,
+            }"
+            :data-vaultspace-id="vaultspace.id"
+          >
             <div
-              v-for="vaultspace in vaultspaces"
-              :key="vaultspace.id"
-              class="vaultspace-card"
-              :class="{
-                'vaultspace-card-new':
-                  vaultspace.id === newlyCreatedVaultspaceId,
-              }"
-              :data-vaultspace-id="vaultspace.id"
+              @click="openVaultSpace(vaultspace.id)"
+              class="vaultspace-card-content"
             >
               <div
-                @click="openVaultSpace(vaultspace.id)"
-                class="vaultspace-card-content"
+                class="vaultspace-icon"
+                v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
+              ></div>
+              <div class="vaultspace-info">
+                <h3 v-if="editingVaultspaceId !== vaultspace.id">
+                  {{ vaultspace.name }}
+                </h3>
+                <input
+                  v-else
+                  v-model="editingVaultspaceName"
+                  @keyup.enter="saveVaultspaceRename(vaultspace.id)"
+                  @keyup.esc="cancelVaultspaceRename"
+                  @blur="saveVaultspaceRename(vaultspace.id)"
+                  class="vaultspace-rename-input"
+                  ref="renameInput"
+                  autofocus
+                />
+                <p class="vaultspace-type">Personal</p>
+                <p class="vaultspace-date">
+                  Created: {{ formatDate(vaultspace.created_at) }}
+                </p>
+              </div>
+            </div>
+            <div class="vaultspace-actions">
+              <button
+                @click.stop="openIconPicker(vaultspace)"
+                class="vaultspace-action-btn"
+                title="Change Icon"
               >
-                <div
-                  class="vaultspace-icon"
-                  v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
-                ></div>
-                <div class="vaultspace-info">
-                  <h3 v-if="editingVaultspaceId !== vaultspace.id">
-                    {{ vaultspace.name }}
-                  </h3>
-                  <input
-                    v-else
-                    v-model="editingVaultspaceName"
-                    @keyup.enter="saveVaultspaceRename(vaultspace.id)"
-                    @keyup.esc="cancelVaultspaceRename"
-                    @blur="saveVaultspaceRename(vaultspace.id)"
-                    class="vaultspace-rename-input"
-                    ref="renameInput"
-                    autofocus
-                  />
-                  <p class="vaultspace-type">Personal</p>
-                  <p class="vaultspace-date">
-                    Created: {{ formatDate(vaultspace.created_at) }}
-                  </p>
-                </div>
-              </div>
-              <div class="vaultspace-actions">
-                <button
-                  @click.stop="openIconPicker(vaultspace)"
-                  class="vaultspace-action-btn"
-                  title="Change Icon"
-                >
-                  <span v-html="getIcon('sparkles', 18)"></span>
-                </button>
-                <button
-                  @click.stop="startVaultspaceRename(vaultspace)"
-                  class="vaultspace-action-btn"
-                  title="Rename"
-                >
-                  <Icon name="edit" :size="18" />
-                </button>
-                <button
-                  @click.stop="confirmDeleteVaultspace(vaultspace)"
-                  class="vaultspace-action-btn vaultspace-action-btn-danger"
-                  title="Delete"
-                >
-                  <Icon name="trash" :size="18" />
-                </button>
-              </div>
+                <span v-html="getIcon('sparkles', 18)"></span>
+              </button>
+              <button
+                @click.stop="startVaultspaceRename(vaultspace)"
+                class="vaultspace-action-btn"
+                title="Rename"
+              >
+                <Icon name="edit" :size="18" />
+              </button>
+              <button
+                @click.stop="confirmDeleteVaultspace(vaultspace)"
+                class="vaultspace-action-btn vaultspace-action-btn-danger"
+                title="Delete"
+              >
+                <Icon name="trash" :size="18" />
+              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Delete Confirmation Modal -->
-    <ConfirmationModal
-      :show="showDeleteConfirm"
-      title="Delete VaultSpace"
-      :message="`Are you sure you want to delete '${pendingDeleteVaultspaceName}'? This will permanently delete all files and folders in this VaultSpace. This action cannot be undone.`"
-      confirm-text="Delete"
-      :dangerous="true"
-      @confirm="handleDeleteVaultspace"
-      @close="showDeleteConfirm = false"
-    />
+  <!-- Delete Confirmation Modal -->
+  <ConfirmationModal
+    :show="showDeleteConfirm"
+    title="Delete VaultSpace"
+    :message="`Are you sure you want to delete '${pendingDeleteVaultspaceName}'? This will permanently delete all files and folders in this VaultSpace. This action cannot be undone.`"
+    confirm-text="Delete"
+    :dangerous="true"
+    @confirm="handleDeleteVaultspace"
+    @close="showDeleteConfirm = false"
+  />
 
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
+  <!-- Alert Modal -->
+  <AlertModal
+    :show="showAlertModal"
+    :type="alertModalConfig.type"
+    :title="alertModalConfig.title"
+    :message="alertModalConfig.message"
+    @close="handleAlertModalClose"
+    @ok="handleAlertModalClose"
+  />
 
-    <!-- Icon Picker Modal -->
-    <IconPicker
-      :show="showIconPicker"
-      :current-icon="selectedVaultspaceIcon"
-      @close="showIconPicker = false"
-      @select="handleIconSelect"
-    />
-  </AppLayout>
+  <!-- Icon Picker Modal -->
+  <IconPicker
+    :show="showIconPicker"
+    :current-icon="selectedVaultspaceIcon"
+    @close="showIconPicker = false"
+    @select="handleIconSelect"
+  />
 </template>
 
 <script>
 import { vaultspaces, auth } from "../services/api";
 import QuotaDisplay from "../components/QuotaDisplay.vue";
-import AppLayout from "../components/AppLayout.vue";
 import Icon from "../components/Icon.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
@@ -145,7 +138,6 @@ export default {
   name: "Dashboard",
   components: {
     QuotaDisplay,
-    AppLayout,
     Icon,
     ConfirmationModal,
     AlertModal,
@@ -256,10 +248,6 @@ export default {
     },
     openVaultSpace(vaultspaceId) {
       this.$router.push(`/vaultspace/${vaultspaceId}`);
-    },
-    logout() {
-      auth.logout();
-      this.$router.push("/login");
     },
     formatDate(dateString) {
       if (!dateString) return "";
@@ -681,29 +669,38 @@ export default {
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  background: rgba(0, 0, 0, 0.7) !important;
-  backdrop-filter: blur(4px) !important;
+  background: rgba(7, 14, 28, 0.4) !important;
+  backdrop-filter: blur(15px) !important;
+  -webkit-backdrop-filter: blur(15px) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 10000 !important;
+  padding: 2rem !important;
+  overflow-y: auto !important;
 }
 
 .modal {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   ) !important;
-  backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
-  padding: 2.5rem !important;
-  border-radius: 1.25rem !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 2rem !important;
+  border-radius: 2rem !important;
   min-width: 400px !important;
   max-width: 90vw !important;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6) !important;
+  max-height: 90vh !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   position: relative !important;
   z-index: 10001 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
 }
 
 .modal h2 {
@@ -736,7 +733,10 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .loading {
@@ -763,47 +763,58 @@ export default {
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  background: rgba(7, 14, 28, 0.6) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  background: rgba(7, 14, 28, 0.4) !important;
+  backdrop-filter: blur(15px) !important;
+  -webkit-backdrop-filter: blur(15px) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 10000 !important;
   visibility: visible !important;
   opacity: 1 !important;
+  padding: 2rem !important;
+  overflow-y: auto !important;
 }
 
 .modal {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   ) !important;
-  backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
-  padding: 0 !important;
-  border-radius: 1.25rem !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 2rem !important;
+  border-radius: 2rem !important;
   min-width: 400px !important;
   max-width: 90vw !important;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6) !important;
+  max-height: 90vh !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   position: relative !important;
   z-index: 10001 !important;
   visibility: visible !important;
   opacity: 1 !important;
-  color: #e6eef6 !important;
+  color: var(--text-primary, #f1f5f9) !important;
   display: flex !important;
   flex-direction: column !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
 }
 
 .modal-header {
-  padding: 1.25rem 2.5rem 1rem 2.5rem !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+  padding: 0 0 1.5rem 0 !important;
+  margin-bottom: 1.5rem !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  flex-shrink: 0 !important;
 }
 
 .modal-form {
-  padding: 0px 2.5rem 0rem !important;
+  padding: 0 !important;
   flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.25rem !important;
 }
 
 .modal h2 {
@@ -835,6 +846,9 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color) !important;
+  flex-shrink: 0;
 }
 </style>

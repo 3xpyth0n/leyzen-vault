@@ -302,7 +302,7 @@ For detailed configuration options, see `env.template` and `docs/SECURITY.md`.
 
 ## Database Schema
 
-Leyzen Vault v2.0.0 uses PostgreSQL for all data storage (files, audit logs, share links, users, vaultspaces, file versions, webhooks, workflows, SSO providers, devices, invitations, etc.). The PostgreSQL implementation uses native TIMESTAMP WITH TIME ZONE for timezone-aware timestamps.
+Leyzen Vault v2.0.0 uses PostgreSQL for all data storage (files, audit logs, share links, users, vaultspaces, webhooks, workflows, SSO providers, devices, invitations, etc.). The PostgreSQL implementation uses native TIMESTAMP WITH TIME ZONE for timezone-aware timestamps.
 
 **Note**: Version 2.0.0 requires PostgreSQL 16 for production deployments. The database schema is automatically created on first startup using SQLAlchemy ORM. All metadata, user data, and system data are stored in PostgreSQL, while encrypted file data is stored in tmpfs volumes and persistent storage volumes.
 

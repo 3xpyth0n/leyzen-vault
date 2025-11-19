@@ -1,278 +1,333 @@
 <template>
-  <AppLayout @logout="logout">
-    <div>
-      <header class="view-header">
-        <button @click="$router.push('/dashboard')" class="btn btn-back">
-          ← Back
+  <div>
+    <header
+      v-if="!showEncryptionOverlay || !isMasterKeyRequired"
+      class="view-header"
+    >
+      <button @click="$router.push('/dashboard')" class="btn btn-back">
+        ← Back
+      </button>
+      <h1>{{ vaultspace?.name || "Loading..." }}</h1>
+      <div class="header-actions">
+        <button @click="createFolderDirect" class="btn btn-primary">
+          New Folder
         </button>
-        <h1>{{ vaultspace?.name || "Loading..." }}</h1>
-        <div class="header-actions">
-          <button @click="createFolderDirect" class="btn btn-primary">
-            New Folder
-          </button>
-          <button @click="handleUploadClick" class="btn btn-primary">
-            Upload File
-          </button>
-        </div>
-      </header>
+        <button @click="handleUploadClick" class="btn btn-primary">
+          Upload File
+        </button>
+      </div>
+    </header>
 
-      <main class="view-main">
-        <!-- Breadcrumbs -->
-        <div
-          v-if="breadcrumbs.length > 0 || currentParentId"
-          class="breadcrumbs glass"
-        >
-          <button @click="navigateToFolder(null)" class="breadcrumb-link">
-            {{ vaultspace?.name || "Home" }}
-          </button>
-          <template v-if="breadcrumbs.length > 0">
-            <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
-              <span class="breadcrumb-separator">/</span>
-              <button
-                v-if="index < breadcrumbs.length - 1"
-                @click="navigateToFolder(crumb.id)"
-                class="breadcrumb-link"
-              >
-                {{ crumb.name }}
-              </button>
-              <span v-else class="breadcrumb-active">
-                {{ crumb.name }}
-              </span>
-            </template>
-          </template>
-          <template v-else-if="currentParentId">
+    <main
+      v-if="!showEncryptionOverlay || !isMasterKeyRequired"
+      class="view-main"
+    >
+      <!-- Breadcrumbs -->
+      <div
+        v-if="breadcrumbs.length > 0 || currentParentId"
+        class="breadcrumbs glass"
+      >
+        <button @click="navigateToFolder(null)" class="breadcrumb-link">
+          {{ vaultspace?.name || "Home" }}
+        </button>
+        <template v-if="breadcrumbs.length > 0">
+          <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
             <span class="breadcrumb-separator">/</span>
-            <span class="breadcrumb-active">Loading...</span>
+            <button
+              v-if="index < breadcrumbs.length - 1"
+              @click="navigateToFolder(crumb.id)"
+              class="breadcrumb-link"
+            >
+              {{ crumb.name }}
+            </button>
+            <span v-else class="breadcrumb-active">
+              {{ crumb.name }}
+            </span>
           </template>
+        </template>
+        <template v-else-if="currentParentId">
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-active">Loading...</span>
+        </template>
+      </div>
+
+      <div v-if="loading" class="loading">Loading files...</div>
+      <div v-else-if="error" class="error glass">{{ error }}</div>
+
+      <div v-else class="files-list glass">
+        <div
+          v-if="folders.length === 0 && filesList.length === 0"
+          class="empty-state"
+        >
+          <p>No files or folders in this location</p>
+          <div class="empty-actions">
+            <button @click="createFolderDirect" class="btn btn-primary">
+              Create Folder
+            </button>
+            <button @click="handleUploadClick" class="btn btn-primary">
+              Upload File
+            </button>
+          </div>
         </div>
 
-        <div v-if="loading" class="loading">Loading files...</div>
-        <div v-else-if="error" class="error glass">{{ error }}</div>
+        <!-- File List View Component -->
+        <FileListView
+          v-else
+          :folders="folders"
+          :files="filesList"
+          :selectedItems="selectedItems"
+          :viewMode="viewMode"
+          :editingItemId="editingItemId"
+          :newlyCreatedItemId="newlyCreatedFolderId"
+          @view-change="viewMode = $event"
+          @item-click="handleItemClick"
+          @action="handleFileAction"
+          @selection-change="handleSelectionChange"
+          @item-context-menu="handleContextMenu"
+          @rename="handleInlineRename"
+          @drag-start="handleDragStart"
+          @drag-over="handleDragOver"
+          @drag-leave="handleDragLeave"
+          @drop="handleDrop"
+        />
+      </div>
+    </main>
 
-        <div v-else class="files-list glass">
-          <div
-            v-if="folders.length === 0 && filesList.length === 0"
-            class="empty-state"
-          >
-            <p>No files or folders in this location</p>
-            <div class="empty-actions">
-              <button @click="createFolderDirect" class="btn btn-primary">
-                Create Folder
-              </button>
-              <button @click="handleUploadClick" class="btn btn-primary">
-                Upload File
-              </button>
+    <!-- Upload Progress Bar (Sticky at bottom) -->
+    <Teleport to="body">
+      <ProgressBar
+        v-if="uploading && uploadProgress !== null"
+        :progress="uploadProgress"
+        :speed="uploadSpeed"
+        :time-remaining="uploadTimeRemaining"
+        :file-name="uploadFileName"
+        :status="uploadCancelled ? 'Cancelled' : 'Uploading...'"
+        :sticky="true"
+        :on-cancel="uploadCancelled ? null : handleUploadCancel"
+      />
+    </Teleport>
+
+    <!-- Download Progress Bar (Sticky at bottom) -->
+    <Teleport to="body">
+      <ProgressBar
+        v-if="downloading && downloadProgress !== null"
+        :progress="downloadProgress"
+        :speed="downloadSpeed"
+        :time-remaining="downloadTimeRemaining"
+        :file-name="downloadFileName"
+        status="Downloading..."
+        :sticky="true"
+      />
+    </Teleport>
+
+    <!-- ZIP Progress Bar (Sticky at bottom) -->
+    <Teleport to="body">
+      <ProgressBar
+        v-if="zipping && zipProgress !== null"
+        :progress="zipProgress"
+        :file-name="zipMessage"
+        status="Zipping folder..."
+        :sticky="true"
+      />
+    </Teleport>
+
+    <!-- Extract Progress Bar (Sticky at bottom) -->
+    <Teleport to="body">
+      <ProgressBar
+        v-if="extracting && extractProgress !== null"
+        :progress="extractProgress"
+        :file-name="extractMessage"
+        status="Extracting ZIP..."
+        :sticky="true"
+      />
+    </Teleport>
+
+    <!-- Batch Actions Bar -->
+    <BatchActions
+      v-if="selectedItems.length > 0"
+      :selectedItems="selectedItems"
+      :availableFolders="allFolders"
+      @delete="handleBatchDelete"
+      @download="handleBatchDownload"
+      @clear="clearSelection"
+    />
+  </div>
+
+  <!-- Hidden file input for direct upload (programmatically triggered) -->
+  <input
+    type="file"
+    @change="handleFileSelect"
+    ref="fileInput"
+    class="file-input-hidden"
+    multiple
+  />
+
+  <!-- Delete Confirmation Modal -->
+  <ConfirmationModal
+    :show="showDeleteConfirmModal"
+    title="Move to Trash"
+    :message="getDeleteMessage()"
+    confirm-text="Move to Trash"
+    :dangerous="true"
+    :disabled="deleting"
+    @confirm="confirmDelete"
+    @close="
+      if (!deleting) {
+        showDeleteConfirmModal = false;
+        deleteError = null;
+      }
+    "
+  />
+
+  <!-- Password Modal for SSO Users -->
+  <Teleport to="body">
+    <div
+      v-if="showPasswordModal"
+      class="password-modal-overlay"
+      @click="closePasswordModal"
+      role="dialog"
+      aria-labelledby="password-modal-title"
+      aria-modal="true"
+    >
+      <div class="password-modal-container" @click.stop>
+        <div class="password-modal-content">
+          <div class="password-modal-header">
+            <h2 id="password-modal-title">Enter Encryption Password</h2>
+            <button
+              @click="closePasswordModal"
+              class="password-modal-close"
+              :disabled="passwordModalLoading"
+              aria-label="Close modal"
+            >
+              &times;
+            </button>
+          </div>
+          <div class="password-modal-body">
+            <p class="password-modal-description">
+              You need to enter your encryption password to access this
+              VaultSpace. This password is used to decrypt your files and is not
+              stored on the server.
+            </p>
+            <div class="form-group">
+              <label for="password-modal-password">Password</label>
+              <input
+                id="password-modal-password"
+                v-model="passwordModalPassword"
+                type="password"
+                class="form-input"
+                placeholder="Enter your encryption password"
+                :disabled="passwordModalLoading"
+                @keyup.enter="handlePasswordModalSubmit"
+                autofocus
+              />
+            </div>
+            <div v-if="passwordModalError" class="password-modal-error">
+              {{ passwordModalError }}
             </div>
           </div>
-
-          <!-- File List View Component -->
-          <FileListView
-            v-else
-            :folders="folders"
-            :files="filesList"
-            :selectedItems="selectedItems"
-            :viewMode="viewMode"
-            :editingItemId="editingItemId"
-            :newlyCreatedItemId="newlyCreatedFolderId"
-            @view-change="viewMode = $event"
-            @item-click="handleItemClick"
-            @action="handleFileAction"
-            @selection-change="handleSelectionChange"
-            @item-context-menu="handleContextMenu"
-            @rename="handleInlineRename"
-            @drag-start="handleDragStart"
-            @drag-over="handleDragOver"
-            @drag-leave="handleDragLeave"
-            @drop="handleDrop"
-          />
-        </div>
-      </main>
-
-      <!-- Upload Progress Bar (Sticky at bottom) -->
-      <Teleport to="body">
-        <ProgressBar
-          v-if="uploading && uploadProgress !== null"
-          :progress="uploadProgress"
-          :speed="uploadSpeed"
-          :time-remaining="uploadTimeRemaining"
-          :file-name="uploadFileName"
-          :status="uploadCancelled ? 'Cancelled' : 'Uploading...'"
-          :sticky="true"
-          :on-cancel="uploadCancelled ? null : handleUploadCancel"
-        />
-      </Teleport>
-
-      <!-- Download Progress Bar (Sticky at bottom) -->
-      <Teleport to="body">
-        <ProgressBar
-          v-if="downloading && downloadProgress !== null"
-          :progress="downloadProgress"
-          :speed="downloadSpeed"
-          :time-remaining="downloadTimeRemaining"
-          :file-name="downloadFileName"
-          status="Downloading..."
-          :sticky="true"
-        />
-      </Teleport>
-
-      <!-- ZIP Progress Bar (Sticky at bottom) -->
-      <Teleport to="body">
-        <ProgressBar
-          v-if="zipping && zipProgress !== null"
-          :progress="zipProgress"
-          :file-name="zipMessage"
-          status="Zipping folder..."
-          :sticky="true"
-        />
-      </Teleport>
-
-      <!-- Extract Progress Bar (Sticky at bottom) -->
-      <Teleport to="body">
-        <ProgressBar
-          v-if="extracting && extractProgress !== null"
-          :progress="extractProgress"
-          :file-name="extractMessage"
-          status="Extracting ZIP..."
-          :sticky="true"
-        />
-      </Teleport>
-
-      <!-- Batch Actions Bar -->
-      <BatchActions
-        v-if="selectedItems.length > 0"
-        :selectedItems="selectedItems"
-        :availableFolders="allFolders"
-        @delete="handleBatchDelete"
-        @download="handleBatchDownload"
-        @clear="clearSelection"
-      />
-    </div>
-
-    <!-- Hidden file input for direct upload (programmatically triggered) -->
-    <input
-      type="file"
-      @change="handleFileSelect"
-      ref="fileInput"
-      class="file-input-hidden"
-      multiple
-    />
-
-    <!-- Delete Confirmation Modal -->
-    <ConfirmationModal
-      :show="showDeleteConfirmModal"
-      title="Move to Trash"
-      :message="getDeleteMessage()"
-      confirm-text="Move to Trash"
-      :dangerous="true"
-      :disabled="deleting"
-      @confirm="confirmDelete"
-      @close="
-        if (!deleting) {
-          showDeleteConfirmModal = false;
-          deleteError = null;
-        }
-      "
-    />
-
-    <!-- Password Modal for SSO Users -->
-    <Teleport to="body">
-      <div
-        v-if="showPasswordModal"
-        class="password-modal-overlay"
-        @click="closePasswordModal"
-        role="dialog"
-        aria-labelledby="password-modal-title"
-        aria-modal="true"
-      >
-        <div class="password-modal-container" @click.stop>
-          <div class="password-modal-content">
-            <div class="password-modal-header">
-              <h2 id="password-modal-title">Enter Encryption Password</h2>
-              <button
-                @click="closePasswordModal"
-                class="password-modal-close"
-                :disabled="passwordModalLoading"
-                aria-label="Close modal"
-              >
-                &times;
-              </button>
-            </div>
-            <div class="password-modal-body">
-              <p class="password-modal-description">
-                You need to enter your encryption password to access this
-                VaultSpace. This password is used to decrypt your files and is
-                not stored on the server.
-              </p>
-              <div class="form-group">
-                <label for="password-modal-password">Password</label>
-                <input
-                  id="password-modal-password"
-                  v-model="passwordModalPassword"
-                  type="password"
-                  class="form-input"
-                  placeholder="Enter your encryption password"
-                  :disabled="passwordModalLoading"
-                  @keyup.enter="handlePasswordModalSubmit"
-                  autofocus
-                />
-              </div>
-              <div v-if="passwordModalError" class="password-modal-error">
-                {{ passwordModalError }}
-              </div>
-            </div>
-            <div class="password-modal-footer">
-              <button
-                @click="closePasswordModal"
-                class="password-modal-btn password-modal-btn-cancel"
-                :disabled="passwordModalLoading"
-              >
-                Cancel
-              </button>
-              <button
-                @click="handlePasswordModalSubmit"
-                class="password-modal-btn password-modal-btn-unlock"
-                :disabled="passwordModalLoading || !passwordModalPassword"
-              >
-                {{ passwordModalLoading ? "Processing..." : "Unlock" }}
-              </button>
-            </div>
+          <div class="password-modal-footer">
+            <button
+              @click="closePasswordModal"
+              class="password-modal-btn password-modal-btn-cancel"
+              :disabled="passwordModalLoading"
+            >
+              Cancel
+            </button>
+            <button
+              @click="handlePasswordModalSubmit"
+              class="password-modal-btn password-modal-btn-unlock"
+              :disabled="passwordModalLoading || !passwordModalPassword"
+            >
+              {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+            </button>
           </div>
         </div>
       </div>
-    </Teleport>
+    </div>
+  </Teleport>
 
-    <!-- Alert Modal (for better UX) -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
+  <!-- Alert Modal (for better UX) -->
+  <AlertModal
+    :show="showAlertModal"
+    :type="alertModalConfig.type"
+    :title="alertModalConfig.title"
+    :message="alertModalConfig.message"
+    @close="handleAlertModalClose"
+    @ok="handleAlertModalClose"
+  />
 
-    <!-- File Properties Modal -->
-    <FileProperties
-      :show="showProperties"
-      :fileId="propertiesFileId"
-      :vaultspaceId="$route.params.id"
-      @close="
-        showProperties = false;
-        propertiesFileId = null;
-      "
-    />
+  <!-- File Properties Modal -->
+  <FileProperties
+    :show="showProperties"
+    :fileId="propertiesFileId"
+    :vaultspaceId="$route.params.id"
+    @close="
+      showProperties = false;
+      propertiesFileId = null;
+    "
+  />
 
-    <!-- Confirmation Modal for share link revocation -->
-    <ConfirmationModal
-      :show="showRevokeConfirm"
-      title="Revoke Share Link"
-      :message="revokeConfirmMessage"
-      confirm-text="Revoke"
-      :dangerous="true"
-      @confirm="handleRevokeConfirm"
-      @close="showRevokeConfirm = false"
-    />
-  </AppLayout>
+  <!-- Encryption Overlay (Glassmorphic) - Fixed position covering page-content -->
+  <Teleport to="body">
+    <div
+      v-if="showEncryptionOverlay && isMasterKeyRequired"
+      class="encryption-overlay"
+      :style="overlayStyle"
+      data-encryption-overlay="true"
+    >
+      <div class="encryption-overlay-content">
+        <div class="encryption-icon-wrapper">
+          <svg
+            class="encryption-icon"
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M12 12V16"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </div>
+        <h2 class="encryption-title">Files are encrypted</h2>
+        <p class="encryption-description">
+          Enter your encryption password to decrypt and access your files. This
+          password is used to decrypt your files and is not stored on the
+          server.
+        </p>
+        <button
+          @click="openPasswordModal"
+          class="encryption-unlock-btn"
+          type="button"
+        >
+          Unlock Files
+        </button>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Confirmation Modal for share link revocation -->
+  <ConfirmationModal
+    :show="showRevokeConfirm"
+    title="Revoke Share Link"
+    :message="revokeConfirmMessage"
+    confirm-text="Revoke"
+    :dangerous="true"
+    @confirm="handleRevokeConfirm"
+    @close="showRevokeConfirm = false"
+  />
 </template>
 
 <script>
@@ -281,7 +336,6 @@ import BatchActions from "../components/BatchActions.vue";
 import DragDropUpload from "../components/DragDropUpload.vue";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
-import AppLayout from "../components/AppLayout.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import ProgressBar from "../components/ProgressBar.vue";
 import { clipboardManager } from "../utils/clipboard";
@@ -311,7 +365,6 @@ import { zipFolder, extractZip } from "../services/zipService.js";
 export default {
   name: "VaultSpaceView",
   components: {
-    AppLayout,
     BatchActions,
     DragDropUpload,
     FileListView,
@@ -377,6 +430,9 @@ export default {
       passwordModalPassword: "",
       passwordModalError: "",
       passwordModalLoading: false,
+      showEncryptionOverlay: false,
+      isMasterKeyRequired: false,
+      overlayStyle: {},
     };
   },
   created() {
@@ -418,9 +474,26 @@ export default {
           const currentUser = await auth.getCurrentUser();
           if (currentUser) {
             // User is authenticated but has no master key or salt
-            // This is normal for SSO users - show password modal to derive master key
-            // Show password modal to allow them to enter password for master key derivation
-            this.showPasswordModal = true;
+            // This is normal for SSO users - show encryption overlay instead of modal
+            // Load VaultSpace metadata but show overlay to indicate encryption is needed
+            this.showEncryptionOverlay = true;
+            this.isMasterKeyRequired = true;
+            // Still load VaultSpace metadata (non-encrypted info)
+            await this.loadVaultSpace();
+            // Calculate overlay position after DOM is ready
+            this.$nextTick(() => {
+              this.calculateOverlayPosition();
+              // Recalculate on window resize
+              const resizeHandler = () => this.calculateOverlayPosition();
+              window.addEventListener("resize", resizeHandler);
+              this._overlayResizeHandler = resizeHandler;
+
+              // Recalculate when sidebar toggles (observe sidebar width changes)
+              this.observeSidebarChanges();
+
+              // Protect overlay from being removed via DevTools
+              this.protectOverlay();
+            });
             return;
           }
         } catch (err) {
@@ -472,6 +545,27 @@ export default {
     };
   },
   beforeUnmount() {
+    // Cleanup resize handler
+    if (this._overlayResizeHandler) {
+      window.removeEventListener("resize", this._overlayResizeHandler);
+    }
+    // Cleanup resize observers
+    if (this._sidebarResizeObserver) {
+      this._sidebarResizeObserver.disconnect();
+    }
+    if (this._mainContentResizeObserver) {
+      this._mainContentResizeObserver.disconnect();
+    }
+    if (this._pageContentResizeObserver) {
+      this._pageContentResizeObserver.disconnect();
+    }
+    // Cleanup overlay protection
+    if (this._overlayProtectionInterval) {
+      clearInterval(this._overlayProtectionInterval);
+    }
+    if (this._overlayMutationObserver) {
+      this._overlayMutationObserver.disconnect();
+    }
     // Cleanup keyboard shortcuts
     if (this._keyboardShortcutHandler) {
       document.removeEventListener("keydown", this._keyboardShortcutHandler);
@@ -1237,6 +1331,18 @@ export default {
       }
     },
     async createFolderDirect() {
+      // Check if master key is required
+      if (this.isMasterKeyRequired) {
+        this.showAlert({
+          type: "error",
+          title: "Encryption Required",
+          message:
+            "Please unlock your files by entering your encryption password to create folders.",
+        });
+        this.openPasswordModal();
+        return;
+      }
+
       // Normalize parent_id for comparison (null and undefined should be treated the same)
       const normalizedParentId = this.currentParentId || null;
 
@@ -1373,6 +1479,18 @@ export default {
 
     async handleUpload() {
       this.uploadError = null;
+
+      // Check if master key is required
+      if (this.isMasterKeyRequired) {
+        this.showAlert({
+          type: "error",
+          title: "Encryption Required",
+          message:
+            "Please unlock your files by entering your encryption password to upload files.",
+        });
+        this.openPasswordModal();
+        return;
+      }
 
       if (this.selectedFiles.length === 0) {
         this.uploadError = "Please select at least one file";
@@ -2241,11 +2359,6 @@ export default {
       this.showProperties = true;
     },
 
-    logout() {
-      auth.logout();
-      this.$router.push("/login");
-    },
-
     handleRevokeConfirm() {
       this.showRevokeConfirm = false;
       if (this.pendingRevokeCallback) {
@@ -2315,6 +2428,10 @@ export default {
         this.passwordModalPassword = "";
         this.passwordModalError = "";
 
+        // Hide overlay and mark master key as no longer required
+        this.showEncryptionOverlay = false;
+        this.isMasterKeyRequired = false;
+
         // Reload VaultSpace with the new master key
         await this.loadVaultSpace();
         await this.loadVaultSpaceKey();
@@ -2333,6 +2450,114 @@ export default {
         this.showPasswordModal = false;
         this.passwordModalPassword = "";
         this.passwordModalError = "";
+        // Keep overlay visible if master key is still required
+        // Don't hide overlay on cancel - user needs to unlock to proceed
+      }
+    },
+    openPasswordModal() {
+      this.showPasswordModal = true;
+    },
+    calculateOverlayPosition() {
+      // Calculate position to cover page-content (which contains view-header and view-main)
+      // but not app-header (which is outside page-content)
+      this.$nextTick(() => {
+        const pageContent = document.querySelector(".page-content");
+        if (pageContent) {
+          const rect = pageContent.getBoundingClientRect();
+          this.overlayStyle = {
+            position: "fixed",
+            top: `${rect.top}px`,
+            left: `${rect.left}px`,
+            width: `${rect.width}px`,
+            height: `${rect.height}px`,
+            zIndex: 2,
+          };
+        }
+      });
+    },
+    observeSidebarChanges() {
+      // Observe sidebar width changes to recalculate overlay position
+      const sidebar = document.querySelector(".sidebar");
+      if (sidebar && window.ResizeObserver) {
+        const observer = new ResizeObserver(() => {
+          // Use requestAnimationFrame to ensure DOM has updated
+          requestAnimationFrame(() => {
+            this.calculateOverlayPosition();
+          });
+        });
+        observer.observe(sidebar);
+        this._sidebarResizeObserver = observer;
+      }
+
+      // Also observe main-content changes (which moves when sidebar toggles)
+      const mainContent = document.querySelector(".main-content");
+      if (mainContent && window.ResizeObserver) {
+        const observer = new ResizeObserver(() => {
+          requestAnimationFrame(() => {
+            this.calculateOverlayPosition();
+          });
+        });
+        observer.observe(mainContent);
+        this._mainContentResizeObserver = observer;
+      }
+
+      // Also observe page-content directly
+      const pageContent = document.querySelector(".page-content");
+      if (pageContent && window.ResizeObserver) {
+        const observer = new ResizeObserver(() => {
+          requestAnimationFrame(() => {
+            this.calculateOverlayPosition();
+          });
+        });
+        observer.observe(pageContent);
+        this._pageContentResizeObserver = observer;
+      }
+    },
+    protectOverlay() {
+      // Protect overlay from being removed via DevTools
+      // Check periodically if overlay still exists and recreate if needed
+      if (this._overlayProtectionInterval) {
+        clearInterval(this._overlayProtectionInterval);
+      }
+
+      this._overlayProtectionInterval = setInterval(() => {
+        if (this.showEncryptionOverlay && this.isMasterKeyRequired) {
+          const overlay = document.querySelector(
+            '[data-encryption-overlay="true"]',
+          );
+          if (!overlay) {
+            // Overlay was removed, force re-render
+            this.$forceUpdate();
+            this.$nextTick(() => {
+              this.calculateOverlayPosition();
+            });
+          }
+        }
+      }, 500);
+
+      // Also use MutationObserver to detect removal
+      const observer = new MutationObserver((mutations) => {
+        if (this.showEncryptionOverlay && this.isMasterKeyRequired) {
+          const overlay = document.querySelector(
+            '[data-encryption-overlay="true"]',
+          );
+          if (!overlay) {
+            // Overlay was removed, force re-render
+            this.$forceUpdate();
+            this.$nextTick(() => {
+              this.calculateOverlayPosition();
+            });
+          }
+        }
+      });
+
+      const body = document.body;
+      if (body) {
+        observer.observe(body, {
+          childList: true,
+          subtree: true,
+        });
+        this._overlayMutationObserver = observer;
       }
     },
 
@@ -2938,6 +3163,7 @@ export default {
 .view-main {
   max-width: 1400px;
   margin: 0 auto;
+  position: relative;
 }
 
 .breadcrumbs {
@@ -3144,52 +3370,64 @@ export default {
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  background: rgba(0, 0, 0, 0.7) !important;
-  backdrop-filter: blur(4px) !important;
+  background: rgba(7, 14, 28, 0.4) !important;
+  backdrop-filter: blur(15px) !important;
+  -webkit-backdrop-filter: blur(15px) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 10000 !important;
   visibility: visible !important;
   opacity: 1 !important;
+  padding: 2rem !important;
+  overflow-y: auto !important;
 }
 
 .modal {
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.9)
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   ) !important;
-  backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
-  padding: 0 !important;
-  border-radius: 1.25rem !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 2rem !important;
+  border-radius: 2rem !important;
   min-width: 400px !important;
   max-width: 90vw !important;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6) !important;
+  max-height: 90vh !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   position: relative !important;
   z-index: 10001 !important;
   visibility: visible !important;
   opacity: 1 !important;
-  color: #e6eef6 !important;
+  color: var(--text-primary, #f1f5f9) !important;
   display: flex !important;
   flex-direction: column !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
 }
 
 .modal-header {
-  padding: 2rem 2.5rem 1rem 2.5rem !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+  padding: 1.5rem !important;
+  margin-bottom: 1.5rem !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  flex-shrink: 0 !important;
 }
 
 .modal-content {
-  padding: 1.5rem !important;
+  padding: 0 !important;
   flex: 1 !important;
+  overflow-y: auto !important;
 }
 
 .modal-form {
-  padding: 1.5rem 2.5rem 2rem 2.5rem;
-  flex: 1;
-  padding-bottom: 2rem !important;
+  padding: 0 !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.25rem !important;
 }
 
 .modal h2 {
@@ -3253,12 +3491,17 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
   margin-bottom: 0;
 }
 
 .modal .form-actions {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color) !important;
   margin-bottom: 0;
   padding-bottom: 0;
 }
@@ -3338,9 +3581,9 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(7, 14, 28, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(7, 14, 28, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.2s ease;
 }
 
@@ -3373,19 +3616,16 @@ export default {
 
 .password-modal-content {
   background: linear-gradient(
-    135deg,
-    rgba(30, 41, 59, 0.85),
-    rgba(15, 23, 42, 0.95)
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
   );
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1.5rem;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   padding: 0;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -3591,6 +3831,195 @@ export default {
 
   .password-modal-btn {
     width: 100%;
+  }
+}
+
+/* Encryption Overlay (Glassmorphic) */
+.encryption-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.15),
+    rgba(15, 23, 42, 0.12)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto;
+  /* Ensure overlay covers content but stays below modals */
+  isolation: isolate;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.encryption-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3rem 2rem;
+  max-width: 500px;
+  animation: gentlePulse 3s ease-in-out infinite;
+}
+
+@keyframes gentlePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.98;
+  }
+}
+
+.encryption-icon-wrapper {
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: iconFloat 3s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.encryption-icon {
+  color: rgba(88, 166, 255, 0.9);
+  filter: drop-shadow(0 4px 12px rgba(88, 166, 255, 0.3));
+  width: 64px;
+  height: 64px;
+}
+
+.encryption-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #e6eef6;
+  margin: 0 0 1rem 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  letter-spacing: -0.02em;
+}
+
+.encryption-description {
+  font-size: 1rem;
+  color: #cbd5e1;
+  line-height: 1.6;
+  margin: 0 0 2rem 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.encryption-unlock-btn {
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #ffffff;
+  background: linear-gradient(
+    135deg,
+    rgba(88, 166, 255, 0.2),
+    rgba(56, 189, 248, 0.15)
+  );
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow:
+    0 4px 16px rgba(88, 166, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.encryption-unlock-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.encryption-unlock-btn:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(
+    135deg,
+    rgba(88, 166, 255, 0.3),
+    rgba(56, 189, 248, 0.25)
+  );
+  border-color: rgba(88, 166, 255, 0.5);
+  box-shadow:
+    0 6px 24px rgba(88, 166, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.encryption-unlock-btn:hover::before {
+  left: 100%;
+}
+
+.encryption-unlock-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 8px rgba(88, 166, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Responsive adjustments for encryption overlay */
+@media (max-width: 768px) {
+  .encryption-overlay-content {
+    padding: 2rem 1.5rem;
+    max-width: 100%;
+  }
+
+  .encryption-title {
+    font-size: 1.5rem;
+  }
+
+  .encryption-description {
+    font-size: 0.9rem;
+  }
+
+  .encryption-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .encryption-unlock-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    width: 100%;
+    max-width: 280px;
   }
 }
 </style>

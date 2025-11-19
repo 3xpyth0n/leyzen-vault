@@ -1,4 +1,4 @@
-"""Advanced file service with versioning, sharing, and encryption key management."""
+"""Advanced file service with sharing and encryption key management."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class AdvancedFileService:
-    """Advanced file service with versioning, sharing, and encryption key management."""
+    """Advanced file service with sharing and encryption key management."""
 
     def __init__(self):
         """Initialize advanced file service."""

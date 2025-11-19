@@ -88,7 +88,7 @@ export default {
 <style scoped>
 .drag-drop-zone {
   border: 2px dashed var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;

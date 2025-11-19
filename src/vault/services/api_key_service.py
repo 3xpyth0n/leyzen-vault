@@ -35,9 +35,9 @@ class ApiKeyService:
             ValueError: If user doesn't exist or name is invalid
         """
         # Validate user exists
-        user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+        user = db.session.query(User).filter_by(id=user_id).first()
         if not user:
-            raise ValueError("User not found or inactive")
+            raise ValueError("User not found")
 
         # Validate name
         if not name or not name.strip():
@@ -100,11 +100,23 @@ class ApiKeyService:
         if not key or not key.startswith(self.key_prefix):
             return None
 
-        # Get all API keys and try to verify
-        # Note: This is not the most efficient approach, but Argon2 verification
-        # is designed to be slow to prevent brute force attacks
-        api_keys = db.session.query(ApiKey).all()
+        # Extract prefix for filtering (prefix + first 8 chars of suffix)
+        # This allows us to filter database queries before expensive Argon2 verification
+        if len(key) < len(self.key_prefix) + 8:
+            return None
 
+        prefix_to_match = key[: len(self.key_prefix) + 8] + "..."
+
+        # Filter API keys by prefix first to reduce the number of Argon2 verifications
+        # This significantly improves performance when there are many API keys
+        api_keys = (
+            db.session.query(ApiKey)
+            .filter(ApiKey.key_prefix.like(prefix_to_match))
+            .all()
+        )
+
+        # Verify each candidate key with Argon2
+        # Argon2 verification is intentionally slow to prevent brute force attacks
         for api_key in api_keys:
             try:
                 # Verify the key against the hash
@@ -114,11 +126,7 @@ class ApiKeyService:
                 db.session.commit()
 
                 # Get the user
-                user = (
-                    db.session.query(User)
-                    .filter_by(id=api_key.user_id, is_active=True)
-                    .first()
-                )
+                user = db.session.query(User).filter_by(id=api_key.user_id).first()
                 return user
             except VerifyMismatchError:
                 # Key doesn't match this hash, continue to next

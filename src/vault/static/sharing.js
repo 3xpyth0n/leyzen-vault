@@ -1196,7 +1196,8 @@ class SharingManager {
           expires_at: link.expires_at,
           max_downloads: link.max_downloads,
           download_count: link.download_count || 0,
-          is_active: link.is_active,
+          is_available:
+            typeof link.is_available === "boolean" ? link.is_available : true,
           is_expired: link.is_expired || false,
           share_url: link.share_url,
           has_password: link.has_password || false,
@@ -1336,7 +1337,6 @@ class SharingManager {
           expires_in_days: expiresInDays,
           max_downloads: maxDownloads,
           allow_download: true,
-          allow_preview: true,
         }),
       });
 
@@ -1459,11 +1459,19 @@ class SharingManager {
       return;
     }
 
-    const activeLinks = links.filter(
-      (link) =>
-        link.is_active &&
-        (!link.expires_at || new Date(link.expires_at) > new Date()),
-    );
+    const now = new Date();
+    const activeLinks = links.filter((link) => {
+      if (link.is_available === false) {
+        return false;
+      }
+      if (link.is_expired) {
+        return false;
+      }
+      if (link.expires_at) {
+        return new Date(link.expires_at) > now;
+      }
+      return true;
+    });
 
     if (activeLinks.length === 0) {
       const emptyHTML = '<p class="share-empty">No active share links</p>';

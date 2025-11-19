@@ -161,19 +161,23 @@ class RateLimiter:
         max_attempts: int,
         window_seconds: int,
         action_name: str = "action",
+        user_id: str | None = None,
     ) -> tuple[bool, str | None]:
-        """Check if IP is within custom rate limit with progressive jailing.
+        """Check if IP/user is within custom rate limit with progressive jailing.
 
-        Implements progressive rate limiting:
+        Implements progressive rate limiting with multi-factor tracking:
         - First violation: standard window
         - Multiple violations: extended window (exponential backoff)
         - Maximum window: 1 hour
+        - Tracks by IP, user_id (if provided), and action name
+        - Detects distributed attacks by tracking global action counts
 
         Args:
             ip: Client IP address
             max_attempts: Maximum number of attempts allowed
             window_seconds: Time window in seconds
             action_name: Name of the action for error messages
+            user_id: Optional user ID for multi-factor rate limiting
 
         Returns:
             (is_allowed, error_message)
@@ -198,9 +202,39 @@ class RateLimiter:
                 ).delete(synchronize_session=False)
                 self._cleanup_counter_custom = 0
 
-            # Use a unique identifier for this action type
-            # Combine IP and action name to track different actions separately
+            # SECURITY: Multi-factor rate limiting
+            # Track by IP, user_id (if provided), and action name
+            # This prevents bypassing rate limits by using multiple IPs with same user
             ip_key = f"{ip}:{action_name}"
+            if user_id:
+                user_key = f"user:{user_id}:{action_name}"
+            else:
+                user_key = None
+
+            # SECURITY: Detect distributed attacks by tracking global action counts
+            # If same action is attempted from many IPs in short time, it's likely an attack
+            global_action_key = f"global:{action_name}"
+            global_window_start = now - timedelta(seconds=window_seconds)
+            global_window_start_rounded = global_window_start.replace(microsecond=0)
+
+            # Check global action count (across all IPs)
+            global_entry = (
+                db.session.query(RateLimitTracking)
+                .filter_by(
+                    ip_address=global_action_key,
+                    window_start=global_window_start_rounded,
+                )
+                .first()
+            )
+
+            # Set a higher threshold for global rate limiting (e.g., 10x per-IP limit)
+            global_max_attempts = max_attempts * 10
+            if global_entry and global_entry.request_count >= global_max_attempts:
+                db.session.commit()
+                return (
+                    False,
+                    "Too many attempts detected across the system. Please try again later.",
+                )
 
             # Calculate base window start
             window_start = now - timedelta(seconds=window_seconds)
@@ -219,6 +253,19 @@ class RateLimiter:
                 .count()
             )
 
+            # Also check user-level violations if user_id is provided
+            if user_key:
+                user_violations = (
+                    db.session.query(RateLimitTracking)
+                    .filter(
+                        RateLimitTracking.ip_address == user_key,
+                        RateLimitTracking.window_start >= violation_window_start,
+                        RateLimitTracking.request_count >= max_attempts,
+                    )
+                    .count()
+                )
+                recent_violations = max(recent_violations, user_violations)
+
             # Calculate progressive jailing: extend window based on violation count
             effective_window_seconds = window_seconds
 
@@ -230,6 +277,7 @@ class RateLimiter:
                 window_start = now - timedelta(seconds=effective_window_seconds)
                 window_start_rounded = window_start.replace(microsecond=0)
 
+            # Check IP-based rate limit
             entry = (
                 db.session.query(RateLimitTracking)
                 .filter_by(ip_address=ip_key, window_start=window_start_rounded)
@@ -261,6 +309,45 @@ class RateLimiter:
                     request_count=1,
                 )
                 db.session.add(entry)
+
+            # Check user-based rate limit if user_id is provided
+            if user_key:
+                user_entry = (
+                    db.session.query(RateLimitTracking)
+                    .filter_by(ip_address=user_key, window_start=window_start_rounded)
+                    .first()
+                )
+
+                if user_entry:
+                    if user_entry.request_count >= max_attempts:
+                        db.session.commit()
+                        return (
+                            False,
+                            "Too many attempts for this account. Please try again later.",
+                        )
+                    user_entry.request_count += 1
+                    user_entry.last_request_time = now
+                else:
+                    user_entry = RateLimitTracking(
+                        ip_address=user_key,
+                        window_start=window_start_rounded,
+                        last_request_time=now,
+                        request_count=1,
+                    )
+                    db.session.add(user_entry)
+
+            # Update global action count
+            if global_entry:
+                global_entry.request_count += 1
+                global_entry.last_request_time = now
+            else:
+                global_entry = RateLimitTracking(
+                    ip_address=global_action_key,
+                    window_start=global_window_start_rounded,
+                    last_request_time=now,
+                    request_count=1,
+                )
+                db.session.add(global_entry)
 
             db.session.commit()
             return True, None

@@ -1,234 +1,230 @@
 <template>
-  <AppLayout @logout="logout">
-    <div class="account-view">
-      <h1>Account Settings</h1>
+  <div class="account-view">
+    <h1>Account Settings</h1>
 
-      <!-- Account Information Section -->
-      <section class="account-section">
-        <h2>Account Information</h2>
-        <div v-if="loading" class="loading">Loading...</div>
-        <div v-else-if="accountError" class="error">{{ accountError }}</div>
-        <div v-else class="account-info">
-          <div class="info-item">
-            <label>Email:</label>
-            <span>{{ accountInfo.email }}</span>
-          </div>
-          <div class="info-item">
-            <label>Account Created:</label>
-            <span>{{ formatDate(accountInfo.created_at) }}</span>
-          </div>
-          <div class="info-item" v-if="accountInfo.last_login">
-            <label>Last Login:</label>
-            <span>{{ formatDate(accountInfo.last_login) }}</span>
-          </div>
+    <!-- Account Information Section -->
+    <section class="account-section">
+      <h2>Account Information</h2>
+      <div v-if="loading" class="loading">Loading...</div>
+      <div v-else-if="accountError" class="error">{{ accountError }}</div>
+      <div v-else class="account-info">
+        <div class="info-item">
+          <label>Email:</label>
+          <span>{{ accountInfo.email }}</span>
         </div>
-      </section>
-
-      <!-- Change Email Section -->
-      <section class="account-section">
-        <h2>Change Email</h2>
-        <form @submit.prevent="handleUpdateEmail">
-          <div class="form-group">
-            <label for="new-email">New Email:</label>
-            <input
-              id="new-email"
-              v-model="emailForm.newEmail"
-              type="email"
-              required
-              :disabled="emailForm.loading"
-              placeholder="newemail@example.com"
-            />
-          </div>
-          <div class="form-group">
-            <label for="email-password">Current Password:</label>
-            <PasswordInput
-              id="email-password"
-              v-model="emailForm.password"
-              autocomplete="current-password"
-              required
-              :disabled="emailForm.loading"
-              placeholder="Enter your current password"
-            />
-          </div>
-          <div v-if="emailForm.error" class="error-message">
-            {{ emailForm.error }}
-          </div>
-          <div v-if="emailForm.success" class="success-message">
-            {{ emailForm.success }}
-          </div>
-          <div class="form-actions">
-            <button
-              type="submit"
-              :disabled="emailForm.loading"
-              class="btn btn-primary"
-            >
-              {{ emailForm.loading ? "Updating..." : "Update Email" }}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <!-- Change Password Section -->
-      <section class="account-section">
-        <h2>Change Password</h2>
-        <form @submit.prevent="handleChangePassword">
-          <div class="form-group">
-            <label for="current-password">Current Password:</label>
-            <PasswordInput
-              id="current-password"
-              v-model="passwordForm.currentPassword"
-              autocomplete="current-password"
-              required
-              :disabled="passwordForm.loading"
-              placeholder="Enter your current password"
-            />
-          </div>
-          <div class="form-group">
-            <label for="new-password">New Password:</label>
-            <PasswordInput
-              id="new-password"
-              v-model="passwordForm.newPassword"
-              autocomplete="new-password"
-              :minlength="12"
-              required
-              :disabled="passwordForm.loading"
-              placeholder="Enter new password (min 12 characters)"
-            />
-          </div>
-          <div class="form-group">
-            <label for="confirm-password">Confirm New Password:</label>
-            <PasswordInput
-              id="confirm-password"
-              v-model="passwordForm.confirmPassword"
-              autocomplete="new-password"
-              required
-              :disabled="passwordForm.loading"
-              placeholder="Confirm new password"
-            />
-          </div>
-          <div v-if="passwordForm.error" class="error-message">
-            {{ passwordForm.error }}
-          </div>
-          <div v-if="passwordForm.success" class="success-message">
-            {{ passwordForm.success }}
-          </div>
-          <div class="form-actions">
-            <button
-              type="submit"
-              :disabled="passwordForm.loading"
-              class="btn btn-primary"
-            >
-              {{ passwordForm.loading ? "Changing..." : "Change Password" }}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <!-- Delete Account Section -->
-      <section class="account-section danger-section">
-        <h2>Delete Account</h2>
-        <p class="warning-text">
-          Warning: Deleting your account will permanently remove all your data.
-          This action cannot be undone.
-        </p>
-        <button @click="showDeleteModal = true" class="btn btn-danger">
-          Delete Account
-        </button>
-      </section>
-
-      <!-- Delete Account Modal -->
-      <div
-        v-if="showDeleteModal"
-        class="modal-overlay"
-        @click="showDeleteModal = false"
-      >
-        <div class="modal glass glass-card" @click.stop>
-          <h2>Confirm Account Deletion</h2>
-          <p class="warning-text">
-            This action cannot be undone. All your data will be permanently
-            deleted.
-          </p>
-          <form @submit.prevent="handleDeleteAccount">
-            <div class="form-group">
-              <label for="delete-password"
-                >Enter your password to confirm:</label
-              >
-              <PasswordInput
-                id="delete-password"
-                v-model="deleteForm.password"
-                autocomplete="current-password"
-                required
-                :disabled="deleteForm.loading"
-                placeholder="Enter your password"
-              />
-            </div>
-            <div v-if="deleteForm.error" class="error-message">
-              {{ deleteForm.error }}
-            </div>
-            <div class="form-actions">
-              <button
-                type="submit"
-                :disabled="deleteForm.loading"
-                class="btn btn-danger"
-              >
-                {{
-                  deleteForm.loading
-                    ? "Deleting..."
-                    : "Delete Account Permanently"
-                }}
-              </button>
-              <button
-                type="button"
-                @click="
-                  showDeleteModal = false;
-                  deleteForm.password = '';
-                  deleteForm.error = '';
-                "
-                class="btn btn-secondary"
-                :disabled="deleteForm.loading"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+        <div class="info-item">
+          <label>Account Created:</label>
+          <span>{{ formatDate(accountInfo.created_at) }}</span>
+        </div>
+        <div class="info-item" v-if="accountInfo.last_login">
+          <label>Last Login:</label>
+          <span>{{ formatDate(accountInfo.last_login) }}</span>
         </div>
       </div>
+    </section>
+
+    <!-- Change Email Section -->
+    <section class="account-section">
+      <h2>Change Email</h2>
+      <form @submit.prevent="handleUpdateEmail">
+        <div class="form-group">
+          <label for="new-email">New Email:</label>
+          <input
+            id="new-email"
+            v-model="emailForm.newEmail"
+            type="email"
+            required
+            :disabled="emailForm.loading"
+            placeholder="newemail@example.com"
+          />
+        </div>
+        <div class="form-group">
+          <label for="email-password">Current Password:</label>
+          <PasswordInput
+            id="email-password"
+            v-model="emailForm.password"
+            autocomplete="current-password"
+            required
+            :disabled="emailForm.loading"
+            placeholder="Enter your current password"
+          />
+        </div>
+        <div v-if="emailForm.error" class="error-message">
+          {{ emailForm.error }}
+        </div>
+        <div v-if="emailForm.success" class="success-message">
+          {{ emailForm.success }}
+        </div>
+        <div class="form-actions">
+          <button
+            type="submit"
+            :disabled="emailForm.loading"
+            class="btn btn-primary"
+          >
+            {{ emailForm.loading ? "Updating..." : "Update Email" }}
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Change Password Section -->
+    <section class="account-section">
+      <h2>Change Password</h2>
+      <form @submit.prevent="handleChangePassword">
+        <div class="form-group">
+          <label for="current-password">Current Password:</label>
+          <PasswordInput
+            id="current-password"
+            v-model="passwordForm.currentPassword"
+            autocomplete="current-password"
+            required
+            :disabled="passwordForm.loading"
+            placeholder="Enter your current password"
+          />
+        </div>
+        <div class="form-group">
+          <label for="new-password">New Password:</label>
+          <PasswordInput
+            id="new-password"
+            v-model="passwordForm.newPassword"
+            autocomplete="new-password"
+            :minlength="12"
+            required
+            :disabled="passwordForm.loading"
+            placeholder="Enter new password (min 12 characters)"
+          />
+        </div>
+        <div class="form-group">
+          <label for="confirm-password">Confirm New Password:</label>
+          <PasswordInput
+            id="confirm-password"
+            v-model="passwordForm.confirmPassword"
+            autocomplete="new-password"
+            required
+            :disabled="passwordForm.loading"
+            placeholder="Confirm new password"
+          />
+        </div>
+        <div v-if="passwordForm.error" class="error-message">
+          {{ passwordForm.error }}
+        </div>
+        <div v-if="passwordForm.success" class="success-message">
+          {{ passwordForm.success }}
+        </div>
+        <div class="form-actions">
+          <button
+            type="submit"
+            :disabled="passwordForm.loading"
+            class="btn btn-primary"
+          >
+            {{ passwordForm.loading ? "Changing..." : "Change Password" }}
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Delete Account Section -->
+    <section class="account-section danger-section">
+      <h2>Delete Account</h2>
+      <p class="warning-text">
+        Warning: Deleting your account will permanently remove all your data.
+        This action cannot be undone.
+      </p>
+      <button @click="showDeleteModal = true" class="btn btn-danger">
+        Delete Account
+      </button>
+    </section>
+
+    <!-- Delete Account Modal -->
+    <div
+      v-if="showDeleteModal"
+      class="modal-overlay"
+      @click="showDeleteModal = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <h2>Confirm Account Deletion</h2>
+        <p class="warning-text">
+          This action cannot be undone. All your data will be permanently
+          deleted.
+        </p>
+        <form @submit.prevent="handleDeleteAccount">
+          <div class="form-group">
+            <label for="delete-password">Enter your password to confirm:</label>
+            <PasswordInput
+              id="delete-password"
+              v-model="deleteForm.password"
+              autocomplete="current-password"
+              required
+              :disabled="deleteForm.loading"
+              placeholder="Enter your password"
+            />
+          </div>
+          <div v-if="deleteForm.error" class="error-message">
+            {{ deleteForm.error }}
+          </div>
+          <div class="form-actions">
+            <button
+              type="submit"
+              :disabled="deleteForm.loading"
+              class="btn btn-danger"
+            >
+              {{
+                deleteForm.loading
+                  ? "Deleting..."
+                  : "Delete Account Permanently"
+              }}
+            </button>
+            <button
+              type="button"
+              @click="
+                showDeleteModal = false;
+                deleteForm.password = '';
+                deleteForm.error = '';
+              "
+              class="btn btn-secondary"
+              :disabled="deleteForm.loading"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
+  </div>
 
-    <!-- Confirmation Modal -->
-    <ConfirmationModal
-      :show="showConfirmModal"
-      :title="confirmModalConfig.title"
-      :message="confirmModalConfig.message"
-      :confirmText="confirmModalConfig.confirmText"
-      :dangerous="confirmModalConfig.dangerous"
-      @confirm="handleConfirmModalConfirm"
-      @cancel="handleConfirmModalCancel"
-      @close="handleConfirmModalCancel"
-    />
+  <!-- Confirmation Modal -->
+  <ConfirmationModal
+    :show="showConfirmModal"
+    :title="confirmModalConfig.title"
+    :message="confirmModalConfig.message"
+    :confirmText="confirmModalConfig.confirmText"
+    :dangerous="confirmModalConfig.dangerous"
+    @confirm="handleConfirmModalConfirm"
+    @cancel="handleConfirmModalCancel"
+    @close="handleConfirmModalCancel"
+  />
 
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
+  <!-- Alert Modal -->
+  <AlertModal
+    :show="showAlertModal"
+    :type="alertModalConfig.type"
+    :title="alertModalConfig.title"
+    :message="alertModalConfig.message"
+    @close="handleAlertModalClose"
+    @ok="handleAlertModalClose"
+  />
 
-    <!-- Re-encryption Modal -->
-    <ReEncryptionModal
-      :show="showReEncryptionModal"
-      :progress="reEncryptionProgress"
-      :currentStep="reEncryptionStep"
-      :vaultspaceName="currentVaultspaceName"
-      :currentIndex="reEncryptionCurrentIndex"
-      :totalCount="reEncryptionTotalCount"
-      :error="reEncryptionError"
-      @cancel="handleReEncryptionCancel"
-    />
-  </AppLayout>
+  <!-- Re-encryption Modal -->
+  <ReEncryptionModal
+    :show="showReEncryptionModal"
+    :progress="reEncryptionProgress"
+    :currentStep="reEncryptionStep"
+    :vaultspaceName="currentVaultspaceName"
+    :currentIndex="reEncryptionCurrentIndex"
+    :totalCount="reEncryptionTotalCount"
+    :error="reEncryptionError"
+    @cancel="handleReEncryptionCancel"
+  />
 </template>
 
 <script>
@@ -242,7 +238,6 @@ import {
 } from "../services/keyManager";
 import { encryptVaultSpaceKey } from "../services/encryption";
 import { clearEncryptedMasterKey } from "../services/masterKeyStorage";
-import AppLayout from "../components/AppLayout.vue";
 import PasswordInput from "../components/PasswordInput.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
@@ -251,7 +246,6 @@ import ReEncryptionModal from "../components/ReEncryptionModal.vue";
 export default {
   name: "AccountView",
   components: {
-    AppLayout,
     PasswordInput,
     ConfirmationModal,
     AlertModal,
@@ -849,10 +843,6 @@ export default {
       const date = new Date(dateString);
       return date.toLocaleString();
     },
-    logout() {
-      auth.logout();
-      this.$router.push("/login");
-    },
   },
 };
 </script>
@@ -1048,22 +1038,36 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(7, 14, 28, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
 }
 
 .modal {
-  background: rgba(30, 41, 59, 0.95);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   padding: 2rem;
   min-width: 400px;
   max-width: 500px;
-  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.4);
+  max-height: 90vh;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .modal h2 {

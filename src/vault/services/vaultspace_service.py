@@ -113,9 +113,7 @@ class VaultSpaceService:
                 "Please create a regular user account."
             )
 
-        owner = (
-            db.session.query(User).filter_by(id=owner_user_id, is_active=True).first()
-        )
+        owner = db.session.query(User).filter_by(id=owner_user_id).first()
         if not owner:
             raise ValueError(f"User {owner_user_id} not found")
 
@@ -208,9 +206,9 @@ class VaultSpaceService:
                 f"User {user_id} is not the owner of VaultSpace {vaultspace_id}"
             )
 
-        user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
-        if not user:
-            raise ValueError(f"User {user_id} not found")
+            user = db.session.query(User).filter_by(id=user_id).first()
+            if not user:
+                raise ValueError(f"User {user_id} not found")
 
         # Check if key already exists
         existing = (

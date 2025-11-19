@@ -109,10 +109,8 @@ class InvitationService:
             ValueError: If email already has an account or invitation exists
         """
         # Check if an active user already exists
-        # If user exists but is inactive (soft deleted), allow invitation to reactivate
-        existing_user = (
-            db.session.query(User).filter_by(email=email, is_active=True).first()
-        )
+        # Check if user already exists
+        existing_user = db.session.query(User).filter_by(email=email).first()
         if existing_user:
             raise ValueError(f"An account already exists for email {email}")
 
@@ -207,78 +205,41 @@ class InvitationService:
         # Check if user already exists
         existing_user = db.session.query(User).filter_by(email=invitation.email).first()
         if existing_user:
-            # If user exists and is active, cannot accept invitation
-            if existing_user.is_active:
-                # Mark invitation as accepted anyway
-                invitation.accepted_at = datetime.now(timezone.utc)
-                db.session.commit()
-                return None, "An account already exists for this email"
-            else:
-                # User exists but is inactive (soft deleted) - reactivate the account
-                # Update password and reactivate
-                if not self.auth_service:
-                    from flask import current_app
+            # If user exists, cannot accept invitation (user already exists)
+            # Mark invitation as accepted anyway
+            invitation.accepted_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return None, "An account already exists for this email"
 
-                    secret_key = current_app.config.get("SECRET_KEY", "")
-                    self.auth_service = AuthService(secret_key)
-
-                # Update password
-                existing_user.password_hash = self.auth_service.password_hasher.hash(
-                    password
-                )
-                # Reactivate user
-                existing_user.is_active = True
-                # Update invited_by if not set
-                if not existing_user.invited_by:
-                    existing_user.invited_by = invitation.invited_by
-                # Reset email verification status (need to verify again)
-                existing_user.email_verified = False
-                db.session.commit()
-
-                # Mark invitation as accepted
-                invitation.accepted_at = datetime.now(timezone.utc)
-                db.session.commit()
-
-                # Send verification email (always required after reactivation)
-                self.email_verification_service.send_verification_email(
-                    user_id=existing_user.id,
-                    base_url=None,  # Will use VAULT_URL from settings or request.host_url as fallback
-                )
-
-                return existing_user, "Account reactivated successfully"
-
-        # Create user account
+        # Create new user account
         if not self.auth_service:
             from flask import current_app
 
             secret_key = current_app.config.get("SECRET_KEY", "")
             self.auth_service = AuthService(secret_key)
 
-        try:
-            user = self.auth_service.create_user(
-                email=invitation.email,
-                password=password,
-                global_role=GlobalRole.USER,
-            )
-            # Set invited_by
-            user.invited_by = invitation.invited_by
-            # Email verification will be sent automatically after account creation
-            db.session.commit()
+        # Create user
+        new_user = self.auth_service.create_user(
+            email=invitation.email,
+            password=password,
+            global_role=invitation.role,
+        )
 
-            # Mark invitation as accepted
-            invitation.accepted_at = datetime.now(timezone.utc)
-            db.session.commit()
+        # Set invited_by
+        new_user.invited_by = invitation.invited_by
+        db.session.commit()
 
-            # Send verification email (always required)
-            # VAULT_URL from settings will be used automatically
-            self.email_verification_service.send_verification_email(
-                user_id=user.id,
-                base_url=None,  # Will use VAULT_URL from settings or request.host_url as fallback
-            )
+        # Mark invitation as accepted
+        invitation.accepted_at = datetime.now(timezone.utc)
+        db.session.commit()
 
-            return user, "Account created successfully"
-        except ValueError as e:
-            return None, str(e)
+        # Send verification email (always required)
+        self.email_verification_service.send_verification_email(
+            user_id=new_user.id,
+            base_url=None,  # Will use VAULT_URL from settings or request.host_url as fallback
+        )
+
+        return new_user, "Account created successfully"
 
     def list_invitations(
         self,

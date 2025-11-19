@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request, send_file
@@ -35,7 +36,6 @@ def create_public_link():
             "max_downloads": 10 (optional),
             "max_access_count": 100 (optional),
             "allow_download": true,
-            "allow_preview": true,
             "permission_type": "read" | "write" | "admin"
         }
 
@@ -68,7 +68,6 @@ def create_public_link():
             max_downloads=data.get("max_downloads"),
             max_access_count=data.get("max_access_count"),
             allow_download=data.get("allow_download", True),
-            allow_preview=data.get("allow_preview", True),
             permission_type=data.get("permission_type", "read"),
         )
 
@@ -121,6 +120,20 @@ def list_public_links():
             )
             if file_obj:
                 resource_info = file_obj.to_dict()
+            else:
+                # Skip links to deleted/non-existent files
+                continue
+        elif link.resource_type == "vaultspace":
+            from vault.database.schema import VaultSpace
+
+            vaultspace = (
+                db.session.query(VaultSpace).filter_by(id=link.resource_id).first()
+            )
+            if vaultspace:
+                resource_info = vaultspace.to_dict()
+            else:
+                # Skip links to non-existent vaultspaces
+                continue
 
         link_data["resource"] = resource_info
         enriched_links.append(link_data)
@@ -139,9 +152,7 @@ def update_public_link(link_id: str):
             "expires_in_days": 7 (optional),
             "max_downloads": 10 (optional),
             "max_access_count": 100 (optional),
-            "allow_download": true (optional),
-            "allow_preview": true (optional),
-            "is_active": true (optional)
+            "allow_download": true (optional)
         }
 
     Returns:
@@ -163,8 +174,6 @@ def update_public_link(link_id: str):
             max_downloads=data.get("max_downloads"),
             max_access_count=data.get("max_access_count"),
             allow_download=data.get("allow_download"),
-            allow_preview=data.get("allow_preview"),
-            is_active=data.get("is_active"),
         )
 
         if not updated_link:
@@ -209,6 +218,25 @@ def verify_public_link():
     Returns:
         JSON with share link info if valid
     """
+    # Rate limiting to prevent brute force attacks on share link passwords
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=300,  # 5 minutes
+            action_name="share_link_verify",
+            user_id=None,  # Share links are public, no user_id available
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+
     token = request.view_args.get("token")
     if not token:
         return jsonify({"error": "Token required"}), 400
@@ -234,9 +262,8 @@ def verify_public_link():
 
     if not share_link.can_access():
         current_app.logger.info(
-            "get_public_link: share link cannot be accessed token=%s active=%s expired=%s download_limit_reached=%s access_limit_reached=%s",
+            "get_public_link: share link cannot be accessed token=%s expired=%s download_limit_reached=%s access_limit_reached=%s",
             token,
-            share_link.is_active,
             share_link.is_expired(),
             share_link.is_download_limit_reached(),
             share_link.is_access_limit_reached(),
@@ -256,6 +283,25 @@ def get_public_link(token: str):
     Returns:
         JSON with share link info and resource info
     """
+    # Rate limiting to prevent enumeration attacks
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=20,
+            window_seconds=60,  # 1 minute
+            action_name="share_link_info",
+            user_id=None,  # Share links are public, no user_id available
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many requests. Please try again later."}
+                ),
+                429,
+            )
+
     password = request.args.get("password")
     download_requested = request.args.get("download") == "true"
 
@@ -299,8 +345,8 @@ def get_public_link(token: str):
                 ),
                 "max_downloads": share_link.max_downloads,
                 "download_count": share_link.download_count or 0,
-                "is_active": share_link.is_active,
                 "is_expired": not share_link.can_access(),
+                "is_available": share_link.can_access(),
                 "is_valid": True,
                 "error": None,
                 "has_password": share_link.password_hash is not None,
@@ -338,6 +384,28 @@ def access_public_link(token: str):
     Returns:
         JSON with share link info and resource info
     """
+    # Rate limiting to prevent abuse
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=10,
+            window_seconds=60,  # 1 minute
+            action_name="share_link_access",
+            user_id=None,  # Share links are public, no user_id available
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {
+                        "error": error_msg
+                        or "Too many access attempts. Please try again later."
+                    }
+                ),
+                429,
+            )
+
     data = request.get_json() or {}
     password = data.get("password")
 
@@ -387,6 +455,28 @@ def download_shared_file(token: str):
     Returns:
         Encrypted file data as binary stream
     """
+    # Rate limiting to prevent abuse and brute force attacks
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=10,
+            window_seconds=60,  # 1 minute
+            action_name="share_link_download",
+            user_id=None,  # Share links are public, no user_id available
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {
+                        "error": error_msg
+                        or "Too many download attempts. Please try again later."
+                    }
+                ),
+                429,
+            )
+
     password = request.args.get("password")
     sharing_service = _get_sharing_service()
     storage = current_app.config.get("VAULT_STORAGE")
@@ -433,8 +523,6 @@ def download_shared_file(token: str):
                 return jsonify({"error": "Share link not found"}), 404
 
         # Check if link can be accessed
-        if not share_link.is_active:
-            return jsonify({"error": "Share link is not active"}), 403
         if share_link.is_expired():
             return jsonify({"error": "Share link has expired"}), 403
         if share_link.is_access_limit_reached():
@@ -469,20 +557,11 @@ def download_shared_file(token: str):
         if share_link.is_download_limit_reached():
             return jsonify({"error": "Download limit reached for this share link"}), 403
 
-        # Increment access count (for tracking access attempts)
-        # This is done before checking file existence to track all access attempts
-        accessed_link = sharing_service.access_public_link(token, password)
-        if not accessed_link:
-            current_app.logger.error(
-                "download_shared_file: access_public_link returned None token=%s",
-                token,
-            )
-            return jsonify({"error": "Failed to process download"}), 500
-
         # Get storage reference
         storage_ref = file_obj.storage_ref or file_obj.id
 
-        # Try storage_ref first, then fallback to file_id if not found
+        # Verify file exists in storage BEFORE incrementing counters
+        # This prevents race conditions where counters are incremented for non-existent files
         if not storage.file_exists(storage_ref):
             # If storage_ref is different from file_id, try file_id as fallback
             if storage_ref != file_obj.id and storage.file_exists(file_obj.id):
@@ -504,7 +583,6 @@ def download_shared_file(token: str):
                         False,
                         file_id=file_obj.id,
                     )
-                # Note: access_count was incremented, but download_count was not
                 return jsonify({"error": "File data not found in storage"}), 404
 
         # Find file path
@@ -523,15 +601,37 @@ def download_shared_file(token: str):
                     False,
                     file_id=file_obj.id,
                 )
-            # Note: access_count was incremented, but download_count was not
             return jsonify({"error": "File not found"}), 404
 
-        # Only increment download count if file exists and is accessible
-        # Re-fetch share link to get latest state (access_count was already incremented)
-        share_link = sharing_service.get_public_link(token)
-        if share_link:
+        # SECURITY: Use atomic transaction to increment counters only after file verification
+        # This prevents race conditions and ensures counters are accurate
+        try:
+            # Re-fetch share link within transaction to get latest state
+            share_link = sharing_service.get_public_link(token)
+            if not share_link:
+                return jsonify({"error": "Share link not found"}), 404
+
+            # Double-check limits within transaction (may have changed)
+            if share_link.is_expired():
+                return jsonify({"error": "Share link has expired"}), 403
+            if share_link.is_access_limit_reached():
+                return jsonify({"error": "Share link access limit reached"}), 403
+            if share_link.is_download_limit_reached():
+                return (
+                    jsonify({"error": "Download limit reached for this share link"}),
+                    403,
+                )
+
+            # Increment both access and download counts atomically
+            share_link.access_count += 1
             share_link.download_count += 1
+            share_link.last_accessed_at = datetime.now(timezone.utc)
             db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Failed to increment share link counters: {e}")
+            # Continue with download even if counter increment fails
+            # (logging is more important than blocking the download)
 
         # Log successful download
         if audit:

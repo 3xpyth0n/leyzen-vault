@@ -37,9 +37,9 @@ class ZeroTrustService:
         Returns:
             Tuple of (is_allowed, reason)
         """
-        user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+        user = db.session.query(User).filter_by(id=user_id).first()
         if not user:
-            return False, "User not found or inactive"
+            return False, "User not found"
 
         # Check device trust
         if device_fingerprint:

@@ -49,10 +49,7 @@
         class="sidebar-toggle"
         :title="sidebarCollapsed ? 'Expand' : 'Collapse'"
       >
-        <Icon
-          :name="sidebarCollapsed ? 'chevron-right' : 'chevron-left'"
-          :size="16"
-        />
+        <Icon name="chevron-left" :size="16" />
       </button>
     </aside>
 
@@ -227,7 +224,7 @@ export default {
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0 1rem 1rem 0;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
-  transition: width 0.3s ease;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   overflow-y: auto;
   overflow-x: hidden;
@@ -237,6 +234,8 @@ export default {
   flex-direction: column;
   visibility: visible;
   opacity: 1;
+  will-change: width;
+  contain: layout style paint;
 }
 
 /* Custom scrollbar for sidebar */
@@ -266,10 +265,6 @@ export default {
   transform: none !important;
 }
 
-.sidebar.collapsed .sidebar-label {
-  display: none;
-}
-
 .sidebar-toggle {
   position: absolute;
   bottom: 1rem;
@@ -286,10 +281,14 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  transition: all 0.2s ease;
+  transition:
+    background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 101;
   visibility: visible;
   opacity: 1;
+  will-change: transform, background;
+  transform: rotate(0deg);
 }
 
 .sidebar.collapsed .sidebar-toggle {
@@ -297,32 +296,32 @@ export default {
   left: auto;
   visibility: visible;
   opacity: 1;
+  transform: rotate(180deg);
 }
 
 .sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
-  padding: 0 1rem;
+  padding: 0 0.75rem;
   flex: 1;
 }
 
 .sidebar.collapsed .sidebar-nav {
-  padding: 0 0.5rem;
+  padding: 1.25rem 0.75rem;
   align-items: center;
-  margin-top: 1rem;
+  gap: 0.625rem;
 }
 
 .sidebar-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.875rem 1rem;
+  padding: 0.875rem 0.75rem;
   background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(10px);
   border: none;
@@ -330,7 +329,7 @@ export default {
   color: #e6eef6;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 0.95rem;
   text-align: left;
   width: 100%;
@@ -344,6 +343,10 @@ export default {
 .sidebar.collapsed .sidebar-item {
   padding: 0.875rem;
   justify-content: center;
+  align-items: center;
+  width: 100%;
+  gap: 0;
+  min-height: 2.75rem;
 }
 
 .sidebar-item:hover {
@@ -353,8 +356,8 @@ export default {
 }
 
 .sidebar.collapsed .sidebar-item:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
+  transform: scale(1.08);
+  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.25);
 }
 
 .sidebar-item.router-link-active {
@@ -374,15 +377,37 @@ export default {
   flex-shrink: 0;
   color: currentColor;
   pointer-events: none;
-  transition: transform 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+  width: 20px;
+  height: 20px;
+  margin: 0;
 }
 
 .sidebar-item:hover .sidebar-icon {
-  transform: scale(1.1);
+  transform: scale(1.15) rotate(5deg);
+}
+
+.sidebar.collapsed .sidebar-item:hover .sidebar-icon {
+  transform: scale(1.2) rotate(0deg);
 }
 
 .sidebar-label {
   flex: 1;
+  opacity: 1;
+  transition:
+    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(0);
+  will-change: opacity, transform;
+}
+
+.sidebar.collapsed .sidebar-label {
+  display: none;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* Main Content */

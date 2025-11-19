@@ -10,6 +10,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Chunked File Upload**: Added chunked upload system for large files. Files larger than 5MB are automatically split into chunks and uploaded sequentially, preventing memory issues and enabling upload of files of any size.
+- **Encryption Overlay for SSO Users**: Added glassmorphic encryption overlay that appears when SSO-authenticated users access encrypted VaultSpaces. The overlay prevents unexpected logout and provides a clear interface for password entry to decrypt files.
 
 ### Changed
 
@@ -19,6 +20,9 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Modal Display After Page Refresh**: Fixed issue where confirmation modals (logout, delete, etc.) would not appear after page refresh. The issue was caused by CSS conflicts where global styles were hiding modal overlays.
+- **SSO User Unexpected Logout**: Fixed issue where SSO-authenticated users were automatically logged out when canceling the password modal. Users can now cancel the password entry without being disconnected, with the encryption overlay remaining visible until they unlock their files.
+- **Origin Validation Security**: Strengthened origin validation to block unauthorized origins and explicitly reject "null" origin in production mode, preventing CSRF attacks.
+- **Timing Attack Protection**: Implemented constant-time comparisons for password and token verification to prevent timing-based enumeration attacks.
 
 ## [2.1.0] - 2025-11-15
 

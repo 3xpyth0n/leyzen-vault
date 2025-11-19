@@ -274,7 +274,7 @@ export default {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
   overflow: hidden;
 }
 

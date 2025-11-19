@@ -1058,13 +1058,13 @@ async function shareFile(fileId, key = null) {
       const shareLinks = linksData.share_links || [];
       // Map to legacy format
       const activeLinks = shareLinks
-        .filter((link) => link.is_active && !link.is_expired)
+        .filter((link) => !link.is_expired)
         .map((link) => ({
           link_id: link.token || link.link_id,
           expires_at: link.expires_at,
           max_downloads: link.max_downloads,
           download_count: link.download_count || 0,
-          is_active: link.is_active,
+          is_active: true, // Always true for existing links
           is_expired: link.is_expired || false,
         }));
 
@@ -1115,7 +1115,6 @@ async function shareFile(fileId, key = null) {
         expires_in_days: null, // Can be extended with UI inputs
         max_downloads: null, // Can be extended with UI inputs
         allow_download: true,
-        allow_preview: true,
       }),
     });
 
@@ -1156,13 +1155,13 @@ async function shareFile(fileId, key = null) {
         const shareLinks = linksData.share_links || [];
         // Map to legacy format
         const activeLinks = shareLinks
-          .filter((link) => link.is_active && !link.is_expired)
+          .filter((link) => !link.is_expired)
           .map((link) => ({
             link_id: link.token || link.link_id,
             expires_at: link.expires_at,
             max_downloads: link.max_downloads,
             download_count: link.download_count || 0,
-            is_active: link.is_active,
+            is_active: true, // Always true for existing links
             is_expired: link.is_expired || false,
           }));
 
@@ -1261,9 +1260,7 @@ async function revokeShareLink(fileId, linkToken) {
           const linksData = await linksResponse.json();
           // API v2 returns share_links array
           const shareLinks = linksData.share_links || [];
-          const activeLinks = shareLinks.filter(
-            (link) => link.is_active && !link.is_expired,
-          );
+          const activeLinks = shareLinks.filter((link) => !link.is_expired);
 
           if (activeLinks.length > 0) {
             const linksHTML = generateExistingLinksHTML(

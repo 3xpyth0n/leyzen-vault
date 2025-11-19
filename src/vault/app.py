@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import Flask
 
@@ -22,6 +23,27 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 from common.token_utils import derive_internal_api_token  # noqa: E402
 
 bootstrap_entry_point()
+
+
+def _normalize_origin(origin: str | None) -> str | None:
+    """Return normalized scheme://host[:port] representation for an origin."""
+    if not origin:
+        return None
+    origin = origin.strip()
+    if not origin:
+        return None
+
+    try:
+        parsed = urlsplit(origin)
+    except Exception:
+        return None
+
+    if not parsed.scheme or not parsed.netloc:
+        return None
+
+    normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+    return normalized.rstrip("/")
+
 
 from .blueprints.admin import admin_api_bp  # noqa: E402
 from .blueprints.auth import auth_bp  # noqa: E402
@@ -296,6 +318,34 @@ def create_app(
         )
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
+    # Configure allowed origins (CORS + Origin validation)
+    vault_settings = app.config.get("VAULT_SETTINGS")
+    allowed_origins_value = (
+        env_values.get("VAULT_ALLOWED_ORIGINS")
+        or env_values.get("ALLOWED_ORIGINS")
+        or env_values.get("CORS_ALLOWED_ORIGINS")
+    )
+    allowed_origins: list[str] = []
+    if allowed_origins_value:
+        for origin in allowed_origins_value.split(","):
+            normalized = origin.strip()
+            if normalized:
+                allowed_origins.append(normalized.rstrip("/"))
+    elif vault_settings and vault_settings.vault_url:
+        allowed_origins.append(vault_settings.vault_url.rstrip("/"))
+
+    app.config["ALLOWED_ORIGINS"] = allowed_origins
+    app.config["ALLOWED_ORIGINS_NORMALIZED"] = {
+        normalized
+        for normalized in (_normalize_origin(origin) for origin in allowed_origins)
+        if normalized
+    }
+    # Default list of headers allowed for CORS requests
+    app.config.setdefault(
+        "ALLOWED_CORS_HEADERS",
+        "Authorization, Content-Type, X-Requested-With, Accept, X-CSRF-Token",
+    )
+
     # CSRF protection disabled - using JWT-only authentication
     # JWT tokens in Authorization headers are protected by Same-Origin Policy
     # Additional security provided by Origin/Referer validation in jwt_required decorator
@@ -390,9 +440,11 @@ def create_app(
         while True:
             try:
                 time.sleep(3600)  # Run every hour
-                deleted_count = audit_service.cleanup_old_logs()
-                if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} old audit log entries")
+                # Use application context for database operations
+                with app.app_context():
+                    deleted_count = audit_service.cleanup_old_logs()
+                    if deleted_count > 0:
+                        logger.info(f"Cleaned up {deleted_count} old audit log entries")
             except Exception as e:
                 logger.error(f"Error during audit log cleanup: {e}", exc_info=True)
 
@@ -401,6 +453,25 @@ def create_app(
 
     cleanup_thread = threading.Thread(target=_audit_cleanup_worker, daemon=True)
     cleanup_thread.start()
+
+    def _origin_is_allowed_for_request(origin: str | None) -> bool:
+        """Check if the provided Origin header is allowed for this request."""
+        if not origin:
+            return False
+
+        normalized_origin = _normalize_origin(origin)
+        if not normalized_origin:
+            return False
+
+        from flask import request
+
+        host_origin = _normalize_origin(f"{request.scheme}://{request.host}")
+        allowed_set = app.config.get("ALLOWED_ORIGINS_NORMALIZED", set())
+
+        if host_origin and normalized_origin == host_origin:
+            return True
+
+        return normalized_origin in allowed_set
 
     # Register blueprints
     app.register_blueprint(admin_api_bp)  # Admin API
@@ -472,6 +543,25 @@ def create_app(
         return response
 
     @app.before_request
+    def handle_cors_preflight():
+        """Handle restrictive CORS preflight checks."""
+        from flask import make_response, jsonify, request
+
+        if request.method != "OPTIONS":
+            return None
+
+        origin = request.headers.get("Origin")
+        if origin and _origin_is_allowed_for_request(origin):
+            response = make_response("", 204)
+            response.headers["Content-Length"] = "0"
+            return response
+
+        if origin:
+            return jsonify({"error": "CORS origin not allowed"}), 403
+
+        return None
+
+    @app.before_request
     def generate_csp_nonce():
         """Generate CSP nonce for each request and make it available to templates."""
         # Import secrets here to avoid importing at module level if not needed
@@ -505,7 +595,7 @@ def create_app(
         """Add strict security headers including CSP."""
         # Import json here to avoid importing at module level if not needed
         import json
-        from flask import request, g
+        from flask import current_app, g, request
         from common.constants import SESSION_MAX_AGE_SECONDS
 
         # Get CSP nonce for this request
@@ -580,9 +670,46 @@ def create_app(
         }
 
         response.headers["Report-To"] = json.dumps(report_to)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers.setdefault("Referrer-Policy", "same-origin")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # Enforce additional security headers
+        response.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+
+        # Strict-Transport-Security (only when HTTPS is expected)
+        settings = current_app.config.get("VAULT_SETTINGS")
+        enforce_https = bool(settings and settings.session_cookie_secure)
+        if enforce_https or request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains; preload",
+            )
+
+        # Restrictive CORS headers
+        origin_header = request.headers.get("Origin")
+        allowed_cors_headers = current_app.config.get(
+            "ALLOWED_CORS_HEADERS",
+            "Authorization, Content-Type, X-Requested-With, Accept, X-CSRF-Token",
+        )
+        if origin_header and _origin_is_allowed_for_request(origin_header):
+            response.headers["Access-Control-Allow-Origin"] = origin_header
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = (
+                "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            )
+            response.headers["Access-Control-Allow-Headers"] = allowed_cors_headers
+            response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
+            response.headers["Access-Control-Max-Age"] = "600"
+            response.headers.add("Vary", "Origin")
+        elif request.method == "OPTIONS" and origin_header:
+            # Preflight request from disallowed origin -> ensure browsers fail fast
+            response.status_code = 403
+
         return response
 
     @app.route("/favicon.ico")

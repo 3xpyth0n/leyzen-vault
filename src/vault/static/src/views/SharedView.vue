@@ -1,122 +1,106 @@
 <template>
-  <AppLayout @logout="logout">
-    <ConfirmationModal
-      :show="showRevokeConfirm"
-      title="Revoke Share Link"
-      message="Are you sure you want to revoke this share link? This action cannot be undone."
-      confirm-text="Revoke"
-      :dangerous="true"
-      @confirm="handleRevokeConfirm"
-      @close="showRevokeConfirm = false"
-    />
-    <div class="shared-view">
-      <header class="view-header">
-        <h1>Shared Files</h1>
-        <p class="view-description">
-          Files you have shared with others via download links
-        </p>
-      </header>
+  <ConfirmationModal
+    :show="showRevokeConfirm"
+    title="Revoke Share Link"
+    message="Are you sure you want to revoke this share link? This action cannot be undone."
+    confirm-text="Revoke"
+    :dangerous="true"
+    @confirm="handleRevokeConfirm"
+    @close="showRevokeConfirm = false"
+  />
+  <div class="shared-view">
+    <header class="view-header">
+      <h1>Shared Files</h1>
+      <p class="view-description">
+        Files you have shared with others via download links
+      </p>
+    </header>
 
-      <main class="view-main">
-        <div v-if="loading" class="loading">Loading shared files...</div>
-        <div v-else-if="error" class="error glass">{{ error }}</div>
-        <div v-else-if="files.length === 0" class="empty-state glass">
-          <p>No shared files yet</p>
-          <p class="empty-hint">
-            Share a file to generate a download link that others can use
-          </p>
-        </div>
-        <div v-else class="shared-files-list glass">
-          <div v-for="file in files" :key="file.id" class="shared-file-item">
-            <div class="file-info">
-              <div class="file-icon" v-html="getIcon('file', 32)"></div>
-              <div class="file-details">
-                <h3 class="file-name">{{ file.original_name }}</h3>
-                <p class="file-meta">
-                  Size: {{ formatSize(file.size) }} • Created:
-                  {{ formatDate(file.created_at) }}
-                </p>
-              </div>
+    <main class="view-main">
+      <div v-if="loading" class="loading">Loading shared files...</div>
+      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="files.length === 0" class="empty-state glass">
+        <p>No shared files yet</p>
+        <p class="empty-hint">
+          Share a file to generate a download link that others can use
+        </p>
+      </div>
+      <div v-else class="shared-files-list glass">
+        <div v-for="file in files" :key="file.id" class="shared-file-item">
+          <div class="file-info">
+            <div class="file-icon" v-html="getIcon('file', 32)"></div>
+            <div class="file-details">
+              <h3 class="file-name">{{ file.original_name }}</h3>
+              <p class="file-meta">
+                Size: {{ formatSize(file.size) }} • Created:
+                {{ formatDate(file.created_at) }}
+              </p>
             </div>
-            <div class="share-links-info">
-              <div
-                v-for="link in file.share_links || []"
-                :key="link.link_id"
-                class="share-link-card"
-              >
-                <div class="link-info">
-                  <div :data-link-id="link.link_id" class="link-url">
-                    {{ getShareUrl(link, file.id) }}
-                  </div>
-                  <div class="link-meta">
-                    <span v-if="link.expires_at">
-                      Expires: {{ formatDate(link.expires_at) }}
-                    </span>
-                    <span v-else>No expiration</span>
-                    <span v-if="link.max_downloads">
-                      • {{ link.download_count || 0 }}/{{ link.max_downloads }}
-                      downloads
-                    </span>
-                    <span v-else>
-                      • {{ link.download_count || 0 }} downloads
-                    </span>
-                    <span v-if="link.max_access_count">
-                      • {{ link.access_count || 0 }}/{{ link.max_access_count }}
-                      accesses
-                    </span>
-                    <span v-else>
-                      • {{ link.access_count || 0 }} accesses
-                    </span>
-                    <span v-if="link.has_password"> • Password protected </span>
-                  </div>
-                  <div class="link-status">
-                    <span
-                      :class="{
-                        'status-active':
-                          link.is_active &&
-                          (!link.expires_at ||
-                            new Date(link.expires_at) > new Date()),
-                        'status-expired':
-                          link.expires_at &&
-                          new Date(link.expires_at) <= new Date(),
-                        'status-revoked': !link.is_active,
-                      }"
-                    >
-                      {{ getLinkStatus(link) }}
-                    </span>
-                  </div>
+          </div>
+          <div class="share-links-info">
+            <div
+              v-for="link in file.share_links || []"
+              :key="link.link_id"
+              class="share-link-card"
+            >
+              <div class="link-info">
+                <div :data-link-id="link.link_id" class="link-url">
+                  {{ getShareUrl(link, file.id) }}
                 </div>
-                <div class="link-actions">
-                  <button
-                    @click="copyLink(link, file.id)"
-                    class="btn btn-small"
-                    :disabled="
-                      !link.is_active ||
-                      (link.expires_at &&
-                        new Date(link.expires_at) <= new Date())
-                    "
-                  >
-                    Copy Link
-                  </button>
-                  <button
-                    @click="revokeLink(link.link_id, file.id)"
-                    class="btn btn-small btn-danger"
-                    :disabled="!link.is_active"
-                  >
-                    Revoke
-                  </button>
+                <div class="link-meta">
+                  <span v-if="link.expires_at">
+                    Expires: {{ formatDate(link.expires_at) }}
+                  </span>
+                  <span v-else>No expiration</span>
+                  <span v-if="link.max_downloads">
+                    • {{ link.download_count || 0 }}/{{ link.max_downloads }}
+                    downloads
+                  </span>
+                  <span v-else>
+                    • {{ link.download_count || 0 }} downloads
+                  </span>
+                  <span v-if="link.max_access_count">
+                    • {{ link.access_count || 0 }}/{{ link.max_access_count }}
+                    accesses
+                  </span>
+                  <span v-else> • {{ link.access_count || 0 }} accesses </span>
+                  <span v-if="link.has_password"> • Password protected </span>
                 </div>
+                <div class="link-status">
+                  <span
+                    :class="{
+                      'status-active': isLinkAvailable(link),
+                      'status-expired': isLinkExpired(link),
+                    }"
+                  >
+                    {{ getLinkStatus(link) }}
+                  </span>
+                </div>
+              </div>
+              <div class="link-actions">
+                <button
+                  @click="copyLink(link, file.id)"
+                  class="btn btn-small"
+                  :disabled="!isLinkAvailable(link)"
+                >
+                  Copy Link
+                </button>
+                <button
+                  @click="revokeLink(link.link_id, file.id)"
+                  class="btn btn-small btn-danger"
+                >
+                  Revoke
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </main>
-    </div>
-  </AppLayout>
+      </div>
+    </main>
+  </div>
 </template>
 
 <script>
-import AppLayout from "../components/AppLayout.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import { auth } from "../services/api";
 import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
@@ -124,7 +108,6 @@ import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
 export default {
   name: "SharedView",
   components: {
-    AppLayout,
     ConfirmationModal,
   },
   data() {
@@ -188,11 +171,15 @@ export default {
             continue;
           }
 
-          if (!link.is_active) {
+          if (link.is_available === false) {
             continue;
           }
 
-          if (link.expires_at && new Date(link.expires_at) <= now) {
+          const expiredFlag =
+            typeof link.is_expired === "boolean"
+              ? link.is_expired
+              : link.expires_at && new Date(link.expires_at) <= now;
+          if (expiredFlag) {
             continue;
           }
 
@@ -400,15 +387,46 @@ export default {
 
       return url;
     },
+    isLinkExpired(link) {
+      if (typeof link.is_expired === "boolean") {
+        return link.is_expired;
+      }
+      if (!link.expires_at) {
+        return false;
+      }
+      return new Date(link.expires_at) <= new Date();
+    },
+    isDownloadLimitReached(link) {
+      if (typeof link.is_download_limit_reached === "boolean") {
+        return link.is_download_limit_reached;
+      }
+      if (!link.max_downloads) {
+        return false;
+      }
+      const downloads = link.download_count || 0;
+      return downloads >= link.max_downloads;
+    },
+    isLinkAvailable(link) {
+      if (typeof link.is_available === "boolean" && !link.is_available) {
+        return false;
+      }
+      if (this.isLinkExpired(link)) {
+        return false;
+      }
+      if (this.isDownloadLimitReached(link)) {
+        return false;
+      }
+      return true;
+    },
     getLinkStatus(link) {
-      if (!link.is_active) {
-        return "Revoked";
-      }
-      if (link.expires_at && new Date(link.expires_at) <= new Date()) {
-        return "Expired";
-      }
-      if (link.max_downloads && link.download_count >= link.max_downloads) {
-        return "Max downloads reached";
+      if (!this.isLinkAvailable(link)) {
+        if (this.isLinkExpired(link)) {
+          return "Expired";
+        }
+        if (this.isDownloadLimitReached(link)) {
+          return "Max downloads reached";
+        }
+        return "Unavailable";
       }
       return "Active";
     },
@@ -423,10 +441,6 @@ export default {
       if (!dateString) return "";
       const date = new Date(dateString);
       return date.toLocaleString();
-    },
-    logout() {
-      auth.logout();
-      this.$router.push("/login");
     },
   },
 };

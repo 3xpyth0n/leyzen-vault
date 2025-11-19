@@ -133,10 +133,17 @@ def sync_volumes():
         )
         # Use token hash as identifier to avoid storing full token
         import hashlib
+        from vault.blueprints.utils import get_client_ip
 
-        token_id = f"sync:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
+        client_ip = get_client_ip() or "unknown"
+        # For internal API, we use token hash as user_id equivalent
+        token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            token_id, max_attempts=1, window_seconds=60, action_name="internal_sync"
+            client_ip,
+            max_attempts=1,
+            window_seconds=60,
+            action_name="internal_sync",
+            user_id=f"token:{token_hash}",
         )
         if not is_allowed:
             current_app.logger.warning(

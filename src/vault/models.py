@@ -21,7 +21,6 @@ class User:
     created_at: datetime
     last_login: datetime | None = None
     email: str | None = None
-    is_active: bool = True
     is_admin: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -32,7 +31,6 @@ class User:
             "email": self.email,
             "created_at": self.created_at.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
-            "is_active": self.is_active,
         }
 
 
@@ -127,7 +125,7 @@ class ShareLink:
     expires_at: datetime | None
     max_downloads: int | None
     download_count: int
-    is_active: bool
+    is_active: bool  # Always True for existing links (kept for backward compatibility)
 
     def to_dict(self, share_url: str | None = None) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization.
@@ -142,7 +140,7 @@ class ShareLink:
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "max_downloads": self.max_downloads,
             "download_count": self.download_count,
-            "is_active": self.is_active,
+            "is_active": True,  # Always True since we only return existing links
             "is_expired": self.is_expired(),
         }
         if share_url:
@@ -163,8 +161,6 @@ class ShareLink:
         """
         from datetime import timezone, timedelta
 
-        if not self.is_active:
-            return True
         if self.expires_at:
             # Compare using UTC to ensure consistency
             # expires_at is timezone-aware, so we compare with UTC now

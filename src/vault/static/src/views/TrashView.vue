@@ -1,174 +1,172 @@
 <template>
-  <AppLayout @logout="logout">
-    <div class="trash-view glass glass-card">
-      <header class="view-header">
-        <h1>
-          <span class="header-icon" v-html="getIcon('trash', 28)"></span>
-          Trash
-        </h1>
-        <div class="header-actions">
-          <button
-            @click="emptyTrash"
-            :disabled="loading || trashFiles.length === 0"
-            class="btn btn-danger"
-          >
-            Empty Trash
-          </button>
-          <button
-            @click="refreshTrash"
-            :disabled="loading"
-            class="btn btn-secondary"
-          >
-            {{ loading ? "Loading..." : "Refresh" }}
-          </button>
-        </div>
-      </header>
+  <div class="trash-view glass glass-card">
+    <header class="view-header">
+      <h1>
+        <span class="header-icon" v-html="getIcon('trash', 28)"></span>
+        Trash
+      </h1>
+      <div class="header-actions">
+        <button
+          @click="emptyTrash"
+          :disabled="loading || trashFiles.length === 0"
+          class="btn btn-danger"
+        >
+          Empty Trash
+        </button>
+        <button
+          @click="refreshTrash"
+          :disabled="loading"
+          class="btn btn-secondary"
+        >
+          {{ loading ? "Loading..." : "Refresh" }}
+        </button>
+      </div>
+    </header>
 
-      <main class="view-main">
-        <div v-if="loading" class="loading">Loading trash...</div>
-        <div v-else-if="error" class="error glass">{{ error }}</div>
-        <div v-else-if="trashFiles.length === 0" class="empty-state">
-          <p>Trash is empty</p>
+    <main class="view-main">
+      <div v-if="loading" class="loading">Loading trash...</div>
+      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="trashFiles.length === 0" class="empty-state">
+        <p>Trash is empty</p>
+      </div>
+      <div v-else class="trash-list">
+        <div class="trash-info glass">
+          <p>{{ trashFiles.length }} item(s) in trash</p>
         </div>
-        <div v-else class="trash-list">
-          <div class="trash-info glass">
-            <p>{{ trashFiles.length }} item(s) in trash</p>
-          </div>
-          <div class="files-grid">
-            <div
-              v-for="file in trashFiles"
-              :key="file.id"
-              class="file-card trash-item glass"
-              :class="{ selected: isSelected(file.id) }"
-              @click="handleItemClick(file, $event)"
-            >
-              <input
-                type="checkbox"
-                :checked="isSelected(file.id)"
-                @click.stop="toggleSelection(file)"
-                class="file-checkbox"
-              />
-              <div class="file-icon" v-html="getFileIcon(file)"></div>
-              <div class="file-info">
-                <h3>{{ file.original_name }}</h3>
-                <p class="file-type">
-                  {{
-                    file.mime_type === "application/x-directory"
-                      ? "Folder"
-                      : file.mime_type
-                  }}
-                </p>
-                <p class="file-size" v-if="file.size">
-                  {{ formatSize(file.size) }}
-                </p>
-                <p class="file-date">
-                  Deleted: {{ formatDate(file.deleted_at) }}
-                </p>
-              </div>
-              <div class="file-actions">
-                <button
-                  @click.stop="restoreFile(file)"
-                  class="btn-icon"
-                  title="Restore"
-                  v-html="getIcon('restore', 20)"
-                ></button>
-                <button
-                  @click.stop="permanentlyDeleteFile(file)"
-                  class="btn-icon"
-                  title="Delete Permanently"
-                  v-html="getIcon('trash', 20)"
-                ></button>
-              </div>
+        <div class="files-grid">
+          <div
+            v-for="file in trashFiles"
+            :key="file.id"
+            class="file-card trash-item glass"
+            :class="{ selected: isSelected(file.id) }"
+            @click="handleItemClick(file, $event)"
+          >
+            <input
+              type="checkbox"
+              :checked="isSelected(file.id)"
+              @click.stop="toggleSelection(file)"
+              class="file-checkbox"
+            />
+            <div class="file-icon" v-html="getFileIcon(file)"></div>
+            <div class="file-info">
+              <h3>{{ file.original_name }}</h3>
+              <p class="file-type">
+                {{
+                  file.mime_type === "application/x-directory"
+                    ? "Folder"
+                    : file.mime_type
+                }}
+              </p>
+              <p class="file-size" v-if="file.size">
+                {{ formatSize(file.size) }}
+              </p>
+              <p class="file-date">
+                Deleted: {{ formatDate(file.deleted_at) }}
+              </p>
+            </div>
+            <div class="file-actions">
+              <button
+                @click.stop="restoreFile(file)"
+                class="btn-icon"
+                title="Restore"
+                v-html="getIcon('restore', 20)"
+              ></button>
+              <button
+                @click.stop="permanentlyDeleteFile(file)"
+                class="btn-icon"
+                title="Delete Permanently"
+                v-html="getIcon('trash', 20)"
+              ></button>
             </div>
           </div>
         </div>
-      </main>
+      </div>
+    </main>
 
-      <!-- Restore Confirmation Modal -->
-      <div
-        v-if="showRestoreConfirm"
-        class="modal-overlay"
-        @click="showRestoreConfirm = false"
-      >
-        <div class="modal glass glass-card" @click.stop>
-          <h2>Restore File</h2>
-          <p>
-            Are you sure you want to restore "{{
-              itemToRestore?.original_name
-            }}"?
-          </p>
-          <div v-if="restoreError" class="error-message glass">
-            {{ restoreError }}
-          </div>
-          <div class="form-actions">
-            <button
-              @click="confirmRestore"
-              :disabled="restoring"
-              class="btn btn-primary"
-            >
-              {{ restoring ? "Restoring..." : "Restore" }}
-            </button>
-            <button
-              type="button"
-              @click="
-                showRestoreConfirm = false;
-                restoreError = null;
-                itemToRestore = null;
-              "
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
+    <!-- Restore Confirmation Modal -->
+    <div
+      v-if="showRestoreConfirm"
+      class="modal-overlay"
+      @click="showRestoreConfirm = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <h2>Restore File</h2>
+        <p>
+          Are you sure you want to restore "{{ itemToRestore?.original_name }}"?
+        </p>
+        <div v-if="restoreError" class="error-message glass">
+          {{ restoreError }}
+        </div>
+        <div class="form-actions">
+          <button
+            @click="confirmRestore"
+            :disabled="restoring"
+            class="btn btn-primary"
+          >
+            {{ restoring ? "Restoring..." : "Restore" }}
+          </button>
+          <button
+            type="button"
+            @click="
+              showRestoreConfirm = false;
+              restoreError = null;
+              itemToRestore = null;
+            "
+            class="btn btn-secondary"
+          >
+            Cancel
+          </button>
         </div>
       </div>
+    </div>
 
-      <!-- Permanent Delete Confirmation Modal -->
-      <div
-        v-if="showDeleteConfirm"
-        class="modal-overlay"
-        @click="showDeleteConfirm = false"
-      >
-        <div class="modal glass glass-card" @click.stop>
-          <h2>Permanently Delete File</h2>
-          <p>
-            Are you sure you want to permanently delete "{{
-              itemToDelete?.original_name
-            }}"? This action cannot be undone.
-          </p>
-          <div v-if="deleteError" class="error-message glass">
-            {{ deleteError }}
-          </div>
-          <div class="form-actions">
-            <button
-              @click="confirmPermanentDelete"
-              :disabled="deleting"
-              class="btn btn-danger"
-            >
-              {{ deleting ? "Deleting..." : "Delete Permanently" }}
-            </button>
-            <button
-              type="button"
-              @click="
-                showDeleteConfirm = false;
-                deleteError = null;
-                itemToDelete = null;
-              "
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
+    <!-- Permanent Delete Confirmation Modal -->
+    <div
+      v-if="showDeleteConfirm"
+      class="modal-overlay"
+      @click="showDeleteConfirm = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <h2>Permanently Delete File</h2>
+        <p>
+          Are you sure you want to permanently delete "{{
+            itemToDelete?.original_name
+          }}"? This action cannot be undone.
+        </p>
+        <div v-if="deleteError" class="error-message glass">
+          {{ deleteError }}
+        </div>
+        <div class="form-actions">
+          <button
+            @click="confirmPermanentDelete"
+            :disabled="deleting"
+            class="btn btn-danger"
+          >
+            {{ deleting ? "Deleting..." : "Delete Permanently" }}
+          </button>
+          <button
+            type="button"
+            @click="
+              showDeleteConfirm = false;
+              deleteError = null;
+              itemToDelete = null;
+            "
+            class="btn btn-secondary"
+          >
+            Cancel
+          </button>
         </div>
       </div>
+    </div>
 
-      <!-- Empty Trash Confirmation Modal -->
+    <!-- Empty Trash Confirmation Modal -->
+    <teleport to="body">
       <div
         v-if="showEmptyTrashConfirm"
         class="modal-overlay"
         @click="showEmptyTrashConfirm = false"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <h2>Empty Trash</h2>
           <p>
             Are you sure you want to permanently delete all
@@ -199,31 +197,29 @@
           </div>
         </div>
       </div>
-    </div>
+    </teleport>
+  </div>
 
-    <!-- Batch Actions Bar -->
-    <BatchActionsTrash
-      :selectedItems="selectedItems"
-      :processing="restoring || deleting"
-      :actionType="restoring ? 'restore' : deleting ? 'delete' : null"
-      @restore="batchRestore"
-      @delete="batchPermanentDelete"
-      @clear="clearSelection"
-    />
-  </AppLayout>
+  <!-- Batch Actions Bar -->
+  <BatchActionsTrash
+    :selectedItems="selectedItems"
+    :processing="restoring || deleting"
+    :actionType="restoring ? 'restore' : deleting ? 'delete' : null"
+    @restore="batchRestore"
+    @delete="batchPermanentDelete"
+    @clear="clearSelection"
+  />
 </template>
 
 <script>
 import { ref, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { trash, auth } from "../services/api";
-import AppLayout from "../components/AppLayout.vue";
 import BatchActionsTrash from "../components/BatchActionsTrash.vue";
 
 export default {
   name: "TrashView",
   components: {
-    AppLayout,
     BatchActionsTrash,
   },
   setup() {
@@ -503,11 +499,6 @@ export default {
       },
     );
 
-    const logout = () => {
-      auth.logout();
-      router.push("/login");
-    };
-
     return {
       loading,
       error,
@@ -541,7 +532,6 @@ export default {
       formatDate,
       getIcon,
       getFileIcon,
-      logout,
     };
   },
 };
@@ -559,7 +549,7 @@ export default {
   align-items: center;
   margin-bottom: 2rem;
   padding: 1.5rem 2rem;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
 }
 
 .view-header h1 {
@@ -689,32 +679,44 @@ export default {
 
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 100000;
   padding: 2rem;
+  overflow-y: auto;
 }
 
 .modal {
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  backdrop-filter: var(--blur, blur(16px));
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-lg, 12px);
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   padding: 2rem;
   max-width: 500px;
   width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .modal h2 {
   margin: 0 0 1rem 0;
   font-size: 1.5rem;
+  color: var(--text-primary, #f1f5f9);
+  font-weight: 600;
 }
 
 .modal p {
@@ -726,6 +728,10 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .error-message {

@@ -16,6 +16,78 @@ from sqlalchemy.orm import Session
 from vault.database.schema import GlobalRole, JWTBlacklist, User, db
 from vault.blueprints.validators import validate_email
 from vault.utils.password_validator import validate_password_strength_raise
+from vault.utils.constant_time import constant_time_compare
+
+
+# Cache for jti column existence check (per process)
+_jti_column_exists_cache = None
+
+
+def _check_jti_column_exists() -> bool:
+    """Check if jti column exists in jwt_blacklist table.
+
+    Uses a cached result to avoid repeated database queries.
+    Returns False if check fails (safe default - assumes column doesn't exist).
+    This function NEVER raises exceptions - all errors are caught and return False.
+
+    Returns:
+        True if column exists, False otherwise
+    """
+    global _jti_column_exists_cache
+
+    # Return cached result if available
+    if _jti_column_exists_cache is not None:
+        return _jti_column_exists_cache
+
+    # Check if column exists - wrap everything in try/except to ensure no exceptions escape
+    try:
+        from sqlalchemy.exc import ProgrammingError, InternalError
+        from sqlalchemy.sql import text as sql_text
+        from flask import has_app_context
+
+        # Only check if we're in Flask application context
+        try:
+            if not has_app_context():
+                # Not in context - assume column doesn't exist (safe default)
+                _jti_column_exists_cache = False
+                return False
+        except Exception:
+            # If has_app_context() itself fails, assume no context
+            _jti_column_exists_cache = False
+            return False
+
+        # Try a simple query that will fail if column doesn't exist
+        # Use a very lightweight query that won't affect performance
+        try:
+            # Use a query that will fail gracefully if column doesn't exist
+            result = db.session.execute(
+                sql_text("SELECT jti FROM jwt_blacklist LIMIT 0")
+            )
+            # If query succeeds, column exists
+            _jti_column_exists_cache = True
+            return True
+        except (ProgrammingError, InternalError) as e:
+            # Check if error is about missing column
+            error_str = str(e).lower()
+            if (
+                "column" in error_str and "jti" in error_str
+            ) or "does not exist" in error_str:
+                # Column doesn't exist
+                _jti_column_exists_cache = False
+                return False
+            else:
+                # Other database error - assume column doesn't exist (safe default)
+                _jti_column_exists_cache = False
+                return False
+        except Exception:
+            # Any other error - assume column doesn't exist (safe default)
+            _jti_column_exists_cache = False
+            return False
+    except Exception:
+        # Any error during check - assume column doesn't exist (safe default)
+        # This outer catch ensures NO exceptions can escape this function
+        _jti_column_exists_cache = False
+        return False
 
 
 class AuthService:
@@ -147,12 +219,64 @@ class AuthService:
         try:
             # Validate token format first (basic sanity check)
             if not token or not isinstance(token, str) or len(token) < 10:
+                # Use constant-time comparison to prevent timing attacks
+                # Compare against a dummy token to maintain constant time
+                constant_time_compare(token or "", "dummy_token_for_timing_protection")
                 return None
 
-            # Check if token is blacklisted
-            blacklisted = db.session.query(JWTBlacklist).filter_by(token=token).first()
-            if blacklisted:
-                return None
+            # SECURITY: Check for token replay using jti (JWT ID) claim
+            # First decode without verification to get jti, then verify
+            jti = None
+            try:
+                unverified_payload = jwt.decode(
+                    token, options={"verify_signature": False}
+                )
+                jti = unverified_payload.get("jti")
+            except Exception:
+                jti = None
+
+            # Check if jti is blacklisted (replay protection)
+            # Handle case where jti column might not exist yet (database migration pending)
+            if jti:
+                # Check if jti column exists before using it
+                # _check_jti_column_exists() never raises exceptions, so this is safe
+                try:
+                    jti_column_exists = _check_jti_column_exists()
+                    if jti_column_exists:
+                        try:
+                            blacklisted_jti = (
+                                db.session.query(JWTBlacklist)
+                                .filter_by(jti=jti)
+                                .first()
+                            )
+                            if blacklisted_jti:
+                                # Use constant-time comparison to prevent timing attacks
+                                constant_time_compare(
+                                    token, "dummy_token_for_timing_protection"
+                                )
+                                return None
+                        except Exception:
+                            # Database error during jti check - continue without jti validation
+                            # This is expected if column doesn't exist or database is unavailable
+                            pass
+                except Exception:
+                    # If _check_jti_column_exists() somehow raises (shouldn't happen), continue
+                    pass
+
+            # Check if token is blacklisted (full token match)
+            # Protect database query to avoid ProgrammingError being logged as JWT error
+            try:
+                blacklisted = (
+                    db.session.query(JWTBlacklist).filter_by(token=token).first()
+                )
+                if blacklisted:
+                    # Use constant-time comparison to prevent timing attacks
+                    constant_time_compare(token, "dummy_token_for_timing_protection")
+                    return None
+            except Exception:
+                # Database error during blacklist check - continue with token verification
+                # This is expected if table doesn't exist or database is unavailable
+                pass
 
             # Decode and verify token with strict algorithm validation
             # CRITICAL: Always explicitly specify algorithms to prevent algorithm confusion attacks
@@ -171,29 +295,55 @@ class AuthService:
             # Validate required claims
             user_id = payload.get("user_id")
             if not user_id or not isinstance(user_id, str):
+                # Use constant-time comparison to prevent timing attacks
+                constant_time_compare(str(user_id or ""), "dummy_user_id")
                 return None
 
             # Validate token type (prevent misuse of other tokens)
             # Ensure token was issued by our service (has expected claims)
             if "email" not in payload or "global_role" not in payload:
+                # Use constant-time comparison to prevent timing attacks
+                constant_time_compare(str(user_id), "dummy_user_id")
                 return None
 
             # Validate issuer claim if present (additional security check)
             # Tokens issued by our service should have iss="leyzen-vault"
-            if "iss" in payload and payload["iss"] != "leyzen-vault":
+            if "iss" in payload and not constant_time_compare(
+                str(payload.get("iss", "")), "leyzen-vault"
+            ):
                 return None
 
             # Regular user lookup from database
-            user = db.session.query(User).filter_by(id=user_id, is_active=True).first()
-            return user
+            # Protect database query to avoid ProgrammingError being logged as JWT error
+            try:
+                user = db.session.query(User).filter_by(id=user_id).first()
+                # Use constant-time comparison to prevent user enumeration via timing
+                if not user:
+                    constant_time_compare(str(user_id), "dummy_user_id")
+                return user
+            except Exception:
+                # Database error during user lookup - token is valid but can't verify user
+                # Return None to indicate authentication failure
+                return None
         except jwt.InvalidTokenError:
+            # Use constant-time comparison to prevent timing attacks
+            constant_time_compare(token or "", "dummy_token_for_timing_protection")
             return None
         except Exception as e:
             # Log unexpected errors but don't expose details
-            import logging
+            # Don't log database errors (ProgrammingError, InternalError) as JWT errors
+            # These are already handled in the try blocks above
+            from sqlalchemy.exc import ProgrammingError, InternalError
 
-            logger = logging.getLogger(__name__)
-            logger.warning(f"JWT verification error: {type(e).__name__}")
+            if not isinstance(e, (ProgrammingError, InternalError)):
+                # Only log non-database errors as JWT verification errors
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(f"JWT verification error: {type(e).__name__}")
+
+            # Use constant-time comparison to prevent timing attacks
+            constant_time_compare(token or "", "dummy_token_for_timing_protection")
             return None
 
     def refresh_token(self, token: str) -> tuple[User, str] | None:
@@ -264,33 +414,22 @@ class AuthService:
         db.session.commit()
         return user
 
-    def delete_user(self, user_id: str, hard_delete: bool = True) -> bool:
-        """Delete a user and all associated data.
+    def delete_user(self, user_id: str) -> bool:
+        """Permanently delete a user and all associated data.
 
         Args:
             user_id: User ID
-            hard_delete: If True, permanently delete user and all data (default: True).
-                        If False, soft delete (set is_active=False).
 
         Returns:
             True if user was deleted, False if not found
         """
-        # Get user (including inactive users for hard delete)
-        if hard_delete:
-            user = db.session.query(User).filter_by(id=user_id).first()
-        else:
-            user = self.get_user(user_id)
+        # Get user
+        user = db.session.query(User).filter_by(id=user_id).first()
 
         if not user:
             return False
 
-        if not hard_delete:
-            # Soft delete: just mark as inactive
-            user.is_active = False
-            db.session.commit()
-            return True
-
-        # Hard delete: permanently delete user and all associated data
+        # Permanently delete user and all associated data
         # First, delete all physical files owned by the user
         from vault.database.schema import File
         from flask import current_app
@@ -366,6 +505,9 @@ class AuthService:
         )
         issued_at = datetime.now(timezone.utc)
 
+        # Generate unique JWT ID (jti) for replay protection
+        jti = secrets.token_urlsafe(32)
+
         # Regular User payload with all required claims
         # CRITICAL: Always use HS256 algorithm explicitly
         payload = {
@@ -376,6 +518,7 @@ class AuthService:
             "iat": issued_at,
             "typ": "JWT",  # Token type claim
             "iss": "leyzen-vault",  # Issuer claim for additional validation
+            "jti": jti,  # JWT ID for replay protection
         }
 
         # Encode with explicit algorithm specification
@@ -388,17 +531,78 @@ class AuthService:
             token: JWT token string to blacklist
             expiration_time: Token expiration time (from JWT payload)
         """
+        # Extract jti from token if present
+        jti = None
+        try:
+            unverified_payload = jwt.decode(token, options={"verify_signature": False})
+            jti = unverified_payload.get("jti")
+        except Exception:
+            pass
+
         # Check if token is already blacklisted
         existing = db.session.query(JWTBlacklist).filter_by(token=token).first()
         if existing:
             return
 
-        blacklist_entry = JWTBlacklist(
-            token=token,
-            expires_at=expiration_time,
-        )
-        db.session.add(blacklist_entry)
-        db.session.commit()
+        # Check if jti is already blacklisted (handle case where column might not exist)
+        if jti and _check_jti_column_exists():
+            try:
+                existing_jti = db.session.query(JWTBlacklist).filter_by(jti=jti).first()
+                if existing_jti:
+                    return
+            except Exception as e:
+                # Log error but continue
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.debug(f"JTI check error (non-fatal): {type(e).__name__}")
+
+        # Create blacklist entry
+        # Handle case where jti column might not exist yet (database migration pending)
+        # Use raw SQL to avoid SQLAlchemy model issues with missing columns
+        from sqlalchemy.sql import text as sql_text
+
+        jti_column_exists = _check_jti_column_exists()
+
+        try:
+            if jti_column_exists and jti:
+                # Column exists, insert with jti
+                db.session.execute(
+                    sql_text(
+                        "INSERT INTO jwt_blacklist (token, jti, expires_at, created_at) "
+                        "VALUES (:token, :jti, :expires_at, NOW())"
+                    ),
+                    {"token": token, "jti": jti, "expires_at": expiration_time},
+                )
+            else:
+                # Column doesn't exist or jti is None, insert without jti
+                db.session.execute(
+                    sql_text(
+                        "INSERT INTO jwt_blacklist (token, expires_at, created_at) "
+                        "VALUES (:token, :expires_at, NOW())"
+                    ),
+                    {"token": token, "expires_at": expiration_time},
+                )
+            db.session.commit()
+        except Exception as e:
+            # Fallback: try without jti if first attempt failed
+            db.session.rollback()
+            try:
+                db.session.execute(
+                    sql_text(
+                        "INSERT INTO jwt_blacklist (token, expires_at, created_at) "
+                        "VALUES (:token, :expires_at, NOW())"
+                    ),
+                    {"token": token, "expires_at": expiration_time},
+                )
+                db.session.commit()
+            except Exception as e2:
+                # If that also fails, log and re-raise
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create blacklist entry: {e2}")
+                raise
 
         # Clean up expired tokens (older than 24 hours past expiration)
         cleanup_threshold = datetime.now(timezone.utc) - timedelta(hours=24)

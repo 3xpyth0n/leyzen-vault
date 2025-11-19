@@ -1,323 +1,236 @@
 <template>
-  <div class="admin-panel-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
-      <nav class="sidebar-nav">
-        <button
-          @click="$router.push('/dashboard')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/dashboard' }"
-        >
-          <Icon name="home" :size="20" class="sidebar-icon" />
-          <span class="sidebar-label">Home</span>
-        </button>
-        <button
-          @click="$router.push('/starred')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/starred' }"
-        >
-          <Icon name="star" :size="20" class="sidebar-icon" />
-          <span class="sidebar-label">Starred</span>
-        </button>
-        <button
-          @click="$router.push('/shared')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/shared' }"
-        >
-          <Icon name="link" :size="20" class="sidebar-icon" />
-          <span class="sidebar-label">Shared</span>
-        </button>
-        <button
-          @click="$router.push('/recent')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/recent' }"
-        >
-          <Icon name="clock" :size="20" class="sidebar-icon" />
-          <span class="sidebar-label">Recent</span>
-        </button>
-        <button
-          @click="$router.push('/trash')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/trash' }"
-        >
-          <Icon name="trash" :size="20" class="sidebar-icon" />
-          <span class="sidebar-label">Trash</span>
-        </button>
-      </nav>
-      <button
-        @click="toggleSidebar"
-        class="sidebar-toggle"
-        :title="sidebarCollapsed ? 'Expand' : 'Collapse'"
-      >
-        <Icon
-          :name="sidebarCollapsed ? 'chevron-right' : 'chevron-left'"
-          :size="16"
-        />
-      </button>
-    </aside>
-
-    <!-- Main Content Area -->
-    <div
-      class="main-content"
-      :class="{ 'sidebar-collapsed': sidebarCollapsed }"
-    >
-      <!-- Admin Header with Tabs -->
-      <header class="admin-header-section">
-        <div class="admin-header-top">
-          <div class="header-left">
-            <h1
-              class="admin-title"
-              @click="$router.push('/dashboard')"
-              style="cursor: pointer"
-            >
-              Admin Panel
-            </h1>
-          </div>
-          <div class="header-right">
-            <div class="header-actions">
-              <router-link to="/account" class="btn btn-account"
-                >Account</router-link
-              >
-              <button @click="handleLogout" class="btn btn-logout">
-                Logout
-              </button>
-            </div>
-          </div>
+  <div class="admin-panel">
+    <!-- Admin Tabs -->
+    <header>
+      <div class="admin-tabs-wrapper">
+        <div class="admin-tabs" ref="tabsContainer">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :ref="(el) => setTabRef(el, tab.id)"
+            @click="activeTab = tab.id"
+            :class="['admin-tab-button', { active: activeTab === tab.id }]"
+          >
+            {{ tab.label }}
+          </button>
+          <div
+            class="tab-indicator"
+            ref="indicator"
+            :style="indicatorStyle"
+          ></div>
         </div>
-        <div class="admin-tabs-wrapper">
-          <div class="admin-tabs" ref="tabsContainer">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              :ref="(el) => setTabRef(el, tab.id)"
-              @click="activeTab = tab.id"
-              :class="['admin-tab-button', { active: activeTab === tab.id }]"
-            >
-              {{ tab.label }}
-            </button>
-            <div
-              class="tab-indicator"
-              ref="indicator"
-              :style="indicatorStyle"
-            ></div>
-          </div>
-        </div>
-      </header>
+      </div>
+    </header>
 
-      <!-- Page Content -->
-      <main class="admin-content-wrapper">
-        <div class="admin-content">
-          <!-- Dashboard Tab -->
-          <div v-if="activeTab === 'dashboard'" class="dashboard-tab">
-            <div v-if="statsLoading" class="loading glass glass-card">
-              Loading statistics...
+    <!-- Page Content -->
+    <main class="admin-content-wrapper">
+      <div class="admin-content">
+        <!-- Dashboard Tab -->
+        <div v-if="activeTab === 'dashboard'" class="dashboard-tab">
+          <div v-if="statsLoading" class="loading glass glass-card">
+            Loading statistics...
+          </div>
+          <div v-else-if="statsError" class="error glass glass-card">
+            {{ statsError }}
+          </div>
+          <div v-else-if="stats" class="dashboard-content">
+            <!-- Header with refresh button -->
+            <div class="dashboard-header glass glass-card">
+              <h2>Dashboard Overview</h2>
+              <div class="header-actions">
+                <span class="last-update" v-if="lastUpdateTime">
+                  Last updated: {{ formatTime(lastUpdateTime) }}
+                </span>
+                <button @click="loadStats" class="btn-refresh" title="Refresh">
+                  <Icon name="clock" :size="18" />
+                </button>
+              </div>
             </div>
-            <div v-else-if="statsError" class="error glass glass-card">
-              {{ statsError }}
-            </div>
-            <div v-else-if="stats" class="dashboard-content">
-              <!-- Header with refresh button -->
-              <div class="dashboard-header glass glass-card">
-                <h2>Dashboard Overview</h2>
-                <div class="header-actions">
-                  <span class="last-update" v-if="lastUpdateTime">
-                    Last updated: {{ formatTime(lastUpdateTime) }}
-                  </span>
-                  <button
-                    @click="loadStats"
-                    class="btn-refresh"
-                    title="Refresh"
+
+            <!-- Main Statistics Cards -->
+            <div class="stats-grid">
+              <div class="stat-card glass glass-card">
+                <h3>Users</h3>
+                <div class="stat-value">{{ stats.users.total }}</div>
+                <div class="stat-details">
+                  <div class="stat-detail-row" v-if="stats.users.by_role">
+                    <span class="stat-detail-label">Regular:</span>
+                    <span class="stat-detail-value">{{
+                      stats.users.by_role.user || 0
+                    }}</span>
+                  </div>
+                  <div class="stat-detail-row" v-if="stats.users.by_role">
+                    <span class="stat-detail-label">Admins:</span>
+                    <span class="stat-detail-value">{{
+                      (stats.users.by_role.admin || 0) +
+                      (stats.users.by_role.superadmin || 0)
+                    }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="stat-card glass glass-card">
+                <h3>Files</h3>
+                <div class="stat-value">{{ stats.files.total }}</div>
+                <div class="stat-details">
+                  <div class="stat-detail-row">
+                    <span class="stat-detail-label">Deleted:</span>
+                    <span class="stat-detail-value">{{
+                      stats.files.deleted
+                    }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="stat-card glass glass-card">
+                <h3>VaultSpaces</h3>
+                <div class="stat-value">{{ stats.vaultspaces.total }}</div>
+                <div class="stat-details">
+                  <div
+                    class="stat-detail-row"
+                    v-if="stats.vaultspaces.avg_per_user"
                   >
-                    <Icon name="clock" :size="18" />
-                  </button>
+                    <span class="stat-detail-label">Avg per user:</span>
+                    <span class="stat-detail-value">{{
+                      stats.vaultspaces.avg_per_user
+                    }}</span>
+                  </div>
                 </div>
               </div>
-
-              <!-- Main Statistics Cards -->
-              <div class="stats-grid">
-                <div class="stat-card glass glass-card">
-                  <h3>Users</h3>
-                  <div class="stat-value">{{ stats.users.total }}</div>
-                  <div class="stat-details">
-                    <div class="stat-detail-row" v-if="stats.users.by_role">
-                      <span class="stat-detail-label">Regular:</span>
-                      <span class="stat-detail-value">{{
-                        stats.users.by_role.user || 0
-                      }}</span>
+              <div class="stat-card glass glass-card">
+                <h3>Disk Storage</h3>
+                <div class="stat-value">
+                  {{ stats.disk ? stats.disk.used_gb : 0 }} GB
+                </div>
+                <div class="stat-details">
+                  <div class="storage-progress" v-if="stats.disk">
+                    <div class="progress-bar">
+                      <div
+                        class="progress-fill"
+                        :style="{
+                          width:
+                            Math.min(stats.disk.percentage || 0, 100) + '%',
+                        }"
+                        :class="{ 'high-usage': stats.disk.percentage >= 80 }"
+                      ></div>
                     </div>
-                    <div class="stat-detail-row" v-if="stats.users.by_role">
-                      <span class="stat-detail-label">Admins:</span>
-                      <span class="stat-detail-value">{{
-                        (stats.users.by_role.admin || 0) +
-                        (stats.users.by_role.superadmin || 0)
-                      }}</span>
+                    <div class="progress-text">
+                      {{ Math.round(stats.disk.percentage || 0) }}% used
                     </div>
                   </div>
-                </div>
-                <div class="stat-card glass glass-card">
-                  <h3>Files</h3>
-                  <div class="stat-value">{{ stats.files.total }}</div>
-                  <div class="stat-details">
-                    <div class="stat-detail-row">
-                      <span class="stat-detail-label">Deleted:</span>
-                      <span class="stat-detail-value">{{
-                        stats.files.deleted
-                      }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="stat-card glass glass-card">
-                  <h3>VaultSpaces</h3>
-                  <div class="stat-value">{{ stats.vaultspaces.total }}</div>
-                  <div class="stat-details">
-                    <div
-                      class="stat-detail-row"
-                      v-if="stats.vaultspaces.avg_per_user"
+                  <div class="stat-detail-row" v-if="stats.disk">
+                    <span class="stat-detail-label">Total:</span>
+                    <span class="stat-detail-value"
+                      >{{ stats.disk.total_gb }} GB</span
                     >
-                      <span class="stat-detail-label">Avg per user:</span>
-                      <span class="stat-detail-value">{{
-                        stats.vaultspaces.avg_per_user
-                      }}</span>
-                    </div>
                   </div>
-                </div>
-                <div class="stat-card glass glass-card">
-                  <h3>Disk Storage</h3>
-                  <div class="stat-value">
-                    {{ stats.disk ? stats.disk.used_gb : 0 }} GB
-                  </div>
-                  <div class="stat-details">
-                    <div class="storage-progress" v-if="stats.disk">
-                      <div class="progress-bar">
-                        <div
-                          class="progress-fill"
-                          :style="{
-                            width:
-                              Math.min(stats.disk.percentage || 0, 100) + '%',
-                          }"
-                          :class="{ 'high-usage': stats.disk.percentage >= 80 }"
-                        ></div>
-                      </div>
-                      <div class="progress-text">
-                        {{ Math.round(stats.disk.percentage || 0) }}% used
-                      </div>
-                    </div>
-                    <div class="stat-detail-row" v-if="stats.disk">
-                      <span class="stat-detail-label">Total:</span>
-                      <span class="stat-detail-value"
-                        >{{ stats.disk.total_gb }} GB</span
-                      >
-                    </div>
-                    <div class="stat-detail-row" v-if="stats.disk">
-                      <span class="stat-detail-label">Free:</span>
-                      <span class="stat-detail-value"
-                        >{{ stats.disk.free_gb }} GB</span
-                      >
-                    </div>
-                  </div>
-                </div>
-                <div class="stat-card glass glass-card">
-                  <h3>Recent Activity</h3>
-                  <div class="stat-value">
-                    {{ stats.users.recent_activity }}
-                  </div>
-                  <div class="stat-details">
-                    <span class="stat-detail">Users (last 7 days)</span>
+                  <div class="stat-detail-row" v-if="stats.disk">
+                    <span class="stat-detail-label">Free:</span>
+                    <span class="stat-detail-value"
+                      >{{ stats.disk.free_gb }} GB</span
+                    >
                   </div>
                 </div>
               </div>
-
-              <!-- Activity and Overview Section -->
-              <div class="overview-section">
-                <div class="overview-left">
-                  <RecentActivityList
-                    :logs="stats.recent_audit_logs || []"
-                    :loading="statsLoading"
-                    @view-all="activeTab = 'audit'"
-                  />
+              <div class="stat-card glass glass-card">
+                <h3>Recent Activity</h3>
+                <div class="stat-value">
+                  {{ stats.users.recent_activity }}
                 </div>
-                <div class="overview-right">
-                  <TopUsersCard
-                    :users="stats.top_users || []"
-                    :loading="statsLoading"
-                    @view-all="activeTab = 'users'"
-                  />
+                <div class="stat-details">
+                  <span class="stat-detail">Users (last 7 days)</span>
                 </div>
               </div>
+            </div>
 
-              <!-- Alerts and Quick Stats Section -->
-              <div class="alerts-section">
-                <QuotaAlertsCard
-                  :alerts="stats.quota_alerts || []"
+            <!-- Activity and Overview Section -->
+            <div class="overview-section">
+              <div class="overview-left">
+                <RecentActivityList
+                  :logs="stats.recent_audit_logs || []"
                   :loading="statsLoading"
-                  @view-all="activeTab = 'quotas'"
+                  @view-all="activeTab = 'audit'"
                 />
               </div>
+              <div class="overview-right">
+                <TopUsersCard
+                  :users="stats.top_users || []"
+                  :loading="statsLoading"
+                  @view-all="activeTab = 'users'"
+                />
+              </div>
+            </div>
 
-              <!-- Quick Stats Cards -->
-              <div class="quick-stats-grid">
-                <div
-                  class="quick-stat-card glass glass-card"
-                  @click="activeTab = 'api-keys'"
-                >
-                  <h4>API Keys</h4>
-                  <div class="quick-stat-value">
-                    {{ stats.api_keys?.total || 0 }}
-                  </div>
-                  <div class="quick-stat-detail">
-                    <span v-if="stats.api_keys?.with_usage">
-                      {{ stats.api_keys.with_usage }} active
-                    </span>
-                    <span v-else>No usage data</span>
-                  </div>
+            <!-- Alerts and Quick Stats Section -->
+            <div class="alerts-section">
+              <QuotaAlertsCard
+                :alerts="stats.quota_alerts || []"
+                :loading="statsLoading"
+                @view-all="activeTab = 'quotas'"
+              />
+            </div>
+
+            <!-- Quick Stats Cards -->
+            <div class="quick-stats-grid">
+              <div
+                class="quick-stat-card glass glass-card"
+                @click="activeTab = 'api-keys'"
+              >
+                <h4>API Keys</h4>
+                <div class="quick-stat-value">
+                  {{ stats.api_keys?.total || 0 }}
                 </div>
-                <div
-                  class="quick-stat-card glass glass-card"
-                  @click="activeTab = 'sso-providers'"
-                >
-                  <h4>Authentication</h4>
-                  <div class="quick-stat-value">
-                    {{ stats.sso_providers?.total || 0 }}
-                  </div>
-                  <div class="quick-stat-detail">
-                    <span v-if="stats.sso_providers?.active">
-                      {{ stats.sso_providers.active }} active
-                    </span>
-                    <span v-else>None configured</span>
-                  </div>
+                <div class="quick-stat-detail">
+                  <span v-if="stats.api_keys?.with_usage">
+                    {{ stats.api_keys.with_usage }} active
+                  </span>
+                  <span v-else>No usage data</span>
+                </div>
+              </div>
+              <div
+                class="quick-stat-card glass glass-card"
+                @click="activeTab = 'sso-providers'"
+              >
+                <h4>Authentication</h4>
+                <div class="quick-stat-value">
+                  {{ stats.sso_providers?.total || 0 }}
+                </div>
+                <div class="quick-stat-detail">
+                  <span v-if="stats.sso_providers?.active">
+                    {{ stats.sso_providers.active }} active
+                  </span>
+                  <span v-else>None configured</span>
                 </div>
               </div>
             </div>
           </div>
-
-          <!-- Users Tab -->
-          <div v-if="activeTab === 'users'" class="users-tab">
-            <UserManagement />
-            <InvitationManagement />
-          </div>
-
-          <!-- Quotas Tab -->
-          <div v-if="activeTab === 'quotas'">
-            <QuotaManagement />
-          </div>
-
-          <!-- Audit Logs Tab -->
-          <div v-if="activeTab === 'audit'">
-            <AuditLogViewer />
-          </div>
-
-          <!-- API Keys Tab -->
-          <div v-if="activeTab === 'api-keys'">
-            <ApiKeyManagement />
-          </div>
-
-          <!-- SSO Providers Tab -->
-          <div v-if="activeTab === 'sso-providers'">
-            <AdminSSOProviders />
-          </div>
         </div>
-      </main>
-    </div>
+
+        <!-- Users Tab -->
+        <div v-if="activeTab === 'users'" class="users-tab">
+          <UserManagement />
+          <InvitationManagement />
+        </div>
+
+        <!-- Quotas Tab -->
+        <div v-if="activeTab === 'quotas'">
+          <QuotaManagement />
+        </div>
+
+        <!-- Audit Logs Tab -->
+        <div v-if="activeTab === 'audit'">
+          <AuditLogViewer />
+        </div>
+
+        <!-- API Keys Tab -->
+        <div v-if="activeTab === 'api-keys'">
+          <ApiKeyManagement />
+        </div>
+
+        <!-- SSO Providers Tab -->
+        <div v-if="activeTab === 'sso-providers'">
+          <AdminSSOProviders />
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -357,7 +270,6 @@ export default {
     const statsLoading = ref(false);
     const statsError = ref(null);
     const lastUpdateTime = ref(null);
-    const sidebarCollapsed = ref(false);
     const tabsContainer = ref(null);
     const indicator = ref(null);
     const tabRefs = ref({});
@@ -370,9 +282,9 @@ export default {
       { id: "dashboard", label: "Dashboard" },
       { id: "users", label: "Users" },
       { id: "quotas", label: "Quotas" },
-      { id: "audit", label: "Audit Logs" },
-      { id: "api-keys", label: "API Keys" },
       { id: "sso-providers", label: "Authentication" },
+      { id: "api-keys", label: "API Keys" },
+      { id: "audit", label: "Audit Logs" },
     ];
 
     const setTabRef = (el, tabId) => {
@@ -419,19 +331,6 @@ export default {
       return new Date(date).toLocaleTimeString();
     };
 
-    const handleLogout = () => {
-      auth.logout();
-      router.push("/login");
-    };
-
-    const toggleSidebar = () => {
-      sidebarCollapsed.value = !sidebarCollapsed.value;
-      // Save preference to localStorage
-      localStorage.setItem("sidebarCollapsed", sidebarCollapsed.value);
-      // Update indicator position after sidebar toggle
-      updateIndicatorPosition();
-    };
-
     // Watch for activeTab changes to update indicator position
     watch(activeTab, () => {
       updateIndicatorPosition();
@@ -443,11 +342,6 @@ export default {
     };
 
     onMounted(async () => {
-      // Load sidebar state from localStorage
-      const saved = localStorage.getItem("sidebarCollapsed");
-      if (saved !== null) {
-        sidebarCollapsed.value = saved === "true";
-      }
       await loadStats();
       // Update indicator position after mounting with a small delay
       // to ensure DOM is fully rendered
@@ -475,14 +369,11 @@ export default {
       statsLoading,
       statsError,
       lastUpdateTime,
-      sidebarCollapsed,
       tabsContainer,
       indicator,
       indicatorStyle,
       setTabRef,
       loadStats,
-      handleLogout,
-      toggleSidebar,
       formatTime,
     };
   },
@@ -490,199 +381,10 @@ export default {
 </script>
 
 <style scoped>
-.admin-panel-layout {
-  display: flex;
-  min-height: 100vh;
-  background: transparent;
-}
-
-/* Sidebar Styles */
-.sidebar {
-  position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
-  width: 250px;
-  background: linear-gradient(
-    180deg,
-    rgba(30, 41, 59, 0.7),
-    rgba(15, 23, 42, 0.6)
-  );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0 1rem 1rem 0;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
-  transition: width 0.3s ease;
-  z-index: 100;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-top: 1.5rem;
-  padding-bottom: 4rem;
-  display: flex;
-  flex-direction: column;
-  visibility: visible;
-  opacity: 1;
-}
-
-/* Custom scrollbar for sidebar */
-.sidebar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.sidebar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.sidebar.collapsed {
-  width: 70px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-
-.sidebar.collapsed .sidebar-label {
-  display: none;
-}
-
-.sidebar-toggle {
-  position: absolute;
-  bottom: 1rem;
-  right: 0.5rem;
-  width: 2rem;
-  height: 2rem;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: none;
-  border-radius: 8px;
-  color: #e6eef6;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-  z-index: 101;
-  visibility: visible;
-  opacity: 1;
-}
-
-.sidebar.collapsed .sidebar-toggle {
-  right: 0.5rem;
-  left: auto;
-  visibility: visible;
-  opacity: 1;
-}
-
-.sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: scale(1.05);
-}
-
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0 1rem;
-  flex: 1;
-}
-
-.sidebar.collapsed .sidebar-nav {
-  padding: 0 0.5rem;
-  align-items: center;
-  margin-top: 1rem;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(10px);
-  border: none;
-  border-radius: 10px;
-  color: #e6eef6;
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 0.95rem;
-  text-align: left;
+.admin-panel {
   width: 100%;
-  justify-content: flex-start;
-  position: relative;
-  z-index: 1;
-  pointer-events: auto;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.sidebar.collapsed .sidebar-item {
-  padding: 0.875rem;
-  justify-content: center;
-}
-
-.sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateX(4px);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.15);
-}
-
-.sidebar.collapsed .sidebar-item:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
-}
-
-.sidebar-item.router-link-active {
-  background: linear-gradient(
-    135deg,
-    rgba(88, 166, 255, 0.2),
-    rgba(56, 189, 248, 0.15)
-  );
-  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.2);
-  color: #60a5fa;
-}
-
-.sidebar-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: currentColor;
-  pointer-events: none;
-  transition: transform 0.2s ease;
-}
-
-.sidebar-item:hover .sidebar-icon {
-  transform: scale(1.1);
-}
-
-.sidebar-label {
-  flex: 1;
-}
-
-/* Main Content */
-.main-content {
-  flex: 1;
-  margin-left: 250px;
-  transition: margin-left 0.3s ease;
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
-}
-
-.main-content.sidebar-collapsed {
-  margin-left: 70px;
+  background: transparent;
 }
 
 /* Admin Header */
@@ -699,112 +401,53 @@ export default {
   width: 100%;
 }
 
-.admin-header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-}
-
-.admin-title {
-  margin: 0;
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: #e6eef6;
-  transition: color 0.2s ease;
-}
-
-.admin-title:hover {
-  color: rgba(88, 166, 255, 0.8);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.btn-account,
-.btn-logout {
-  padding: 0.625rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  font-family: inherit;
-}
-
-.btn-account {
-  color: #e6eef6;
-}
-
-.btn-account:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(88, 166, 255, 0.3);
-}
-
-.btn-logout {
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.btn-logout:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
 .admin-tabs-wrapper {
-  background: rgba(30, 41, 59, 0.2);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.4),
+    rgba(15, 23, 42, 0.3)
+  );
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  margin-bottom: 2rem;
 }
 
 .admin-tabs {
   display: flex;
-  gap: 0;
-  padding: 0 2rem;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
   position: relative;
+  justify-content: center;
+  align-items: center;
 }
 
 .admin-tab-button {
   background: transparent;
   border: none;
   color: #64748b;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.25rem;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   z-index: 1;
+  border-radius: 0.5rem;
 }
 
 .admin-tab-button:hover {
   color: #cbd5e1;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .admin-tab-button.active {
   color: #60a5fa;
-  background: transparent;
+  background: rgba(88, 166, 255, 0.1);
 }
 
 /* Liquid glass indicator */

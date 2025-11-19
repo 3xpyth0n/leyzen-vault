@@ -1,98 +1,94 @@
 <template>
-  <AppLayout @logout="logout">
-    <ConfirmationModal
-      :show="showDeleteConfirm"
-      title="Move to Trash"
-      :message="getDeleteMessage()"
-      confirm-text="Move to Trash"
-      :dangerous="true"
-      :disabled="deleting"
-      @confirm="handleDeleteConfirm"
-      @close="
-        if (!deleting) {
-          showDeleteConfirm = false;
-          deleteError = null;
-        }
-      "
-    />
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
+  <ConfirmationModal
+    :show="showDeleteConfirm"
+    title="Move to Trash"
+    :message="getDeleteMessage()"
+    confirm-text="Move to Trash"
+    :dangerous="true"
+    :disabled="deleting"
+    @confirm="handleDeleteConfirm"
+    @close="
+      if (!deleting) {
+        showDeleteConfirm = false;
+        deleteError = null;
+      }
+    "
+  />
+  <!-- Alert Modal -->
+  <AlertModal
+    :show="showAlertModal"
+    :type="alertModalConfig.type"
+    :title="alertModalConfig.title"
+    :message="alertModalConfig.message"
+    @close="handleAlertModalClose"
+    @ok="handleAlertModalClose"
+  />
 
-    <!-- Confirmation Modal for share link revocation -->
-    <ConfirmationModal
-      :show="showRevokeConfirm"
-      title="Revoke Share Link"
-      :message="revokeConfirmMessage"
-      confirm-text="Revoke"
-      :dangerous="true"
-      @confirm="handleRevokeConfirm"
-      @close="showRevokeConfirm = false"
-    />
+  <!-- Confirmation Modal for share link revocation -->
+  <ConfirmationModal
+    :show="showRevokeConfirm"
+    title="Revoke Share Link"
+    :message="revokeConfirmMessage"
+    confirm-text="Revoke"
+    :dangerous="true"
+    @confirm="handleRevokeConfirm"
+    @close="showRevokeConfirm = false"
+  />
 
-    <!-- File Properties Modal -->
-    <FileProperties
-      :show="showProperties"
-      :fileId="propertiesFileId"
-      :vaultspaceId="propertiesVaultspaceId"
-      @close="
-        showProperties = false;
-        propertiesFileId = null;
-        propertiesVaultspaceId = null;
-      "
-      @action="handlePropertiesAction"
-    />
+  <!-- File Properties Modal -->
+  <FileProperties
+    :show="showProperties"
+    :fileId="propertiesFileId"
+    :vaultspaceId="propertiesVaultspaceId"
+    @close="
+      showProperties = false;
+      propertiesFileId = null;
+      propertiesVaultspaceId = null;
+    "
+    @action="handlePropertiesAction"
+  />
 
-    <div class="starred-view glass glass-card">
-      <header class="view-header">
-        <h1>
-          <span class="header-icon" v-html="getIcon('star', 28)"></span>
-          Starred Files
-        </h1>
-        <div class="header-actions">
-          <button
-            @click="refreshStarred"
-            :disabled="loading"
-            class="btn btn-secondary"
-          >
-            {{ loading ? "Loading..." : "Refresh" }}
-          </button>
+  <div class="starred-view glass glass-card">
+    <header class="view-header">
+      <h1>
+        <span class="header-icon" v-html="getIcon('star', 28)"></span>
+        Starred Files
+      </h1>
+      <div class="header-actions">
+        <button
+          @click="refreshStarred"
+          :disabled="loading"
+          class="btn btn-secondary"
+        >
+          {{ loading ? "Loading..." : "Refresh" }}
+        </button>
+      </div>
+    </header>
+
+    <main class="view-main">
+      <div v-if="loading" class="loading">Loading starred files...</div>
+      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="starredFiles.length === 0" class="empty-state">
+        <p>No starred files</p>
+        <p class="empty-hint">Star files by clicking the ☆ icon on any file</p>
+      </div>
+      <div v-else class="files-list">
+        <div class="files-info glass">
+          <p>{{ starredFiles.length }} starred file(s)</p>
         </div>
-      </header>
-
-      <main class="view-main">
-        <div v-if="loading" class="loading">Loading starred files...</div>
-        <div v-else-if="error" class="error glass">{{ error }}</div>
-        <div v-else-if="starredFiles.length === 0" class="empty-state">
-          <p>No starred files</p>
-          <p class="empty-hint">
-            Star files by clicking the ☆ icon on any file
-          </p>
-        </div>
-        <div v-else class="files-list">
-          <div class="files-info glass">
-            <p>{{ starredFiles.length }} starred file(s)</p>
-          </div>
-          <FileListView
-            :folders="folders"
-            :files="filesList"
-            :selectedItems="[]"
-            viewMode="grid"
-            :editingItemId="editingItemId"
-            @item-click="handleItemClick"
-            @action="handleFileAction"
-            @rename="handleRename"
-          />
-        </div>
-      </main>
-    </div>
-  </AppLayout>
+        <FileListView
+          :folders="folders"
+          :files="filesList"
+          :selectedItems="[]"
+          viewMode="grid"
+          :editingItemId="editingItemId"
+          @item-click="handleItemClick"
+          @action="handleFileAction"
+          @rename="handleRename"
+        />
+      </div>
+    </main>
+  </div>
 </template>
 
 <script>
@@ -101,7 +97,6 @@ import { useRouter, useRoute } from "vue-router";
 import { files, auth } from "../services/api";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
-import AppLayout from "../components/AppLayout.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import { folderPicker } from "../utils/FolderPicker";
@@ -110,7 +105,6 @@ import { decryptFileKey, decryptFile } from "../services/encryption.js";
 export default {
   name: "StarredView",
   components: {
-    AppLayout,
     FileListView,
     FileProperties,
     ConfirmationModal,
@@ -629,11 +623,6 @@ export default {
       return window.Icons[iconName](size, "currentColor");
     };
 
-    const logout = () => {
-      auth.logout();
-      router.push("/login");
-    };
-
     return {
       loading,
       error,
@@ -667,7 +656,6 @@ export default {
         showAlertModal.value = false;
       },
       getIcon,
-      logout,
     };
   },
 };
@@ -685,7 +673,7 @@ export default {
   align-items: center;
   margin-bottom: 2rem;
   padding: 1.5rem 2rem;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: 2rem;
 }
 
 .view-header h1 {

@@ -7,7 +7,7 @@
       :style="menuStyle"
       @click.stop
     >
-      <div class="file-menu-dropdown glass glass-card">
+      <div class="file-menu-dropdown">
         <button
           v-for="option in menuOptions"
           :key="option.action"
@@ -324,20 +324,19 @@ export default {
   position: relative;
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.85),
-    rgba(15, 23, 42, 0.8)
-  );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 8px;
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  ) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 2rem !important;
   padding: 0.5rem;
   min-width: 180px;
-  box-shadow:
-    0 8px 32px rgba(2, 6, 23, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   overflow: visible;
   margin: 0;
+  isolation: isolate;
 }
 
 .file-menu-item {

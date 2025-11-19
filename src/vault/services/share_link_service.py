@@ -93,7 +93,6 @@ class ShareService:
             expires_at=expires_at,
             max_downloads=max_downloads,
             download_count=0,
-            is_active=True,
         )
         db.session.add(share_link_model)
         db.session.commit()
@@ -129,7 +128,7 @@ class ShareService:
                 expires_at=share_link_model.expires_at,
                 max_downloads=share_link_model.max_downloads,
                 download_count=share_link_model.download_count,
-                is_active=share_link_model.is_active,
+                is_active=True,  # Always True since we only return existing links
             )
         except Exception as e:
             logger.error(
@@ -146,10 +145,6 @@ class ShareService:
         share_link = self.get_share_link(link_id)
         if not share_link:
             return False, "Share link not found"
-
-        # Check if link is active
-        if not share_link.is_active:
-            return False, "Share link has been deactivated"
 
         # Validate expiration with tolerance (60 seconds) for clock drift
         if share_link.is_expired(tolerance_seconds=60):
@@ -169,17 +164,17 @@ class ShareService:
             share_link_model.download_count += 1
             db.session.commit()
 
-    def deactivate_link(self, link_id: str) -> None:
-        """Deactivate a share link."""
+    def revoke_link(self, link_id: str) -> None:
+        """Revoke (permanently delete) a share link."""
         share_link_model = (
             db.session.query(ShareLinkModel).filter_by(link_id=link_id).first()
         )
         if share_link_model:
-            share_link_model.is_active = False
+            db.session.delete(share_link_model)
             db.session.commit()
 
     def revoke_all_links_for_file(self, file_id: str) -> int:
-        """Revoke all active share links for a file.
+        """Revoke (permanently delete) all share links for a file.
 
         Args:
             file_id: File ID
@@ -187,22 +182,17 @@ class ShareService:
         Returns:
             Number of links revoked
         """
-        # Find all active links for this file
-        active_links = (
+        # Delete all links for this file
+        deleted_count = (
             db.session.query(ShareLinkModel)
-            .filter_by(file_id=file_id, is_active=True)
-            .all()
+            .filter_by(file_id=file_id)
+            .delete(synchronize_session=False)
         )
 
-        # Deactivate all active links
-        count = len(active_links)
-        for link in active_links:
-            link.is_active = False
-
-        if count > 0:
+        if deleted_count > 0:
             db.session.commit()
 
-        return count
+        return int(deleted_count)
 
     def list_links_for_file(self, file_id: str) -> list[ShareLink]:
         """List all share links for a file."""
@@ -222,34 +212,29 @@ class ShareService:
                 expires_at=model.expires_at,
                 max_downloads=model.max_downloads,
                 download_count=model.download_count,
-                is_active=model.is_active,
+                is_active=True,  # Always True since we only return existing links
             )
             for model in share_link_models
         ]
 
     def cleanup_expired_links(self) -> int:
-        """Deactivate expired links and return count of cleaned links."""
+        """Permanently delete expired links and return count of cleaned links."""
         from datetime import timezone
 
         now_utc = datetime.now(timezone.utc)
-        expired_links = (
+        deleted_count = (
             db.session.query(ShareLinkModel)
             .filter(
-                ShareLinkModel.is_active == True,
                 ShareLinkModel.expires_at.isnot(None),
                 ShareLinkModel.expires_at < now_utc,
             )
-            .all()
+            .delete(synchronize_session=False)
         )
 
-        count = len(expired_links)
-        for link in expired_links:
-            link.is_active = False
-
-        if count > 0:
+        if deleted_count > 0:
             db.session.commit()
 
-        return count
+        return int(deleted_count)
 
 
 __all__ = ["ShareService"]

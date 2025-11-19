@@ -35,6 +35,15 @@ def _validate_origin() -> tuple[bool, str | None]:
     origin = request.headers.get("Origin")
     referer = request.headers.get("Referer")
 
+    # Get allowed origins from config (for CORS/SPA support)
+    allowed_origins = current_app.config.get("ALLOWED_ORIGINS", [])
+    allowed_origins_normalized = current_app.config.get(
+        "ALLOWED_ORIGINS_NORMALIZED", set()
+    )
+
+    # Get production mode to determine strictness
+    is_production = current_app.config.get("IS_PRODUCTION", True)
+
     # If neither header is present, allow the request (same-origin browsers
     # may not send these headers for same-origin requests, especially after refresh)
     if not origin and not referer:
@@ -46,16 +55,45 @@ def _validate_origin() -> tuple[bool, str | None]:
         request_url = urlparse(request.url)
         expected_host = request_url.netloc.split(":")[0]  # Remove port
         expected_scheme = request_url.scheme
+        expected_origin = f"{expected_scheme}://{expected_host}"
     except Exception:
         # Fallback to request.host if url parsing fails
         expected_host = request.host.split(":")[0]
         expected_scheme = request.scheme
+        expected_origin = f"{expected_scheme}://{expected_host}"
+
+    # Normalize expected origin for comparison
+    expected_origin_normalized = f"{expected_scheme.lower()}://{expected_host.lower()}"
 
     # Check Origin header first (most reliable for POST requests)
     if origin:
         try:
             parsed_origin = urlparse(origin)
             origin_host = parsed_origin.netloc.split(":")[0]  # Remove port
+            origin_normalized = (
+                f"{parsed_origin.scheme.lower()}://{origin_host.lower()}"
+            )
+
+            # SECURITY: Block null origin in production (used in CSRF attacks)
+            if origin.lower() == "null":
+                if is_production:
+                    current_app.logger.warning(
+                        f"Blocked request with null Origin header: {request.method} {request.path}"
+                    )
+                    return False, "Null origin not allowed"
+                else:
+                    # In development, log but allow (for testing)
+                    current_app.logger.warning(
+                        f"Request with null Origin header (allowed in dev): {request.method} {request.path}"
+                    )
+
+            # Check against allowed origins list first (exact match)
+            if origin in allowed_origins:
+                return True, None
+
+            # Check normalized allowed origins
+            if origin_normalized in allowed_origins_normalized:
+                return True, None
 
             # Allow if host matches (ignoring port and scheme differences)
             # This handles cases where browser sends http:// but server expects https://
@@ -63,16 +101,27 @@ def _validate_origin() -> tuple[bool, str | None]:
             if origin_host.lower() == expected_host.lower():
                 return True, None
 
-            # Also allow null origin (can occur in some browser contexts)
-            if origin.lower() == "null":
-                # Null origin can be legitimate in some same-origin contexts
-                # but we'll log it for investigation
-                current_app.logger.debug(
-                    f"Request with null Origin header: {request.method} {request.path}"
+            # If origin doesn't match and not in allowed list, block in production
+            if is_production:
+                current_app.logger.warning(
+                    f"Blocked request with invalid Origin: Origin={origin}, "
+                    f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
                 )
-                return True, None
+                return False, "Origin not allowed"
+            else:
+                # In development, log but allow (for testing with different origins)
+                current_app.logger.warning(
+                    f"Origin validation failed (allowed in dev): Origin={origin}, "
+                    f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
+                )
         except Exception:
-            pass  # Invalid origin format, continue to referer check
+            # Invalid origin format - block in production
+            if is_production:
+                current_app.logger.warning(
+                    f"Blocked request with invalid Origin format: {request.method} {request.path}"
+                )
+                return False, "Invalid origin format"
+            # In development, continue to referer check
 
     # Fallback to Referer header (used by browsers for GET requests and some POST)
     if referer:
@@ -85,18 +134,22 @@ def _validate_origin() -> tuple[bool, str | None]:
         except Exception:
             pass
 
-    # If headers are present but don't match, log warning but be lenient
-    # For JWT authentication, strict Origin checking can cause false positives
-    # due to browser behavior, reverse proxies, or SPA navigation
+    # If headers are present but don't match, block in production
     if origin or referer:
-        current_app.logger.warning(
-            f"Origin validation warning (not blocking): Origin={origin}, "
-            f"Referer={referer}, Expected host={expected_host}, "
-            f"Path={request.path}, Method={request.method}"
-        )
-        # Allow request to proceed - JWT token validation is the primary security
-        # Origin validation is just defense in depth and shouldn't block legitimate requests
-        return True, None
+        if is_production:
+            current_app.logger.warning(
+                f"Blocked request: Origin={origin}, "
+                f"Referer={referer}, Expected host={expected_host}, "
+                f"Path={request.path}, Method={request.method}"
+            )
+            return False, "Origin validation failed"
+        else:
+            # In development, log but allow
+            current_app.logger.warning(
+                f"Origin validation warning (allowed in dev): Origin={origin}, "
+                f"Referer={referer}, Expected host={expected_host}, "
+                f"Path={request.path}, Method={request.method}"
+            )
 
     return True, None
 
@@ -106,9 +159,6 @@ def _validate_content_type() -> tuple[bool, str | None]:
 
     Ensures JSON requests have correct Content-Type to prevent
     content-type confusion attacks.
-
-    This is a lenient check - only validates if it's clear there's a body.
-    Empty POST requests (like logout) are allowed without Content-Type.
 
     Returns:
         (is_valid, error_message) - (True, None) if valid
@@ -137,20 +187,19 @@ def _validate_content_type() -> tuple[bool, str | None]:
     if not has_body:
         return True, None
 
-    # If there's a body, check Content-Type
+    # SECURITY: Require Content-Type for all requests with body
     content_type = request.headers.get("Content-Type", "")
+    if not content_type:
+        current_app.logger.warning(
+            f"Request with body but no Content-Type: {request.method} {request.path}"
+        )
+        return False, "Content-Type header is required for requests with body"
 
     # For JSON requests, require application/json
-    # Note: Browser may send Content-Type: application/json even for empty POST
-    # so we check request.is_json to see if Flask actually parsed JSON
     if request.is_json:
         # Flask successfully parsed JSON, so ensure Content-Type matches
         if "application/json" not in content_type:
             return False, "Content-Type must be application/json for JSON requests"
-    elif content_type and "application/json" in content_type and has_body:
-        # Content-Type says JSON but Flask didn't parse it - might be empty body
-        # Allow it if there's no actual body
-        pass
 
     # For form data, require appropriate content type
     if (
@@ -159,15 +208,10 @@ def _validate_content_type() -> tuple[bool, str | None]:
     ):
         return True, None
 
-    # Allow other content types if explicitly set (e.g., file uploads)
+    # Allow other content types if explicitly set (e.g., file uploads, text/plain)
     if content_type:
         return True, None
 
-    # If we detected a body but no content type, log warning but allow
-    # Some APIs may work without explicit Content-Type
-    current_app.logger.debug(
-        f"Request with body but no Content-Type: {request.method} {request.path}"
-    )
     return True, None
 
 

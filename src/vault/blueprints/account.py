@@ -40,7 +40,7 @@ def get_user(user_id: str):
     """Get user information by ID."""
     from vault.database.schema import User, db
 
-    user_obj = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    user_obj = db.session.query(User).filter_by(id=user_id).first()
     if not user_obj:
         return jsonify({"error": "User not found"}), 404
 
@@ -83,7 +83,6 @@ def search_users():
             or_(
                 User.email.ilike(search_pattern),
             ),
-            User.is_active == True,
         )
         .limit(10)
         .all()
@@ -116,7 +115,7 @@ def get_account():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    user_obj = db.session.query(User).filter_by(id=user.id, is_active=True).first()
+    user_obj = db.session.query(User).filter_by(id=user.id).first()
     if not user_obj:
         return jsonify({"error": "User not found"}), 404
 
@@ -143,11 +142,15 @@ def change_password():
     # Enhanced rate limiting for sensitive operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
+        from vault.blueprints.utils import get_client_ip
+
+        client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            user_id,
+            client_ip,
             max_attempts=5,
             window_seconds=3600,  # 1 hour window
             action_name="password_change",
+            user_id=user_id,
         )
         if not is_allowed:
             audit.log_action(
@@ -196,7 +199,7 @@ def change_password():
         return jsonify({"error": "current_password and new_password are required"}), 400
 
     # Get user and verify current password
-    user_obj = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    user_obj = db.session.query(User).filter_by(id=user_id).first()
     if not user_obj:
         return jsonify({"error": "User not found"}), 404
 
@@ -300,11 +303,15 @@ def delete_account():
     # Enhanced rate limiting for sensitive operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
+        from vault.blueprints.utils import get_client_ip
+
+        client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            user_id,
+            client_ip,
             max_attempts=3,
             window_seconds=3600,  # 1 hour window
             action_name="account_delete",
+            user_id=user_id,
         )
         if not is_allowed:
             audit.log_action(
@@ -352,7 +359,7 @@ def delete_account():
         return jsonify({"error": "Password is required"}), 400
 
     # Get user and verify password
-    user_obj = db.session.query(User).filter_by(id=user_id, is_active=True).first()
+    user_obj = db.session.query(User).filter_by(id=user_id).first()
     if not user_obj:
         return jsonify({"error": "User not found"}), 404
 
@@ -373,9 +380,10 @@ def delete_account():
         )
         return jsonify({"error": "Invalid password"}), 403
 
-    # Soft delete: mark user as inactive
-    user_obj.is_active = False
-    db.session.commit()
+    # Permanently delete user account
+    success = auth_service.delete_user(user_id)
+    if not success:
+        return jsonify({"error": "Failed to delete account"}), 500
 
     audit.log_action(
         "account_delete",

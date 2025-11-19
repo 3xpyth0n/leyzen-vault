@@ -1704,21 +1704,32 @@ h1 {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(7, 14, 28, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  overflow-y: auto;
 }
 
 .modal-content {
-  background: rgba(30, 41, 59, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 12px;
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
   max-width: 700px;
   width: 100%;
   max-height: 90vh;
+  padding: 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   overflow-y: auto;
 }
 
@@ -1874,20 +1885,35 @@ h1 {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 500;
+  border-radius: 0.75rem;
   cursor: pointer;
-  transition: all 0.2s;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .btn-primary {
-  background: #58a6ff;
-  color: #0d1117;
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.2) 0%,
+    rgba(129, 140, 248, 0.2) 100%
+  );
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #6eb3ff;
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.3) 0%,
+    rgba(129, 140, 248, 0.3) 100%
+  );
+  border-color: rgba(56, 189, 248, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
 }
 
 .btn-secondary {

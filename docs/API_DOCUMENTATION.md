@@ -264,7 +264,6 @@ Create a public share link.
   "max_downloads": 10,
   "max_access_count": 100,
   "allow_download": true,
-  "allow_preview": true,
   "permission_type": "read"
 }
 ```
@@ -368,16 +367,6 @@ Search files.
   "offset": 0
 }
 ```
-
-### Versions
-
-#### GET `/v2/files/:id/versions`
-
-List file versions.
-
-#### POST `/v2/files/:id/versions/:version_id/restore`
-
-Restore a specific version.
 
 ### Thumbnails
 

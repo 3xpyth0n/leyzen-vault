@@ -166,7 +166,6 @@ class User(db.Model):
     last_login: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     master_key_salt: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # Base64-encoded salt for master key derivation (16 bytes)
@@ -208,7 +207,6 @@ class User(db.Model):
             "global_role": self.global_role.value,
             "created_at": self.created_at.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
-            "is_active": self.is_active,
             "email_verified": self.email_verified,
             "invited_by": self.invited_by,
         }
@@ -873,9 +871,7 @@ class PublicShareLink(db.Model):
     download_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_access_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     allow_download: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    allow_preview: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     permission_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="read"
     )  # read, write, admin
@@ -909,14 +905,16 @@ class PublicShareLink(db.Model):
             "download_count": self.download_count,
             "max_access_count": self.max_access_count,
             "access_count": self.access_count,
-            "is_active": self.is_active,
             "allow_download": self.allow_download,
-            "allow_preview": self.allow_preview,
             "permission_type": self.permission_type,
             "created_at": self.created_at.isoformat(),
             "last_accessed_at": (
                 self.last_accessed_at.isoformat() if self.last_accessed_at else None
             ),
+            "is_expired": self.is_expired(),
+            "is_download_limit_reached": self.is_download_limit_reached(),
+            "is_access_limit_reached": self.is_access_limit_reached(),
+            "is_available": self.can_access(),
         }
 
     def is_expired(self) -> bool:
@@ -942,8 +940,7 @@ class PublicShareLink(db.Model):
     def can_access(self) -> bool:
         """Check if link can be accessed."""
         return (
-            self.is_active
-            and not self.is_expired()
+            not self.is_expired()
             and not self.is_download_limit_reached()
             and not self.is_access_limit_reached()
         )
@@ -983,6 +980,9 @@ class JWTBlacklist(db.Model):
         UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
     )
     token: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    jti: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True
+    )  # JWT ID for replay protection (nullable for backward compatibility)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -993,6 +993,7 @@ class JWTBlacklist(db.Model):
     __table_args__ = (
         Index("ix_jwt_blacklist_token", "token"),
         Index("ix_jwt_blacklist_expires_at", "expires_at"),
+        # Note: jti index is created separately via migration to handle cases where column doesn't exist yet
     )
 
 
@@ -1059,7 +1060,6 @@ class ShareLink(db.Model):
     )
     max_downloads: Mapped[int | None] = mapped_column(Integer, nullable=True)
     download_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Relationships
     file: Mapped["File"] = relationship("File", foreign_keys=[file_id])
@@ -1068,7 +1068,6 @@ class ShareLink(db.Model):
     __table_args__ = (
         Index("ix_share_links_file_id", "file_id"),
         Index("ix_share_links_expires_at", "expires_at"),
-        Index("ix_share_links_is_active", "is_active"),
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1080,7 +1079,6 @@ class ShareLink(db.Model):
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "max_downloads": self.max_downloads,
             "download_count": self.download_count,
-            "is_active": self.is_active,
         }
 
     def is_expired(self, tolerance_seconds: int = 60) -> bool:
@@ -1097,8 +1095,6 @@ class ShareLink(db.Model):
         """
         from datetime import timezone, timedelta
 
-        if not self.is_active:
-            return True
         if self.expires_at:
             now_utc = datetime.now(timezone.utc)
             expires_utc = self.expires_at.astimezone(timezone.utc)

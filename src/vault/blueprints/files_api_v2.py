@@ -275,16 +275,19 @@ def upload_file_v2():
     if not is_valid:
         return jsonify({"error": f"Invalid encrypted_file_key: {error_msg}"}), 400
 
-    # Rate limiting: 10 uploads per minute per user
+    # Rate limiting: 10 uploads per minute per user and IP
     rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
     if rate_limiter:
         from vault.blueprints.utils import get_client_ip
 
         client_ip = get_client_ip() or "unknown"
         user_id = user.id
-        rate_limit_id = f"upload:{user_id}:{client_ip}"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            rate_limit_id, max_attempts=10, window_seconds=60, action_name="file_upload"
+            client_ip,
+            max_attempts=10,
+            window_seconds=60,
+            action_name="file_upload",
+            user_id=user_id,
         )
         if not is_allowed:
             return (
@@ -563,12 +566,12 @@ def download_file(file_id: str):
 
         client_ip = get_client_ip() or "unknown"
         user_id = user.id
-        rate_limit_id = f"download:{user_id}:{client_ip}"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
-            rate_limit_id,
+            client_ip,
             max_attempts=20,
             window_seconds=60,
             action_name="file_download",
+            user_id=user_id,
         )
         if not is_allowed:
             return (
