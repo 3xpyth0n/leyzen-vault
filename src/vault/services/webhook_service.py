@@ -5,12 +5,16 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import requests
 from vault.database.schema import Webhook, db
+from vault.security.url_validator import SSRFProtection, SSRFProtectionError
+
+logger = logging.getLogger(__name__)
 
 
 class WebhookService:
@@ -33,8 +37,22 @@ class WebhookService:
 
         Returns:
             Webhook object
+
+        Raises:
+            ValueError: If URL fails SSRF validation
         """
         import secrets
+
+        # SECURITY: Validate webhook URL to prevent SSRF attacks
+        ssrf_protection = SSRFProtection()
+        try:
+            ssrf_protection.validate_url(url)
+        except SSRFProtectionError as e:
+            logger.error(f"SSRF protection blocked webhook URL for user {user_id}: {e}")
+            raise ValueError(
+                f"Invalid webhook URL: {e}. "
+                "URLs must not point to private networks, localhost, or cloud metadata services."
+            ) from e
 
         if not secret:
             secret = secrets.token_urlsafe(32)
@@ -82,6 +100,27 @@ class WebhookService:
                 if event_type not in events:
                     continue
 
+                # SECURITY: Validate webhook URL before sending to prevent SSRF attacks
+                # This protects against URLs that might have been modified in the database
+                ssrf_protection = SSRFProtection()
+                try:
+                    ssrf_protection.validate_url(webhook.url)
+                except SSRFProtectionError as e:
+                    logger.warning(
+                        f"SSRF protection blocked webhook {webhook.id} URL at trigger time: {e}"
+                    )
+                    webhook.failure_count += 1
+                    webhook.last_triggered_at = datetime.now(timezone.utc)
+                    db.session.commit()
+                    results.append(
+                        {
+                            "webhook_id": webhook.id,
+                            "error": f"Invalid URL (SSRF protection): {e}",
+                            "success": False,
+                        }
+                    )
+                    continue
+
                 # Sign payload with HMAC
                 signature = hmac.new(
                     webhook.secret.encode(),
@@ -95,12 +134,13 @@ class WebhookService:
                     "X-Leyzen-Event": event_type,
                 }
 
-                # Send webhook
+                # Send webhook with SSRF protections (no redirects, timeout)
                 response = requests.post(
                     webhook.url,
                     json=payload,
                     headers=headers,
                     timeout=5,
+                    allow_redirects=False,
                 )
 
                 webhook.last_triggered_at = datetime.now(timezone.utc)

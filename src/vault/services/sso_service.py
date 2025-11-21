@@ -21,6 +21,7 @@ from vault.database.schema import (
 )
 from vault.services.auth_service import AuthService
 from vault.services.email_service import EmailService
+from vault.security.url_validator import SSRFProtection, SSRFProtectionError
 
 
 class SSOService:
@@ -74,6 +75,59 @@ class SSOService:
         if self.auth_service is None:
             secret_key = current_app.config.get("SECRET_KEY", "")
             self.auth_service = AuthService(secret_key)
+
+    def _validate_provider_config_urls(
+        self, provider_type: SSOProviderType, config: dict[str, Any]
+    ) -> None:
+        """Validate all URLs in provider configuration to prevent SSRF attacks.
+
+        Args:
+            provider_type: Type of SSO provider
+            config: Provider configuration dictionary
+
+        Raises:
+            ValueError: If any URL in config fails SSRF validation
+        """
+        ssrf_protection = SSRFProtection()
+        urls_to_validate = []
+
+        # Collect URLs based on provider type
+        if provider_type == SSOProviderType.SAML:
+            # SAML providers have sso_url
+            if config.get("sso_url"):
+                urls_to_validate.append(("sso_url", config["sso_url"]))
+            # Note: acs_url is our own callback URL, no need to validate
+        elif provider_type == SSOProviderType.OAUTH2:
+            # OAuth2 providers have authorization_url, token_url, userinfo_url
+            if config.get("authorization_url"):
+                urls_to_validate.append(
+                    ("authorization_url", config["authorization_url"])
+                )
+            if config.get("token_url"):
+                urls_to_validate.append(("token_url", config["token_url"]))
+            if config.get("userinfo_url"):
+                urls_to_validate.append(("userinfo_url", config["userinfo_url"]))
+        elif provider_type == SSOProviderType.OIDC:
+            # OIDC providers have issuer_url (and optionally explicit endpoints)
+            if config.get("issuer_url"):
+                urls_to_validate.append(("issuer_url", config["issuer_url"]))
+            if config.get("token_url"):
+                urls_to_validate.append(("token_url", config["token_url"]))
+            if config.get("userinfo_url"):
+                urls_to_validate.append(("userinfo_url", config["userinfo_url"]))
+
+        # Validate all collected URLs
+        for url_name, url in urls_to_validate:
+            try:
+                ssrf_protection.validate_url(url)
+            except SSRFProtectionError as e:
+                current_app.logger.error(
+                    f"SSRF protection blocked {url_name} in provider config: {e}"
+                )
+                raise ValueError(
+                    f"Invalid {url_name}: {e}. "
+                    "URLs must not point to private networks, localhost, or cloud metadata services."
+                ) from e
 
     def _get_base_url(self) -> str:
         """Get base URL from VAULT_URL setting.
@@ -419,11 +473,31 @@ class SSOService:
                 "client_secret": client_secret,
             }
 
-            # SECURITY: Add timeout to prevent DoS attacks
+            # SECURITY: Add timeout to prevent DoS attacks and validate URLs to prevent SSRF
             timeout = 10  # 10 seconds timeout
+            ssrf_protection = SSRFProtection()
+
+            # SECURITY: Validate token URL to prevent SSRF attacks
+            try:
+                ssrf_protection.validate_url(token_url)
+            except SSRFProtectionError as e:
+                current_app.logger.error(
+                    f"SSRF protection blocked token URL for OAuth2 provider {provider_id}: {e}"
+                )
+                return None
+
+            # SECURITY: Validate userinfo URL to prevent SSRF attacks
+            try:
+                ssrf_protection.validate_url(userinfo_url)
+            except SSRFProtectionError as e:
+                current_app.logger.error(
+                    f"SSRF protection blocked userinfo URL for OAuth2 provider {provider_id}: {e}"
+                )
+                return None
+
             try:
                 token_response = requests.post(
-                    token_url, data=token_data, timeout=timeout
+                    token_url, data=token_data, timeout=timeout, allow_redirects=False
                 )
                 token_response.raise_for_status()
                 token_json = token_response.json()
@@ -435,7 +509,10 @@ class SSOService:
                 # Get user info
                 headers = {"Authorization": f"Bearer {access_token}"}
                 userinfo_response = requests.get(
-                    userinfo_url, headers=headers, timeout=timeout
+                    userinfo_url,
+                    headers=headers,
+                    timeout=timeout,
+                    allow_redirects=False,
                 )
                 userinfo_response.raise_for_status()
                 userinfo = userinfo_response.json()
@@ -508,11 +585,24 @@ class SSOService:
             issuer_url = config.get("issuer_url")
 
             # Discover OIDC endpoints
-            # SECURITY: Add timeout to prevent DoS attacks
+            # SECURITY: Add timeout to prevent DoS attacks and validate URL to prevent SSRF
             timeout = 10  # 10 seconds timeout
             discovery_url = f"{issuer_url}/.well-known/openid-configuration"
+
+            # SECURITY: Validate discovery URL to prevent SSRF attacks
+            ssrf_protection = SSRFProtection()
             try:
-                discovery_response = requests.get(discovery_url, timeout=timeout)
+                ssrf_protection.validate_url(discovery_url)
+            except SSRFProtectionError as e:
+                current_app.logger.error(
+                    f"SSRF protection blocked discovery URL for provider {provider_id}: {e}"
+                )
+                raise ValueError(f"Invalid discovery URL: {e}") from e
+
+            try:
+                discovery_response = requests.get(
+                    discovery_url, timeout=timeout, allow_redirects=False
+                )
                 discovery_response.raise_for_status()
                 discovery = discovery_response.json()
             except requests.Timeout:
@@ -610,11 +700,22 @@ class SSOService:
                 "client_secret": client_secret,
             }
 
-            # SECURITY: Add timeout to prevent DoS attacks
+            # SECURITY: Add timeout to prevent DoS attacks and validate URLs to prevent SSRF
             timeout = 10  # 10 seconds timeout
+            ssrf_protection = SSRFProtection()
+
+            # SECURITY: Validate token URL to prevent SSRF attacks
+            try:
+                ssrf_protection.validate_url(token_url)
+            except SSRFProtectionError as e:
+                current_app.logger.error(
+                    f"SSRF protection blocked token URL for provider {provider_id}: {e}"
+                )
+                return None
+
             try:
                 token_response = requests.post(
-                    token_url, data=token_data, timeout=timeout
+                    token_url, data=token_data, timeout=timeout, allow_redirects=False
                 )
                 token_response.raise_for_status()
                 token_json = token_response.json()
@@ -626,9 +727,21 @@ class SSOService:
 
                 # Get user info from userinfo endpoint or ID token
                 if userinfo_url:
+                    # SECURITY: Validate userinfo URL to prevent SSRF attacks
+                    try:
+                        ssrf_protection.validate_url(userinfo_url)
+                    except SSRFProtectionError as e:
+                        current_app.logger.error(
+                            f"SSRF protection blocked userinfo URL for provider {provider_id}: {e}"
+                        )
+                        return None
+
                     headers = {"Authorization": f"Bearer {access_token}"}
                     userinfo_response = requests.get(
-                        userinfo_url, headers=headers, timeout=timeout
+                        userinfo_url,
+                        headers=headers,
+                        timeout=timeout,
+                        allow_redirects=False,
                     )
                     userinfo_response.raise_for_status()
                     userinfo = userinfo_response.json()
@@ -666,8 +779,19 @@ class SSOService:
                             jwks_uri = f"{issuer_url}/.well-known/jwks.json"
 
                         # Fetch JWKS (JSON Web Key Set) for signature verification
+                        # SECURITY: Validate JWKS URL to prevent SSRF attacks
                         try:
-                            jwks_response = requests.get(jwks_uri, timeout=timeout)
+                            ssrf_protection.validate_url(jwks_uri)
+                        except SSRFProtectionError as e:
+                            current_app.logger.error(
+                                f"SSRF protection blocked JWKS URL for provider {provider_id}: {e}"
+                            )
+                            return None
+
+                        try:
+                            jwks_response = requests.get(
+                                jwks_uri, timeout=timeout, allow_redirects=False
+                            )
                             jwks_response.raise_for_status()
                             jwks = jwks_response.json()
                         except requests.RequestException as e:
@@ -969,7 +1093,11 @@ The Leyzen Vault Team
 
         Raises:
             ValueError: If name already exists or if another provider of the same preset is active
+                       or if configuration contains invalid URLs (SSRF protection)
         """
+        # SECURITY: Validate all URLs in config to prevent SSRF attacks
+        self._validate_provider_config_urls(provider_type, config)
+
         # Check if name already exists
         existing_by_name = db.session.query(SSOProvider).filter_by(name=name).first()
         if existing_by_name:
@@ -1035,12 +1163,18 @@ The Leyzen Vault Team
             Updated SSOProvider object or None if not found
 
         Raises:
-            ValueError: If name already exists (for another provider) or if activating would conflict with another active provider of the same type
+            ValueError: If name already exists (for another provider) or if activating would conflict
+                       with another active provider of the same type or if configuration contains
+                       invalid URLs (SSRF protection)
         """
         # When updating, we need to access the provider even if it's inactive
         provider = self.get_provider(provider_id, active_only=False)
         if not provider:
             return None
+
+        # SECURITY: Validate all URLs in new config to prevent SSRF attacks
+        if config is not None:
+            self._validate_provider_config_urls(provider.provider_type, config)
 
         # Check if name already exists (for another provider)
         if name is not None:

@@ -28,6 +28,15 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Orchestrator UI Style**: Updated orchestrator UI styling to match the vault's design system for consistent user experience across the application.
 - **Authentication Migration**: Migrated from hybrid session/CSRF authentication to JWT-only authentication. CSRF protection has been removed as JWT tokens in Authorization headers are already protected by Same-Origin Policy. This provides a cleaner and more secure authentication approach for API endpoints while maintaining defense-in-depth security through Origin/Referer header validation and Content-Type validation.
 
+### Security
+
+- **SSRF Vulnerability Protection**: Fixed critical Server-Side Request Forgery (SSRF) vulnerabilities in SSO and Webhook services that could allow attackers to access internal services or cloud metadata APIs (AWS, GCP, Azure).
+  - Implemented comprehensive URL validation blocking private networks (RFC 1918), localhost, link-local addresses, and cloud metadata service (169.254.169.254)
+  - Added DNS resolution checking to prevent DNS rebinding attacks
+  - Disabled HTTP redirects on all external requests
+  - Enforced strict validation of all URLs in SSO provider configurations (OAuth2, OIDC, SAML) and webhook endpoints
+  - All vulnerabilities resolved with 28 unit tests providing comprehensive coverage
+
 ### Fixed
 
 - **Permanent File Deletion**: Fixed issue where permanently deleted files were removed from database but remained on disk, causing orphaned files accumulation. Physical files are now properly deleted from both primary and source storage locations.
