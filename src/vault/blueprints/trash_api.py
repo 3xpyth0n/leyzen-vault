@@ -101,29 +101,11 @@ def permanently_delete_file(file_id: str):
         return jsonify({"error": "Authentication required"}), 401
 
     file_service = _get_file_service()
-    storage = request.environ.get("VAULT_STORAGE")
     try:
-        # Get file before deletion to delete storage
-        file_obj, _ = file_service.get_file_with_permissions(file_id, user.id)
-
+        # Service now handles BOTH database AND physical file deletion
         success = file_service.permanently_delete_file(file_id, user.id)
         if not success:
             return jsonify({"error": "File not found"}), 404
-
-        # Delete from storage if it's a file (not a folder)
-        if (
-            file_obj
-            and file_obj.storage_ref
-            and file_obj.mime_type != "application/x-directory"
-        ):
-            if storage:
-                try:
-                    storage.delete_file(file_obj.storage_ref)
-                except Exception as e:
-                    # Storage deletion is best-effort, but log the error
-                    current_app.logger.warning(
-                        f"Failed to delete storage file {file_obj.storage_ref} from trash: {e}"
-                    )
 
         return (
             jsonify(

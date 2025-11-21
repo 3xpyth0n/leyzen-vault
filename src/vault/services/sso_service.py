@@ -117,7 +117,6 @@ class SSOService:
         Returns:
             True if signup is allowed, False otherwise
         """
-        # Check database first (takes precedence)
         try:
             from vault.database.schema import SystemSettings
 
@@ -129,15 +128,6 @@ class SSOService:
         except Exception:
             pass
 
-        # Fallback to config
-        try:
-            vault_settings = current_app.config.get("VAULT_SETTINGS")
-            if vault_settings and hasattr(vault_settings, "allow_signup"):
-                return vault_settings.allow_signup
-        except Exception:
-            pass
-
-        # Default to True if not configured
         return True
 
     def get_provider(

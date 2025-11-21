@@ -17,6 +17,7 @@ from .extensions import csrf
 from .services.docker_proxy import DockerProxyService
 from common.services.logging import FileLogger
 from .services.rotation import RotationService
+from .services.storage_cleanup import StorageCleanupService
 
 
 def create_app(settings: Settings | None = None) -> Flask:
@@ -45,10 +46,12 @@ def create_app(settings: Settings | None = None) -> Flask:
     logger = FileLogger(settings)
     docker_service = DockerProxyService(settings, logger)
     rotation_service = RotationService(settings, docker_service, logger)
+    storage_cleanup_service = StorageCleanupService(settings, logger)
 
     app.config["SETTINGS"] = settings
     app.config["LOGGER"] = logger
     app.config["ROTATION_SERVICE"] = rotation_service
+    app.config["STORAGE_CLEANUP_SERVICE"] = storage_cleanup_service
 
     csrf.init_app(app)
     logging.getLogger("werkzeug").setLevel(logging.ERROR)

@@ -129,15 +129,11 @@ def signup_status():
     """
     from vault.database.schema import SystemSettings, db
 
-    # First, try to get from database (takes precedence over config)
     setting = db.session.query(SystemSettings).filter_by(key="allow_signup").first()
     if setting:
-        # Convert string to boolean
         allow_signup = setting.value.lower() == "true"
     else:
-        # Fallback to config
-        vault_settings = current_app.config.get("VAULT_SETTINGS")
-        allow_signup = vault_settings.allow_signup if vault_settings else True
+        allow_signup = True
 
     return jsonify({"allow_signup": allow_signup}), 200
 
@@ -220,17 +216,14 @@ def signup():
     if not validate_email(email):
         return jsonify({"error": "Invalid email format"}), 400
 
-    # Check if signup is allowed (check database first, then config)
+    # Check if signup is allowed
     from vault.database.schema import SystemSettings, db
 
     setting = db.session.query(SystemSettings).filter_by(key="allow_signup").first()
     if setting:
-        # Convert string to boolean
         allow_signup = setting.value.lower() == "true"
     else:
-        # Fallback to config
-        vault_settings = current_app.config.get("VAULT_SETTINGS")
-        allow_signup = vault_settings.allow_signup if vault_settings else True
+        allow_signup = True
 
     if not allow_signup:
         return (
@@ -404,8 +397,17 @@ def login():
         settings = _settings()
         captcha_store = get_captcha_store_for_app(settings)
 
-        # CAPTCHA is REQUIRED for login (security requirement)
-        if not captcha_response:
+        # Check if this is a 2FA verification step (credentials already validated)
+        totp_token = data.get("totp_token", "").strip() or None
+        session_2fa_validated = session.get("2fa_credentials_validated", {})
+        is_2fa_step = (
+            totp_token
+            and session_2fa_validated.get("username") == username_or_email
+            and session_2fa_validated.get("captcha_validated") is True
+        )
+
+        # CAPTCHA is REQUIRED for login (security requirement), but not for 2FA verification step
+        if not is_2fa_step and not captcha_response:
             client_ip = get_client_ip()
             register_failed_attempt(client_ip)
             # Log for debugging (only in development)
@@ -419,92 +421,101 @@ def login():
                 )
             return jsonify({"error": "CAPTCHA response is required"}), 400
 
-        # Verify CAPTCHA response
-        expected_captcha = None
-        # Try to get captcha from store if nonce provided
-        if captcha_nonce:
-            expected_captcha = captcha_store.get(captcha_nonce)
-            # SECURITY: Never log CAPTCHA values or nonces in production
-            is_production = current_app.config.get("IS_PRODUCTION", True)
-            if not is_production:
-                # Only log lookup status in development, never actual values
-                current_app.logger.debug(
-                    f"CAPTCHA lookup by nonce: found={expected_captcha is not None}"
+        # Verify CAPTCHA response (skip if this is a 2FA verification step)
+        if not is_2fa_step:
+            expected_captcha = None
+            # Try to get captcha from store if nonce provided
+            if captcha_nonce:
+                expected_captcha = captcha_store.get(captcha_nonce)
+                # SECURITY: Never log CAPTCHA values or nonces in production
+                is_production = current_app.config.get("IS_PRODUCTION", True)
+                if not is_production:
+                    # Only log lookup status in development, never actual values
+                    current_app.logger.debug(
+                        f"CAPTCHA lookup by nonce: found={expected_captcha is not None}"
+                    )
+
+            # Fallback to session-based captcha (preferred for API)
+            if not expected_captcha:
+                session_text = session.get("captcha_text")
+                session_nonce = session.get("captcha_nonce")
+                if session_text:
+                    expected_captcha = str(session_text)
+                    # If nonce was provided, verify it matches session
+                    if (
+                        captcha_nonce
+                        and session_nonce
+                        and session_nonce != captcha_nonce
+                    ):
+                        # Nonce mismatch - the provided nonce doesn't match session nonce
+                        # This might happen if multiple CAPTCHAs were generated
+                        # SECURITY: Never log nonce values in production
+                        is_production = current_app.config.get("IS_PRODUCTION", True)
+                        if not is_production:
+                            # Only log mismatch status in development, never actual nonce values
+                            current_app.logger.debug(
+                                f"CAPTCHA nonce mismatch: using session CAPTCHA anyway"
+                            )
+                        # Still use session CAPTCHA even if nonce doesn't match
+                        # (nonce is optional for session-based verification)
+                    elif captcha_nonce and not session_nonce:
+                        # Nonce provided but no session nonce - this is OK, use session text
+                        pass
+
+            # Validate CAPTCHA response
+            if not expected_captcha:
+                client_ip = get_client_ip()
+                register_failed_attempt(client_ip)
+                # CAPTCHA not found in store or session
+                # SECURITY: Never log CAPTCHA details in production
+                is_production = current_app.config.get("IS_PRODUCTION", True)
+                if not is_production:
+                    # Only log status in development, never actual values
+                    current_app.logger.debug(
+                        f"CAPTCHA not found: session has captcha_text={session.get('captcha_text') is not None}, "
+                        f"session has captcha_nonce={session.get('captcha_nonce') is not None}"
+                    )
+                return (
+                    jsonify(
+                        {
+                            "error": "CAPTCHA session expired. Please refresh the page and try again."
+                        }
+                    ),
+                    400,
                 )
 
-        # Fallback to session-based captcha (preferred for API)
-        if not expected_captcha:
-            session_text = session.get("captcha_text")
-            session_nonce = session.get("captcha_nonce")
-            if session_text:
-                expected_captcha = str(session_text)
-                # If nonce was provided, verify it matches session
-                if captcha_nonce and session_nonce and session_nonce != captcha_nonce:
-                    # Nonce mismatch - the provided nonce doesn't match session nonce
-                    # This might happen if multiple CAPTCHAs were generated
-                    # SECURITY: Never log nonce values in production
-                    is_production = current_app.config.get("IS_PRODUCTION", True)
-                    if not is_production:
-                        # Only log mismatch status in development, never actual nonce values
-                        current_app.logger.debug(
-                            f"CAPTCHA nonce mismatch: using session CAPTCHA anyway"
-                        )
-                    # Still use session CAPTCHA even if nonce doesn't match
-                    # (nonce is optional for session-based verification)
-                elif captcha_nonce and not session_nonce:
-                    # Nonce provided but no session nonce - this is OK, use session text
-                    pass
+            # Normalize both for comparison (uppercase, strip whitespace)
+            expected_normalized = str(expected_captcha).strip().upper()
+            received_normalized = captcha_response.strip().upper()
 
-        # Validate CAPTCHA response
-        if not expected_captcha:
-            client_ip = get_client_ip()
-            register_failed_attempt(client_ip)
-            # CAPTCHA not found in store or session
-            # SECURITY: Never log CAPTCHA details in production
-            is_production = current_app.config.get("IS_PRODUCTION", True)
-            if not is_production:
-                # Only log status in development, never actual values
-                current_app.logger.debug(
-                    f"CAPTCHA not found: session has captcha_text={session.get('captcha_text') is not None}, "
-                    f"session has captcha_nonce={session.get('captcha_nonce') is not None}"
-                )
-            return (
-                jsonify(
-                    {
-                        "error": "CAPTCHA session expired. Please refresh the page and try again."
-                    }
-                ),
-                400,
-            )
+            if received_normalized != expected_normalized:
+                client_ip = get_client_ip()
+                register_failed_attempt(client_ip)
+                if captcha_nonce:
+                    captcha_store.drop(captcha_nonce)
+                # SECURITY: Never log CAPTCHA values in production
+                is_production = current_app.config.get("IS_PRODUCTION", True)
+                if not is_production:
+                    # Only log mismatch status in development, never actual CAPTCHA values
+                    current_app.logger.debug(
+                        f"CAPTCHA mismatch: expected_len={len(expected_normalized)}, "
+                        f"received_len={len(received_normalized)}"
+                    )
+                return jsonify({"error": "Invalid captcha response"}), 400
 
-        # Normalize both for comparison (uppercase, strip whitespace)
-        expected_normalized = str(expected_captcha).strip().upper()
-        received_normalized = captcha_response.strip().upper()
-
-        if received_normalized != expected_normalized:
-            client_ip = get_client_ip()
-            register_failed_attempt(client_ip)
+            # Clean up captcha after successful verification
             if captcha_nonce:
                 captcha_store.drop(captcha_nonce)
-            # SECURITY: Never log CAPTCHA values in production
-            is_production = current_app.config.get("IS_PRODUCTION", True)
-            if not is_production:
-                # Only log mismatch status in development, never actual CAPTCHA values
-                current_app.logger.debug(
-                    f"CAPTCHA mismatch: expected_len={len(expected_normalized)}, "
-                    f"received_len={len(received_normalized)}"
-                )
-            return jsonify({"error": "Invalid captcha response"}), 400
-
-        # Clean up captcha after successful verification
-        if captcha_nonce:
-            captcha_store.drop(captcha_nonce)
-        session.pop("captcha_nonce", None)
-        session.pop("captcha_text", None)
+            session.pop("captcha_nonce", None)
+            session.pop("captcha_text", None)
 
         auth_service = _get_auth_service()
+
+        # Get optional 2FA token from request (already retrieved above)
+        # totp_token = data.get("totp_token", "").strip() or None
+
         try:
-            result = auth_service.authenticate(username_or_email, password)
+            result = auth_service.authenticate(username_or_email, password, totp_token)
         except ValueError as e:
             # Email not verified error
             return jsonify({"error": str(e)}), 403
@@ -516,6 +527,27 @@ def login():
 
         user, token = result
 
+        # Check if 2FA is required (token is None but user is valid)
+        if token is None:
+            # 2FA is required - store that credentials were validated
+            session["2fa_credentials_validated"] = {
+                "username": username_or_email,
+                "captcha_validated": True,
+            }
+            # Return special response
+            return (
+                jsonify(
+                    {
+                        "requires_2fa": True,
+                        "message": "Two-factor authentication required",
+                        "user_id": user.id,  # Frontend may need this for context
+                    }
+                ),
+                200,
+            )
+
+        # Full authentication success - clear 2FA session data
+        session.pop("2fa_credentials_validated", None)
         return (
             jsonify(
                 {
@@ -1284,3 +1316,222 @@ def captcha_refresh():
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
+
+
+# ========== Two-Factor Authentication (2FA/TOTP) Endpoints ==========
+
+
+@auth_api_bp.route("/2fa/status", methods=["GET"])
+@jwt_required
+def get_2fa_status():
+    """Get user's 2FA status.
+
+    Returns:
+        JSON with enabled status and setup date (if applicable)
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    return jsonify(
+        {
+            "enabled": user.totp_enabled,
+            "enabled_at": (
+                user.totp_enabled_at.isoformat() if user.totp_enabled_at else None
+            ),
+        }
+    )
+
+
+@auth_api_bp.route("/2fa/setup", methods=["POST"])
+@jwt_required
+def setup_2fa():
+    """Generate TOTP secret and QR code for 2FA setup.
+
+    Returns:
+        JSON with secret, provisioning_uri, and qr_code (base64 PNG)
+    """
+    from vault.services.totp_service import get_totp_service
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    # Check if 2FA is already enabled
+    if user.totp_enabled:
+        return jsonify({"error": "Two-factor authentication is already enabled"}), 400
+
+    totp_service = get_totp_service()
+
+    # Generate new TOTP secret
+    secret = totp_service.generate_secret()
+
+    # Generate provisioning URI for QR code
+    provisioning_uri = totp_service.generate_provisioning_uri(
+        secret=secret, email=user.email, issuer="Leyzen Vault"
+    )
+
+    # Generate QR code
+    qr_code = totp_service.generate_qr_code(provisioning_uri)
+
+    # Store secret temporarily in session (will be saved after verification)
+    session["totp_setup_secret"] = secret
+    session.modified = True
+
+    return jsonify(
+        {"secret": secret, "provisioning_uri": provisioning_uri, "qr_code": qr_code}
+    )
+
+
+@auth_api_bp.route("/2fa/verify-setup", methods=["POST"])
+@jwt_required
+def verify_2fa_setup():
+    """Verify TOTP token and enable 2FA.
+
+    Request JSON:
+        token: 6-digit TOTP token
+
+    Returns:
+        JSON with success status and backup codes
+    """
+    from vault.services.totp_service import get_totp_service
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    # Check if 2FA is already enabled
+    if user.totp_enabled:
+        return jsonify({"error": "Two-factor authentication is already enabled"}), 400
+
+    # Get secret from session
+    secret = session.get("totp_setup_secret")
+    if not secret:
+        return (
+            jsonify({"error": "No setup in progress. Please start 2FA setup first"}),
+            400,
+        )
+
+    # Get token from request
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    token = data.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "Missing token"}), 400
+
+    totp_service = get_totp_service()
+
+    # Verify token
+    if not totp_service.verify_token(secret, token):
+        return jsonify({"error": "Invalid token. Please try again"}), 400
+
+    # Token is valid - enable 2FA
+    # Generate backup codes
+    backup_codes = totp_service.generate_backup_codes(count=10)
+    hashed_codes = [totp_service.hash_backup_code(code) for code in backup_codes]
+
+    # Encrypt secret and backup codes
+    encrypted_secret = totp_service.encrypt_secret(secret)
+    encrypted_backup_codes = totp_service.encrypt_backup_codes(hashed_codes)
+
+    # Enable 2FA for user
+    auth_service = _get_auth_service()
+    auth_service.enable_totp(user.id, encrypted_secret, encrypted_backup_codes)
+
+    # Clear session
+    session.pop("totp_setup_secret", None)
+    session.modified = True
+
+    return jsonify(
+        {
+            "success": True,
+            "message": "Two-factor authentication enabled successfully",
+            "backup_codes": backup_codes,
+        }
+    )
+
+
+@auth_api_bp.route("/2fa/disable", methods=["POST"])
+@jwt_required
+def disable_2fa():
+    """Disable 2FA for the current user.
+
+    Request JSON:
+        password: User's password (for confirmation)
+
+    Returns:
+        JSON with success status
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    # Check if 2FA is enabled
+    if not user.totp_enabled:
+        return jsonify({"error": "Two-factor authentication is not enabled"}), 400
+
+    # Verify password for security
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    password = data.get("password", "").strip()
+    if not password:
+        return jsonify({"error": "Password required to disable 2FA"}), 400
+
+    # Verify password
+    auth_service = _get_auth_service()
+    result = auth_service.authenticate(user.email, password)
+    if not result:
+        return jsonify({"error": "Invalid password"}), 401
+
+    # Disable 2FA
+    auth_service.disable_totp(user.id)
+
+    return jsonify(
+        {"success": True, "message": "Two-factor authentication disabled successfully"}
+    )
+
+
+@auth_api_bp.route("/2fa/regenerate-backup", methods=["POST"])
+@jwt_required
+def regenerate_backup_codes():
+    """Regenerate backup recovery codes.
+
+    Request JSON:
+        password: User's password (for confirmation)
+
+    Returns:
+        JSON with new backup codes
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    # Check if 2FA is enabled
+    if not user.totp_enabled:
+        return jsonify({"error": "Two-factor authentication is not enabled"}), 400
+
+    # Verify password for security
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    password = data.get("password", "").strip()
+    if not password:
+        return jsonify({"error": "Password required to regenerate backup codes"}), 400
+
+    # Verify password
+    auth_service = _get_auth_service()
+    result = auth_service.authenticate(user.email, password)
+    if not result:
+        return jsonify({"error": "Invalid password"}), 401
+
+    # Regenerate backup codes
+    new_codes = auth_service.regenerate_backup_codes(user.id)
+    if not new_codes:
+        return jsonify({"error": "Failed to regenerate backup codes"}), 500
+
+    return jsonify({"success": True, "backup_codes": new_codes})

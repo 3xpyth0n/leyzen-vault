@@ -2735,16 +2735,44 @@ kbd {
   width: 100%;
 }
 
+/* Specific styles for Share Link modal */
+#share-modal .modal-content {
+  padding: 0;
+}
+
+#share-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+#share-modal .modal-header h3 {
+  margin: 0;
+  padding: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary, #f1f5f9);
+  font-weight: 600;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 1.5rem;
   margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 1.25rem;
+  color: var(--text-primary, #f1f5f9);
+  font-weight: 600;
 }
 
 .modal-close {
@@ -3637,6 +3665,23 @@ body.modal-open {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
+}
+
+.modal-content-share .modal-header {
+  padding: 1.5rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.modal-content-share .modal-header h2,
+.modal-content-share .modal-header h3,
+.modal-content-share .modal-header .modal-title {
+  margin: 0;
+  padding: 0;
+  color: var(--text-primary, #f1f5f9);
+  font-size: 1.5rem;
+  font-weight: 600;
 }
 
 .share-modal-body {

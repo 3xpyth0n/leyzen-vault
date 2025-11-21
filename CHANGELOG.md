@@ -9,6 +9,16 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Two-Factor Authentication (2FA)
+
+- **TOTP-Based Authentication**: Optional two-factor authentication using Time-based One-Time Password (TOTP) compliant with RFC 6238. Users can enable 2FA through the Account Settings page.
+- **Authenticator App Support**: Compatible with popular authenticator apps including Google Authenticator, Authy, 1Password, Microsoft Authenticator, and other TOTP-compatible applications.
+- **QR Code Setup**: Automatic QR code generation for easy 2FA setup. Users can scan the QR code with their authenticator app for instant configuration.
+- **Backup Recovery Codes**: 8-character backup codes generated during 2FA setup for emergency account access. Users can regenerate backup codes at any time through their account settings.
+
+#### Other Features
+
+- **Automatic Storage Cleanup**: Implemented background worker in orchestrator that periodically detects and removes orphaned files from storage, ensuring disk space is properly reclaimed from deleted files.
 - **Chunked File Upload**: Added chunked upload system for large files. Files larger than 5MB are automatically split into chunks and uploaded sequentially, preventing memory issues and enabling upload of files of any size.
 - **Encryption Overlay for SSO Users**: Added glassmorphic encryption overlay that appears when SSO-authenticated users access encrypted VaultSpaces. The overlay prevents unexpected logout and provides a clear interface for password entry to decrypt files.
 - **Configurable Gunicorn Workers**: Added `VAULT_WORKERS` environment variable to configure the number of Gunicorn worker processes for the vault service, with a default value of 2 workers.
@@ -20,8 +30,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Permanent File Deletion**: Fixed issue where permanently deleted files were removed from database but remained on disk, causing orphaned files accumulation. Physical files are now properly deleted from both primary and source storage locations.
+- **File List Synchronization**: Fixed critical issues with file list synchronization where deleted files would reappear, files would appear duplicated after copy/move operations, and files in trash would still appear in recent/starred views. The fix includes proper filtering of deleted files in all operations, improved cache invalidation, and forced cache-busting refresh in frontend views.
 - **Modal Display After Page Refresh**: Fixed issue where confirmation modals (logout, delete, etc.) would not appear after page refresh. The issue was caused by CSS conflicts where global styles were hiding modal overlays.
 - **SSO User Unexpected Logout**: Fixed issue where SSO-authenticated users were automatically logged out when canceling the password modal. Users can now cancel the password entry without being disconnected, with the encryption overlay remaining visible until they unlock their files.
+- **View Synchronization**: Synchronized file view functionality across VaultSpaceView, StarredView, and RecentView by implementing a shared composable for selection management, view mode switching, and encryption overlay handling, ensuring consistent behavior across all views.
 - **Origin Validation Security**: Strengthened origin validation to block unauthorized origins and explicitly reject "null" origin in production mode, preventing CSRF attacks.
 - **Timing Attack Protection**: Implemented constant-time comparisons for password and token verification to prevent timing-based enumeration attacks.
 

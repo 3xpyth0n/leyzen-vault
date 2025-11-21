@@ -1045,14 +1045,17 @@ def list_recent_files():
     # Calculate cutoff date
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
-    # Query recent files
+    # Query recent files - CRITICAL: Must exclude deleted files
+    # Use explicit and_() to ensure deleted_at filter is always applied
     query = db.session.query(File).filter(
-        File.deleted_at.is_(None),
-        File.owner_user_id == user.id,
-        or_(
-            File.updated_at >= cutoff_date,
-            File.created_at >= cutoff_date,
-        ),
+        and_(
+            File.deleted_at.is_(None),  # Exclude deleted files (trash)
+            File.owner_user_id == user.id,
+            or_(
+                File.updated_at >= cutoff_date,
+                File.created_at >= cutoff_date,
+            ),
+        )
     )
 
     # Filter by vaultspace if provided
@@ -1064,6 +1067,10 @@ def list_recent_files():
 
     # Limit results
     recent_files = query.limit(limit).all()
+
+    # Double-check: filter out any deleted files that might have slipped through
+    # (defensive programming - should not happen but ensures data integrity)
+    recent_files = [f for f in recent_files if f.deleted_at is None]
 
     return jsonify({"files": [f.to_dict() for f in recent_files]}), 200
 
@@ -1238,10 +1245,16 @@ def prepare_extract():
             )
 
         # Check if it's actually a ZIP file
-        if file_obj.mime_type not in (
+        # Check by MIME type or by file extension
+        is_zip_by_mime = file_obj.mime_type in (
             "application/zip",
             "application/x-zip-compressed",
-        ):
+        )
+        is_zip_by_extension = (
+            file_obj.original_name and file_obj.original_name.lower().endswith(".zip")
+        )
+
+        if not (is_zip_by_mime or is_zip_by_extension):
             return jsonify({"error": "File is not a ZIP file"}), 400
 
         # Check permissions

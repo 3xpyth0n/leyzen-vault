@@ -77,7 +77,152 @@ Login.
     "id": "uuid",
     "email": "user@example.com",
     "username": "username"
-  }
+  },
+  "token": "jwt_token_here"
+}
+```
+
+**Response (2FA Required):**
+
+If the user has two-factor authentication enabled, the response will indicate 2FA is required:
+
+```json
+{
+  "requires_2fa": true,
+  "message": "Two-factor authentication required",
+  "user_id": "uuid"
+}
+```
+
+In this case, you must submit another login request with the `totp_token` parameter:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword",
+  "totp_token": "123456",
+  "captcha_nonce": "nonce_value",
+  "captcha": "captcha_response"
+}
+```
+
+### Two-Factor Authentication (2FA)
+
+#### GET `/api/auth/2fa/status`
+
+Get the current user's 2FA status.
+
+**Authentication**: Required (JWT)
+
+**Response:**
+
+```json
+{
+  "enabled": true,
+  "enabled_at": "2025-11-20T12:00:00Z"
+}
+```
+
+#### POST `/api/auth/2fa/setup`
+
+Start 2FA setup process. Generates a TOTP secret and QR code.
+
+**Authentication**: Required (JWT)
+
+**Response:**
+
+```json
+{
+  "secret": "BASE32SECRETKEY",
+  "provisioning_uri": "otpauth://totp/Leyzen%20Vault:user@example.com?secret=BASE32SECRETKEY&issuer=Leyzen%20Vault",
+  "qr_code": "data:image/png;base64,..."
+}
+```
+
+#### POST `/api/auth/2fa/verify-setup`
+
+Verify the TOTP token and enable 2FA for the user.
+
+**Authentication**: Required (JWT)
+
+**Request Body:**
+
+```json
+{
+  "token": "123456"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Two-factor authentication enabled successfully",
+  "backup_codes": [
+    "1234-5678",
+    "2345-6789",
+    "3456-7890",
+    "4567-8901",
+    "5678-9012",
+    "6789-0123",
+    "7890-1234",
+    "8901-2345",
+    "9012-3456",
+    "0123-4567"
+  ]
+}
+```
+
+**Important**: Save the backup codes in a secure location. They won't be shown again.
+
+#### POST `/api/auth/2fa/disable`
+
+Disable 2FA for the current user.
+
+**Authentication**: Required (JWT)
+
+**Request Body:**
+
+```json
+{
+  "password": "current_password"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Two-factor authentication disabled successfully"
+}
+```
+
+#### POST `/api/auth/2fa/regenerate-backup`
+
+Regenerate backup recovery codes. Old codes will be invalidated.
+
+**Authentication**: Required (JWT)
+
+**Request Body:**
+
+```json
+{
+  "password": "current_password"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "backup_codes": [
+    "1234-5678",
+    "2345-6789",
+    ...
+  ]
 }
 ```
 

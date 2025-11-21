@@ -62,7 +62,9 @@ export default {
       const isFolder = this.item.mime_type === "application/x-directory";
       const isZipFile =
         this.item.mime_type === "application/zip" ||
-        this.item.mime_type === "application/x-zip-compressed";
+        this.item.mime_type === "application/x-zip-compressed" ||
+        (this.item.original_name &&
+          this.item.original_name.toLowerCase().endsWith(".zip"));
       const options = [];
 
       options.push({

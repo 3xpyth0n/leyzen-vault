@@ -9,7 +9,7 @@
       <div class="section-header">
         <h2>Authentication Methods</h2>
         <button @click="openCreateModal" class="btn btn-primary">
-          Create Provider
+          Add Provider
         </button>
       </div>
 
@@ -188,7 +188,7 @@
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h2>{{ editingProvider ? "Edit Provider" : "Create Provider" }}</h2>
+          <h2>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h2>
           <button @click="closeModal" class="modal-close">&times;</button>
         </div>
 

@@ -65,6 +65,7 @@ from .config import (
     load_settings,
 )  # noqa: E402
 from .database import db, init_db  # noqa: E402
+from .services.totp_service import init_totp_service  # noqa: E402
 
 # CSRF disabled - using JWT-only authentication
 # from .extensions import csrf  # noqa: E402
@@ -244,6 +245,10 @@ def create_app(
             )
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
+
+            # Initialize TOTP service for 2FA
+            init_totp_service(settings.secret_key)
+            logger.log("[INIT] TOTP service initialized")
 
             # Check if setup is complete
             try:
@@ -454,6 +459,10 @@ def create_app(
     cleanup_thread = threading.Thread(target=_audit_cleanup_worker, daemon=True)
     cleanup_thread.start()
 
+    # NOTE: Storage cleanup worker is now in orchestrator (not vault)
+    # This avoids issues with MTD container restarts every 2 minutes
+    # Storage cleanup is triggered via internal API endpoint from orchestrator
+
     def _origin_is_allowed_for_request(origin: str | None) -> bool:
         """Check if the provided Origin header is allowed for this request."""
         if not origin:
@@ -504,8 +513,16 @@ def create_app(
     # This must be registered AFTER blueprints to have priority
     @app.route("/static/<path:filename>")
     def serve_static_fallback(filename):
-        """Serve static files from dist/ first, then fallback to static/."""
+        """Serve static files from dist/ first, then fallback to static/.
+
+        Optimized to use try/except instead of exists() checks for better performance.
+        This prevents HAProxy from returning 503 due to slow file system operations.
+        """
         from flask import send_from_directory, abort
+        from werkzeug.exceptions import NotFound
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         # If filename starts with "assets/", it's from Vue.js build
         # Request: /static/assets/index-BNuRR0jV.js
@@ -513,22 +530,50 @@ def create_app(
         if filename.startswith("assets/"):
             dist_dir = vault_dir / "static" / "dist"
             if dist_dir.exists():
-                asset_file = dist_dir / filename  # dist/assets/index-BNuRR0jV.js
-                if asset_file.exists() and asset_file.is_file():
-                    # send_from_directory needs the directory and relative filename
-                    return send_from_directory(str(dist_dir), filename)
+                try:
+                    # Try to serve directly - faster than checking existence first
+                    response = send_from_directory(str(dist_dir), filename)
+                    # Add cache headers for static assets
+                    response.cache_control.public = True
+                    response.cache_control.max_age = 31536000  # 1 year
+                    return response
+                except NotFound:
+                    # File doesn't exist in dist/assets/, continue to next check
+                    pass
+                except Exception as e:
+                    logger.error(f"Error serving asset {filename}: {e}", exc_info=True)
+                    abort(500)
 
         # Try dist/ first (for Vue.js build assets and index.html)
-        dist_file = static_dir / filename
-        if dist_file.exists() and dist_file.is_file():
-            return send_from_directory(str(static_dir), filename)
+        try:
+            response = send_from_directory(str(static_dir), filename)
+            # Add cache headers for static assets
+            response.cache_control.public = True
+            response.cache_control.max_age = 31536000  # 1 year
+            return response
+        except NotFound:
+            # File doesn't exist in dist/, try static/ fallback
+            pass
+        except Exception as e:
+            logger.error(f"Error serving file {filename} from dist: {e}", exc_info=True)
+            abort(500)
 
         # Fallback to original static/ (for legacy files like vault.css, vault.js, etc.)
-        original_file = original_static_dir / filename
-        if original_file.exists() and original_file.is_file():
-            return send_from_directory(str(original_static_dir), filename)
-
-        abort(404)
+        try:
+            response = send_from_directory(str(original_static_dir), filename)
+            # Add cache headers for static assets
+            response.cache_control.public = True
+            response.cache_control.max_age = 31536000  # 1 year
+            return response
+        except NotFound:
+            # File not found anywhere
+            logger.warning(f"Static file not found: {filename}")
+            abort(404)
+        except Exception as e:
+            logger.error(
+                f"Error serving file {filename} from static: {e}", exc_info=True
+            )
+            abort(500)
 
     @app.after_request
     def save_session(response):
@@ -723,8 +768,12 @@ def create_app(
 
     @app.route("/healthz")
     def healthz():
-        """Health check endpoint."""
-        return {"status": "ok"}, 200
+        """Health check endpoint - must respond quickly for HAProxy."""
+        # Return immediately without any database checks to ensure fast response
+        # This prevents HAProxy from marking the backend as down
+        from flask import Response
+
+        return Response('{"status":"ok"}', mimetype="application/json", status=200)
 
     # All frontend routes (/share) are handled by Vue.js SPA
     # Share route is now handled by Vue Router at /share/:token

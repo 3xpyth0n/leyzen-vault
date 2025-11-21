@@ -123,6 +123,56 @@
       </form>
     </section>
 
+    <!-- Two-Factor Authentication Section -->
+    <section class="account-section">
+      <div class="section-header-with-badge">
+        <h2>Two-Factor Authentication</h2>
+        <div
+          v-if="!twoFactorLoading"
+          class="status-badge"
+          :class="twoFactorEnabled ? 'enabled' : 'disabled'"
+        >
+          <span class="status-icon">{{ twoFactorEnabled ? "✓" : "✗" }}</span>
+          {{ twoFactorEnabled ? "2FA Enabled" : "2FA Disabled" }}
+        </div>
+      </div>
+
+      <div v-if="twoFactorLoading" class="loading">Loading...</div>
+      <div v-else>
+        <p class="section-description">
+          Add an extra layer of security to your account with two-factor
+          authentication (2FA). You'll need to enter a code from your
+          authenticator app when you log in.
+        </p>
+
+        <p v-if="twoFactorEnabled && twoFactorEnabledAt" class="enabled-date">
+          Enabled on {{ formatDate(twoFactorEnabledAt) }}
+        </p>
+
+        <div v-if="twoFactorError" class="error-message">
+          {{ twoFactorError }}
+        </div>
+
+        <div v-if="twoFactorEnabled" class="button-group">
+          <button
+            @click="showRegenerateBackupModal = true"
+            class="btn btn-secondary"
+          >
+            Regenerate Backup Codes
+          </button>
+          <button @click="showDisable2FAModal = true" class="btn btn-danger">
+            Disable 2FA
+          </button>
+        </div>
+
+        <div v-else class="button-group">
+          <button @click="start2FASetup" class="btn btn-primary">
+            Enable 2FA
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Delete Account Section -->
     <section class="account-section danger-section">
       <h2>Delete Account</h2>
@@ -190,6 +240,148 @@
         </form>
       </div>
     </div>
+
+    <!-- 2FA Setup Modal -->
+    <div
+      v-if="show2FASetupModal"
+      class="modal-overlay"
+      @click="show2FASetupModal = false"
+    >
+      <div class="modal glass glass-card modal-large" @click.stop>
+        <TwoFactorSetup
+          @success="handle2FASetupSuccess"
+          @cancel="show2FASetupModal = false"
+        />
+      </div>
+    </div>
+
+    <!-- Disable 2FA Modal -->
+    <div
+      v-if="showDisable2FAModal"
+      class="modal-overlay"
+      @click="showDisable2FAModal = false"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <h2>Disable 2FA</h2>
+        <p class="warning-text">
+          Are you sure you want to disable 2FA? Your account will be less
+          secure.
+        </p>
+        <form @submit.prevent="handleDisable2FA">
+          <div class="form-group">
+            <label for="disable-2fa-password"
+              >Enter your password to confirm:</label
+            >
+            <PasswordInput
+              id="disable-2fa-password"
+              v-model="disable2FAForm.password"
+              autocomplete="current-password"
+              required
+              :disabled="disable2FAForm.loading"
+              placeholder="Enter your password"
+            />
+          </div>
+          <div v-if="disable2FAForm.error" class="error-message">
+            {{ disable2FAForm.error }}
+          </div>
+          <div class="form-actions">
+            <button
+              type="submit"
+              :disabled="disable2FAForm.loading"
+              class="btn btn-danger"
+            >
+              {{ disable2FAForm.loading ? "Disabling..." : "Disable 2FA" }}
+            </button>
+            <button
+              type="button"
+              @click="showDisable2FAModal = false"
+              class="btn btn-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Regenerate Backup Codes Modal -->
+    <div
+      v-if="showRegenerateBackupModal"
+      class="modal-overlay"
+      @click="closeRegenerateBackupModal"
+    >
+      <div class="modal glass glass-card" @click.stop>
+        <h2>Regenerate Backup Codes</h2>
+
+        <div v-if="!regeneratedBackupCodes">
+          <p>
+            Regenerating backup codes will invalidate your existing codes. Make
+            sure to save the new codes in a secure place.
+          </p>
+          <form @submit.prevent="handleRegenerateBackupCodes">
+            <div class="form-group">
+              <label for="regenerate-password"
+                >Enter your password to confirm:</label
+              >
+              <PasswordInput
+                id="regenerate-password"
+                v-model="regenerateBackupForm.password"
+                autocomplete="current-password"
+                required
+                :disabled="regenerateBackupForm.loading"
+                placeholder="Enter your password"
+              />
+            </div>
+            <div v-if="regenerateBackupForm.error" class="error-message">
+              {{ regenerateBackupForm.error }}
+            </div>
+            <div class="form-actions">
+              <button
+                type="submit"
+                :disabled="regenerateBackupForm.loading"
+                class="btn btn-primary"
+              >
+                {{
+                  regenerateBackupForm.loading
+                    ? "Generating..."
+                    : "Regenerate Codes"
+                }}
+              </button>
+              <button
+                type="button"
+                @click="closeRegenerateBackupModal"
+                class="btn btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div v-else>
+          <p class="warning-text">
+            <strong>Save these codes now!</strong> They won't be shown again.
+          </p>
+          <div class="backup-codes-display">
+            <div
+              v-for="(code, index) in regeneratedBackupCodes"
+              :key="index"
+              class="backup-code"
+            >
+              <code>{{ code }}</code>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button @click="downloadBackupCodes" class="btn btn-secondary">
+              Download Codes
+            </button>
+            <button @click="closeRegenerateBackupModal" class="btn btn-primary">
+              I've Saved My Codes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Confirmation Modal -->
@@ -238,10 +430,12 @@ import {
 } from "../services/keyManager";
 import { encryptVaultSpaceKey } from "../services/encryption";
 import { clearEncryptedMasterKey } from "../services/masterKeyStorage";
+import { twoFactor } from "../services/api";
 import PasswordInput from "../components/PasswordInput.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import ReEncryptionModal from "../components/ReEncryptionModal.vue";
+import TwoFactorSetup from "../components/TwoFactorSetup.vue";
 
 export default {
   name: "AccountView",
@@ -250,6 +444,7 @@ export default {
     ConfirmationModal,
     AlertModal,
     ReEncryptionModal,
+    TwoFactorSetup,
   },
   data() {
     return {
@@ -302,10 +497,30 @@ export default {
       reEncryptionTotalCount: 0,
       reEncryptionError: null,
       reEncryptionCancelled: false,
+      // Two-Factor Authentication state
+      twoFactorEnabled: false,
+      twoFactorEnabledAt: null,
+      twoFactorLoading: false,
+      twoFactorError: null,
+      show2FASetupModal: false,
+      showDisable2FAModal: false,
+      showRegenerateBackupModal: false,
+      regeneratedBackupCodes: null,
+      disable2FAForm: {
+        password: "",
+        loading: false,
+        error: null,
+      },
+      regenerateBackupForm: {
+        password: "",
+        loading: false,
+        error: null,
+      },
     };
   },
   async mounted() {
     await this.loadAccountInfo();
+    await this.load2FAStatus();
   },
   methods: {
     async loadAccountInfo() {
@@ -843,6 +1058,96 @@ export default {
       const date = new Date(dateString);
       return date.toLocaleString();
     },
+    // Two-Factor Authentication Methods
+    async load2FAStatus() {
+      this.twoFactorLoading = true;
+      this.twoFactorError = null;
+      try {
+        const status = await twoFactor.getStatus();
+        this.twoFactorEnabled = status.enabled;
+        this.twoFactorEnabledAt = status.enabled_at;
+      } catch (err) {
+        console.error("Failed to load 2FA status:", err);
+        // Don't show error for 2FA status check failure
+      } finally {
+        this.twoFactorLoading = false;
+      }
+    },
+    start2FASetup() {
+      this.show2FASetupModal = true;
+      this.twoFactorError = null;
+    },
+    async handle2FASetupSuccess() {
+      this.show2FASetupModal = false;
+      // Reload 2FA status
+      await this.load2FAStatus();
+      // Show success message
+      this.showAlert({
+        type: "success",
+        title: "2FA Enabled",
+        message:
+          "Two-factor authentication has been enabled successfully. Make sure to save your backup codes!",
+      });
+    },
+    async handleDisable2FA() {
+      this.disable2FAForm.loading = true;
+      this.disable2FAForm.error = null;
+
+      try {
+        await twoFactor.disable(this.disable2FAForm.password);
+        this.showDisable2FAModal = false;
+        this.disable2FAForm.password = "";
+        // Reload 2FA status
+        await this.load2FAStatus();
+        // Show success message
+        this.showAlert({
+          type: "success",
+          title: "2FA Disabled",
+          message: "Two-factor authentication has been disabled.",
+        });
+      } catch (err) {
+        this.disable2FAForm.error = err.message || "Failed to disable 2FA";
+      } finally {
+        this.disable2FAForm.loading = false;
+      }
+    },
+    async handleRegenerateBackupCodes() {
+      this.regenerateBackupForm.loading = true;
+      this.regenerateBackupForm.error = null;
+
+      try {
+        const result = await twoFactor.regenerateBackupCodes(
+          this.regenerateBackupForm.password,
+        );
+        this.regeneratedBackupCodes = result.backup_codes;
+        this.regenerateBackupForm.password = "";
+      } catch (err) {
+        this.regenerateBackupForm.error =
+          err.message || "Failed to regenerate backup codes";
+      } finally {
+        this.regenerateBackupForm.loading = false;
+      }
+    },
+    downloadBackupCodes() {
+      if (!this.regeneratedBackupCodes) return;
+
+      const codesText = this.regeneratedBackupCodes.join("\n");
+      const blob = new Blob([codesText], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "leyzen-vault-backup-codes.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
+    closeRegenerateBackupModal() {
+      this.showRegenerateBackupModal = false;
+      this.regeneratedBackupCodes = null;
+      this.regenerateBackupForm.password = "";
+      this.regenerateBackupForm.error = null;
+    },
   },
 };
 </script>
@@ -1079,5 +1384,98 @@ export default {
 .modal p {
   color: #94a3b8;
   margin-bottom: 1.5rem;
+}
+/* Two-Factor Authentication Styles */
+.section-header-with-badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.section-header-with-badge h2 {
+  margin: 0;
+}
+
+.section-description {
+  color: #b8c5d6;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.status-badge.enabled {
+  background: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.status-badge.disabled {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.status-icon {
+  font-size: 1.1rem;
+}
+
+.enabled-date {
+  color: #b8c5d6;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.button-group {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.button-group .btn {
+  min-width: auto;
+  white-space: nowrap;
+}
+
+.modal-large {
+  max-width: 600px;
+}
+
+.backup-codes-display {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.backup-codes-display .backup-code {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.backup-codes-display .backup-code code {
+  font-family: "Courier New", monospace;
+  color: #e6eef6;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
 }
 </style>

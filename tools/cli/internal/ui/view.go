@@ -303,7 +303,6 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		"VAULT_MAX_TOTAL_SIZE_MB":    2,
 		"VAULT_AUDIT_RETENTION_DAYS": 3,
 		"VAULT_LOG_FILE":             4,
-		"ALLOW_SIGNUP":               5,
 	}
 	orchestratorOrder := map[string]int{
 		"ORCH_USER":            0,
@@ -375,7 +374,7 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 			category = "Authentication & Security"
 		} else if key == "TIMEZONE" || key == "LEYZEN_ENVIRONMENT" || key == "VAULT_URL" {
 			category = "General"
-		} else if strings.HasPrefix(key, "VAULT_") || key == "ALLOW_SIGNUP" {
+		} else if strings.HasPrefix(key, "VAULT_") {
 			category = "Vault"
 		} else if strings.HasPrefix(key, "ORCH_") || key == "WEB_REPLICAS" || key == "ROTATION_INTERVAL" {
 			category = "Orchestrator"
@@ -674,7 +673,7 @@ func (m *Model) renderLogPanel() string {
 
 func (m *Model) renderQuitConfirmation() string {
 	message := fmt.Sprintf(
-		"⚠️  Quit application? Press %s again to confirm quit, or any other key to cancel",
+		"\n⚠️  Quit application? Press %s again to confirm quit, or any other key to cancel",
 		m.theme.HelpKey.Render("CTRL+C"),
 	)
 	return m.theme.WarningStatus.

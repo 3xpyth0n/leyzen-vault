@@ -90,7 +90,6 @@ class VaultSettings:
     max_uploads_per_hour: int
     audit_retention_days: int
     smtp_config: SMTPConfig | None = None
-    allow_signup: bool = True
     vault_url: str | None = None
     email_verification_expiry_minutes: int = 10
     max_total_size_mb: int | None = None
@@ -206,9 +205,6 @@ def load_settings() -> VaultSettings:
                 from_name=smtp_from_name,
             )
 
-    # Allow signup (default: true)
-    allow_signup = parse_bool(env_values.get("ALLOW_SIGNUP"), default=True)
-
     # Vault URL (optional - used for email links)
     vault_url = env_values.get("VAULT_URL", "").strip()
     if vault_url:
@@ -249,7 +245,6 @@ def load_settings() -> VaultSettings:
         max_uploads_per_hour=max_uploads_per_hour,
         audit_retention_days=audit_retention_days,
         smtp_config=smtp_config,
-        allow_signup=allow_signup,
         vault_url=vault_url,
         email_verification_expiry_minutes=email_verification_expiry_minutes,
         max_total_size_mb=max_total_size_mb,

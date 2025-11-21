@@ -90,6 +90,11 @@ def _register_runtime_hooks(flask_app: Flask) -> None:
         rotation_service = flask_app.config["ROTATION_SERVICE"]
         rotation_service.start_background_workers()
 
+        # Start storage cleanup worker (runs periodically to clean orphaned files)
+        storage_cleanup_service = flask_app.config.get("STORAGE_CLEANUP_SERVICE")
+        if storage_cleanup_service:
+            storage_cleanup_service.start_background_worker()
+
 
 def _build_placeholder_app(error: ConfigurationError) -> Flask:
     """Return a tiny Flask app that surfaces configuration errors at runtime."""
@@ -146,6 +151,11 @@ def main() -> None:
 
     rotation_service = real_app.config["ROTATION_SERVICE"]
     rotation_service.start_background_workers()
+
+    # Start storage cleanup worker
+    storage_cleanup_service = real_app.config.get("STORAGE_CLEANUP_SERVICE")
+    if storage_cleanup_service:
+        storage_cleanup_service.start_background_worker()
 
     logger = real_app.config["LOGGER"]
 

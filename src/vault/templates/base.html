@@ -9,39 +9,28 @@
     <link rel="stylesheet" href="/static/vault.css" />
     <link rel="stylesheet" href="/static/logout-modal.css" />
     {% block extra_head %}{% endblock %}
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration DISABLED -->
+    <!-- Service worker is disabled to prevent cache issues with CSS/JS files -->
     <script nonce="{{ csp_nonce }}">
       if ("serviceWorker" in navigator) {
+        // Unregister any existing service workers and clear all caches
         window.addEventListener("load", () => {
-          let scriptURL = "/static/service-worker.js";
-          if (window.vaultScriptURLPolicy) {
-            try {
-              scriptURL =
-                window.vaultScriptURLPolicy.createScriptURL(scriptURL);
-            } catch (e) {
-              console.warn("Failed to create TrustedScriptURL:", e);
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (let registration of registrations) {
+              registration.unregister().then((success) => {
+                if (success) {
+                  // Clear all caches after unregistering
+                  if ("caches" in window) {
+                    caches.keys().then((cacheNames) => {
+                      cacheNames.forEach((cacheName) => {
+                        caches.delete(cacheName);
+                      });
+                    });
+                  }
+                }
+              });
             }
-          } else if (window.trustedTypes && window.trustedTypes.createPolicy) {
-            try {
-              const trustedScriptURLPolicy = window.trustedTypes.createPolicy(
-                "vault-script-url",
-                {
-                  createScriptURL: (url) => url,
-                },
-              );
-              scriptURL = trustedScriptURLPolicy.createScriptURL(scriptURL);
-            } catch (e) {
-              console.warn("Failed to create TrustedScriptURL:", e);
-            }
-          }
-          navigator.serviceWorker
-            .register(scriptURL)
-            .then((registration) => {
-              // Service Worker registered successfully
-            })
-            .catch((error) => {
-              // Service Worker registration failed
-            });
+          });
         });
       }
     </script>

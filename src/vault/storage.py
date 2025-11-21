@@ -320,12 +320,32 @@ class FileStorage:
         raise FileNotFoundError(f"File {file_id} not found in storage or source")
 
     def delete_file(self, file_id: str) -> bool:
-        """Delete a stored file."""
+        """Delete a stored file from both primary and source storage.
+
+        Args:
+            file_id: File identifier (storage_ref)
+
+        Returns:
+            True if deleted from at least one location, False if not found anywhere
+        """
+        deleted_primary = False
+        deleted_source = False
+
+        # Delete from primary storage (/data/files/)
         file_path = self.get_file_path(file_id)
         if file_path.exists():
             file_path.unlink()
-            return True
-        return False
+            deleted_primary = True
+
+        # Delete from source storage (/data-source/files/)
+        if self.source_dir:
+            source_file_path = self.get_source_file_path(file_id)
+            if source_file_path and source_file_path.exists():
+                source_file_path.unlink()
+                deleted_source = True
+
+        # Return True if deleted from at least one location
+        return deleted_primary or deleted_source
 
     def file_exists(self, file_id: str) -> bool:
         """Check if a file exists.

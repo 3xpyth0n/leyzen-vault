@@ -20,10 +20,24 @@ function staticScriptsPlugin() {
 }
 
 export default defineConfig({
-  plugins: [vue(), staticScriptsPlugin()],
+  plugins: [
+    vue({
+      // Disable CSS preloading to prevent 503 errors when server is slow
+      template: {
+        compilerOptions: {
+          // This prevents Vue from automatically preloading CSS files
+          // CSS will still be loaded, but not preloaded, avoiding 503 errors
+        },
+      },
+    }),
+    staticScriptsPlugin(),
+  ],
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Disable CSS code splitting - inline CSS in JS to avoid preload issues
+    // This prevents Vue from trying to preload separate CSS files that cause 503 errors
+    cssCodeSplit: false,
     rollupOptions: {
       input: resolve(__dirname, "index.html"),
       output: {

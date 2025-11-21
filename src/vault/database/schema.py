@@ -178,6 +178,20 @@ class User(db.Model):
         nullable=True,
     )  # ID of admin who invited this user
 
+    # Two-Factor Authentication (2FA/TOTP) fields
+    totp_secret: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # Encrypted TOTP secret (base32)
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )  # Whether 2FA is enabled for this user
+    totp_backup_codes: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Encrypted JSON array of backup recovery codes
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Timestamp when 2FA was enabled
+
     # Relationships
     owned_vaultspaces: Mapped[list["VaultSpace"]] = relationship(
         "VaultSpace",

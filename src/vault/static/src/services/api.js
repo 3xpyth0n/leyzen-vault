@@ -308,6 +308,7 @@ export const auth = {
     password,
     captchaNonce = "",
     captchaResponse = "",
+    totpToken = null,
   ) {
     const body = { email: usernameOrEmail, password };
     // CAPTCHA response is now required - always send it (even if empty, backend will validate)
@@ -315,6 +316,10 @@ export const auth = {
     // Nonce is optional - only send if provided
     if (captchaNonce) {
       body.captcha_nonce = captchaNonce;
+    }
+    // 2FA token is optional - only send if provided
+    if (totpToken) {
+      body.totp_token = totpToken;
     }
     const response = await apiRequest("/auth/login", {
       method: "POST",
@@ -456,6 +461,96 @@ export const auth = {
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to resend verification email");
+    }
+    return await response.json();
+  },
+};
+
+/**
+ * Two-Factor Authentication API methods.
+ */
+export const twoFactor = {
+  /**
+   * Get current user's 2FA status.
+   *
+   * @returns {Promise<object>} 2FA status
+   */
+  async getStatus() {
+    const response = await apiRequest("/auth/2fa/status");
+    if (!response.ok) {
+      const error = await parseErrorResponse(response);
+      throw new Error(error.error);
+    }
+    return await response.json();
+  },
+
+  /**
+   * Start 2FA setup process.
+   * Generates a new TOTP secret and QR code.
+   *
+   * @returns {Promise<object>} Setup data with secret, URI, and QR code
+   */
+  async setup() {
+    const response = await apiRequest("/auth/2fa/setup", {
+      method: "POST",
+    });
+    if (!response.ok) {
+      const error = await parseErrorResponse(response);
+      throw new Error(error.error);
+    }
+    return await response.json();
+  },
+
+  /**
+   * Verify 2FA setup by providing a TOTP token.
+   *
+   * @param {string} token - 6-digit TOTP token
+   * @returns {Promise<object>} Result with backup codes
+   */
+  async verifySetup(token) {
+    const response = await apiRequest("/auth/2fa/verify-setup", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    if (!response.ok) {
+      const error = await parseErrorResponse(response);
+      throw new Error(error.error);
+    }
+    return await response.json();
+  },
+
+  /**
+   * Disable 2FA for the current user.
+   *
+   * @param {string} password - User's password for confirmation
+   * @returns {Promise<object>} Result
+   */
+  async disable(password) {
+    const response = await apiRequest("/auth/2fa/disable", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    if (!response.ok) {
+      const error = await parseErrorResponse(response);
+      throw new Error(error.error);
+    }
+    return await response.json();
+  },
+
+  /**
+   * Regenerate backup recovery codes.
+   *
+   * @param {string} password - User's password for confirmation
+   * @returns {Promise<object>} New backup codes
+   */
+  async regenerateBackupCodes(password) {
+    const response = await apiRequest("/auth/2fa/regenerate-backup", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    if (!response.ok) {
+      const error = await parseErrorResponse(response);
+      throw new Error(error.error);
     }
     return await response.json();
   },
@@ -972,10 +1067,17 @@ export const files = {
    * @param {string} vaultspaceId - Optional VaultSpace ID filter
    * @returns {Promise<object>} List of starred files
    */
-  async listStarred(vaultspaceId = null) {
+  async listStarred(vaultspaceId = null, cacheBust = false) {
     const params = new URLSearchParams();
     if (vaultspaceId) {
       params.append("vaultspace_id", vaultspaceId);
+    }
+
+    // Add cache-busting parameter if requested
+    if (cacheBust) {
+      const timestamp = Date.now();
+      const highResTime = performance.now ? performance.now() : 0;
+      params.append("_t", `${timestamp}_${highResTime.toFixed(3)}`);
     }
 
     const response = await apiRequest(`/v2/files/starred?${params.toString()}`);
@@ -994,13 +1096,25 @@ export const files = {
    * @param {number} days - Number of days to look back (default: 30)
    * @returns {Promise<object>} List of recent files
    */
-  async listRecent(vaultspaceId = null, limit = 50, days = 30) {
+  async listRecent(
+    vaultspaceId = null,
+    limit = 50,
+    days = 30,
+    cacheBust = false,
+  ) {
     const params = new URLSearchParams();
     if (vaultspaceId) {
       params.append("vaultspace_id", vaultspaceId);
     }
     params.append("limit", limit.toString());
     params.append("days", days.toString());
+
+    // Add cache-busting parameter if requested
+    if (cacheBust) {
+      const timestamp = Date.now();
+      const highResTime = performance.now ? performance.now() : 0;
+      params.append("_t", `${timestamp}_${highResTime.toFixed(3)}`);
+    }
 
     const response = await apiRequest(`/v2/files/recent?${params.toString()}`);
     if (!response.ok) {

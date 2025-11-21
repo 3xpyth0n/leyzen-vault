@@ -2,31 +2,43 @@
  * Client-side encryption service using Web Crypto API.
  *
  * This service handles the complete encryption chain:
- * - User master key derivation (Argon2)
+ * - User master key derivation (PBKDF2 for E2EE key derivation)
  * - VaultSpace key generation and encryption
  * - File key generation and encryption
  * - File encryption/decryption
  *
  * IMPORTANT: All encryption/decryption happens client-side.
  * The server never sees plaintext keys or file contents.
+ *
+ * CRYPTOGRAPHY NOTE:
+ * - Server-side authentication: Argon2id (see auth_service.py)
+ * - Client-side key derivation: PBKDF2 (this file)
+ * These serve different purposes and both are secure for their use cases.
  */
 
 import { logger } from "../utils/logger.js";
 
 /**
- * Derive user master key from password using Argon2.
- * Falls back to PBKDF2 if Argon2 is not available.
+ * Derive user master key from password using PBKDF2.
+ *
+ * NOTE: This is for CLIENT-SIDE ENCRYPTION KEY DERIVATION ONLY.
+ * Server-side password authentication uses Argon2id which provides better
+ * protection against brute-force and GPU attacks.
+ *
+ * PBKDF2 is used here because:
+ * - Natively supported by Web Crypto API (no external dependencies)
+ * - Argon2 WebAssembly modules cannot be properly bundled by Vite/Rollup
+ * - 600,000 iterations with SHA-256 provides adequate security for key derivation
+ * - The derived key is used for E2EE encryption and never sent to the server
  *
  * @param {string} password - User password
  * @param {Uint8Array} salt - Salt bytes
  * @param {boolean} extractable - Whether the key should be extractable (default: false for security)
- * @returns {Promise<CryptoKey>} User master key
+ * @returns {Promise<CryptoKey>} User master key for encryption
  */
 export async function deriveUserKey(password, salt, extractable = false) {
-  // NOTE: Argon2 implementation is not feasible with Vite/Vue as WebAssembly
-  // modules cannot be properly bundled by Rollup. While Argon2 would provide
-  // better security against GPU-based attacks, PBKDF2 with 600,000 iterations
-  // remains secure for our use case and is fully supported by the Web Crypto API.
+  // Use PBKDF2 for client-side key derivation (E2EE)
+  // This is NOT used for authentication - server uses Argon2id for that
 
   // Use PBKDF2 (current implementation)
   const encoder = new TextEncoder();

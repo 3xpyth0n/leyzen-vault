@@ -363,7 +363,7 @@ export default {
   isolation: isolate;
 }
 
-.modal-header {
+.file-properties-modal .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -372,8 +372,9 @@ export default {
   flex-shrink: 0;
 }
 
-.modal-header h2 {
+.file-properties-modal .modal-header h2 {
   margin: 0;
+  padding: 0;
   font-size: 1.25rem;
   color: var(--text-primary, #f1f5f9);
   font-weight: 600;

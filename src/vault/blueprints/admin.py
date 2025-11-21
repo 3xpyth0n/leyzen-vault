@@ -650,16 +650,13 @@ def manage_settings():
         settings = db.session.query(SystemSettings).all()
         settings_dict = {s.key: s.value for s in settings}
 
-        # Priority: database value > config value
-        # If allow_signup is not in database, fall back to config
-        vault_settings = current_app.config.get("VAULT_SETTINGS")
-        if "allow_signup" not in settings_dict and vault_settings:
-            settings_dict["allow_signup"] = str(vault_settings.allow_signup)
-        # If allow_signup is in database, use database value (already in settings_dict)
-
         # Password authentication enabled (default: true)
         if "password_authentication_enabled" not in settings_dict:
             settings_dict["password_authentication_enabled"] = "true"
+
+        # Allow signup (default: true)
+        if "allow_signup" not in settings_dict:
+            settings_dict["allow_signup"] = "true"
 
         return jsonify({"settings": settings_dict}), 200
     else:
@@ -667,7 +664,7 @@ def manage_settings():
         if not data:
             return jsonify({"error": "Invalid request"}), 400
 
-        # Update allow_signup in database (reference only - actual config requires .env update)
+        # Update allow_signup in database
         allow_signup = data.get("allow_signup")
         if allow_signup is not None:
             setting = (
@@ -1316,3 +1313,120 @@ The Leyzen Vault Team
     except Exception as e:
         current_app.logger.error(f"Error testing SMTP: {e}")
         return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
+
+
+@admin_api_bp.route("/storage/reconcile", methods=["GET"])
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def storage_reconciliation_report():
+    """Get storage reconciliation report (find orphaned files).
+
+    Returns a report of orphaned files - files that exist on disk but have
+    no corresponding active database records.
+
+    Returns:
+        JSON with orphan statistics:
+        {
+            "primary": list of orphaned file IDs in primary storage,
+            "source": list of orphaned file IDs in source storage,
+            "db_records": count of active files in database,
+            "primary_files": count of physical files in primary storage,
+            "source_files": count of physical files in source storage
+        }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    from vault.services.storage_reconciliation_service import (
+        StorageReconciliationService,
+    )
+
+    storage = current_app.config.get("VAULT_STORAGE")
+    if not storage:
+        return jsonify({"error": "Storage not configured"}), 500
+
+    reconciliation_service = StorageReconciliationService(storage)
+    orphans = reconciliation_service.find_orphaned_files()
+
+    # Convert sets to lists for JSON serialization
+    result = {
+        "primary_orphans": list(orphans["primary"]),
+        "source_orphans": list(orphans["source"]),
+        "primary_orphans_count": len(orphans["primary"]),
+        "source_orphans_count": len(orphans["source"]),
+        "db_records": orphans["db_records"],
+        "primary_files": orphans["primary_files"],
+        "source_files": orphans["source_files"],
+    }
+
+    return jsonify(result), 200
+
+
+@admin_api_bp.route("/storage/cleanup", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.SUPERADMIN)  # Require superadmin for cleanup
+def storage_cleanup():
+    """Clean up orphaned files from storage.
+
+    This endpoint removes files from disk that have no corresponding database
+    records. Use with caution!
+
+    Request body:
+        {
+            "dry_run": true/false  # Default: true for safety
+        }
+
+    Returns:
+        JSON with cleanup results:
+        {
+            "dry_run": bool,
+            "deleted_primary": list of deleted file IDs from primary storage,
+            "deleted_source": list of deleted file IDs from source storage,
+            "deleted_primary_count": int,
+            "deleted_source_count": int,
+            "failed": list of failed deletions with error details,
+            "failed_count": int,
+            "stats": orphan statistics
+        }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json() or {}
+    dry_run = data.get("dry_run", True)  # Default to dry run for safety
+
+    from vault.services.storage_reconciliation_service import (
+        StorageReconciliationService,
+    )
+
+    storage = current_app.config.get("VAULT_STORAGE")
+    if not storage:
+        return jsonify({"error": "Storage not configured"}), 500
+
+    reconciliation_service = StorageReconciliationService(storage)
+    results = reconciliation_service.cleanup_orphaned_files(dry_run=dry_run)
+
+    # Audit log
+    audit_service = current_app.config.get("VAULT_AUDIT")
+    if audit_service:
+        audit_service.log_event(
+            event_type="storage_cleanup",
+            user_id=user.id,
+            status="success",
+            details={
+                "dry_run": dry_run,
+                "deleted_primary_count": len(results["deleted_primary"]),
+                "deleted_source_count": len(results["deleted_source"]),
+                "failed_count": len(results["failed"]),
+            },
+        )
+
+    # Add counts to response for easier consumption
+    results["deleted_primary_count"] = len(results["deleted_primary"])
+    results["deleted_source_count"] = len(results["deleted_source"])
+    results["failed_count"] = len(results["failed"])
+
+    return jsonify(results), 200

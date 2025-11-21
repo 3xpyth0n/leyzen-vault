@@ -12,5 +12,7 @@ requests==2.32.4
 whoosh==2.7.4
 authlib==1.6.5
 cryptography==42.0.5
+pyotp==2.9.0
+qrcode==7.4.2
 # python-saml is optional - requires xmlsec which has compatibility issues
 # Install manually if SAML support is needed: pip install python3-saml

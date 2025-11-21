@@ -135,7 +135,10 @@ class AuthService:
         if existing_user:
             raise ValueError(f"User with email {email} already exists")
 
-        # Hash password with Argon2
+        # Hash password with Argon2id for authentication
+        # NOTE: This is for server-side password authentication ONLY.
+        # Client-side encryption uses PBKDF2 for key derivation (see key_management.py).
+        # Argon2id provides strong protection against brute-force and GPU attacks.
         password_hash = self.password_hasher.hash(password)
 
         # Generate master key salt (16 bytes, base64-encoded)
@@ -158,16 +161,19 @@ class AuthService:
         return user
 
     def authenticate(
-        self, username_or_email: str, password: str
-    ) -> tuple[User, str] | None:
+        self, username_or_email: str, password: str, totp_token: str | None = None
+    ) -> tuple[User, str] | tuple[User, None] | None:
         """Authenticate a user and return JWT token.
 
         Args:
             username_or_email: User email
             password: User password
+            totp_token: Optional TOTP token (6-digit code) for 2FA verification
 
         Returns:
-            Tuple of (User, JWT token) if authentication succeeds, None otherwise
+            - None: Authentication failed (invalid credentials)
+            - (User, None): Password correct but 2FA required (no token provided or invalid)
+            - (User, JWT token): Full authentication success (no 2FA or 2FA verified)
 
         Raises:
             ValueError: If email is not verified (with error message)
@@ -189,6 +195,19 @@ class AuthService:
                 raise ValueError(
                     "Email not verified. Please verify your email before logging in."
                 )
+
+            # Check if 2FA is enabled
+            if user.totp_enabled:
+                # If no TOTP token provided, indicate 2FA is required
+                if not totp_token:
+                    return user, None  # Signal that 2FA is required
+
+                # Verify TOTP token
+                if not self.verify_totp(user.id, totp_token):
+                    # Invalid TOTP token - still return user but no JWT
+                    return user, None
+
+                # TOTP verified successfully - continue with login
 
             # Update last login
             user.last_login = datetime.now(timezone.utc)
@@ -628,3 +647,146 @@ class AuthService:
             List of superadmin users
         """
         return db.session.query(User).filter_by(global_role=GlobalRole.SUPERADMIN).all()
+
+    # ========== Two-Factor Authentication (2FA/TOTP) Methods ==========
+
+    def enable_totp(
+        self, user_id: str, totp_secret: str, backup_codes: list[str]
+    ) -> User | None:
+        """Enable TOTP-based two-factor authentication for a user.
+
+        Args:
+            user_id: User ID
+            totp_secret: Encrypted TOTP secret (base32)
+            backup_codes: Encrypted JSON array of hashed backup codes
+
+        Returns:
+            Updated User object if successful, None if user not found
+
+        Raises:
+            ValueError: If 2FA is already enabled for this user
+        """
+        user = self.get_user(user_id)
+        if not user:
+            return None
+
+        if user.totp_enabled:
+            raise ValueError(
+                "Two-factor authentication is already enabled for this user"
+            )
+
+        user.totp_secret = totp_secret
+        user.totp_backup_codes = backup_codes
+        user.totp_enabled = True
+        user.totp_enabled_at = datetime.now(timezone.utc)
+
+        db.session.commit()
+        return user
+
+    def disable_totp(self, user_id: str) -> User | None:
+        """Disable TOTP-based two-factor authentication for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Updated User object if successful, None if user not found
+        """
+        user = self.get_user(user_id)
+        if not user:
+            return None
+
+        user.totp_secret = None
+        user.totp_backup_codes = None
+        user.totp_enabled = False
+        user.totp_enabled_at = None
+
+        db.session.commit()
+        return user
+
+    def verify_totp(self, user_id: str, token: str) -> bool:
+        """Verify a TOTP token for a user.
+
+        Args:
+            user_id: User ID
+            token: 6-digit TOTP token or backup recovery code
+
+        Returns:
+            True if token is valid, False otherwise
+        """
+        from vault.services.totp_service import get_totp_service
+
+        user = self.get_user(user_id)
+        if not user or not user.totp_enabled or not user.totp_secret:
+            return False
+
+        totp_service = get_totp_service()
+
+        # Try TOTP token first
+        try:
+            decrypted_secret = totp_service.decrypt_secret(user.totp_secret)
+            if totp_service.verify_token(decrypted_secret, token):
+                return True
+        except Exception:
+            # Decryption failed or invalid token
+            pass
+
+        # Try backup codes if TOTP token failed
+        if user.totp_backup_codes:
+            try:
+                decrypted_codes = totp_service.decrypt_backup_codes(
+                    user.totp_backup_codes
+                )
+                is_valid, matched_hash = totp_service.verify_backup_code(
+                    token, decrypted_codes
+                )
+
+                if is_valid and matched_hash:
+                    # Remove used backup code
+                    decrypted_codes.remove(matched_hash)
+                    user.totp_backup_codes = totp_service.encrypt_backup_codes(
+                        decrypted_codes
+                    )
+                    db.session.commit()
+                    return True
+            except Exception:
+                # Decryption failed or invalid backup code
+                pass
+
+        return False
+
+    def regenerate_backup_codes(self, user_id: str) -> list[str] | None:
+        """Regenerate backup recovery codes for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of new backup codes (plaintext, for display to user), or None if user not found
+
+        Raises:
+            ValueError: If 2FA is not enabled for this user
+        """
+        from vault.services.totp_service import get_totp_service
+
+        user = self.get_user(user_id)
+        if not user:
+            return None
+
+        if not user.totp_enabled:
+            raise ValueError("Two-factor authentication is not enabled for this user")
+
+        totp_service = get_totp_service()
+
+        # Generate new backup codes
+        new_codes = totp_service.generate_backup_codes(count=10)
+
+        # Hash and encrypt them
+        hashed_codes = [totp_service.hash_backup_code(code) for code in new_codes]
+        encrypted_codes = totp_service.encrypt_backup_codes(hashed_codes)
+
+        # Update user
+        user.totp_backup_codes = encrypted_codes
+        db.session.commit()
+
+        return new_codes

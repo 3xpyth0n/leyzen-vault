@@ -34,6 +34,14 @@ class AdvancedFileService:
         self.encryption_service = EncryptionService()
         self.search_service = SearchService()
 
+    def _get_active_file_query(self):
+        """Get a base query for active (non-deleted) files.
+
+        Returns:
+            SQLAlchemy query filtered to exclude deleted files
+        """
+        return db.session.query(File).filter(File.deleted_at.is_(None))
+
     def _check_duplicate_name_in_folder(
         self,
         vaultspace_id: str,
@@ -120,13 +128,13 @@ class AdvancedFileService:
         # Validate parent if provided
         if parent_id:
             parent_file = (
-                db.session.query(File)
+                self._get_active_file_query()
                 .filter_by(id=parent_id, vaultspace_id=vaultspace_id)
                 .first()
             )
             if not parent_file:
                 raise ValueError(
-                    f"Parent file {parent_id} not found in VaultSpace {vaultspace_id}"
+                    f"Parent file {parent_id} not found in VaultSpace {vaultspace_id} or has been deleted"
                 )
 
         # Check for duplicate names in the same folder
@@ -189,7 +197,8 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission to delete
         """
-        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        # Get file - must not be deleted (can't delete an already deleted file)
+        file_obj = self._get_active_file_query().filter_by(id=file_id).first()
         if not file_obj:
             return False
 
@@ -332,14 +341,42 @@ class AdvancedFileService:
                 f"User {user_id} does not have permission to permanently delete file {file_id}"
             )
 
+        # Store storage_ref before deletion for physical file cleanup
+        storage_ref = file_obj.storage_ref
+        mime_type = file_obj.mime_type
+
         # Delete all FileKeys (cascade will handle)
         file_keys = self.encryption_service.get_all_file_keys(file_id)
         for fk in file_keys:
             db.session.delete(fk)
 
-        # Hard delete file
+        # Hard delete file from database
         db.session.delete(file_obj)
         db.session.commit()
+
+        # Delete physical file from storage AFTER database commit
+        # This ensures we only delete files that were successfully removed from DB
+        from flask import current_app
+
+        storage = current_app.config.get("VAULT_STORAGE")
+        if storage and storage_ref and mime_type != "application/x-directory":
+            try:
+                # Delete from both primary and source storage
+                deleted = storage.delete_file(storage_ref)
+                if deleted:
+                    logger.info(
+                        f"Deleted physical file {storage_ref} during permanent delete"
+                    )
+                else:
+                    logger.warning(
+                        f"Physical file {storage_ref} not found during permanent delete"
+                    )
+            except Exception as e:
+                # Log warning - file was deleted from DB but physical deletion failed
+                # This creates an orphan, but reconciliation service will clean it up
+                logger.warning(
+                    f"Failed to delete physical file {storage_ref} during permanent delete: {e}"
+                )
 
         # Remove from search index
         if self.search_service.index_service:
@@ -394,7 +431,8 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission
         """
-        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        # Get file - must not be deleted
+        file_obj = self._get_active_file_query().filter_by(id=file_id).first()
         if not file_obj:
             return None
 
@@ -494,13 +532,13 @@ class AdvancedFileService:
         # Validate parent if provided
         if parent_id:
             parent_file = (
-                db.session.query(File)
+                self._get_active_file_query()
                 .filter_by(id=parent_id, vaultspace_id=vaultspace_id)
                 .first()
             )
             if not parent_file:
                 raise ValueError(
-                    f"Parent folder {parent_id} not found in VaultSpace {vaultspace_id}"
+                    f"Parent folder {parent_id} not found in VaultSpace {vaultspace_id} or has been deleted"
                 )
             # Check that parent is actually a folder
             if parent_file.mime_type != "application/x-directory":
@@ -574,7 +612,8 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission to rename
         """
-        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        # Get file - must not be deleted
+        file_obj = self._get_active_file_query().filter_by(id=file_id).first()
         if not file_obj:
             return None
 
@@ -641,7 +680,8 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission or move would create cycle
         """
-        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        # Get file source - must not be deleted
+        file_obj = self._get_active_file_query().filter_by(id=file_id).first()
         if not file_obj:
             return None
 
@@ -654,12 +694,14 @@ class AdvancedFileService:
         # Validate new parent if provided
         if new_parent_id:
             parent_file = (
-                db.session.query(File)
+                self._get_active_file_query()
                 .filter_by(id=new_parent_id, vaultspace_id=file_obj.vaultspace_id)
                 .first()
             )
             if not parent_file:
-                raise ValueError(f"Parent folder {new_parent_id} not found")
+                raise ValueError(
+                    f"Parent folder {new_parent_id} not found or has been deleted"
+                )
             # Check that parent is actually a folder
             if parent_file.mime_type != "application/x-directory":
                 raise ValueError(f"Parent {new_parent_id} is not a folder")
@@ -714,7 +756,7 @@ class AdvancedFileService:
             visited.add(current_id)
 
             parent = (
-                db.session.query(File)
+                self._get_active_file_query()
                 .filter_by(id=current_id, mime_type="application/x-directory")
                 .first()
             )
@@ -887,9 +929,10 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission or file not found
         """
-        file_obj = db.session.query(File).filter_by(id=file_id).first()
+        # Get file source - must not be deleted
+        file_obj = self._get_active_file_query().filter_by(id=file_id).first()
         if not file_obj:
-            raise ValueError(f"File {file_id} not found")
+            raise ValueError(f"File {file_id} not found or has been deleted")
 
         # Check permissions: only owner can copy
         if file_obj.owner_user_id != user_id:
@@ -914,18 +957,21 @@ class AdvancedFileService:
         new_file_name = new_name or file_obj.original_name
         if new_parent_id:
             parent_file = (
-                db.session.query(File)
+                self._get_active_file_query()
                 .filter_by(id=new_parent_id, vaultspace_id=target_vaultspace_id)
                 .first()
             )
             if not parent_file:
-                raise ValueError(f"Parent folder {new_parent_id} not found")
+                raise ValueError(
+                    f"Parent folder {new_parent_id} not found or has been deleted"
+                )
             if parent_file.mime_type != "application/x-directory":
                 raise ValueError(f"Parent {new_parent_id} is not a folder")
 
         # Check for name conflicts and generate unique name if needed
+        # Only check active (non-deleted) files
         existing = (
-            db.session.query(File)
+            self._get_active_file_query()
             .filter_by(
                 vaultspace_id=target_vaultspace_id,
                 parent_id=new_parent_id,
@@ -943,7 +989,7 @@ class AdvancedFileService:
             while existing:
                 new_file_name = f"{name_parts[0]} ({counter}){name_parts[1]}"
                 existing = (
-                    db.session.query(File)
+                    self._get_active_file_query()
                     .filter_by(
                         vaultspace_id=target_vaultspace_id,
                         parent_id=new_parent_id,
@@ -984,6 +1030,18 @@ class AdvancedFileService:
                 pass
 
         db.session.commit()
+
+        # Invalidate cache for the target vaultspace to ensure fresh data
+        cache = get_cache_service()
+        vaultspace_pattern = f"files:{target_vaultspace_id}:{user_id}:"
+        invalidated_count = cache.invalidate_pattern(vaultspace_pattern)
+        logger.debug(
+            f"Invalidated {invalidated_count} cache entries for vaultspace {target_vaultspace_id} after file copy"
+        )
+
+        # Re-index copied file
+        self.search_service.index_file(new_file)
+
         return new_file
 
     def copy_folder(
@@ -1009,9 +1067,10 @@ class AdvancedFileService:
         Raises:
             ValueError: If user doesn't have permission or folder not found
         """
-        folder_obj = db.session.query(File).filter_by(id=folder_id).first()
+        # Get folder source - must not be deleted
+        folder_obj = self._get_active_file_query().filter_by(id=folder_id).first()
         if not folder_obj:
-            raise ValueError(f"Folder {folder_id} not found")
+            raise ValueError(f"Folder {folder_id} not found or has been deleted")
 
         if folder_obj.mime_type != "application/x-directory":
             raise ValueError(f"File {folder_id} is not a folder")
@@ -1031,9 +1090,9 @@ class AdvancedFileService:
             new_name=new_name,
         )
 
-        # Recursively copy children
+        # Recursively copy children - only active (non-deleted) files
         children = (
-            db.session.query(File)
+            self._get_active_file_query()
             .filter_by(vaultspace_id=folder_obj.vaultspace_id, parent_id=folder_id)
             .all()
         )

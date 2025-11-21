@@ -48,7 +48,119 @@
     @action="handlePropertiesAction"
   />
 
-  <div class="starred-view glass glass-card">
+  <!-- Batch Actions Bar -->
+  <BatchActions
+    v-if="selectedItems.length > 0"
+    :selectedItems="selectedItems"
+    :availableFolders="[]"
+    @delete="handleBatchDelete"
+    @download="handleBatchDownload"
+    @clear="clearSelection"
+  />
+
+  <!-- Encryption Overlay -->
+  <Teleport to="body">
+    <div
+      v-if="showEncryptionOverlay && isMasterKeyRequired"
+      class="encryption-overlay"
+      :style="overlayStyle"
+      data-encryption-overlay="true"
+    >
+      <div class="encryption-overlay-content">
+        <div class="encryption-icon-wrapper">
+          <svg
+            class="encryption-icon"
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M12 12V16"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </div>
+        <h2 class="encryption-title">Files are encrypted</h2>
+        <p class="encryption-description">
+          Enter your encryption password to decrypt and access your files. This
+          password is used to decrypt your files and is not stored on the
+          server.
+        </p>
+        <button
+          @click="openPasswordModal"
+          class="encryption-unlock-btn"
+          type="button"
+        >
+          Unlock Files
+        </button>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Password Modal for SSO Users -->
+  <Teleport to="body">
+    <div
+      v-if="showPasswordModal"
+      class="password-modal-overlay"
+      @click.self="closePasswordModal"
+    >
+      <div class="password-modal glass glass-card">
+        <h2>Enter Encryption Password</h2>
+        <p class="password-modal-description">
+          Enter your encryption password to access your files. This password is
+          used to decrypt your files and is not stored on the server.
+        </p>
+        <div v-if="passwordModalError" class="error-message">
+          {{ passwordModalError }}
+        </div>
+        <div class="form-group">
+          <label for="password-input">Password</label>
+          <input
+            id="password-input"
+            v-model="passwordModalPassword"
+            type="password"
+            class="form-input"
+            placeholder="Enter your encryption password"
+            @keydown.enter="handlePasswordSubmit"
+            :disabled="passwordModalLoading"
+          />
+        </div>
+        <div class="form-actions">
+          <button
+            @click="closePasswordModal"
+            class="btn btn-secondary"
+            :disabled="passwordModalLoading"
+          >
+            Cancel
+          </button>
+          <button
+            @click="handlePasswordSubmit"
+            class="btn btn-primary"
+            :disabled="passwordModalLoading || !passwordModalPassword.trim()"
+          >
+            {{ passwordModalLoading ? "Unlocking..." : "Unlock" }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <div
+    class="starred-view glass glass-card"
+    v-if="!showEncryptionOverlay || !isMasterKeyRequired"
+  >
     <header class="view-header">
       <h1>
         <span class="header-icon" v-html="getIcon('star', 28)"></span>
@@ -79,11 +191,13 @@
         <FileListView
           :folders="folders"
           :files="filesList"
-          :selectedItems="[]"
-          viewMode="grid"
+          :selectedItems="selectedItems"
+          :viewMode="viewMode"
           :editingItemId="editingItemId"
+          @view-change="handleViewChange"
           @item-click="handleItemClick"
           @action="handleFileAction"
+          @selection-change="handleSelectionChange"
           @rename="handleRename"
         />
       </div>
@@ -99,8 +213,10 @@ import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
+import BatchActions from "../components/BatchActions.vue";
 import { folderPicker } from "../utils/FolderPicker";
 import { decryptFileKey, decryptFile } from "../services/encryption.js";
+import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 
 export default {
   name: "StarredView",
@@ -109,10 +225,12 @@ export default {
     FileProperties,
     ConfirmationModal,
     AlertModal,
+    BatchActions,
   },
   setup() {
     const router = useRouter();
     const route = useRoute();
+
     const loading = ref(false);
     const error = ref(null);
     const starredFiles = ref([]);
@@ -156,12 +274,13 @@ export default {
       );
     });
 
-    const loadStarred = async () => {
+    const loadStarred = async (cacheBust = false) => {
       loading.value = true;
       error.value = null;
       try {
-        const data = await files.listStarred(null);
-        starredFiles.value = data.files || [];
+        const data = await files.listStarred(null, cacheBust);
+        // Filter out any deleted files that might have slipped through (defensive)
+        starredFiles.value = (data.files || []).filter((f) => !f.deleted_at);
       } catch (err) {
         error.value = err.message || "Failed to load starred files";
       } finally {
@@ -169,8 +288,35 @@ export default {
       }
     };
 
+    // Use file view composable for shared functionality
+    const {
+      selectedItems,
+      viewMode,
+      showEncryptionOverlay,
+      isMasterKeyRequired,
+      showPasswordModal,
+      passwordModalPassword,
+      passwordModalError,
+      passwordModalLoading,
+      overlayStyle,
+      handleSelectionChange,
+      handleViewChange,
+      clearSelection,
+      checkEncryptionAccess,
+      handlePasswordSubmit,
+      closePasswordModal,
+      openPasswordModal,
+    } = useFileViewComposable({
+      viewType: "starred",
+      enableEncryptionCheck: true,
+      onEncryptionUnlocked: async () => {
+        // Reload starred files after encryption is unlocked
+        await loadStarred(true);
+      },
+    });
+
     const refreshStarred = () => {
-      loadStarred();
+      loadStarred(true); // Force cache-busting on manual refresh
     };
 
     const handleItemClick = (item, event) => {
@@ -224,8 +370,11 @@ export default {
 
       try {
         await files.delete(item.id);
-        // Remove from list
+        // Remove from list immediately
         starredFiles.value = starredFiles.value.filter((f) => f.id !== item.id);
+
+        // Force refresh with cache-busting to ensure consistency
+        await loadStarred(true);
 
         pendingDeleteFile.value = null;
         pendingDeleteFileName.value = "";
@@ -433,8 +582,8 @@ export default {
           newName: newName, // Keep same name unless specified
         });
 
-        // Reload starred files to show the new copy
-        await loadStarred();
+        // Reload starred files with cache-busting to show the new copy
+        await loadStarred(true);
       } catch (err) {
         throw err;
       }
@@ -443,8 +592,11 @@ export default {
     const handleMove = async (item, newParentId) => {
       try {
         await files.move(item.id, newParentId);
-        // Remove from list since it's moved
+        // Remove from list immediately since it's moved
         starredFiles.value = starredFiles.value.filter((f) => f.id !== item.id);
+
+        // Force refresh with cache-busting to ensure consistency
+        await loadStarred(true);
       } catch (err) {
         throw err;
       }
@@ -471,8 +623,8 @@ export default {
         // Perform move
         await handleMove(item, selectedFolderId);
 
-        // Reload starred files to reflect changes
-        await loadStarred();
+        // Note: handleMove already calls loadStarred(true), but we ensure it here too
+        await loadStarred(true);
 
         // Show success message
         if (window.Notifications) {
@@ -545,8 +697,8 @@ export default {
         // Perform copy
         await handleCopy(item, selectedFolderId, null);
 
-        // Reload starred files to show the new copy
-        await loadStarred();
+        // Note: handleCopy already calls loadStarred(true), but we ensure it here too
+        await loadStarred(true);
 
         // Show success message
         if (window.Notifications) {
@@ -571,7 +723,80 @@ export default {
       }
     };
 
-    onMounted(() => {
+    // Batch actions handlers
+    const handleBatchDelete = async (result) => {
+      // Reload starred files after batch delete
+      await loadStarred(true);
+      clearSelection();
+    };
+
+    const handleBatchDownload = async (items) => {
+      // Download each file individually
+      for (const item of items) {
+        try {
+          // Download file
+          const encryptedDataArrayBuffer = await files.download(
+            item.id,
+            item.vaultspace_id,
+          );
+
+          // Convert ArrayBuffer to Uint8Array
+          const encryptedData = new Uint8Array(encryptedDataArrayBuffer);
+
+          // Extract IV and encrypted content (IV is first 12 bytes)
+          const iv = encryptedData.slice(0, 12);
+          const encrypted = encryptedData.slice(12);
+
+          // Get vaultspace key from keyManager
+          const vaultspaceKey = await window.keyManager?.getVaultSpaceKey(
+            item.vaultspace_id,
+          );
+          if (!vaultspaceKey) {
+            throw new Error(
+              `VaultSpace key not found for file ${item.original_name}. Please refresh the page.`,
+            );
+          }
+
+          // Get file details with FileKey
+          const fileData = await files.get(item.id, item.vaultspace_id);
+          if (!fileData || !fileData.file_key) {
+            throw new Error(`File key not found for ${item.original_name}`);
+          }
+
+          // Decrypt file key
+          const fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+          );
+
+          // Decrypt file
+          const decrypted = await decryptFile(fileKey, encrypted.buffer, iv);
+
+          // Create blob and download
+          const blob = new Blob([decrypted]);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = item.original_name;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error(`Download failed for ${item.original_name}:`, err);
+          showAlert({
+            type: "error",
+            title: "Download Error",
+            message: `Failed to download ${item.original_name}: ${err.message}`,
+          });
+        }
+      }
+      clearSelection();
+    };
+
+    onMounted(async () => {
+      // Check encryption access first
+      await checkEncryptionAccess();
+
+      // Load starred files
       loadStarred();
 
       // Expose showConfirmationModal for sharing.js to use
@@ -656,6 +881,24 @@ export default {
         showAlertModal.value = false;
       },
       getIcon,
+      // Composable properties
+      selectedItems,
+      viewMode,
+      showEncryptionOverlay,
+      isMasterKeyRequired,
+      showPasswordModal,
+      passwordModalPassword,
+      passwordModalError,
+      passwordModalLoading,
+      overlayStyle,
+      handleSelectionChange,
+      handleViewChange,
+      clearSelection,
+      handlePasswordSubmit,
+      closePasswordModal,
+      openPasswordModal,
+      handleBatchDelete,
+      handleBatchDownload,
     };
   },
 };
@@ -722,5 +965,284 @@ export default {
   padding: 1rem;
   margin-bottom: 1rem;
   border-radius: var(--radius-md, 8px);
+}
+
+/* Encryption Overlay (Glassmorphic) */
+.encryption-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.15),
+    rgba(15, 23, 42, 0.12)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.encryption-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3rem 2rem;
+  max-width: 500px;
+  animation: gentlePulse 3s ease-in-out infinite;
+}
+
+@keyframes gentlePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.98;
+  }
+}
+
+.encryption-icon-wrapper {
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: iconFloat 3s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.encryption-icon {
+  color: rgba(88, 166, 255, 0.9);
+  filter: drop-shadow(0 4px 12px rgba(88, 166, 255, 0.3));
+  width: 64px;
+  height: 64px;
+}
+
+.encryption-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #e6eef6;
+  margin: 0 0 1rem 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  letter-spacing: -0.02em;
+}
+
+.encryption-description {
+  font-size: 1rem;
+  color: #cbd5e1;
+  line-height: 1.6;
+  margin: 0 0 2rem 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.encryption-unlock-btn {
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #ffffff;
+  background: linear-gradient(
+    135deg,
+    rgba(88, 166, 255, 0.2),
+    rgba(56, 189, 248, 0.15)
+  );
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow:
+    0 4px 16px rgba(88, 166, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.encryption-unlock-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.encryption-unlock-btn:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(
+    135deg,
+    rgba(88, 166, 255, 0.3),
+    rgba(56, 189, 248, 0.25)
+  );
+  border-color: rgba(88, 166, 255, 0.5);
+  box-shadow:
+    0 6px 24px rgba(88, 166, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.encryption-unlock-btn:hover::before {
+  left: 100%;
+}
+
+.encryption-unlock-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 8px rgba(88, 166, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Password Modal */
+.password-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.password-modal {
+  padding: 2rem;
+  min-width: 400px;
+  max-width: 90vw;
+  border-radius: 2rem;
+}
+
+.password-modal h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.password-modal-description {
+  margin-bottom: 1.5rem;
+  color: var(--text-secondary, #cbd5e1);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary, #cbd5e1);
+  font-weight: 500;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-primary, #f1f5f9);
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent-blue, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.form-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+.error-message {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  color: var(--error, #ef4444);
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md, 8px);
+  font-size: 0.9rem;
+}
+
+/* Responsive adjustments for encryption overlay */
+@media (max-width: 768px) {
+  .encryption-overlay-content {
+    padding: 2rem 1.5rem;
+    max-width: 100%;
+  }
+
+  .encryption-title {
+    font-size: 1.5rem;
+  }
+
+  .encryption-description {
+    font-size: 0.9rem;
+  }
+
+  .encryption-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .encryption-unlock-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .password-modal {
+    min-width: auto;
+    width: 90%;
+    padding: 1.5rem;
+  }
 }
 </style>

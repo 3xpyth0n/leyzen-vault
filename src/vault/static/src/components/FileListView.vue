@@ -339,6 +339,14 @@ export default {
       type: [String, Number],
       default: null,
     },
+    defaultSortBy: {
+      type: String,
+      default: "name",
+    },
+    defaultSortOrder: {
+      type: String,
+      default: "asc",
+    },
   },
   emits: [
     "view-change",
@@ -353,8 +361,8 @@ export default {
     "drop",
   ],
   setup(props, { emit }) {
-    const sortBy = ref("name");
-    const sortOrder = ref("asc");
+    const sortBy = ref(props.defaultSortBy);
+    const sortOrder = ref(props.defaultSortOrder);
     const filterType = ref("all");
     const showMenu = ref(false);
     const menuItem = ref(null);
@@ -1236,6 +1244,15 @@ export default {
         } else {
           editingName.value = "";
         }
+      },
+    );
+
+    // Watch for changes to default sort props
+    watch(
+      () => [props.defaultSortBy, props.defaultSortOrder],
+      ([newSortBy, newSortOrder]) => {
+        sortBy.value = newSortBy;
+        sortOrder.value = newSortOrder;
       },
     );
 

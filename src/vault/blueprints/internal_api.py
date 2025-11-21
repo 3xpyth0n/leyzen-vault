@@ -325,4 +325,92 @@ def sync_volumes():
         return jsonify({"error": "Synchronization failed"}), 500
 
 
+@internal_api_bp.route("/storage/cleanup", methods=["POST"])
+@csrf.exempt  # Internal API, CSRF not needed
+def storage_cleanup():
+    """Clean up orphaned files from storage.
+
+    This endpoint is called by the orchestrator to periodically clean up
+    orphaned files - files that exist on disk but have no corresponding
+    database records.
+
+    Request headers:
+        Authorization: Bearer <INTERNAL_API_TOKEN>
+
+    Request body (optional):
+        {
+            "dry_run": true/false  # Default: false
+        }
+
+    Note: INTERNAL_API_TOKEN is auto-generated from SECRET_KEY if not explicitly set.
+
+    Returns:
+        JSON with cleanup results
+    """
+    # Validate internal token
+    if not _validate_internal_token():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json() or {}
+    dry_run = data.get("dry_run", False)  # Default to actual cleanup for automated runs
+
+    try:
+        from vault.services.storage_reconciliation_service import (
+            StorageReconciliationService,
+        )
+
+        storage = current_app.config.get("VAULT_STORAGE")
+        if not storage:
+            return jsonify({"error": "Storage not configured"}), 500
+
+        reconciliation_service = StorageReconciliationService(storage)
+        results = reconciliation_service.cleanup_orphaned_files(dry_run=dry_run)
+
+        total_deleted = len(results["deleted_primary"]) + len(results["deleted_source"])
+
+        if total_deleted > 0:
+            current_app.logger.info(
+                f"Storage cleanup: Deleted {total_deleted} orphaned files "
+                f"(primary: {len(results['deleted_primary'])}, "
+                f"source: {len(results['deleted_source'])})"
+            )
+
+        if results["failed"]:
+            current_app.logger.warning(
+                f"Storage cleanup: Failed to delete {len(results['failed'])} files"
+            )
+
+        # Convert sets to lists for JSON serialization
+        stats = results.get("stats", {})
+        if "primary" in stats and isinstance(stats["primary"], set):
+            stats["primary"] = list(stats["primary"])
+        if "source" in stats and isinstance(stats["source"], set):
+            stats["source"] = list(stats["source"])
+
+        # Add counts to response
+        results["deleted_primary_count"] = len(results["deleted_primary"])
+        results["deleted_source_count"] = len(results["deleted_source"])
+        results["failed_count"] = len(results["failed"])
+        results["total_deleted"] = total_deleted
+
+        # Convert lists to ensure all are JSON serializable
+        response_data = {
+            "dry_run": results["dry_run"],
+            "deleted_primary": results["deleted_primary"],
+            "deleted_source": results["deleted_source"],
+            "failed": results["failed"],
+            "deleted_primary_count": results["deleted_primary_count"],
+            "deleted_source_count": results["deleted_source_count"],
+            "failed_count": results["failed_count"],
+            "total_deleted": total_deleted,
+            "stats": stats,
+        }
+
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Storage cleanup failed: {e}", exc_info=True)
+        return jsonify({"error": "Storage cleanup failed", "details": str(e)}), 500
+
+
 __all__ = ["internal_api_bp"]

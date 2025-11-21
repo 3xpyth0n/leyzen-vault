@@ -79,7 +79,7 @@
           :viewMode="viewMode"
           :editingItemId="editingItemId"
           :newlyCreatedItemId="newlyCreatedFolderId"
-          @view-change="viewMode = $event"
+          @view-change="handleViewChange"
           @item-click="handleItemClick"
           @action="handleFileAction"
           @selection-change="handleSelectionChange"
@@ -516,6 +516,12 @@ export default {
     }
 
     // Master key is available, proceed with loading
+    // Load view mode preference from localStorage
+    const savedViewMode = localStorage.getItem("fileViewMode_vaultspace");
+    if (savedViewMode === "grid" || savedViewMode === "list") {
+      this.viewMode = savedViewMode;
+    }
+
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
 
@@ -2244,6 +2250,11 @@ export default {
       this.selectedItems = [];
     },
 
+    handleViewChange(mode) {
+      this.viewMode = mode;
+      localStorage.setItem("fileViewMode_vaultspace", mode);
+    },
+
     handleSelectionChange(change) {
       if (change.action === "select") {
         if (!this.isSelected(change.item.id)) {
@@ -2820,7 +2831,9 @@ export default {
 
         const isZipFile =
           zipFile.mime_type === "application/zip" ||
-          zipFile.mime_type === "application/x-zip-compressed";
+          zipFile.mime_type === "application/x-zip-compressed" ||
+          (zipFile.original_name &&
+            zipFile.original_name.toLowerCase().endsWith(".zip"));
 
         if (!isZipFile) {
           this.showAlert({

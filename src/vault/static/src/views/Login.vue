@@ -127,6 +127,15 @@
         @click.stop
       />
     </div>
+
+    <!-- Two-Factor Authentication Modal -->
+    <TwoFactorVerify
+      v-if="show2FAModal"
+      :isLoading="loading"
+      :error="twoFactorError"
+      @verify="handle2FAVerify"
+      @cancel="cancel2FA"
+    />
   </div>
 </template>
 
@@ -140,6 +149,7 @@ import {
 } from "../services/keyManager";
 import { logger } from "../utils/logger.js";
 import PasswordInput from "../components/PasswordInput.vue";
+import TwoFactorVerify from "../components/TwoFactorVerify.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -161,6 +171,8 @@ const magicLinkSuccess = ref(false);
 
 const captchaImageUrl = ref("");
 const showOverlay = ref(false);
+const show2FAModal = ref(false);
+const twoFactorError = ref("");
 
 // Handle Escape key to close overlay
 let handleKeyDown = null;
@@ -298,38 +310,18 @@ const handleLogin = async () => {
       captchaNonce.value || "", // Use nonce if available, otherwise empty (session-based)
       captchaResponse.value,
     );
+
+    // Check if 2FA is required
+    if (response.requires_2fa) {
+      show2FAModal.value = true;
+      twoFactorError.value = "";
+      loading.value = false;
+      // Do NOT refresh CAPTCHA - it's already been validated
+      return;
+    }
+
     if (response.token) {
-      // Clear any existing master key and salt before initializing a new one
-      // This ensures a clean state after logout/login
-      await clearUserMasterKey();
-
-      // Get salt from server response (base64-encoded)
-      // The salt is persistent per user and ensures the same master key is derived each session
-      const saltBase64 = response.user?.master_key_salt;
-      let salt = null;
-
-      if (saltBase64) {
-        // Decode base64 salt to Uint8Array
-        try {
-          const saltStr = atob(saltBase64);
-          salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
-        } catch (e) {
-          logger.error("Failed to decode salt from server:", e);
-          // Fallback: generate new salt (but this will cause issues with existing VaultSpace keys)
-          salt = null;
-        }
-      }
-
-      // Initialize user master key from password using the salt from server
-      // Pass JWT token so the key can be stored encrypted in IndexedDB
-      // This ensures the same master key is derived each session and persists across page refreshes
-      await initializeUserMasterKey(password.value, salt, response.token);
-
-      // Clear password from memory
-      password.value = "";
-
-      // Redirect to dashboard after successful login
-      router.push("/dashboard");
+      await completeLogin(response);
     }
   } catch (err) {
     error.value = err.message || "Login failed. Please try again.";
@@ -345,6 +337,79 @@ const handleLogin = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const handle2FAVerify = async (totpToken) => {
+  error.value = "";
+  twoFactorError.value = "";
+  loading.value = true;
+
+  try {
+    const response = await auth.login(
+      username.value,
+      password.value,
+      captchaNonce.value || "",
+      captchaResponse.value,
+      totpToken, // Pass the TOTP token
+    );
+
+    if (response.token) {
+      show2FAModal.value = false;
+      await completeLogin(response);
+    } else if (response.requires_2fa) {
+      // Still requires 2FA (invalid token)
+      twoFactorError.value = "Invalid code. Please try again.";
+      loading.value = false;
+      // Do NOT refresh CAPTCHA - credentials already validated
+    }
+  } catch (err) {
+    twoFactorError.value =
+      err.message || "Verification failed. Please try again.";
+    loading.value = false;
+    // Refresh CAPTCHA on error - session may be invalid
+    await refreshCaptcha();
+  }
+};
+
+const cancel2FA = () => {
+  show2FAModal.value = false;
+  twoFactorError.value = "";
+  refreshCaptcha();
+  captchaResponse.value = "";
+};
+
+const completeLogin = async (response) => {
+  // Clear any existing master key and salt before initializing a new one
+  // This ensures a clean state after logout/login
+  await clearUserMasterKey();
+
+  // Get salt from server response (base64-encoded)
+  // The salt is persistent per user and ensures the same master key is derived each session
+  const saltBase64 = response.user?.master_key_salt;
+  let salt = null;
+
+  if (saltBase64) {
+    // Decode base64 salt to Uint8Array
+    try {
+      const saltStr = atob(saltBase64);
+      salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
+    } catch (e) {
+      logger.error("Failed to decode salt from server:", e);
+      // Fallback: generate new salt (but this will cause issues with existing VaultSpace keys)
+      salt = null;
+    }
+  }
+
+  // Initialize user master key from password using the salt from server
+  // Pass JWT token so the key can be stored encrypted in IndexedDB
+  // This ensures the same master key is derived each session and persists across page refreshes
+  await initializeUserMasterKey(password.value, salt, response.token);
+
+  // Clear password from memory
+  password.value = "";
+
+  // Redirect to dashboard after successful login
+  router.push("/dashboard");
 };
 
 const handleSSOLogin = async (providerId) => {

@@ -20,7 +20,18 @@ class KeyDerivation(Protocol):
 
 
 class PBKDF2Derivation:
-    """PBKDF2-based key derivation for user master keys."""
+    """PBKDF2-based key derivation for user master keys.
+
+    IMPORTANT: This is used for CLIENT-SIDE encryption key derivation ONLY,
+    not for password authentication. Server-side authentication uses Argon2id
+    (see auth_service.py) which provides better protection against attacks.
+
+    PBKDF2 is used client-side because:
+    - It's natively supported by Web Crypto API (no external dependencies)
+    - Argon2 WebAssembly modules cannot be properly bundled by Vite/Rollup
+    - 600,000 iterations with SHA-256 provides adequate security for key derivation
+    - The derived key is used for E2EE encryption, never sent to the server
+    """
 
     def __init__(self, iterations: int = 600000):
         """Initialize PBKDF2 derivation.
@@ -31,7 +42,7 @@ class PBKDF2Derivation:
         self.iterations = iterations
 
     def derive(self, password: str, salt: bytes) -> bytes:
-        """Derive master key from password using PBKDF2.
+        """Derive master key from password using PBKDF2 for client-side encryption.
 
         Args:
             password: User password
