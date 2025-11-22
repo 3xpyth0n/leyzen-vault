@@ -79,6 +79,7 @@
           :viewMode="viewMode"
           :editingItemId="editingItemId"
           :newlyCreatedItemId="newlyCreatedFolderId"
+          :vaultspaceId="$route.params.id"
           @view-change="handleViewChange"
           @item-click="handleItemClick"
           @action="handleFileAction"

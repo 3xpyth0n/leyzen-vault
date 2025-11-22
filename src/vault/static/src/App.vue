@@ -30,7 +30,7 @@ import AppLayout from "./components/AppLayout.vue";
 
 const route = useRoute();
 
-// Routes qui nécessitent AppLayout (avec sidebar)
+// Routes that require AppLayout (with sidebar)
 const authenticatedRoutes = [
   "Dashboard",
   "VaultSpaceView",

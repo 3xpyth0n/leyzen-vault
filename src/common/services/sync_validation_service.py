@@ -4,22 +4,47 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from flask import current_app
 from sqlalchemy import and_
-
-from vault.database.schema import File, db
+from sqlalchemy.orm import Session
 
 
 class SyncValidationService:
     """Service for validating files before synchronization to prevent malware persistence."""
 
-    def __init__(self):
-        """Initialize the validation service."""
+    def __init__(
+        self,
+        db_session: Session | None = None,
+        File_model: type | None = None,
+        logger: logging.Logger | None = None,
+    ):
+        """Initialize the validation service.
+
+        Args:
+            db_session: SQLAlchemy session for database queries. If None, must be set later.
+            File_model: File model class for database queries. If None, must be set later.
+            logger: Logger instance. If None, uses default logger.
+        """
         self._legitimate_files: dict[str, dict[str, Any]] = {}
         self._legitimate_thumbnails: set[str] = set()
+        self._loaded = False
+        self._db_session = db_session
+        self._File_model = File_model
+        self._logger = logger or logging.getLogger(__name__)
+
+    def set_database(self, db_session: Session, File_model: type) -> None:
+        """Set database session and model after initialization.
+
+        Args:
+            db_session: SQLAlchemy session for database queries
+            File_model: File model class for database queries
+        """
+        self._db_session = db_session
+        self._File_model = File_model
+        # Reset loaded state to force reload with new database connection
         self._loaded = False
 
     def load_legitimate_files(self) -> dict[str, dict[str, Any]]:
@@ -28,9 +53,19 @@ class SyncValidationService:
         Returns:
             Dictionary mapping file_id to file metadata (storage_ref, encrypted_hash, size)
         """
+        if not self._db_session or not self._File_model:
+            self._logger.warning(
+                "Database session or File model not set. Cannot load legitimate files."
+            )
+            return {}
+
         try:
             # Query all non-deleted files
-            files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
+            files = (
+                self._db_session.query(self._File_model)
+                .filter(self._File_model.deleted_at.is_(None))
+                .all()
+            )
 
             legitimate_files = {}
             for file_obj in files:
@@ -58,16 +93,14 @@ class SyncValidationService:
                     "file_id": file_id,
                 }
 
-            current_app.logger.info(
+            self._logger.info(
                 f"Loaded {len(legitimate_files)} legitimate files from database. "
                 f"Sample storage_refs: {list(legitimate_files.keys())[:5]}"
             )
             return legitimate_files
 
         except Exception as e:
-            current_app.logger.error(
-                f"Failed to load legitimate files: {e}", exc_info=True
-            )
+            self._logger.error(f"Failed to load legitimate files: {e}", exc_info=True)
             return {}
 
     def load_legitimate_thumbnails(self) -> set[str]:
@@ -76,15 +109,21 @@ class SyncValidationService:
         Returns:
             Set of legitimate thumbnail storage references (normalized paths)
         """
+        if not self._db_session or not self._File_model:
+            self._logger.warning(
+                "Database session or File model not set. Cannot load legitimate thumbnails."
+            )
+            return set()
+
         try:
             # Query all files with thumbnails
             files = (
-                db.session.query(File)
+                self._db_session.query(self._File_model)
                 .filter(
                     and_(
-                        File.deleted_at.is_(None),
-                        File.thumbnail_refs.isnot(None),
-                        File.has_thumbnail.is_(True),
+                        self._File_model.deleted_at.is_(None),
+                        self._File_model.thumbnail_refs.isnot(None),
+                        self._File_model.has_thumbnail.is_(True),
                     )
                 )
                 .all()
@@ -121,18 +160,18 @@ class SyncValidationService:
                                 legitimate_thumbnails.add(normalized_ref)
 
                 except (json.JSONDecodeError, AttributeError) as e:
-                    current_app.logger.warning(
+                    self._logger.warning(
                         f"Failed to parse thumbnail_refs for file {file_obj.id}: {e}"
                     )
                     continue
 
-            current_app.logger.info(
+            self._logger.info(
                 f"Loaded {len(legitimate_thumbnails)} legitimate thumbnail references"
             )
             return legitimate_thumbnails
 
         except Exception as e:
-            current_app.logger.error(
+            self._logger.error(
                 f"Failed to load legitimate thumbnails: {e}", exc_info=True
             )
             return set()
@@ -146,10 +185,19 @@ class SyncValidationService:
         self._legitimate_thumbnails = self.load_legitimate_thumbnails()
         self._loaded = True
 
-        current_app.logger.info(
+        self._logger.info(
             f"Whitelist loaded: {len(self._legitimate_files)} files, "
             f"{len(self._legitimate_thumbnails)} thumbnails"
         )
+
+    def reload_whitelist(self) -> None:
+        """Force reload the whitelist from database.
+
+        This is useful after creating new files in the database to ensure
+        the whitelist includes the newly created files.
+        """
+        self._loaded = False
+        self.load_whitelist()
 
     def extract_file_id_from_path(self, file_path: Path, base_dir: Path) -> str | None:
         """Extract file_id from file path.
@@ -213,7 +261,7 @@ class SyncValidationService:
                     sha256.update(chunk)
             return sha256.hexdigest()
         except Exception as e:
-            current_app.logger.error(f"Failed to compute hash for {file_path}: {e}")
+            self._logger.error(f"Failed to compute hash for {file_path}: {e}")
             return ""
 
     def validate_file(self, file_path: Path, base_dir: Path) -> tuple[bool, str | None]:
@@ -228,7 +276,17 @@ class SyncValidationService:
         """
         try:
             # Use common file validation utility to check path traversal
-            from vault.utils.file_validation import validate_file_path
+            # Import here to avoid circular dependencies
+            try:
+                from vault.utils.file_validation import validate_file_path
+            except ImportError:
+                # Fallback if vault.utils is not available (e.g., in orchestrator)
+                # Basic path validation
+                try:
+                    file_path.resolve().relative_to(base_dir.resolve())
+                except ValueError:
+                    return False, "Path traversal detected"
+                validate_file_path = lambda p, b: (True, None)
 
             is_valid_path, path_error = validate_file_path(file_path, base_dir)
             if not is_valid_path:
@@ -329,11 +387,15 @@ class SyncValidationService:
             self.load_whitelist()
 
         # Check if it's a thumbnail (in thumbnails/ subdirectory)
-        relative_path = file_path.relative_to(base_dir)
-        if str(relative_path).startswith("thumbnails/"):
-            return self.validate_thumbnail(file_path, base_dir)
-        else:
-            return self.validate_file(file_path, base_dir)
+        try:
+            relative_path = file_path.relative_to(base_dir)
+            if str(relative_path).startswith("thumbnails/"):
+                return self.validate_thumbnail(file_path, base_dir)
+            else:
+                return self.validate_file(file_path, base_dir)
+        except ValueError:
+            # Path is not relative to base_dir, which is invalid
+            return False, "File path is not within base directory"
 
 
 __all__ = ["SyncValidationService"]

@@ -103,10 +103,6 @@ def generate_thumbnail(file_id: str):
         if not file_obj:
             return jsonify({"error": "File not found"}), 404
 
-        # Only generate thumbnails for images
-        if not file_obj.mime_type or not file_obj.mime_type.startswith("image/"):
-            return jsonify({"error": "Thumbnails only available for images"}), 400
-
         # Get file data (decrypted)
         data = request.get_json() or {}
         file_data_b64 = data.get("file_data")
@@ -121,9 +117,39 @@ def generate_thumbnail(file_id: str):
             # For now, we'll require file_data to be provided
             return jsonify({"error": "file_data required"}), 400
 
+        # Detect actual MIME type from file data
+        detected_mime_type = file_obj.mime_type
+        if not detected_mime_type or detected_mime_type == "application/octet-stream":
+            # Try to detect image type from file data using PIL
+            try:
+                from PIL import Image
+                import io
+
+                image = Image.open(io.BytesIO(file_data))
+                # PIL can detect format, map to MIME type
+                format_to_mime = {
+                    "PNG": "image/png",
+                    "JPEG": "image/jpeg",
+                    "GIF": "image/gif",
+                    "WEBP": "image/webp",
+                    "BMP": "image/bmp",
+                    "TIFF": "image/tiff",
+                    "ICO": "image/x-icon",
+                }
+                detected_mime_type = format_to_mime.get(
+                    image.format, detected_mime_type
+                )
+            except Exception:
+                # If PIL can't open it, it's not an image
+                pass
+
+        # Only generate thumbnails for images
+        if not detected_mime_type or not detected_mime_type.startswith("image/"):
+            return jsonify({"error": "Thumbnails only available for images"}), 400
+
         # Generate thumbnails
         thumbnails = thumbnail_service.generate_and_save_thumbnails(
-            file_id, file_data, file_obj.mime_type
+            file_id, file_data, detected_mime_type
         )
 
         if not thumbnails:

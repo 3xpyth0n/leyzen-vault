@@ -18,6 +18,7 @@ from vault.blueprints.validators import (
     validate_file_id,
     validate_pagination_params,
 )
+from vault.utils.mime_type_detection import detect_mime_type
 
 files_api_bp = Blueprint("files_api", __name__, url_prefix="/api/v2/files")
 
@@ -353,10 +354,12 @@ def upload_file_v2():
 
         # Store encrypted file (file is already encrypted client-side)
         try:
-            storage_ref = storage.save_file(file_id, file_data)
+            saved_path = storage.save_file(file_id, file_data)
+            # save_file returns a Path, but we use file_id as storage_ref
+            storage_ref = file_id
         except IOError as e:
             current_app.logger.error(
-                f"Failed to save file {file_id}: {type(e).__name__}"
+                f"Failed to save file {file_id}: {type(e).__name__}: {e}"
             )
             return jsonify({"error": "Failed to save file"}), 500
 
@@ -364,6 +367,13 @@ def upload_file_v2():
         import hashlib
 
         encrypted_hash = hashlib.sha256(file_data).hexdigest()
+
+        # Detect MIME type properly
+        detected_mime_type = detect_mime_type(
+            filename=file.filename,
+            file_data=file_data,
+            provided_mime_type=file.content_type,
+        )
 
         # Upload file metadata
         file_obj, file_key = file_service.upload_file(
@@ -374,10 +384,52 @@ def upload_file_v2():
             encrypted_hash=encrypted_hash,
             storage_ref=file_id,  # Use file_id as storage_ref
             encrypted_file_key=encrypted_file_key,
-            mime_type=file.content_type,
+            mime_type=detected_mime_type,
             parent_id=data.get("parent_id"),
             encrypted_metadata=data.get("encrypted_metadata"),
         )
+
+        # Promote file to persistent storage with validation
+        # This ensures the file is persisted even without orchestrator
+        try:
+            from common.services.file_promotion_service import (
+                FilePromotionService,
+            )
+            from common.services.sync_validation_service import (
+                SyncValidationService,
+            )
+            from vault.database.schema import File
+
+            # Initialize validation service with database
+            validation_service = SyncValidationService(
+                db_session=db.session, File_model=File, logger=current_app.logger
+            )
+            promotion_service = FilePromotionService(
+                validation_service=validation_service,
+                logger_instance=current_app.logger,
+            )
+
+            # Get file path in tmpfs
+            source_path = storage.get_file_path(file_id)
+            target_dir = storage.source_dir
+
+            if source_path.exists() and target_dir:
+                success, error_msg = promotion_service.promote_file(
+                    file_id=file_id,
+                    source_path=source_path,
+                    target_dir=target_dir,
+                    base_dir=storage.storage_dir / "files",
+                )
+
+                if not success:
+                    current_app.logger.warning(
+                        f"[PROMOTION] Failed to promote file {file_id}: {error_msg}"
+                    )
+        except Exception as e:
+            current_app.logger.error(
+                f"[PROMOTION ERROR] Exception during promotion of {file_id}: {e}",
+                exc_info=True,
+            )
 
         return (
             jsonify(
@@ -613,7 +665,10 @@ def download_file(file_id: str):
         # Read encrypted file data from storage
         try:
             encrypted_data = storage.read_file(file_obj.storage_ref)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
+            current_app.logger.error(
+                f"File {file_id} not found in storage. storage_ref: {file_obj.storage_ref}, error: {e}"
+            )
             return jsonify({"error": "File data not found in storage"}), 404
 
         # Return encrypted file as binary response
@@ -1397,6 +1452,14 @@ def create_upload_session():
         # Set expiration to 24 hours from now
         expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
+        # Detect MIME type from filename if not provided or generic
+        provided_mime_type = data.get("mime_type")
+        detected_mime_type = detect_mime_type(
+            filename=original_name,
+            file_data=None,  # Can't detect from content in chunked upload
+            provided_mime_type=provided_mime_type,
+        )
+
         # Create upload session
         session = UploadSession(
             user_id=user.id,
@@ -1412,7 +1475,7 @@ def create_upload_session():
             encrypted_file_key=encrypted_file_key,
             parent_id=data.get("parent_id"),
             encrypted_metadata=data.get("encrypted_metadata"),
-            mime_type=data.get("mime_type"),
+            mime_type=detected_mime_type,
             expires_at=expires_at,
         )
 
@@ -1686,6 +1749,15 @@ def complete_upload():
             encrypted_data = storage.read_file(session.file_id)
             final_hash = hashlib.sha256(encrypted_data).hexdigest()
 
+            # Re-detect MIME type from complete file data for better accuracy
+            # Note: encrypted_data is encrypted, so we can't detect from content
+            # But we can still improve detection from filename if mime_type is generic
+            final_mime_type = detect_mime_type(
+                filename=session.original_name,
+                file_data=None,  # Data is encrypted, can't detect from content
+                provided_mime_type=session.mime_type,
+            )
+
             # Create File record
             file_obj, file_key = file_service.upload_file(
                 vaultspace_id=session.vaultspace_id,
@@ -1695,10 +1767,53 @@ def complete_upload():
                 encrypted_hash=final_hash,
                 storage_ref=session.file_id,
                 encrypted_file_key=session.encrypted_file_key,
-                mime_type=session.mime_type,
+                mime_type=final_mime_type,
                 parent_id=session.parent_id,
                 encrypted_metadata=session.encrypted_metadata,
             )
+
+            # Promote file to persistent storage with validation
+            # This ensures the file is persisted even without orchestrator
+            storage_ref = session.file_id
+            try:
+                from common.services.file_promotion_service import (
+                    FilePromotionService,
+                )
+                from common.services.sync_validation_service import (
+                    SyncValidationService,
+                )
+                from vault.database.schema import File
+
+                # Initialize validation service with database
+                validation_service = SyncValidationService(
+                    db_session=db.session, File_model=File, logger=current_app.logger
+                )
+                promotion_service = FilePromotionService(
+                    validation_service=validation_service,
+                    logger_instance=current_app.logger,
+                )
+
+                # Get file path in tmpfs
+                source_path = storage.get_file_path(storage_ref)
+                target_dir = storage.source_dir
+
+                if source_path.exists() and target_dir:
+                    success, error_msg = promotion_service.promote_file(
+                        file_id=storage_ref,
+                        source_path=source_path,
+                        target_dir=target_dir,
+                        base_dir=storage.storage_dir / "files",
+                    )
+
+                    if not success:
+                        current_app.logger.warning(
+                            f"[PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                        )
+            except Exception as e:
+                current_app.logger.error(
+                    f"[PROMOTION ERROR] Exception during promotion of {storage_ref}: {e}",
+                    exc_info=True,
+                )
 
             # Mark session as completed and delete
             session.status = "completed"

@@ -22,7 +22,8 @@ checks we expect before shipping changes.
   requests to the Docker Engine socket.
 - `infra/haproxy/` — Static HAProxy configuration and error pages that front every
   HTTP service.
-- `src/vault/` — Leyzen Vault secure file storage application with end-to-end encryption
+- `src/vault/` — Leyzen Vault secure file storage application with end-to-end encryption.
+  Vue.js SPA frontend with Flask REST API backend. Uses PostgreSQL for metadata storage.
 - `src/common/` — Shared Python modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
 - `src/compose/` — Python build scripts that generate `docker-generated.yml` and HAProxy
@@ -30,9 +31,13 @@ checks we expect before shipping changes.
 - `tools/cli/` — Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
+- `infra/monitoring/` — Monitoring infrastructure components (currently empty, reserved for future use).
+- `infra/queue/` — Queue infrastructure components (currently empty, reserved for future use).
 - `leyzenctl` — Deployment helper (Go CLI binary compiled by `install.sh`).
 
-## Python guidelines (`src/orchestrator/`, `infra/docker-proxy/`)
+## Python guidelines
+
+### Orchestrator & Docker Proxy (`src/orchestrator/`, `infra/docker-proxy/`)
 
 - **Typing & style**: Keep `from __future__ import annotations` at the top of new
   modules. Add precise type hints, docstrings, and descriptive variable names.
@@ -92,7 +97,27 @@ checks we expect before shipping changes.
   For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_python_paths()`
   directly if you need to configure paths before importing other modules.
 
-## Flask blueprints & templates (`src/orchestrator/blueprints`, `src/orchestrator/templates`)
+### Vault Application (`src/vault/`)
+
+The Vault application follows similar Python guidelines with additional considerations:
+
+- **Database**: Uses PostgreSQL via SQLAlchemy. Database initialization happens in `create_app()`.
+  The application requires PostgreSQL in production mode but allows fallback in development.
+- **Background workers**: Background threads handle periodic tasks (e.g., audit log cleanup).
+  Workers are started as daemon threads in `create_app()`.
+- **Service initialization**: Services are initialized with timezone awareness and registered in
+  `app.config`. Services like `AuditService`, `ShareService`, and `RateLimiter` use the timezone
+  from `VaultSettings.timezone`.
+- **Error handling**: Global exception handlers return JSON for API routes and HTML for SPA routes.
+  Production mode hides error details from clients for security.
+- **Configuration fallback**: The application supports fallback configuration for development/testing,
+  but production mode requires valid configuration and will fail fast if misconfigured.
+- **Internal API token**: The `INTERNAL_API_TOKEN` is auto-generated from `SECRET_KEY` if not
+  explicitly set. This token is used for orchestrator-to-vault communication.
+
+## Flask blueprints & templates
+
+### Orchestrator Blueprints (`src/orchestrator/blueprints`, `src/orchestrator/templates`)
 
 - Blueprints should only call into services or helpers defined under
   `src/orchestrator/services` and `src/orchestrator/blueprints/utils.py`. Do not access
@@ -105,7 +130,49 @@ checks we expect before shipping changes.
 - When exposing new context variables, update the template, JS bootstrap data,
   and `dashboard` blueprint together.
 
-## Front-end assets (`src/orchestrator/static`, `src/orchestrator/styles`)
+**Current blueprints:**
+
+- `auth_bp` — Authentication and CAPTCHA routes
+- `dashboard_bp` — Dashboard and API routes for container management
+
+### Vault Blueprints (`src/vault/blueprints`)
+
+The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Blueprints are organized into API endpoints and legacy routes.
+
+**API Blueprints (JWT-based authentication):**
+
+- `admin_api_bp` — Admin API endpoints
+- `auth_api_bp` — JWT-based authentication API
+- `files_api_bp` — Advanced files API v2 (upload, download, metadata)
+- `internal_api_bp` — Internal API for orchestrator operations
+- `search_api_bp` — Search API endpoints
+- `sso_api_bp` — SSO API (SAML, OAuth2, OIDC)
+- `trash_api_bp` — Trash API v2
+- `quota_api_v2_bp` — Quota API v2
+- `sharing_api_bp` — Advanced Sharing API v2
+- `thumbnail_api_bp` — Thumbnail API v2
+- `vaultspace_api_bp` — VaultSpaces API
+
+**Legacy Blueprints:**
+
+- `auth_bp` — Legacy session-based authentication (for CAPTCHA/logout until fully migrated)
+- `security_bp` — Security statistics endpoints
+
+**Additional blueprints** (may be used internally or for specific features):
+
+- `account.py`, `folders.py`, `preview.py`, `quotas.py`, `vaultspaces.py`
+
+**Architecture notes:**
+
+- The Vault application serves a Vue.js SPA from `/` and handles client-side routing
+- API endpoints are prefixed with `/api/`
+- Static files are served from `/static/` with fallback logic (dist/ → static/)
+- CSP nonces are generated per-request for inline scripts
+- CORS is restrictively configured with origin validation
+
+## Front-end assets
+
+### Orchestrator Front-end (`src/orchestrator/static`, `src/orchestrator/styles`)
 
 - **JavaScript**: Modules live under `src/orchestrator/static/js/` and use modern ES modules.
   Stick with `const`/`let`, async/await, and `fetch`. Shared utilities belong in
@@ -129,6 +196,30 @@ checks we expect before shipping changes.
   The Flask `static_url_path` configuration maps the URL path prefix to the filesystem directory
   automatically, so you should never mix these two in templates or code.
 
+### Vault Front-end (`src/vault/static`)
+
+The Vault application uses a Vue.js Single Page Application (SPA) architecture:
+
+- **Build output**: Compiled Vue.js application is located in `src/vault/static/dist/`
+- **Static file serving**: Flask serves static files with fallback logic:
+  1. First checks `static/dist/` (production build)
+  2. Falls back to `static/` (development/legacy files)
+- **SPA routing**: All routes are handled by Vue Router on the client side. Flask serves `index.html`
+  for all non-API routes, and Vue Router handles client-side navigation.
+- **API communication**: The frontend communicates with Flask REST API endpoints prefixed with `/api/`
+- **CSP nonces**: Content Security Policy nonces are generated per-request and injected into templates
+  for inline scripts. The nonce is available in templates via `g.csp_nonce`.
+- **CORS**: Restrictive CORS policy with origin validation. Only allowed origins (configured via
+  `VAULT_ALLOWED_ORIGINS`) can make API requests.
+- **Cache headers**: Static assets include long-term cache headers (1 year) for optimal performance.
+
+**Architecture notes:**
+
+- The application serves `index.html` for the root route (`/`) and all SPA routes
+- API endpoints return JSON; non-API 404s serve `index.html` for Vue Router handling
+- Static files (CSS, JS, images) are served with cache headers
+- Background workers handle audit log cleanup automatically
+
 ## Service Startup Order
 
 Services must start in a specific order to ensure dependencies are available:
@@ -144,7 +235,83 @@ The orchestrator reads container names from the environment (injected by docker-
 
 See [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#service-startup-order) for detailed sequence diagrams and startup flow documentation.
 
-## Supporting services
+## Services Architecture
+
+### Orchestrator Services (`src/orchestrator/services`)
+
+The orchestrator uses a service-oriented architecture where business logic is encapsulated in service classes:
+
+- `docker_proxy.py` — `DockerProxyService` — Manages communication with the Docker proxy service
+- `rotation.py` — `RotationService` — Handles container rotation, health checks, and lifecycle management
+- `storage_cleanup.py` — `StorageCleanupService` — Manages cleanup of orphaned storage
+- `file_promotion_service.py` — Handles file promotion from temporary to persistent storage
+- `rotation_telemetry.py` — Collects and reports rotation metrics
+- `security_metrics_service.py` — Collects security-related metrics
+- `sync_service.py` — Handles synchronization operations
+
+Services are registered in `app.config` and accessed via `current_app.config` in blueprints.
+
+### Vault Services (`src/vault/services`)
+
+The Vault application has an extensive service layer covering various functionality:
+
+**Core Services:**
+
+- `audit.py` — `AuditService` — Audit logging and retention
+- `file_service.py` — `FileService` — File operations and metadata
+- `encryption_service.py` — End-to-end encryption operations
+- `key_management.py` — Key management and rotation
+
+**Storage Layer:**
+
+- `storage.py` (in `src/vault/`) — `FileStorage` — Storage abstraction layer for file operations
+
+**Authentication & Authorization:**
+
+- `auth_service.py` — Authentication logic
+- `sso_service.py` — SSO integration (SAML, OAuth2, OIDC)
+- `totp_service.py` — TOTP-based 2FA
+- `api_key_service.py` — API key management
+- `device_service.py` — Device management
+
+**Sharing & Collaboration:**
+
+- `share_link_service.py` — `ShareService` — Share link generation and management
+- `advanced_sharing_service.py` — Advanced sharing features
+- `invitation_service.py` — User invitations
+
+**Search & Indexing:**
+
+- `search_service.py` — Search functionality
+- `search_index_service.py` — Search index management
+- `searchable_encryption.py` — Encrypted search operations
+
+**Quota & Storage:**
+
+- `quota_service.py` — Quota management
+- `cache_service.py` — Caching layer
+- `cache_promotion_service.py` — Cache promotion logic
+- `storage_reconciliation_service.py` — Storage reconciliation
+
+**Security & Compliance:**
+
+- `zero_trust_service.py` — Zero-trust security model
+- `behavioral_analysis_service.py` — Behavioral analysis
+- `rate_limiter.py` — `RateLimiter` — Rate limiting
+- `security_bp` — Security statistics
+
+**Additional Services:**
+
+- `admin_service.py`, `backup_service.py`, `domain_service.py`, `email_service.py`,
+  `email_verification_service.py`, `log_filter.py`, `memory_cleanup_service.py`,
+  `mtd_compatibility.py`, `preview.py`, `sync_validation_service.py`, `template_service.py`,
+  `thumbnail_service.py`, `vaultspace_service.py`, `webhook_service.py`, `workflow_service.py`,
+  `zip_service.py`
+
+Services are registered in `app.config` (e.g., `VAULT_STORAGE`, `VAULT_AUDIT`, `VAULT_SHARE`, `VAULT_RATE_LIMITER`)
+and accessed via `current_app.config` in blueprints.
+
+### Supporting Services
 
 - `infra/docker-proxy/proxy.py` enforces bearer-token authentication and a strict
   endpoint allowlist. Maintain the pattern of compiling regular expressions at

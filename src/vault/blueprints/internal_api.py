@@ -12,7 +12,6 @@ from flask import Blueprint, current_app, jsonify, request
 
 from vault.extensions import csrf
 from vault.services.rate_limiter import RateLimiter
-from vault.services.sync_validation_service import SyncValidationService
 
 internal_api_bp = Blueprint("internal_api", __name__, url_prefix="/api/internal")
 
@@ -159,9 +158,20 @@ def sync_volumes():
     target_dir = Path("/data-source")
 
     try:
+        from common.services.file_promotion_service import FilePromotionService
+        from common.services.sync_validation_service import SyncValidationService
+        from vault.database.schema import File
+
         # Initialize validation service and load whitelist
-        validation_service = SyncValidationService()
+        validation_service = SyncValidationService(
+            db_session=db.session, File_model=File, logger=current_app.logger
+        )
         validation_service.load_whitelist()
+
+        # Initialize promotion service
+        promotion_service = FilePromotionService(
+            validation_service=validation_service, logger_instance=current_app.logger
+        )
 
         # Ensure target directory exists
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -213,58 +223,25 @@ def sync_volumes():
                         )
 
                         if is_valid:
-                            # File is legitimate, synchronize it atomically
-                            try:
-                                # Copy file if it doesn't exist or if source is newer
-                                if not dst_item.exists() or (
-                                    src_item.stat().st_mtime > dst_item.stat().st_mtime
-                                ):
-                                    # Use temporary file for atomic operation to prevent race conditions
-                                    temp_file = None
-                                    try:
-                                        # Create temporary file in the same directory to guarantee same filesystem
-                                        temp_fd, temp_path = tempfile.mkstemp(
-                                            dir=dst.parent,
-                                            prefix=".sync_",
-                                            suffix=".tmp",
-                                        )
-                                        temp_file = Path(temp_path)
-                                        os.close(temp_fd)
+                            # File is legitimate, use promotion service to synchronize it
+                            file_id = item.name
+                            success, promotion_error = promotion_service.promote_file(
+                                file_id=file_id,
+                                source_path=src_item,
+                                target_dir=target_dir,
+                                base_dir=base_dir,
+                            )
 
-                                        # Copy to temporary file
-                                        shutil.copy2(src_item, temp_file)
-
-                                        # Re-validate after copy (protection against race condition)
-                                        is_still_valid, revalidation_error = (
-                                            validation_service.is_file_legitimate(
-                                                temp_file, base_dir
-                                            )
-                                        )
-
-                                        if is_still_valid:
-                                            # Atomically rename (atomic operation on same filesystem)
-                                            temp_file.rename(dst_item)
-                                            synced += 1
-                                            current_app.logger.info(
-                                                f"[SYNC VALID] Synchronized legitimate file: {src_item.relative_to(base_dir)}"
-                                            )
-                                        else:
-                                            # File became invalid during sync, delete it
-                                            temp_file.unlink()
-                                            deleted += 1
-                                            current_app.logger.warning(
-                                                f"[SYNC SECURITY] File became invalid during sync: {src_item.relative_to(base_dir)} "
-                                                f"(reason: {revalidation_error})"
-                                            )
-                                    except Exception as e:
-                                        if temp_file and temp_file.exists():
-                                            temp_file.unlink()
-                                        raise
-                            except Exception as e:
-                                current_app.logger.error(
-                                    f"[SYNC ERROR] Failed to copy file {src_item}: {e}"
+                            if success:
+                                synced += 1
+                                current_app.logger.info(
+                                    f"[SYNC VALID] Synchronized legitimate file: {src_item.relative_to(base_dir)}"
                                 )
+                            else:
                                 rejected += 1
+                                current_app.logger.error(
+                                    f"[SYNC ERROR] Failed to promote file {file_id}: {promotion_error}"
+                                )
                         else:
                             # File is suspicious, delete it immediately
                             try:
@@ -300,13 +277,30 @@ def sync_volumes():
                 source_files, target_files, source_files
             )
 
+            # Run cleanup of orphaned files after sync
+            cleanup_result = promotion_service.cleanup_orphaned_files(
+                target_dir=target_dir,
+                base_dir=source_files,
+                dry_run=False,
+            )
+            files_deleted += cleanup_result.get("deleted_count", 0)
+
             current_app.logger.info(
                 f"Successfully synchronized {files_synced} legitimate files from {source_files} to {target_files}, "
-                f"rejected {files_rejected} files, deleted {files_deleted} suspicious files"
+                f"rejected {files_rejected} files, deleted {files_deleted} suspicious/orphaned files"
             )
         else:
             # Source directory doesn't exist, which is fine (no files to sync)
-            current_app.logger.info("No files directory to sync")
+            # But still run cleanup to remove orphaned files
+            cleanup_result = promotion_service.cleanup_orphaned_files(
+                target_dir=target_dir,
+                base_dir=source_files if source_files.exists() else target_files,
+                dry_run=False,
+            )
+            files_deleted = cleanup_result.get("deleted_count", 0)
+            current_app.logger.info(
+                f"No files directory to sync. Cleaned up {files_deleted} orphaned files."
+            )
 
         return (
             jsonify(

@@ -28,14 +28,21 @@ export const thumbnails = {
 
   /**
    * Get thumbnail URL for a file.
+   * Creates a blob URL by fetching the thumbnail via API.
    *
    * @param {string} fileId - File ID
    * @param {string} size - Thumbnail size (64x64, 128x128, 256x256) - default: 256x256
-   * @returns {string} Thumbnail URL
+   * @returns {Promise<string>} Blob URL for the thumbnail
    */
-  getUrl(fileId, size = "256x256") {
-    const token = localStorage.getItem("token");
-    return `/api/v2/thumbnails/${fileId}?size=${size}&token=${token}`;
+  async getUrl(fileId, size = "256x256") {
+    try {
+      const blob = await this.get(fileId, size);
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error(`Failed to get thumbnail URL for ${fileId}:`, error);
+      // Return empty string or a placeholder image URL
+      return "";
+    }
   },
 
   /**

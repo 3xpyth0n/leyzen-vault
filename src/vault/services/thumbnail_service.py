@@ -129,7 +129,9 @@ class ThumbnailService:
             self.storage = current_app.config.get("VAULT_STORAGE")
 
         storage_key = self.get_thumbnail_storage_key(file_id, size)
-        return self.storage.save_file(storage_key, thumbnail_data)
+        # save_file returns a Path, but we need to return the storage_key as string
+        self.storage.save_file(storage_key, thumbnail_data)
+        return storage_key
 
     def get_thumbnail(
         self, file_id: str, size: tuple[int, int] = (256, 256)
@@ -150,7 +152,9 @@ class ThumbnailService:
 
         storage_key = self.get_thumbnail_storage_key(file_id, size)
         try:
-            return self.storage.get_file(storage_key)
+            return self.storage.read_file(storage_key)
+        except FileNotFoundError:
+            return None
         except Exception:
             return None
 

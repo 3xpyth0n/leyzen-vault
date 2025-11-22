@@ -22,6 +22,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Chunked File Upload**: Added chunked upload system for large files. Files larger than 5MB are automatically split into chunks and uploaded sequentially, preventing memory issues and enabling upload of files of any size.
 - **Encryption Overlay for SSO Users**: Added glassmorphic encryption overlay that appears when SSO-authenticated users access encrypted VaultSpaces. The overlay prevents unexpected logout and provides a clear interface for password entry to decrypt files.
 - **Configurable Gunicorn Workers**: Added `VAULT_WORKERS` environment variable to configure the number of Gunicorn worker processes for the vault service, with a default value of 2 workers.
+- **Automatic Thumbnail Generation**: Lazy-loaded thumbnail generation for images displayed in grid view with automatic detection and generation on scroll.
 
 #### Moving Target Defense (MTD) Enhancements
 
@@ -34,6 +35,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Orchestrator UI Style**: Updated orchestrator UI styling to match the vault's design system for consistent user experience across the application.
 - **Authentication Migration**: Migrated from hybrid session/CSRF authentication to JWT-only authentication. CSRF protection has been removed as JWT tokens in Authorization headers are already protected by Same-Origin Policy. This provides a cleaner and more secure authentication approach for API endpoints while maintaining defense-in-depth security through Origin/Referer header validation and Content-Type validation.
+- **File Promotion Service**: File promotion is now a common service shared between vault and orchestrator, rather than being reserved to the orchestrator. Files are automatically promoted to persistent storage after each upload, ensuring persistence even without orchestrator rotation.
 
 ### Security
 

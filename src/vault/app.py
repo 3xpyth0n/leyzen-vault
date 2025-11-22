@@ -459,9 +459,69 @@ def create_app(
     cleanup_thread = threading.Thread(target=_audit_cleanup_worker, daemon=True)
     cleanup_thread.start()
 
+    # Start background thread for periodic orphaned file cleanup
+    def _orphaned_files_cleanup_worker() -> None:
+        """Background worker to periodically clean up orphaned files."""
+        # Import here to avoid importing at module level if worker thread is not started
+        import time
+        import logging
+
+        logger = logging.getLogger(__name__)
+        while True:
+            try:
+                time.sleep(3600)  # Run every hour
+                # Use application context for database operations
+                with app.app_context():
+                    try:
+                        from common.services.file_promotion_service import (
+                            FilePromotionService,
+                        )
+                        from common.services.sync_validation_service import (
+                            SyncValidationService,
+                        )
+                        from vault.database.schema import File, db
+
+                        # Initialize validation service with database
+                        validation_service = SyncValidationService(
+                            db_session=db.session,
+                            File_model=File,
+                            logger=logger,
+                        )
+                        promotion_service = FilePromotionService(
+                            validation_service=validation_service,
+                            logger_instance=logger,
+                        )
+
+                        if storage.source_dir:
+                            result = promotion_service.cleanup_orphaned_files(
+                                target_dir=storage.source_dir,
+                                base_dir=storage.storage_dir / "files",
+                                dry_run=False,
+                            )
+                            deleted_count = result.get("deleted_count", 0)
+                            if deleted_count > 0:
+                                logger.info(
+                                    f"Cleaned up {deleted_count} orphaned files from persistent storage"
+                                )
+                    except Exception as cleanup_error:
+                        logger.error(
+                            f"Error during orphaned files cleanup: {cleanup_error}",
+                            exc_info=True,
+                        )
+            except Exception as e:
+                logger.error(
+                    f"Error in orphaned files cleanup worker: {e}", exc_info=True
+                )
+
+    orphaned_cleanup_thread = threading.Thread(
+        target=_orphaned_files_cleanup_worker, daemon=True
+    )
+    orphaned_cleanup_thread.start()
+
     # NOTE: Storage cleanup worker is now in orchestrator (not vault)
     # This avoids issues with MTD container restarts every 2 minutes
     # Storage cleanup is triggered via internal API endpoint from orchestrator
+    # However, we also run autonomous cleanup for orphaned files in persistent storage
 
     def _origin_is_allowed_for_request(origin: str | None) -> bool:
         """Check if the provided Origin header is allowed for this request."""

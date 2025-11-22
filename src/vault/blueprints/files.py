@@ -325,112 +325,44 @@ def upload_file():
         file_id=file_id,
     )
 
-    # Trigger background synchronization to source volume
-    # This ensures the file is available on all containers immediately
-    # The sync happens in background and won't block the response
+    # Promote file to persistent storage with validation
+    # This ensures the file is persisted even without orchestrator
+    # Validation checks that file exists in DB and hash matches
     try:
-        from threading import Thread
-        from pathlib import Path
+        from common.services.file_promotion_service import FilePromotionService
+        from common.services.sync_validation_service import SyncValidationService
+        from vault.database.schema import File
 
-        def sync_file_to_source(file_id: str) -> None:
-            """Synchronize a single file to source volume in background."""
-            try:
-                source_dir = Path("/data-source")
-                if not source_dir.exists():
-                    # Source directory doesn't exist, skip sync
-                    return
+        # Initialize validation service with database
+        validation_service = SyncValidationService(
+            db_session=db.session, File_model=File, logger=current_app.logger
+        )
+        promotion_service = FilePromotionService(
+            validation_service=validation_service, logger_instance=current_app.logger
+        )
 
-                from ..services.sync_validation_service import SyncValidationService
-                import shutil
-                import tempfile
-                import os
+        # Get file path in tmpfs
+        source_path = storage.get_file_path(file_id)
+        target_dir = storage.source_dir
 
-                # Initialize validation service
-                validation_service = SyncValidationService()
-                validation_service.load_whitelist()
+        if source_path.exists() and target_dir:
+            success, error_msg = promotion_service.promote_file(
+                file_id=file_id,
+                source_path=source_path,
+                target_dir=target_dir,
+                base_dir=storage.storage_dir / "files",
+            )
 
-                # Source and target paths
-                source_file = storage.get_file_path(file_id)
-                target_files_dir = source_dir / "files"
-                target_file = target_files_dir / file_id
-
-                # Check if source file exists
-                if not source_file.exists():
-                    current_app.logger.warning(
-                        f"Source file not found for sync: {file_id}"
-                    )
-                    return
-
-                # Validate file before synchronizing
-                base_dir = storage.storage_dir / "files"
-                is_valid, error_msg = validation_service.is_file_legitimate(
-                    source_file, base_dir
+            if not success:
+                # Log warning but don't fail the upload - file is already in cache
+                current_app.logger.warning(
+                    f"[PROMOTION] Failed to promote file {file_id}: {error_msg}"
                 )
-
-                if not is_valid:
-                    current_app.logger.warning(
-                        f"File {file_id} failed validation during sync: {error_msg}"
-                    )
-                    return
-
-                # Create target directory if it doesn't exist
-                target_files_dir.mkdir(parents=True, exist_ok=True)
-
-                # Copy file atomically if it doesn't exist or if source is newer
-                if not target_file.exists() or (
-                    source_file.stat().st_mtime > target_file.stat().st_mtime
-                ):
-                    try:
-                        # Create temporary file for atomic operation
-                        temp_fd, temp_path = tempfile.mkstemp(
-                            dir=target_files_dir,
-                            prefix=".sync_",
-                            suffix=".tmp",
-                        )
-                        temp_file = Path(temp_path)
-                        os.close(temp_fd)
-
-                        # Copy to temporary file
-                        shutil.copy2(source_file, temp_file)
-
-                        # Re-validate after copy
-                        is_still_valid, revalidation_error = (
-                            validation_service.is_file_legitimate(temp_file, base_dir)
-                        )
-
-                        if is_still_valid:
-                            # Atomically rename
-                            temp_file.rename(target_file)
-                            current_app.logger.info(
-                                f"[SYNC] Synchronized file {file_id} to source volume"
-                            )
-                        else:
-                            # File became invalid during sync, delete it
-                            temp_file.unlink()
-                            current_app.logger.warning(
-                                f"[SYNC SECURITY] File {file_id} became invalid during sync: {revalidation_error}"
-                            )
-                    except Exception as e:
-                        if temp_file.exists():
-                            temp_file.unlink()
-                        current_app.logger.error(
-                            f"[SYNC ERROR] Failed to sync file {file_id}: {e}"
-                        )
-
-            except Exception as e:
-                current_app.logger.error(
-                    f"[SYNC ERROR] Background sync failed for file {file_id}: {e}",
-                    exc_info=True,
-                )
-
-        # Start background sync thread
-        sync_thread = Thread(target=sync_file_to_source, args=(file_id,), daemon=True)
-        sync_thread.start()
-
     except Exception as e:
-        # If background sync setup fails, log but don't fail the upload
-        current_app.logger.warning(
-            f"Failed to start background sync for file {file_id}: {e}"
+        # Log error but don't fail the upload - file is already in cache
+        current_app.logger.error(
+            f"[PROMOTION ERROR] Failed to promote file {file_id}: {e}",
+            exc_info=True,
         )
 
     return jsonify({"file_id": file_id, "status": "success"}), 201

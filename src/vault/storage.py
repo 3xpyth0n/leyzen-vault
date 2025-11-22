@@ -213,7 +213,7 @@ class FileStorage:
         Files must be promoted to persistent storage separately via promote_to_persistent().
 
         Args:
-            file_id: File identifier
+            file_id: File identifier or storage key (can contain subdirectories like "thumbnails/2c/61/file.jpg")
             encrypted_data: Encrypted file data to save
 
         Returns:
@@ -225,16 +225,29 @@ class FileStorage:
         # Compute hash before writing
         expected_hash = self.compute_hash(encrypted_data)
 
-        # Save to primary storage (tmpfs) only - no immediate duplication
-        files_dir = self.storage_dir / "files"
-        files_dir.mkdir(parents=True, exist_ok=True)
-        file_path = files_dir / file_id
+        # Check if file_id contains subdirectories (e.g., "thumbnails/2c/61/file.jpg")
+        if "/" in file_id:
+            # Use the storage_key as-is, but relative to storage_dir
+            file_path = self.storage_dir / file_id
+        else:
+            # Legacy behavior: save to files/ subdirectory
+            files_dir = self.storage_dir / "files"
+            files_dir.mkdir(parents=True, exist_ok=True)
+            file_path = files_dir / file_id
+
+        # Create parent directories if they don't exist
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             # Write to primary storage atomically
             self._write_file_atomically(
                 file_path, encrypted_data, expected_hash, file_id
             )
+
+            # Verify file was written
+            if not file_path.exists():
+                raise IOError(f"File {file_id} was not created at {file_path}")
+
             return file_path
 
         except Exception as e:
@@ -332,10 +345,25 @@ class FileStorage:
         """Read encrypted file data.
 
         First checks primary storage, then source storage if configured.
+        Supports both simple file_id and full storage_key paths (e.g., "thumbnails/2c/61/file.jpg").
         """
-        file_path = self._find_file_path(file_id)
-        if file_path:
-            return file_path.read_bytes()
+        # Check if file_id contains subdirectories (e.g., "thumbnails/2c/61/file.jpg")
+        if "/" in file_id:
+            # Use the storage_key as-is, relative to storage_dir
+            file_path = self.storage_dir / file_id
+            if file_path.exists():
+                return file_path.read_bytes()
+
+            # Check source storage if configured
+            if self.source_dir:
+                source_file_path = self.source_dir / file_id
+                if source_file_path.exists():
+                    return source_file_path.read_bytes()
+        else:
+            # Legacy behavior: look in files/ subdirectory
+            file_path = self._find_file_path(file_id)
+            if file_path:
+                return file_path.read_bytes()
 
         raise FileNotFoundError(f"File {file_id} not found in storage or source")
 
@@ -515,6 +543,10 @@ class FileStorage:
         # This handles both primary and source storage
         try:
             file_path = self.save_file(file_id, encrypted_data)
+
+            # Verify file was saved
+            if not file_path.exists():
+                raise IOError(f"File {file_id} was not created at {file_path}")
 
             # Cleanup temporary file after successful save
             try:

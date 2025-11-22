@@ -3,3 +3,4 @@ Flask-WTF
 httpx
 Pillow
 uvicorn
+sqlalchemy

@@ -249,7 +249,12 @@
           />
           <div class="file-icon-large">
             <img
-              v-if="item.has_thumbnail && item.mime_type?.startsWith('image/')"
+              v-if="
+                hasThumbnail(item) &&
+                isImageFile(item) &&
+                getThumbnailUrl(item.id)
+              "
+              :key="`thumb-${item.id}-${thumbnailUpdateTrigger}`"
               :src="getThumbnailUrl(item.id)"
               :alt="item.original_name"
               class="file-thumbnail"
@@ -303,8 +308,10 @@
 
 <script>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
-import { thumbnails } from "../services/api";
+import { thumbnails, files } from "../services/api";
 import { debounce } from "../utils/debounce";
+import { decryptFile, decryptFileKey } from "../services/encryption";
+import { getCachedVaultSpaceKey } from "../services/keyManager";
 import FileMenuDropdown from "./FileMenuDropdown.vue";
 import CustomSelect from "./CustomSelect.vue";
 
@@ -346,6 +353,10 @@ export default {
     defaultSortOrder: {
       type: String,
       default: "asc",
+    },
+    vaultspaceId: {
+      type: String,
+      default: null,
     },
   },
   emits: [
@@ -1218,8 +1229,71 @@ export default {
       return "Unknown";
     };
 
+    const thumbnailUrls = ref({}); // Cache blob URLs as reactive object
+    const thumbnailUpdateTrigger = ref(0); // Force reactivity trigger
+
     const getThumbnailUrl = (fileId) => {
-      return thumbnails.getUrl(fileId, "256x256");
+      // Access thumbnailUpdateTrigger to create dependency
+      void thumbnailUpdateTrigger.value;
+      // Return cached URL if available
+      return thumbnailUrls.value[fileId] || "";
+    };
+
+    // Load thumbnail URL when it becomes available
+    const loadThumbnailUrl = async (fileId) => {
+      if (thumbnailUrls.value[fileId]) {
+        return; // Already loaded
+      }
+
+      try {
+        const blobUrl = await thumbnails.getUrl(fileId, "256x256");
+        if (blobUrl) {
+          // Force reactivity by creating a new object
+          const newUrls = { ...thumbnailUrls.value };
+          newUrls[fileId] = blobUrl;
+          thumbnailUrls.value = newUrls;
+
+          // Force Vue to update by incrementing trigger
+          thumbnailUpdateTrigger.value++;
+
+          // Wait for next tick to ensure DOM update
+          await nextTick();
+        }
+      } catch (error) {
+        console.error(`Failed to load thumbnail URL for ${fileId}:`, error);
+      }
+    };
+
+    const hasThumbnail = (file) => {
+      return file.has_thumbnail || generatedThumbnails.value.has(file.id);
+    };
+
+    // Check if file is an image based on mime_type or file extension
+    const isImageFile = (file) => {
+      // Check mime_type first
+      if (file.mime_type?.startsWith("image/")) {
+        return true;
+      }
+
+      // Fallback: check file extension for common image formats
+      if (file.original_name) {
+        const extension = file.original_name.split(".").pop()?.toLowerCase();
+        const imageExtensions = [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "bmp",
+          "svg",
+          "ico",
+          "tiff",
+          "tif",
+        ];
+        return imageExtensions.includes(extension);
+      }
+
+      return false;
     };
 
     const handleThumbnailError = (event) => {
@@ -1364,6 +1438,267 @@ export default {
       }
     };
 
+    // Thumbnail generation state
+    const generatingThumbnails = ref(new Set());
+    const failedThumbnails = ref(new Set());
+    const generatedThumbnails = ref(new Set()); // Track successfully generated thumbnails
+    const MAX_CONCURRENT_GENERATIONS = 2;
+    let thumbnailObserver = null;
+
+    // Generate thumbnail for a file
+    const generateThumbnailForFile = async (file) => {
+      // Check if file is an image without thumbnail
+      if (
+        !isImageFile(file) ||
+        hasThumbnail(file) ||
+        generatingThumbnails.value.has(file.id) ||
+        failedThumbnails.value.has(file.id)
+      ) {
+        return;
+      }
+
+      // Get vaultspaceId from prop or file
+      const vaultspaceId = props.vaultspaceId || file.vaultspace_id;
+      if (!vaultspaceId) {
+        return;
+      }
+
+      // Check if we're at max concurrent generations
+      if (generatingThumbnails.value.size >= MAX_CONCURRENT_GENERATIONS) {
+        return;
+      }
+
+      generatingThumbnails.value.add(file.id);
+
+      try {
+        // Get VaultSpace key
+        const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
+        if (!vaultspaceKey) {
+          failedThumbnails.value.add(file.id);
+          return;
+        }
+
+        // Download encrypted file
+        let encryptedData;
+        try {
+          encryptedData = await files.download(file.id, vaultspaceId);
+        } catch (downloadError) {
+          // If file not found (404), it might be a new file that's not yet synced
+          // Check if file was created recently (within last 5 minutes)
+          const fileCreatedAt = file.created_at
+            ? new Date(file.created_at)
+            : null;
+          const isRecentFile =
+            fileCreatedAt &&
+            Date.now() - fileCreatedAt.getTime() < 5 * 60 * 1000;
+
+          if (
+            downloadError.message?.includes("404") ||
+            downloadError.message?.includes("not found")
+          ) {
+            if (isRecentFile) {
+              // For recent files, don't mark as failed - might be syncing
+              // Remove from generating set so it can be retried
+              generatingThumbnails.value.delete(file.id);
+              return;
+            } else {
+              // For older files, mark as failed
+              failedThumbnails.value.add(file.id);
+              return;
+            }
+          }
+          throw downloadError;
+        }
+
+        // Get file key from server
+        const fileData = await files.get(file.id, vaultspaceId);
+        if (!fileData.file_key) {
+          failedThumbnails.value.add(file.id);
+          return;
+        }
+
+        // Decrypt file key with VaultSpace key
+        const fileKey = await decryptFileKey(
+          vaultspaceKey,
+          fileData.file_key.encrypted_key,
+        );
+
+        // Decrypt file data
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const encryptedDataArray = new Uint8Array(encryptedData);
+        const iv = encryptedDataArray.slice(0, 12);
+        const encrypted = encryptedDataArray.slice(12);
+
+        // Decrypt file
+        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Convert to base64 efficiently (avoid stack overflow for large files)
+        const uint8Array = new Uint8Array(decryptedData);
+        let binary = "";
+        const chunkSize = 8192; // Process in chunks to avoid stack overflow
+        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+          const chunk = uint8Array.slice(i, i + chunkSize);
+          // Convert chunk to array for apply
+          const chunkArray = Array.from(chunk);
+          binary += String.fromCharCode.apply(null, chunkArray);
+        }
+        const base64Data = btoa(binary);
+
+        // Generate thumbnail
+        await thumbnails.generate(file.id, base64Data);
+
+        // Mark as generated to refresh display
+        generatedThumbnails.value.add(file.id);
+
+        // Wait a bit for database to be updated
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Load thumbnail URL for display
+        try {
+          await loadThumbnailUrl(file.id);
+        } catch (error) {
+          // Don't mark as failed, will retry later
+        }
+
+        // Trigger reactivity update
+        nextTick(() => {
+          // Re-setup observer to handle newly generated thumbnails
+          if (props.viewMode === "grid") {
+            setupThumbnailObserver();
+          }
+        });
+      } catch (err) {
+        console.error(
+          `Failed to generate thumbnail for file ${file.id} (${file.original_name}):`,
+          err,
+        );
+        failedThumbnails.value.add(file.id);
+      } finally {
+        generatingThumbnails.value.delete(file.id);
+      }
+    };
+
+    // Setup Intersection Observer for lazy loading thumbnails
+    const setupThumbnailObserver = () => {
+      if (thumbnailObserver) {
+        thumbnailObserver.disconnect();
+      }
+
+      thumbnailObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              // entry.target is the file-card element we're observing
+              const fileCard = entry.target;
+              const fileId = fileCard.dataset.fileId;
+              if (fileId) {
+                const file = allItems.value.find((f) => f.id === fileId);
+                if (file) {
+                  generateThumbnailForFile(file);
+                }
+              }
+            }
+          });
+        },
+        {
+          rootMargin: "50px", // Start loading slightly before entering viewport
+          threshold: 0.1,
+        },
+      );
+
+      // Observe all file cards in grid view
+      if (props.viewMode === "grid") {
+        // Use a small delay to ensure DOM is ready
+        setTimeout(() => {
+          const fileCards = document.querySelectorAll(".file-card");
+          fileCards.forEach((card) => {
+            const fileId = card.dataset.fileId;
+            if (fileId) {
+              const file = allItems.value.find((f) => f.id === fileId);
+              if (file) {
+                if (
+                  file &&
+                  isImageFile(file) &&
+                  !hasThumbnail(file) &&
+                  !generatingThumbnails.value.has(file.id) &&
+                  !failedThumbnails.value.has(file.id)
+                ) {
+                  thumbnailObserver.observe(card);
+
+                  // Check if card is already visible and trigger generation immediately
+                  const rect = card.getBoundingClientRect();
+                  const isVisible =
+                    rect.top < window.innerHeight + 50 && rect.bottom > -50;
+                  if (isVisible) {
+                    generateThumbnailForFile(file);
+                  }
+                }
+              }
+            }
+          });
+        }, 100);
+      }
+    };
+
+    // Watch for view mode changes and file list changes to update observer
+    watch(
+      () => [props.viewMode, props.files, props.folders],
+      () => {
+        if (props.viewMode === "grid") {
+          setupThumbnailObserver();
+        }
+      },
+      { deep: true },
+    );
+
+    // Load existing thumbnails on mount
+    const loadExistingThumbnails = async () => {
+      const filesToLoad = allItems.value.filter(
+        (file) => hasThumbnail(file) && isImageFile(file),
+      );
+
+      // Wait for DOM to be ready
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Load thumbnails sequentially to avoid race conditions
+      for (const file of filesToLoad) {
+        await loadThumbnailUrl(file.id);
+        // Small delay between loads to ensure reactivity
+        await nextTick();
+      }
+    };
+
+    // Setup observer on mount
+    onMounted(() => {
+      // Load existing thumbnails
+      loadExistingThumbnails();
+
+      if (props.viewMode === "grid") {
+        // Delay to ensure DOM is fully rendered
+        setTimeout(() => {
+          setupThumbnailObserver();
+        }, 200);
+      }
+    });
+
+    // Watch for new files with thumbnails
+    watch(
+      () => allItems.value,
+      () => {
+        loadExistingThumbnails();
+      },
+      { deep: true },
+    );
+
+    // Cleanup observer on unmount
+    onUnmounted(() => {
+      if (thumbnailObserver) {
+        thumbnailObserver.disconnect();
+        thumbnailObserver = null;
+      }
+    });
+
     return {
       newlyCreatedItemId,
       isNewlyCreated,
@@ -1405,6 +1740,9 @@ export default {
       formatDate,
       getFileType,
       getThumbnailUrl,
+      loadThumbnailUrl,
+      hasThumbnail,
+      isImageFile,
       handleThumbnailError,
       getIcon,
       getSortIcon,
@@ -1860,6 +2198,15 @@ export default {
 .file-icon-large svg {
   width: 48px;
   height: 48px;
+}
+
+.file-thumbnail {
+  max-height: 60px;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .star-icon-large {

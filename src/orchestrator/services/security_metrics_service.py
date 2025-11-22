@@ -18,8 +18,8 @@ class SecurityMetricsService:
     """
 
     # Hardcoded thresholds (no environment variables)
-    RISK_THRESHOLD_CRITICAL = 70  # Rotation immédiate
-    RISK_THRESHOLD_MEDIUM = 50  # Rotation accélérée
+    RISK_THRESHOLD_CRITICAL = 70  # Immediate rotation
+    RISK_THRESHOLD_MEDIUM = 50  # Accelerated rotation
 
     def __init__(self, settings: Settings, logger: FileLogger) -> None:
         """Initialize the security metrics service.
