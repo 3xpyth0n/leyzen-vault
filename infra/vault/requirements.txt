@@ -9,6 +9,7 @@ psycopg2-binary==2.9.9
 pyjwt==2.8.0
 argon2-cffi==23.1.0
 requests==2.32.4
+httpx==0.27.2
 whoosh==2.7.4
 authlib==1.6.5
 cryptography==44.0.1

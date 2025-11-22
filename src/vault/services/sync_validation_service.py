@@ -34,15 +34,24 @@ class SyncValidationService:
 
             legitimate_files = {}
             for file_obj in files:
-                # Use the file_id from the database (file_obj.id) as the key
-                # The storage_ref can be in different formats:
-                # - Just the file_id: "abc123..."
-                # - Full path: "/data/files/abc123..."
-                # - Relative path: "files/abc123..."
+                # Use storage_ref as the key (files are stored by storage_ref, not by id)
+                # The storage_ref is the actual filename in /data/files/
                 file_id = file_obj.id
                 storage_ref = file_obj.storage_ref
 
-                legitimate_files[file_id] = {
+                # Normalize storage_ref (remove any path prefixes)
+                # storage_ref can be in different formats:
+                # - Just the filename: "abc123..." (most common case)
+                # - Full path: "/data/files/abc123..."
+                # - Relative path: "files/abc123..."
+                # In practice, storage_ref is stored as just the filename in the database
+                normalized_storage_ref = storage_ref.strip()
+                if "/" in normalized_storage_ref:
+                    # Extract just the filename (handle paths)
+                    normalized_storage_ref = normalized_storage_ref.split("/")[-1]
+
+                # Use normalized_storage_ref as the key (this is the filename in /data/files/)
+                legitimate_files[normalized_storage_ref] = {
                     "storage_ref": storage_ref,
                     "encrypted_hash": file_obj.encrypted_hash,
                     "size": file_obj.encrypted_size,
@@ -50,7 +59,8 @@ class SyncValidationService:
                 }
 
             current_app.logger.info(
-                f"Loaded {len(legitimate_files)} legitimate files from database"
+                f"Loaded {len(legitimate_files)} legitimate files from database. "
+                f"Sample storage_refs: {list(legitimate_files.keys())[:5]}"
             )
             return legitimate_files
 

@@ -37,6 +37,12 @@ from .docker_proxy import (
 from common.services.logging import FileLogger
 from .rotation_telemetry import RotationTelemetry
 
+# Type hint for SecurityMetricsService (imported lazily to avoid circular dependencies)
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .security_metrics_service import SecurityMetricsService
+
 
 class RotationService:
     """Coordinates container rotation and uptime tracking."""
@@ -73,6 +79,8 @@ class RotationService:
         self._stats_error_last_logged: dict[str, float] = {}
         self._telemetry = RotationTelemetry(settings)
         self._sync_service: SyncService | None = None
+        self._security_metrics: "SecurityMetricsService | None" = None
+        self._shutdown_requested = False
 
     # ------------------------------------------------------------------
     # Helpers
@@ -89,11 +97,31 @@ class RotationService:
             self._sync_service = SyncService(self._settings, self._docker, self._logger)
         return self._sync_service
 
+    def _get_security_metrics_service(self) -> "SecurityMetricsService":
+        """Get or create the shared SecurityMetricsService instance.
+
+        Returns:
+            The shared SecurityMetricsService instance
+        """
+        if self._security_metrics is None:
+            from .security_metrics_service import SecurityMetricsService
+
+            self._security_metrics = SecurityMetricsService(
+                self._settings, self._logger
+            )
+        return self._security_metrics
+
     def cleanup(self) -> None:
-        """Clean up resources, including closing the SyncService HTTP client."""
+        """Clean up resources, including closing the SyncService and SecurityMetricsService HTTP clients."""
+        # Signal threads to stop
+        self._shutdown_requested = True
+        # Clean up HTTP clients
         if self._sync_service is not None:
             self._sync_service.close()
             self._sync_service = None
+        if self._security_metrics is not None:
+            self._security_metrics.close()
+            self._security_metrics = None
 
     def mark_active(self, name: str) -> None:
         self.container_active_since[name] = datetime.now(self._settings.timezone)
@@ -134,6 +162,158 @@ class RotationService:
             self._logger.log(message)
             self._stats_error_last_logged[name] = current
 
+    def _should_rotate_immediately(self, container_name: str) -> bool:
+        """Check if container should be rotated immediately based on security metrics.
+
+        Args:
+            container_name: Name of the container to check
+
+        Returns:
+            True if rotation should happen immediately
+        """
+        try:
+            security_metrics = self._get_security_metrics_service()
+            return security_metrics.should_rotate_immediately(container_name)
+        except Exception as e:
+            self._logger.log(
+                f"[SECURITY METRICS ERROR] Failed to check rotation need: {e}"
+            )
+            return False
+
+    def _prepare_container_for_rotation(self, container_name: str) -> bool:
+        """Prepare container for rotation with validation and secure promotion.
+
+        This method calls the prepare-rotation endpoint on the container which:
+        1. Validates all files in /data/files/
+        2. Sends validated files to orchestrator for secure promotion
+        3. Cleans up memory
+        4. Verifies all critical files are promoted
+
+        Args:
+            container_name: Name of the container to prepare
+
+        Returns:
+            True if preparation succeeded, False otherwise
+        """
+        import httpx
+
+        try:
+            # Call prepare-rotation endpoint
+            url = f"http://{container_name}/api/internal/prepare-rotation"
+            internal_token = self._settings.internal_api_token
+
+            if not internal_token:
+                self._logger.log(
+                    f"[PREPARE ROTATION ERROR] INTERNAL_API_TOKEN not available"
+                )
+                return False
+
+            headers = {
+                "Authorization": f"Bearer {internal_token}",
+                "Content-Type": "application/json",
+            }
+
+            with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
+                response = client.post(url, headers=headers, json={})
+
+                if response.status_code == 200:
+                    result = response.json()
+                    overall_success = result.get("overall_success", False)
+
+                    # Log statistics
+                    validation_stats = result.get("validation", {})
+                    promotion_stats = result.get("promotion", {})
+                    cleanup_stats = result.get("cleanup", {})
+                    verification_stats = result.get("verification", {})
+
+                    self._logger.log(
+                        f"[PREPARE ROTATION] Validation: {validation_stats.get('validated', 0)} validated, "
+                        f"{validation_stats.get('rejected', 0)} rejected, "
+                        f"{validation_stats.get('deleted', 0)} deleted, "
+                        f"{validation_stats.get('files_in_queue', 0)} files in promotion queue"
+                    )
+
+                    # Log critical errors and debug info if any
+                    if "critical_error" in validation_stats:
+                        self._logger.log(
+                            f"[PREPARE ROTATION CRITICAL ERROR] {validation_stats['critical_error']}"
+                        )
+                    if "debug_info" in validation_stats:
+                        self._logger.log(
+                            f"[PREPARE ROTATION DEBUG] {validation_stats['debug_info']}"
+                        )
+                    if "debug" in validation_stats:
+                        self._logger.log(
+                            f"[PREPARE ROTATION DEBUG] {validation_stats['debug']}"
+                        )
+
+                    # Log warning if files validated but not in queue
+                    files_in_queue = validation_stats.get("files_in_queue", 0)
+                    validated_count = validation_stats.get("validated", 0)
+                    if validated_count > 0 and files_in_queue == 0:
+                        self._logger.log(
+                            f"[PREPARE ROTATION WARNING] {validated_count} files validated but 0 files in promotion queue. "
+                            f"This indicates metadata lookup failed for all validated files."
+                        )
+                    self._logger.log(
+                        f"[PREPARE ROTATION] Promotion: {promotion_stats.get('promoted', 0)} promoted, "
+                        f"{promotion_stats.get('failed', 0)} failed"
+                    )
+                    self._logger.log(
+                        f"[PREPARE ROTATION] Cleanup: {'success' if cleanup_stats.get('success') else 'failed'}"
+                    )
+
+                    # Log detailed verification stats
+                    verification_success = verification_stats.get("success", False)
+                    total_files = verification_stats.get("total_files", 0)
+                    missing_count = verification_stats.get("missing_count", 0)
+                    missing_percentage = verification_stats.get("missing_percentage", 0)
+                    found_in_tmpfs = verification_stats.get("found_in_tmpfs", 0)
+                    found_in_source = verification_stats.get("found_in_source", 0)
+
+                    self._logger.log(
+                        f"[PREPARE ROTATION] Verification: {'success' if verification_success else 'failed'} "
+                        f"(total: {total_files}, missing: {missing_count} ({missing_percentage}%), "
+                        f"tmpfs: {found_in_tmpfs}, source: {found_in_source})"
+                    )
+
+                    if not overall_success:
+                        # Log why it failed
+                        if not verification_success:
+                            self._logger.log(
+                                f"[PREPARE ROTATION ERROR] Verification failed: {missing_count} files missing "
+                                f"({missing_percentage}%)"
+                            )
+                        if promotion_stats.get("failed", 0) > 0:
+                            self._logger.log(
+                                f"[PREPARE ROTATION ERROR] Promotion failed: {promotion_stats.get('failed', 0)} files"
+                            )
+                        if not cleanup_stats.get("success", False):
+                            self._logger.log(f"[PREPARE ROTATION ERROR] Cleanup failed")
+
+                        errors = result.get("errors", [])
+                        if errors:
+                            for error in errors:
+                                self._logger.log(f"[PREPARE ROTATION ERROR] {error}")
+
+                    return overall_success
+                else:
+                    self._logger.log(
+                        f"[PREPARE ROTATION ERROR] Container returned status {response.status_code}: {response.text}"
+                    )
+                    return False
+
+        except httpx.TimeoutException:
+            self._logger.log(
+                f"[PREPARE ROTATION ERROR] Timeout preparing {container_name}"
+            )
+            return False
+        except Exception as e:
+            self._logger.log(
+                f"[PREPARE ROTATION ERROR] Failed to prepare {container_name}: {e}"
+            )
+            return False
+
     # ------------------------------------------------------------------
     def _orchestrator_loop(self) -> None:
         interval = self._settings.rotation_interval
@@ -149,6 +329,8 @@ class RotationService:
         wait_log_interval = ROTATION_WAIT_LOG_INTERVAL
         next_wait_log_time = time.monotonic() + quiet_period
         while True:
+            if self._shutdown_requested:
+                return
             managed_containers = []
             proxy_error: DockerProxyError | None = None
             for name in web_containers:
@@ -179,7 +361,14 @@ class RotationService:
                 if monotonic_now < next_wait_log_time:
                     delay = min(delay, max(0.0, next_wait_log_time - monotonic_now))
 
-                time.sleep(delay)
+                # Sleep in small chunks to allow quick shutdown
+                sleep_remaining = delay
+                while sleep_remaining > 0 and not self._shutdown_requested:
+                    sleep_chunk = min(sleep_remaining, 1.0)  # Check every second
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                if self._shutdown_requested:
+                    return
                 continue
 
             break
@@ -238,6 +427,8 @@ class RotationService:
         self.next_rotation_eta = interval
 
         while True:
+            if self._shutdown_requested:
+                return
             try:
                 now: datetime = datetime.now(self._settings.timezone)
 
@@ -268,27 +459,93 @@ class RotationService:
                     next_switch_time = override
                     remaining = (next_switch_time - now).total_seconds()
                     self.next_rotation_eta = max(0, int(remaining))
-                    time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
+                    # Sleep in small chunks to allow quick shutdown
+                    sleep_remaining = ROTATION_LOOP_SLEEP_INTERVAL
+                    while sleep_remaining > 0 and not self._shutdown_requested:
+                        sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                        time.sleep(sleep_chunk)
+                        sleep_remaining -= sleep_chunk
+                    if self._shutdown_requested:
+                        return
                     continue
 
                 if self.rotation_resuming:
                     next_switch_time = now + timedelta(seconds=interval)
                     self.next_rotation_eta = None
-                    time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
+                    # Sleep in small chunks to allow quick shutdown
+                    sleep_remaining = ROTATION_LOOP_SLEEP_INTERVAL
+                    while sleep_remaining > 0 and not self._shutdown_requested:
+                        sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                        time.sleep(sleep_chunk)
+                        sleep_remaining -= sleep_chunk
+                    if self._shutdown_requested:
+                        return
                     continue
 
                 if not self.rotation_active:
                     next_switch_time = now + timedelta(seconds=interval)
                     self.next_rotation_eta = None
-                    time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
+                    # Sleep in small chunks to allow quick shutdown
+                    sleep_remaining = ROTATION_LOOP_SLEEP_INTERVAL
+                    while sleep_remaining > 0 and not self._shutdown_requested:
+                        sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                        time.sleep(sleep_chunk)
+                        sleep_remaining -= sleep_chunk
+                    if self._shutdown_requested:
+                        return
                     continue
 
-                # next_switch_time is guaranteed to be set here (either from override or above)
-                remaining = (next_switch_time - now).total_seconds()
-                self.next_rotation_eta = max(0, int(remaining))
-                if now < next_switch_time:
-                    time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
-                    continue
+                # Check security metrics for intelligent rotation
+                should_rotate_immediately = False
+                should_rotate_soon = False
+
+                if active_name:
+                    try:
+                        security_metrics = self._get_security_metrics_service()
+                        should_rotate_immediately = (
+                            security_metrics.should_rotate_immediately(active_name)
+                        )
+                        should_rotate_soon = security_metrics.should_rotate_soon(
+                            active_name
+                        )
+
+                        if should_rotate_immediately:
+                            risk_score = security_metrics.get_risk_score(active_name)
+                            self._logger.log(
+                                f"[SECURITY] Critical risk detected for {active_name} (score: {risk_score}). Rotating immediately."
+                            )
+                        elif should_rotate_soon:
+                            risk_score = security_metrics.get_risk_score(active_name)
+                            self._logger.log(
+                                f"[SECURITY] Elevated risk detected for {active_name} (score: {risk_score}). Accelerating rotation."
+                            )
+                    except Exception as e:
+                        self._logger.log(
+                            f"[SECURITY METRICS ERROR] Failed to check security metrics: {e}"
+                        )
+
+                # Adjust rotation timing based on security metrics
+                if should_rotate_immediately:
+                    # Force immediate rotation
+                    next_switch_time = now
+                elif should_rotate_soon:
+                    # Accelerate rotation (reduce interval by 50%)
+                    accelerated_interval = max(interval // 2, 30)  # Minimum 30 seconds
+                    next_switch_time = now + timedelta(seconds=accelerated_interval)
+                else:
+                    # Normal rotation timing
+                    remaining = (next_switch_time - now).total_seconds()
+                    self.next_rotation_eta = max(0, int(remaining))
+                    if now < next_switch_time:
+                        # Sleep in small chunks to allow quick shutdown
+                        sleep_remaining = ROTATION_LOOP_SLEEP_INTERVAL
+                        while sleep_remaining > 0 and not self._shutdown_requested:
+                            sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                            time.sleep(sleep_chunk)
+                            sleep_remaining -= sleep_chunk
+                        if self._shutdown_requested:
+                            return
+                        continue
 
                 if len(managed_containers) == 1:
                     next_switch_time = now + timedelta(seconds=interval)
@@ -319,15 +576,27 @@ class RotationService:
                         f"[WARNING] Rotation skipped — no healthy candidates available. {active_name} remains active."
                     )
 
-                next_switch_time = datetime.now(self._settings.timezone) + timedelta(
-                    seconds=interval
-                )
-                self.next_rotation_eta = interval
+                # Reset next switch time for next iteration
+                if should_rotate_immediately or should_rotate_soon:
+                    # Already set above
+                    pass
+                else:
+                    next_switch_time = datetime.now(
+                        self._settings.timezone
+                    ) + timedelta(seconds=interval)
+                    self.next_rotation_eta = interval
             except Exception:
                 self._logger.log(
                     f"Exception in orchestrator loop:\n{traceback.format_exc()}"
                 )
-                time.sleep(ROTATION_LONG_SLEEP)
+                # Sleep in small chunks to allow quick shutdown
+                sleep_remaining = ROTATION_LONG_SLEEP
+                while sleep_remaining > 0 and not self._shutdown_requested:
+                    sleep_chunk = min(sleep_remaining, 1.0)  # Check every second
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                if self._shutdown_requested:
+                    return
 
     def _select_next_active(
         self,
@@ -350,18 +619,15 @@ class RotationService:
         for next_index in candidate_indices:
             next_name = managed_containers[next_index]
 
-            # 1. Synchronize data BEFORE starting rotation
+            # 1. Prepare rotation with validation and secure promotion
             try:
-                sync_service = self._get_sync_service()
-                if not sync_service.sync_container_data_to_source(active_name):
-                    raise RuntimeError(
-                        f"Failed to synchronize {active_name} before rotation"
-                    )
+                if not self._prepare_container_for_rotation(active_name):
+                    raise RuntimeError(f"Failed to prepare {active_name} for rotation")
             except Exception as exc:
                 self._logger.log(
-                    f"[ERROR] Failed to synchronize {active_name} before rotation: {exc}. Aborting rotation."
+                    f"[ERROR] Failed to prepare {active_name} for rotation: {exc}. Aborting rotation."
                 )
-                # Stop rotation if sync fails to prevent data loss
+                # Stop rotation if preparation fails to prevent data loss
                 return False, active_index, active_name
 
             # 2. Start the new container WITHOUT stopping the old one
@@ -425,6 +691,8 @@ class RotationService:
     def _uptime_tracker_loop(self) -> None:
         local_cache: dict[str, ProxyContainer] = {}
         while True:
+            if self._shutdown_requested:
+                return
             try:
                 now = datetime.now(self._settings.timezone)
 
@@ -478,10 +746,24 @@ class RotationService:
                             )
                             self.container_active_since[name] = None
 
-                time.sleep(ROTATION_LOOP_SLEEP_INTERVAL)
+                # Sleep in small chunks to allow quick shutdown
+                sleep_remaining = ROTATION_LOOP_SLEEP_INTERVAL
+                while sleep_remaining > 0 and not self._shutdown_requested:
+                    sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                if self._shutdown_requested:
+                    return
             except Exception as exc:
                 self._logger.log(f"[UPTIME TRACKER ERROR] {exc}")
-                time.sleep(ROTATION_ERROR_RETRY_SLEEP)
+                # Sleep in small chunks to allow quick shutdown
+                sleep_remaining = ROTATION_ERROR_RETRY_SLEEP
+                while sleep_remaining > 0 and not self._shutdown_requested:
+                    sleep_chunk = min(sleep_remaining, 1.0)  # Check every second
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                if self._shutdown_requested:
+                    return
 
     def _metrics_collector_loop(self) -> None:
         base_interval = max(
@@ -491,6 +773,8 @@ class RotationService:
         worst_iteration = 0.0
         last_report = time.perf_counter()
         while True:
+            if self._shutdown_requested:
+                return
             loop_start = time.perf_counter()
             try:
                 running_containers: list[str] = []
@@ -556,7 +840,14 @@ class RotationService:
                 worst_iteration = 0.0
                 last_report = now
             delay = max(base_interval - elapsed, ROTATION_DELAY_MIN)
-            time.sleep(delay)
+            # Sleep in small chunks to allow quick shutdown
+            sleep_remaining = delay
+            while sleep_remaining > 0 and not self._shutdown_requested:
+                sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                time.sleep(sleep_chunk)
+                sleep_remaining -= sleep_chunk
+            if self._shutdown_requested:
+                return
 
     def _get_latest_metrics(
         self, running_containers: list[str]
@@ -800,6 +1091,8 @@ class RotationService:
             ROTATION_SNAPSHOT_MIN_INTERVAL,
         )
         while True:
+            if self._shutdown_requested:
+                return
             loop_start = time.perf_counter()
             try:
                 snapshot = self.build_stream_snapshot()
@@ -816,7 +1109,14 @@ class RotationService:
             elapsed = time.perf_counter() - loop_start
             delay = max(interval - elapsed, 0.0)
             if delay:
-                time.sleep(delay)
+                # Sleep in small chunks to allow quick shutdown
+                sleep_remaining = delay
+                while sleep_remaining > 0 and not self._shutdown_requested:
+                    sleep_chunk = min(sleep_remaining, 0.5)  # Check every 0.5s
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                if self._shutdown_requested:
+                    return
 
     def get_latest_snapshot(self) -> dict[str, object]:
         interval = max(

@@ -284,7 +284,7 @@ def build_base_services(
         "container_name": "orchestrator",
         "image": "leyzen/orchestrator:latest",
         "restart": "on-failure",
-        "stop_grace_period": "30s",
+        "stop_grace_period": "10s",
         "healthcheck": {
             "test": ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"],
             "interval": "2s",
@@ -302,6 +302,7 @@ def build_base_services(
             "./src/orchestrator:/app:ro",
             "./src/common:/common:ro",
             "orchestrator-logs:/app/logs",
+            "vault-data-source:/data-source:rw",  # Read-write for secure file promotion
         ],
         "depends_on": orchestrator_depends,
         "networks": ["vault-net", "control-net"],

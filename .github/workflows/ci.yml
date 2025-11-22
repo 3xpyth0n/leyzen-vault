@@ -23,12 +23,17 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r src/orchestrator/requirements.txt
           pip install -r infra/docker-proxy/requirements.txt
-          pip install ruff
+          pip install ruff black
 
       - name: Validate Python bytecode
         run: python -m compileall src/orchestrator infra/docker-proxy src/compose src/vault
@@ -74,6 +79,12 @@ jobs:
           else:
               print("✅ All common dependencies have consistent versions.")
           EOF
+
+      - name: Check Prettier formatting
+        run: npx prettier --check .
+
+      - name: Check Black formatting
+        run: black --check .
 
   shellcheck:
     name: Shell script linting

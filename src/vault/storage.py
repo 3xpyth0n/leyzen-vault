@@ -209,14 +209,15 @@ class FileStorage:
     def save_file(self, file_id: str, encrypted_data: bytes) -> Path:
         """Save encrypted file data with integrity verification.
 
-        Saves to both storage_dir (primary, tmpfs) and source_dir (persistent) if configured.
+        Saves ONLY to primary storage (tmpfs, ephemeral cache).
+        Files must be promoted to persistent storage separately via promote_to_persistent().
 
         Args:
             file_id: File identifier
             encrypted_data: Encrypted file data to save
 
         Returns:
-            Path to the saved file in primary storage
+            Path to the saved file in primary storage (tmpfs)
 
         Raises:
             IOError: If file write fails or integrity check fails
@@ -224,57 +225,73 @@ class FileStorage:
         # Compute hash before writing
         expected_hash = self.compute_hash(encrypted_data)
 
-        # Save to primary storage (tmpfs)
+        # Save to primary storage (tmpfs) only - no immediate duplication
         files_dir = self.storage_dir / "files"
         files_dir.mkdir(parents=True, exist_ok=True)
         file_path = files_dir / file_id
-
-        primary_saved = False
-        source_saved = False
 
         try:
             # Write to primary storage atomically
             self._write_file_atomically(
                 file_path, encrypted_data, expected_hash, file_id
             )
-            primary_saved = True
-
-            # Also save to source storage (persistent) if configured
-            if self.source_dir:
-                source_files_dir = self.source_dir / "files"
-                source_files_dir.mkdir(parents=True, exist_ok=True)
-                source_file_path = source_files_dir / file_id
-
-                try:
-                    # Write to source storage atomically
-                    self._write_file_atomically(
-                        source_file_path, encrypted_data, expected_hash, file_id
-                    )
-                    source_saved = True
-                except Exception as source_error:
-                    # Log error but don't fail if primary save succeeded
-                    # Source storage is a backup, primary is required
-                    import logging
-
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        f"Failed to save file {file_id} to source storage: {source_error}. "
-                        f"File saved to primary storage only."
-                    )
-
             return file_path
 
         except Exception as e:
-            # If primary save failed, cleanup source if it was saved
-            if source_saved and self.source_dir:
-                try:
-                    source_file_path = self.source_dir / "files" / file_id
-                    if source_file_path.exists():
-                        source_file_path.unlink()
-                except Exception:
-                    pass
-
             raise IOError(f"Failed to save file {file_id}: {e}") from e
+
+    def promote_to_persistent(self, file_id: str) -> bool:
+        """Promote a file from cache (tmpfs) to persistent storage.
+
+        This method copies a file from the ephemeral tmpfs cache to the persistent
+        source directory. The file must exist in the cache and be validated before
+        promotion.
+
+        Args:
+            file_id: File identifier
+
+        Returns:
+            True if promotion succeeded, False otherwise
+
+        Note:
+            This method does not validate the file - validation should be done
+            separately using SyncValidationService before calling this method.
+        """
+        if not self.source_dir:
+            return False
+
+        # Get file from cache
+        cache_file_path = self.get_file_path(file_id)
+        if not cache_file_path.exists():
+            return False
+
+        try:
+            # Read file data from cache
+            encrypted_data = cache_file_path.read_bytes()
+
+            # Write to persistent storage
+            source_files_dir = self.source_dir / "files"
+            source_files_dir.mkdir(parents=True, exist_ok=True)
+            source_file_path = source_files_dir / file_id
+
+            # Compute hash for integrity
+            expected_hash = self.compute_hash(encrypted_data)
+
+            # Write atomically to persistent storage
+            self._write_file_atomically(
+                source_file_path, encrypted_data, expected_hash, file_id
+            )
+
+            return True
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to promote file {file_id} to persistent storage: {e}"
+            )
+            return False
 
     def get_file_path(self, file_id: str) -> Path:
         """Get the path to a stored file in primary storage."""
@@ -290,17 +307,20 @@ class FileStorage:
         return source_files_dir / file_id
 
     def _find_file_path(self, file_id: str) -> Path | None:
-        """Find the file path, checking primary storage first, then source storage.
+        """Find the file path, checking primary storage (tmpfs cache) first, then source storage.
+
+        This prioritizes the cache for performance. If a file is found in cache,
+        it is returned immediately. If not found in cache, checks persistent storage.
 
         Returns:
             Path to the file if found, None otherwise
         """
-        # Check primary storage first
+        # Check primary storage (tmpfs cache) first for performance
         file_path = self.get_file_path(file_id)
         if file_path.exists():
             return file_path
 
-        # Check source storage
+        # Check source storage (persistent) if not in cache
         if self.source_dir:
             source_file_path = self.get_source_file_path(file_id)
             if source_file_path and source_file_path.exists():

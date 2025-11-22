@@ -113,16 +113,16 @@ class StorageCleanupService:
         """Background worker that periodically triggers storage cleanup.
 
         This worker runs in a separate thread and calls the vault's internal API
-        to clean up orphaned files every 24 hours.
+        to clean up orphaned files every 30 minutes.
         """
-        # Wait 1 hour before first run to allow system to stabilize
+        # Wait 30 minutes before first run to allow system to stabilize
         # and avoid cleanup during initial setup
         self.logger.log(
-            "[STORAGE_CLEANUP] Worker started, waiting 1 hour before first cleanup"
+            "[STORAGE_CLEANUP] Worker started, waiting 30 minutes before first cleanup"
         )
 
         # Sleep in small chunks to allow quick shutdown
-        for _ in range(360):  # 360 * 10s = 3600s = 1 hour
+        for _ in range(180):  # 180 * 10s = 1800s = 30 minutes
             if self._stop_event.wait(timeout=10):
                 return
 
@@ -158,8 +158,8 @@ class StorageCleanupService:
             except Exception as e:
                 self.logger.log(f"[STORAGE_CLEANUP] Worker error: {e}")
 
-            # Sleep for 24 hours before next cleanup
+            # Sleep for 30 minutes before next cleanup
             # Sleep in small chunks (10 seconds) to allow quick shutdown
-            for _ in range(8640):  # 8640 * 10s = 86400s = 24 hours
+            for _ in range(180):  # 180 * 10s = 1800s = 30 minutes
                 if self._stop_event.wait(timeout=10):
                     return

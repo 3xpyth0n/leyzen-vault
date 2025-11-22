@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -411,6 +412,536 @@ def storage_cleanup():
     except Exception as e:
         current_app.logger.error(f"Storage cleanup failed: {e}", exc_info=True)
         return jsonify({"error": "Storage cleanup failed", "details": str(e)}), 500
+
+
+@internal_api_bp.route("/security-metrics", methods=["GET"])
+@csrf.exempt  # Internal API, CSRF not needed
+def security_metrics():
+    """Get security metrics for the current container.
+
+    This endpoint exposes security metrics to the orchestrator for intelligent
+    rotation decisions.
+
+    Request headers:
+        Authorization: Bearer <INTERNAL_API_TOKEN>
+
+    Returns:
+        JSON with security metrics including:
+        - suspicious_requests: Number of suspicious requests
+        - auth_failures: Number of authentication failures
+        - anomalies: List of detected anomalies
+        - app_errors: Number of application errors
+        - memory_usage_percent: Memory usage percentage
+    """
+    # Validate internal token
+    if not _validate_internal_token():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        metrics: dict[str, Any] = {
+            "suspicious_requests": 0,
+            "auth_failures": 0,
+            "anomalies": [],
+            "app_errors": 0,
+            "memory_usage_percent": 0,
+        }
+
+        # Get rate limiter for suspicious requests count
+        rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+        if rate_limiter:
+            # This is a simplified metric - in production, you'd track this properly
+            metrics["suspicious_requests"] = 0  # TODO: Track actual suspicious requests
+
+        # Get authentication failures from audit logs
+        try:
+            from vault.services.audit import AuditService
+
+            audit = current_app.config.get("VAULT_AUDIT")
+            if audit:
+                # Get recent auth failures (last hour)
+                from datetime import datetime, timedelta
+
+                recent_threshold = datetime.now() - timedelta(hours=1)
+                # This is simplified - in production, query audit logs properly
+                metrics["auth_failures"] = 0  # TODO: Query actual auth failures
+        except Exception:
+            pass
+
+        # Get behavioral anomalies
+        try:
+            from vault.services.behavioral_analysis_service import (
+                BehavioralAnalysisService,
+            )
+
+            # This would require user context - simplified for now
+            # In production, aggregate anomalies across all users
+            metrics["anomalies"] = []
+        except Exception:
+            pass
+
+        # Get memory usage
+        try:
+            import psutil
+
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_percent = process.memory_percent()
+            metrics["memory_usage_percent"] = round(memory_percent, 2)
+        except ImportError:
+            # psutil not available, skip memory metric
+            pass
+        except Exception:
+            pass
+
+        return jsonify(metrics), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to get security metrics: {e}", exc_info=True)
+        return (
+            jsonify({"error": "Failed to get security metrics", "details": str(e)}),
+            500,
+        )
+
+
+@internal_api_bp.route("/prepare-rotation", methods=["POST"])
+@csrf.exempt  # Internal API, CSRF not needed
+def prepare_rotation():
+    """Prepare container for rotation with validation and secure promotion.
+
+    This endpoint:
+    1. Validates all files in /data/files/ using SyncValidationService
+    2. Sends validated files to orchestrator for secure promotion
+    3. Cleans up memory
+    4. Verifies all critical files are promoted
+
+    Request headers:
+        Authorization: Bearer <INTERNAL_API_TOKEN>
+
+    Returns:
+        JSON with preparation status and statistics
+    """
+    # Validate internal token
+    if not _validate_internal_token():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    current_app.logger.info(
+        "[PREPARE ROTATION] ===== Starting prepare-rotation endpoint ====="
+    )
+
+    try:
+        storage = current_app.config.get("VAULT_STORAGE")
+        if not storage:
+            return jsonify({"error": "Storage not configured"}), 500
+
+        stats: dict[str, Any] = {
+            "validation": {
+                "validated": 0,
+                "rejected": 0,
+                "deleted": 0,
+                "files_in_queue": 0,
+            },
+            "promotion": {"promoted": 0, "failed": 0},
+            "cleanup": {"success": False},
+            "verification": {"success": False},
+            "overall_success": False,
+        }
+
+        # Step 1: Validation
+        current_app.logger.info("[PREPARE ROTATION] Starting validation phase")
+        validation_service = SyncValidationService()
+        validation_service.load_whitelist()
+
+        # Log whitelist size for debugging
+        whitelist_size = len(validation_service._legitimate_files)
+        whitelist_keys_sample = list(validation_service._legitimate_files.keys())[:5]
+        current_app.logger.info(
+            f"[PREPARE ROTATION] Loaded {whitelist_size} files in whitelist. "
+            f"Sample keys: {whitelist_keys_sample}"
+        )
+
+        storage_dir = storage.storage_dir
+        base_dir = storage_dir / "files"
+        source_dir = Path("/data-source")
+
+        files_dir = storage_dir / "files"
+        validated_files: list[dict[str, Any]] = []
+
+        if files_dir.exists():
+            files_in_tmpfs = [f for f in files_dir.iterdir() if f.is_file()]
+            current_app.logger.info(
+                f"[PREPARE ROTATION] Found {len(files_in_tmpfs)} files in tmpfs. "
+                f"Whitelist has {len(validation_service._legitimate_files)} entries"
+            )
+
+            # SIMPLE LOGIC: For each file, check if it's in whitelist. If yes, promote. If no, delete.
+            whitelist_keys_sample = list(validation_service._legitimate_files.keys())[
+                :5
+            ]
+            current_app.logger.info(
+                f"[PREPARE ROTATION] Sample whitelist keys: {whitelist_keys_sample}"
+            )
+
+            for file_path in files_dir.iterdir():
+                if not file_path.is_file():
+                    continue
+
+                file_id = file_path.name
+                current_app.logger.info(
+                    f"[PREPARE ROTATION] Processing file: {file_id}, "
+                    f"in whitelist: {file_id in validation_service._legitimate_files}"
+                )
+
+                # Check if file is in whitelist (this is the filename as stored in database)
+                if file_id in validation_service._legitimate_files:
+                    current_app.logger.info(
+                        f"[PREPARE ROTATION] File {file_id} IS in whitelist, promoting..."
+                    )
+                    # File is legitimate - read and promote it
+                    try:
+                        file_metadata = validation_service._legitimate_files[file_id]
+                        file_data = file_path.read_bytes()
+
+                        # Verify we have required metadata
+                        if (
+                            not isinstance(file_metadata, dict)
+                            or "encrypted_hash" not in file_metadata
+                            or "size" not in file_metadata
+                        ):
+                            current_app.logger.error(
+                                f"[PREPARE ROTATION] File {file_id} in whitelist but metadata invalid: {type(file_metadata)}"
+                            )
+                            stats["validation"]["rejected"] += 1
+                            file_path.unlink()
+                            stats["validation"]["deleted"] += 1
+                            continue
+
+                        # Add to promotion queue
+                        validated_files.append(
+                            {
+                                "file_id": file_id,
+                                "file_data": file_data,
+                                "expected_hash": file_metadata["encrypted_hash"],
+                                "expected_size": file_metadata["size"],
+                            }
+                        )
+                        stats["validation"]["validated"] += 1
+                        current_app.logger.info(
+                            f"[PREPARE ROTATION] File {file_id} added to promotion queue "
+                            f"(size: {len(file_data)}, hash: {file_metadata['encrypted_hash'][:16]}...)"
+                        )
+                    except Exception as e:
+                        current_app.logger.error(
+                            f"[PREPARE ROTATION] Error processing legitimate file {file_id}: {e}",
+                            exc_info=True,
+                        )
+                        stats["validation"]["rejected"] += 1
+                        try:
+                            file_path.unlink()
+                            stats["validation"]["deleted"] += 1
+                        except:
+                            pass
+                else:
+                    # File is NOT in whitelist - delete it
+                    current_app.logger.warning(
+                        f"[PREPARE ROTATION] File {file_id} not in whitelist - deleting"
+                    )
+                    try:
+                        file_path.unlink()
+                        stats["validation"]["deleted"] += 1
+                    except Exception as e:
+                        current_app.logger.error(
+                            f"[PREPARE ROTATION] Failed to delete invalid file {file_id}: {e}"
+                        )
+        else:
+            current_app.logger.info(
+                "[PREPARE ROTATION] No files directory in tmpfs (empty cache is normal)"
+            )
+
+        # Step 2: Secure promotion via orchestrator
+        # Update stats with files in queue
+        stats["validation"]["files_in_queue"] = len(validated_files)
+        current_app.logger.info(
+            f"[PREPARE ROTATION] After processing: {len(validated_files)} files in queue, "
+            f"{stats['validation']['validated']} validated, {stats['validation']['rejected']} rejected"
+        )
+
+        # Add debug info to stats so it appears in orchestrator logs
+        if len(validated_files) == 0 and stats["validation"]["validated"] > 0:
+            stats["validation"]["debug_info"] = (
+                f"WARNING: {stats['validation']['validated']} files validated but 0 files in promotion queue. "
+                f"This indicates metadata lookup failed for all validated files."
+            )
+        current_app.logger.info(
+            f"[PREPARE ROTATION] validated_files count: {len(validated_files)}, "
+            f"validated count: {stats['validation']['validated']}"
+        )
+
+        if validated_files:
+            current_app.logger.info(
+                f"[PREPARE ROTATION] Promoting {len(validated_files)} validated files"
+            )
+            # Log first few file IDs being promoted
+            sample_file_ids = [f["file_id"] for f in validated_files[:3]]
+            current_app.logger.info(
+                f"[PREPARE ROTATION] Sample files to promote: {sample_file_ids}"
+            )
+            promotion_result = _send_files_to_orchestrator(validated_files)
+            stats["promotion"]["promoted"] = promotion_result.get("promoted", 0)
+            stats["promotion"]["failed"] = promotion_result.get("failed", 0)
+            stats["promotion"]["errors"] = promotion_result.get("errors", [])
+            if stats["promotion"]["failed"] > 0:
+                current_app.logger.warning(
+                    f"[PREPARE ROTATION] Promotion had {stats['promotion']['failed']} failures"
+                )
+                for error in promotion_result.get("errors", [])[:5]:
+                    current_app.logger.warning(
+                        f"[PREPARE ROTATION] Promotion error: {error}"
+                    )
+        else:
+            current_app.logger.warning(
+                f"[PREPARE ROTATION] No files to promote (validated_files is empty, "
+                f"but {stats['validation']['validated']} files were validated). "
+                f"This indicates metadata lookup failed for all validated files."
+            )
+
+        # Step 3: Memory cleanup
+        current_app.logger.info("[PREPARE ROTATION] Starting memory cleanup")
+        try:
+            from vault.services.memory_cleanup_service import MemoryCleanupService
+
+            cleanup_service = MemoryCleanupService()
+            cleanup_stats = cleanup_service.cleanup()
+            stats["cleanup"]["success"] = cleanup_stats.get("memory_freed", False)
+            stats["cleanup"]["details"] = cleanup_stats
+        except Exception as e:
+            current_app.logger.error(f"[PREPARE ROTATION] Memory cleanup failed: {e}")
+            stats["cleanup"]["error"] = str(e)
+
+        # Step 4: Verification
+        current_app.logger.info("[PREPARE ROTATION] Starting verification phase")
+        try:
+            # Verify that all files in database exist either in tmpfs or /data-source
+            from vault.database.schema import File, db
+
+            files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
+            total_files_in_db = len(files)
+            current_app.logger.info(
+                f"[PREPARE ROTATION] Checking {total_files_in_db} files from database"
+            )
+
+            missing_files = []
+            found_in_tmpfs = 0
+            found_in_source = 0
+
+            for file_obj in files:
+                file_id = file_obj.id
+                # Use storage_ref for file lookup (files are stored by storage_ref, not by id)
+                storage_ref = file_obj.storage_ref
+
+                # Check tmpfs (uses storage_ref)
+                tmpfs_path = storage.get_file_path(storage_ref)
+                # Check persistent storage (uses storage_ref)
+                source_path = source_dir / "files" / storage_ref
+
+                if tmpfs_path.exists():
+                    found_in_tmpfs += 1
+                elif source_path.exists():
+                    found_in_source += 1
+                else:
+                    missing_files.append(file_id)
+
+            # Verification is successful if:
+            # - All files are accounted for (in tmpfs or source), OR
+            # - Missing files are a small percentage (files might be new or deleted)
+            total_files = len(files)
+            missing_count = len(missing_files)
+            missing_percentage = (
+                (missing_count / total_files * 100) if total_files > 0 else 0
+            )
+
+            stats["verification"]["found_in_tmpfs"] = found_in_tmpfs
+            stats["verification"]["found_in_source"] = found_in_source
+            stats["verification"]["total_files"] = total_files
+            stats["verification"]["missing_count"] = missing_count
+            stats["verification"]["missing_percentage"] = round(missing_percentage, 2)
+
+            # Allow up to 10% missing files (tolerance for new/deleted files)
+            # But fail if more than 10% are missing (potential data loss)
+            if missing_count > 0:
+                if missing_percentage <= 10.0:
+                    stats["verification"]["success"] = True
+                    current_app.logger.warning(
+                        f"[PREPARE ROTATION] Verification: {missing_count} files missing "
+                        f"({missing_percentage:.1f}%) - within tolerance "
+                        f"(found in tmpfs: {found_in_tmpfs}, found in source: {found_in_source})"
+                    )
+                    # Log first few missing files for debugging
+                    for file_id in missing_files[:3]:
+                        current_app.logger.warning(
+                            f"[PREPARE ROTATION] Missing file (within tolerance): {file_id}"
+                        )
+                else:
+                    stats["verification"]["success"] = False
+                    stats["verification"]["missing_files"] = missing_files
+                    current_app.logger.error(
+                        f"[PREPARE ROTATION] Verification failed: {missing_count} files missing "
+                        f"({missing_percentage:.1f}%) - exceeds 10% tolerance "
+                        f"(found in tmpfs: {found_in_tmpfs}, found in source: {found_in_source})"
+                    )
+                    # Log first few missing files for debugging
+                    for file_id in missing_files[:5]:
+                        current_app.logger.error(
+                            f"[PREPARE ROTATION] Missing file: {file_id}"
+                        )
+            else:
+                stats["verification"]["success"] = True
+                current_app.logger.info(
+                    f"[PREPARE ROTATION] Verification successful: all files accounted for "
+                    f"(tmpfs: {found_in_tmpfs}, source: {found_in_source})"
+                )
+
+        except Exception as e:
+            current_app.logger.error(
+                f"[PREPARE ROTATION] Verification failed with exception: {e}",
+                exc_info=True,
+            )
+            stats["verification"]["error"] = str(e)
+            # On exception, mark as failed but log the error
+            stats["verification"]["success"] = False
+            # Try to still get basic stats even on error
+            try:
+                from vault.database.schema import File, db
+
+                files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
+                stats["verification"]["total_files"] = len(files)
+            except Exception:
+                pass
+
+        # Overall success if:
+        # - No promotion failures (if files were promoted)
+        # - Verification succeeded (all files accounted for)
+        # - Cleanup succeeded
+        # Note: It's OK if no files were validated (tmpfs might be empty if all files already promoted)
+        stats["overall_success"] = (
+            stats["promotion"]["failed"] == 0
+            and stats["verification"]["success"]
+            and stats["cleanup"]["success"]
+        )
+
+        if stats["overall_success"]:
+            current_app.logger.info(
+                "[PREPARE ROTATION] Preparation completed successfully"
+            )
+            return jsonify(stats), 200
+        else:
+            current_app.logger.warning(
+                "[PREPARE ROTATION] Preparation completed with issues"
+            )
+            return jsonify(stats), 200  # Return 200 but with success=False
+
+    except Exception as e:
+        current_app.logger.error(
+            f"[PREPARE ROTATION] Preparation failed: {e}", exc_info=True
+        )
+        return jsonify({"error": "Preparation failed", "details": str(e)}), 500
+
+
+def _send_files_to_orchestrator(files: list[dict[str, Any]]) -> dict[str, Any]:
+    """Send validated files to orchestrator for secure promotion.
+
+    Args:
+        files: List of file dictionaries with file_id, file_data, expected_hash, expected_size
+
+    Returns:
+        Dictionary with promotion results
+    """
+    import base64
+    import httpx
+    import os
+
+    current_app.logger.info(
+        f"[PREPARE ROTATION] Sending {len(files)} files to orchestrator for promotion"
+    )
+
+    try:
+        # Get orchestrator URL
+        orchestrator_url = os.environ.get("ORCHESTRATOR_URL", "http://orchestrator:80")
+        promote_url = f"{orchestrator_url}/orchestrator/api/promote-files"
+
+        current_app.logger.debug(f"[PREPARE ROTATION] Promotion URL: {promote_url}")
+
+        # Get internal API token
+        internal_token = current_app.config.get("INTERNAL_API_TOKEN")
+        if not internal_token:
+            current_app.logger.error(
+                "[PREPARE ROTATION] INTERNAL_API_TOKEN not available"
+            )
+            return {
+                "promoted": 0,
+                "failed": len(files),
+                "errors": ["INTERNAL_API_TOKEN not available"],
+            }
+
+        # Prepare batch data - use base64 encoding for binary data
+        batch_data = []
+        for file_info in files:
+            batch_data.append(
+                {
+                    "file_id": file_info["file_id"],
+                    "file_data": base64.b64encode(file_info["file_data"]).decode(
+                        "utf-8"
+                    ),
+                    "expected_hash": file_info["expected_hash"],
+                    "expected_size": file_info["expected_size"],
+                }
+            )
+
+        # Send to orchestrator
+        headers = {
+            "Authorization": f"Bearer {internal_token}",
+            "Content-Type": "application/json",
+        }
+
+        with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
+            current_app.logger.debug(
+                f"[PREPARE ROTATION] Sending POST request to orchestrator with {len(batch_data)} files"
+            )
+            response = client.post(
+                promote_url, headers=headers, json={"files": batch_data}
+            )
+
+            current_app.logger.debug(
+                f"[PREPARE ROTATION] Orchestrator response: status={response.status_code}"
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                current_app.logger.info(
+                    f"[PREPARE ROTATION] Orchestrator promotion result: {result.get('promoted', 0)} promoted, "
+                    f"{result.get('failed', 0)} failed"
+                )
+                return result
+            else:
+                current_app.logger.error(
+                    f"[PREPARE ROTATION] Orchestrator returned error status {response.status_code}: {response.text}"
+                )
+                return {
+                    "promoted": 0,
+                    "failed": len(files),
+                    "errors": [
+                        f"Orchestrator returned status {response.status_code}: {response.text}"
+                    ],
+                }
+
+    except Exception as e:
+        current_app.logger.error(
+            f"[PREPARE ROTATION] Failed to send files to orchestrator: {e}"
+        )
+        return {
+            "promoted": 0,
+            "failed": len(files),
+            "errors": [f"Failed to send files to orchestrator: {e}"],
+        }
 
 
 __all__ = ["internal_api_bp"]

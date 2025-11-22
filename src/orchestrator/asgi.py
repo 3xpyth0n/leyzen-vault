@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import importlib
 import importlib.util
+import signal
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -33,6 +35,11 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 bootstrap_entry_point()
 
 from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
+
+# Global references to services for signal handlers
+_rotation_service = None
+_storage_cleanup_service = None
+_logger = None
 
 
 def _load_orchestrator_module() -> ModuleType:
@@ -87,13 +94,53 @@ get_configured_app = orchestrator_module.get_configured_app
 def create_app() -> WSGIMiddleware:
     """Return the orchestrator wrapped for ASGI servers."""
 
+    global _rotation_service, _storage_cleanup_service, _logger
+
     try:
         configured_app = get_configured_app()
     except RuntimeError:
         return WSGIMiddleware(flask_app)
 
-    rotation_service = configured_app.config["ROTATION_SERVICE"]
-    rotation_service.start_background_workers()
+    _rotation_service = configured_app.config["ROTATION_SERVICE"]
+    _storage_cleanup_service = configured_app.config.get("STORAGE_CLEANUP_SERVICE")
+    _logger = configured_app.config["LOGGER"]
+
+    # Start background workers
+    _rotation_service.start_background_workers()
+    if _storage_cleanup_service:
+        _storage_cleanup_service.start_background_worker()
+
+    def log_shutdown(sig: int | None = None) -> None:
+        """Log shutdown message and flush logger."""
+        if _logger is None:
+            return
+        if sig is not None:
+            _logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
+        else:
+            _logger.log("=== Orchestrator stopped ===")
+        # Clean up rotation service resources
+        if _rotation_service is not None:
+            _rotation_service.cleanup()
+        # Stop storage cleanup worker
+        if _storage_cleanup_service is not None:
+            _storage_cleanup_service.stop_background_worker()
+        _logger.flush()
+
+    def handle_shutdown(
+        sig: int, frame: object
+    ) -> None:  # pragma: no cover - runtime signal handler
+        """Handle shutdown signals gracefully."""
+        log_shutdown(sig)
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # Register atexit handler as backup to ensure shutdown message is logged
+    # even if signal handler doesn't execute properly
+    atexit.register(log_shutdown)
+
     return WSGIMiddleware(configured_app)
 
 

@@ -326,4 +326,94 @@ def api_stream():
     return response
 
 
+@dashboard_bp.route("/api/promote-files", methods=["POST"])
+@csrf.exempt  # Internal API, CSRF not needed
+def api_promote_files():
+    """Promote validated files to persistent storage.
+
+    This endpoint receives validated files from vault containers and performs
+    double validation before writing to /data-source.
+
+    Request headers:
+        Authorization: Bearer <INTERNAL_API_TOKEN>
+
+    Request body:
+        {
+            "files": [
+                {
+                    "file_id": "...",
+                    "file_data": "<base64-encoded>",
+                    "expected_hash": "...",
+                    "expected_size": 12345
+                }
+            ]
+        }
+
+    Returns:
+        JSON with promotion statistics
+    """
+    # Validate internal token
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    token = auth_header[len("Bearer ") :].strip()
+    settings = _settings()
+
+    # Verify token matches internal API token
+    import hmac
+
+    expected_token = settings.internal_api_token
+    if not expected_token or not hmac.compare_digest(token, expected_token):
+        _logger().log("[PROMOTE FILES] Invalid token")
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        data = request.get_json()
+        if not data or "files" not in data:
+            return jsonify({"error": "Missing 'files' in request body"}), 400
+
+        files = data["files"]
+        if not isinstance(files, list):
+            return jsonify({"error": "'files' must be a list"}), 400
+
+        # Initialize promotion service
+        from ..services.file_promotion_service import FilePromotionService
+
+        promotion_service = FilePromotionService(settings, _logger())
+
+        # Prepare files for promotion
+        promotion_batch = []
+        for file_info in files:
+            file_id = file_info.get("file_id")
+            file_data = file_info.get("file_data")
+            expected_hash = file_info.get("expected_hash")
+            expected_size = file_info.get("expected_size")
+
+            if not all([file_id, file_data, expected_hash, expected_size]):
+                continue
+
+            promotion_batch.append(
+                {
+                    "file_id": file_id,
+                    "file_data": file_data,  # Will be decoded in promote_file
+                    "expected_hash": expected_hash,
+                    "expected_size": expected_size,
+                }
+            )
+
+        # Promote files
+        result = promotion_service.promote_files_batch(promotion_batch)
+
+        _logger().log(
+            f"[PROMOTE FILES] Promotion result: {result['promoted']} promoted, {result['failed']} failed"
+        )
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        _logger().log(f"[PROMOTE FILES ERROR] {e}", exc_info=True)
+        return jsonify({"error": "Promotion failed", "details": str(e)}), 500
+
+
 __all__ = ["dashboard_bp"]

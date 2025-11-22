@@ -23,6 +23,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Encryption Overlay for SSO Users**: Added glassmorphic encryption overlay that appears when SSO-authenticated users access encrypted VaultSpaces. The overlay prevents unexpected logout and provides a clear interface for password entry to decrypt files.
 - **Configurable Gunicorn Workers**: Added `VAULT_WORKERS` environment variable to configure the number of Gunicorn worker processes for the vault service, with a default value of 2 workers.
 
+#### Moving Target Defense (MTD) Enhancements
+
+- **Enhanced File Validation and Promotion**: Improved MTD rotation process with streamlined file validation and promotion system.
+  - Files in temporary storage are validated against database whitelist before promotion to persistent storage.
+  - Only legitimate files are preserved during container rotation.
+  - Invalid files are automatically removed, enhancing security and preventing malware persistence.
+
 ### Changed
 
 - **Orchestrator UI Style**: Updated orchestrator UI styling to match the vault's design system for consistent user experience across the application.

@@ -423,6 +423,59 @@ footer {
   display: block;
 }
 
+.state-wave-chart-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: rgb(15, 23, 42);
+  border-radius: 1rem;
+  z-index: 10;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    visibility 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    filter 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    transform 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: auto;
+  filter: blur(0px);
+  transform: scale(1);
+}
+
+.state-wave-chart-loading.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  filter: blur(8px);
+  transform: scale(1.02);
+}
+
+.state-wave-chart-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #38bdf8;
+  border-right-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+}
+
+.state-wave-chart-loading-text {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 .chart-surface {
   width: 100%;
   height: 100%;

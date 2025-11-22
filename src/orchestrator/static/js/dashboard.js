@@ -1001,6 +1001,15 @@ function flushStateWaveQueues(chart) {
   });
 }
 
+function initStateWaveChartLoading() {
+  const loadingEl = document.getElementById("stateWaveChartLoading");
+  if (!loadingEl) return;
+
+  setTimeout(() => {
+    loadingEl.classList.add("fade-out");
+  }, 1000);
+}
+
 function buildStateWavePlaceholderDatasets() {
   const now = Date.now();
   const start = now - STATE_WAVE_WINDOW_MS;
@@ -1253,6 +1262,13 @@ function initStateWaveChart(initialSnapshot = null) {
   }
 
   chart._stateWave.ready = true;
+
+  // Ensure canvas is blurred
+  canvas.style.filter = "blur(20px)";
+  canvas.style.transition = "filter 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+
+  // Initialize loading overlay with 2 second delay
+  initStateWaveChartLoading();
 }
 
 function seedStateWaveChart(chart) {

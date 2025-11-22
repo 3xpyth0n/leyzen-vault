@@ -196,7 +196,7 @@ def build_vault_services(
                 f"/data:size={tmpfs_size_mb}M,noexec,nosuid,nodev",
             ],
             "volumes": [
-                "vault-data-source:/data-source:rw",  # Read-write for sync operations
+                "vault-data-source:/data-source:ro",  # Read-only to prevent direct writes by attackers
             ],
             # Dependencies: Vault containers must wait for HAProxy and PostgreSQL
             # to be healthy before starting to ensure proper routing and database access
