@@ -292,14 +292,14 @@ class SSOService:
         except Exception as e:
             raise ValueError(f"SAML login initiation failed: {str(e)}")
 
-    def handle_saml_callback(self, provider_id: str) -> tuple[User, str] | None:
+    def handle_saml_callback(self, provider_id: str) -> tuple[User, str | None] | None:
         """Handle SAML authentication callback.
 
         Args:
             provider_id: SSO provider ID
 
         Returns:
-            Tuple of (User, JWT token) if authentication succeeds, None otherwise
+            Tuple of (User, JWT token) if authentication succeeds, (User, None) if 2FA is required, None otherwise
         """
         provider = self.get_provider(provider_id)
         if not provider or provider.provider_type != SSOProviderType.SAML:
@@ -376,6 +376,10 @@ class SSOService:
                     )
                     return None
 
+                # Check if 2FA is enabled - if so, return user without token
+                if user.totp_enabled:
+                    return user, None
+
                 # Generate JWT token
                 token = self.auth_service._generate_token(user)
                 return user, token
@@ -449,7 +453,7 @@ class SSOService:
 
     def handle_oauth2_callback(
         self, provider_id: str, code: str, state: str
-    ) -> tuple[User, str] | None:
+    ) -> tuple[User, str | None] | None:
         """Handle OAuth2 authentication callback.
 
         Args:
@@ -458,7 +462,7 @@ class SSOService:
             state: State parameter (for CSRF protection)
 
         Returns:
-            Tuple of (User, JWT token) if authentication succeeds, None otherwise
+            Tuple of (User, JWT token) if authentication succeeds, (User, None) if 2FA is required, None otherwise
         """
         # Verify state
         if state != session.get("sso_state"):
@@ -561,6 +565,10 @@ class SSOService:
                     f"SSO login attempted for non-existent user: {email}"
                 )
                 return None
+
+            # Check if 2FA is enabled - if so, return user without token
+            if user.totp_enabled:
+                return user, None
 
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
@@ -682,7 +690,7 @@ class SSOService:
 
     def handle_oidc_callback(
         self, provider_id: str, code: str, state: str
-    ) -> tuple[User, str] | None:
+    ) -> tuple[User, str | None] | None:
         """Handle OpenID Connect authentication callback.
 
         Args:
@@ -691,7 +699,7 @@ class SSOService:
             state: State parameter
 
         Returns:
-            Tuple of (User, JWT token) if authentication succeeds, None otherwise
+            Tuple of (User, JWT token) if authentication succeeds, (User, None) if 2FA is required, None otherwise
         """
         # Verify state
         if state != session.get("sso_state"):
@@ -943,6 +951,10 @@ class SSOService:
                 )
                 return None
 
+            # Check if 2FA is enabled - if so, return user without token
+            if user.totp_enabled:
+                return user, None
+
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
@@ -1065,7 +1077,7 @@ The Leyzen Vault Team
 
     def handle_magic_link_callback(
         self, provider_id: str, token: str
-    ) -> tuple[User, str] | None:
+    ) -> tuple[User, str | None] | None:
         """Handle magic link callback and authenticate user.
 
         Args:
@@ -1073,7 +1085,7 @@ The Leyzen Vault Team
             token: Magic link token
 
         Returns:
-            Tuple of (User, JWT token) if successful, None otherwise
+            Tuple of (User, JWT token) if successful, (User, None) if 2FA is required, None otherwise
         """
         provider = self.get_provider(provider_id, active_only=True)
         if not provider:
@@ -1116,6 +1128,10 @@ The Leyzen Vault Team
                 f"Magic link SSO login attempted for non-existent user: {email}"
             )
             return None
+
+        # Check if 2FA is enabled - if so, return user without token
+        if user.totp_enabled:
+            return user, None
 
         # Generate JWT token
         token = self.auth_service._generate_token(user)

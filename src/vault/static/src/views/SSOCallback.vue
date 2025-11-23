@@ -1,7 +1,11 @@
 <template>
   <div class="callback-wrapper">
     <div class="callback-container glass glass-card">
-      <div v-if="loading" class="loading-state">
+      <div v-if="show2FAModal" class="two-factor-state">
+        <h2>Two-Factor Authentication Required</h2>
+        <p>Please verify your identity to complete the login.</p>
+      </div>
+      <div v-else-if="loading" class="loading-state">
         <div class="spinner"></div>
         <p>Completing authentication...</p>
       </div>
@@ -17,20 +21,33 @@
         <p>Redirecting to dashboard...</p>
       </div>
     </div>
+
+    <!-- Two-Factor Authentication Modal -->
+    <TwoFactorVerify
+      v-if="show2FAModal"
+      :isLoading="twoFactorLoading"
+      :error="twoFactorError"
+      @verify="handle2FAVerify"
+      @cancel="cancel2FA"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { auth } from "../services/api";
+import { auth, sso } from "../services/api";
 import { clearUserMasterKey } from "../services/keyManager";
 import { logger } from "../utils/logger.js";
+import TwoFactorVerify from "../components/TwoFactorVerify.vue";
 
 const router = useRouter();
 const route = useRoute();
 const loading = ref(true);
 const error = ref("");
+const show2FAModal = ref(false);
+const twoFactorLoading = ref(false);
+const twoFactorError = ref("");
 
 onMounted(async () => {
   try {
@@ -41,9 +58,24 @@ onMounted(async () => {
       return;
     }
 
-    // Get token and user_id from query parameters
-    const token = route.query.token;
+    // Check if 2FA is required
+    const requires2FA = route.query.requires_2fa === "true";
     const userId = route.query.user_id;
+
+    if (requires2FA) {
+      // Show 2FA modal
+      if (!userId) {
+        error.value = "Missing user information. Please try logging in again.";
+        loading.value = false;
+        return;
+      }
+      show2FAModal.value = true;
+      loading.value = false;
+      return;
+    }
+
+    // Normal SSO flow - get token and user_id from query parameters
+    const token = route.query.token;
 
     if (!token || !userId) {
       error.value =
@@ -89,6 +121,51 @@ onMounted(async () => {
     localStorage.removeItem("jwt_token");
   }
 });
+
+const handle2FAVerify = async (totpToken) => {
+  twoFactorError.value = "";
+  twoFactorLoading.value = true;
+
+  try {
+    const response = await sso.verify2FA(totpToken);
+
+    if (response.token) {
+      show2FAModal.value = false;
+
+      // Clear any existing master key (SSO users don't have passwords)
+      await clearUserMasterKey();
+
+      // Get user info to verify authentication
+      try {
+        const user = await auth.getCurrentUser();
+        if (!user) {
+          throw new Error("User verification failed");
+        }
+
+        // Small delay to show success message
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 1000);
+      } catch (userErr) {
+        logger.error("Failed to verify user after SSO 2FA:", userErr);
+        error.value = "Failed to verify authentication. Please try again.";
+        twoFactorLoading.value = false;
+        // Clear token on error
+        localStorage.removeItem("jwt_token");
+      }
+    }
+  } catch (err) {
+    twoFactorError.value =
+      err.message || "Verification failed. Please try again.";
+    twoFactorLoading.value = false;
+  }
+};
+
+const cancel2FA = () => {
+  show2FAModal.value = false;
+  twoFactorError.value = "";
+  router.push("/login");
+};
 </script>
 
 <style scoped>
@@ -111,7 +188,8 @@ onMounted(async () => {
 
 .loading-state,
 .error-state,
-.success-state {
+.success-state,
+.two-factor-state {
   display: flex;
   flex-direction: column;
   align-items: center;

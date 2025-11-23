@@ -33,6 +33,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Container Rotation**: Fixed SyncValidationService import error and replaced orchestrator-based file promotion with local FilePromotionService in prepare_rotation endpoint.
+- **2FA Bypass via SSO**: Fixed security issue where users with 2FA enabled could bypass two-factor authentication when logging in via SSO. All SSO providers (SAML, OAuth2, OIDC, Magic Link) now require 2FA verification if enabled.
 
 ## [2.2.0] - 2025-11-22
 

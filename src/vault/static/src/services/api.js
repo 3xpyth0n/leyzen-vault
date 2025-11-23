@@ -2281,6 +2281,30 @@ export const sso = {
 
     return await response.json();
   },
+
+  /**
+   * Verify 2FA token after SSO authentication.
+   *
+   * @param {string} totpToken - 6-digit TOTP token or backup code
+   * @returns {Promise<object>} User info and JWT token
+   */
+  async verify2FA(totpToken) {
+    const response = await apiRequest("/sso/verify-2fa", {
+      method: "POST",
+      body: JSON.stringify({ totp_token: totpToken }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "2FA verification failed");
+    }
+
+    const data = await response.json();
+    if (data.token) {
+      setToken(data.token);
+    }
+    return data;
+  },
 };
 
 export default {

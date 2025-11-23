@@ -5,9 +5,10 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
 from urllib.parse import parse_qs, urlparse, quote
 
-from vault.database.schema import SSOProviderType
+from vault.database.schema import SSOProviderType, User
 from vault.extensions import csrf
 from vault.services.sso_service import SSOService
+from vault.services.auth_service import AuthService
 
 sso_api_bp = Blueprint("sso_api", __name__, url_prefix="/api/sso")
 
@@ -15,6 +16,12 @@ sso_api_bp = Blueprint("sso_api", __name__, url_prefix="/api/sso")
 def _get_sso_service() -> SSOService:
     """Get SSOService instance."""
     return SSOService()
+
+
+def _get_auth_service() -> AuthService:
+    """Get AuthService instance."""
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    return AuthService(secret_key)
 
 
 def _validate_host_header() -> None:
@@ -326,12 +333,38 @@ def handle_callback(provider_id: str):
 
         user, token = result
 
+        # Check if 2FA is required (token is None)
+        if token is None:
+            # Store user ID in session for 2FA verification
+            session["sso_2fa_pending"] = user.id
+            # Keep SSO session data for later (we'll clean it after 2FA verification)
+            # Don't clear sso_provider_id, sso_state, etc. yet
+
+            # Build redirect URL with requires_2fa flag
+            from vault.services.share_link_service import ShareService
+
+            share_service = ShareService()
+            frontend_base = share_service._get_base_url()
+            if not frontend_base:
+                current_app.logger.warning(
+                    "VAULT_URL not configured, using relative URL for SSO callback"
+                )
+                callback_url = (
+                    f"/sso/callback/{provider_id}?requires_2fa=true&user_id={user.id}"
+                )
+            else:
+                callback_url = f"{frontend_base}/sso/callback/{provider_id}?requires_2fa=true&user_id={user.id}"
+
+            return redirect(callback_url)
+
+        # 2FA not required - proceed with normal flow
         # Clear SSO session data
         session.pop("sso_provider_id", None)
         session.pop("sso_state", None)
         session.pop("sso_nonce", None)  # Clear nonce
         session.pop("sso_return_url", None)
         session.pop("sso_discovery", None)
+        session.pop("sso_2fa_pending", None)  # Clear any pending 2FA
 
         # For SSO users, we need to handle master key differently
         # Since they don't have a password, we'll need to handle this in the frontend
@@ -362,3 +395,91 @@ def handle_callback(provider_id: str):
         error_msg = "An error occurred during SSO authentication"
         frontend_url = f"/login?error={error_msg}"
         return redirect(frontend_url)
+
+
+@sso_api_bp.route("/verify-2fa", methods=["POST"])
+@csrf.exempt  # Public endpoint, CSRF handled by session
+def verify_2fa():
+    """Verify 2FA token after SSO authentication.
+
+    Request body:
+        {
+            "totp_token": "123456"  # 6-digit TOTP token or backup code
+        }
+
+    Returns:
+        JSON with user info and JWT token if successful
+    """
+    try:
+        # Check if there's a pending SSO 2FA verification in session
+        user_id = session.get("sso_2fa_pending")
+        if not user_id:
+            return jsonify({"error": "No pending SSO authentication found"}), 400
+
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request"}), 400
+
+        totp_token = data.get("totp_token", "").strip()
+        if not totp_token:
+            return jsonify({"error": "TOTP token is required"}), 400
+
+        # Get user from database
+        from vault.database.schema import db
+
+        user = db.session.query(User).filter_by(id=user_id).first()
+        if not user:
+            # Clean up session
+            session.pop("sso_2fa_pending", None)
+            return jsonify({"error": "User not found"}), 404
+
+        # Verify 2FA is enabled
+        if not user.totp_enabled:
+            # Clean up session
+            session.pop("sso_2fa_pending", None)
+            return jsonify({"error": "Two-factor authentication is not enabled"}), 400
+
+        # Verify TOTP token
+        auth_service = _get_auth_service()
+        if not auth_service.verify_totp(user_id, totp_token):
+            return jsonify({"error": "Invalid verification code"}), 401
+
+        # TOTP verified successfully - generate JWT token
+        token = auth_service._generate_token(user)
+
+        # Update last login
+        from datetime import datetime, timezone
+
+        user.last_login = datetime.now(timezone.utc)
+        db.session.commit()
+
+        # Clear SSO session data
+        session.pop("sso_provider_id", None)
+        session.pop("sso_state", None)
+        session.pop("sso_nonce", None)
+        session.pop("sso_return_url", None)
+        session.pop("sso_discovery", None)
+        session.pop("sso_2fa_pending", None)
+
+        # Return token and user info
+        return (
+            jsonify(
+                {
+                    "user": user.to_dict(include_salt=True),
+                    "token": token,
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Error verifying 2FA for SSO: {e}")
+        import traceback
+
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if not is_production:
+            current_app.logger.debug(
+                f"2FA verification error traceback: {traceback.format_exc()}"
+            )
+        return jsonify({"error": "An error occurred during 2FA verification"}), 500
