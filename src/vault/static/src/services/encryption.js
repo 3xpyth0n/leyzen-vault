@@ -2,7 +2,7 @@
  * Client-side encryption service using Web Crypto API.
  *
  * This service handles the complete encryption chain:
- * - User master key derivation (PBKDF2 for E2EE key derivation)
+ * - User master key derivation (Argon2-browser)
  * - VaultSpace key generation and encryption
  * - File key generation and encryption
  * - File encryption/decryption
@@ -12,65 +12,104 @@
  *
  * CRYPTOGRAPHY NOTE:
  * - Server-side authentication: Argon2id (see auth_service.py)
- * - Client-side key derivation: PBKDF2 (this file)
+ * - Client-side key derivation: Argon2-browser
  * These serve different purposes and both are secure for their use cases.
  */
 
 import { logger } from "../utils/logger.js";
+import argon2 from "argon2-browser/dist/argon2-bundled.min.js";
 
 /**
- * Derive user master key from password using PBKDF2.
+ * Derive user master key from password using Argon2-browser.
  *
  * NOTE: This is for CLIENT-SIDE ENCRYPTION KEY DERIVATION ONLY.
  * Server-side password authentication uses Argon2id which provides better
  * protection against brute-force and GPU attacks.
  *
- * PBKDF2 is used here because:
- * - Natively supported by Web Crypto API (no external dependencies)
- * - Argon2 WebAssembly modules cannot be properly bundled by Vite/Rollup
- * - 600,000 iterations with SHA-256 provides adequate security for key derivation
- * - The derived key is used for E2EE encryption and never sent to the server
+ * The salt must contain the "argon2:" prefix. The actual salt bytes follow
+ * after the prefix. This prefix is automatically added by the server when
+ * generating new salts.
  *
  * @param {string} password - User password
- * @param {Uint8Array} salt - Salt bytes
+ * @param {Uint8Array} salt - Salt bytes (must start with "argon2:" prefix in UTF-8)
  * @param {boolean} extractable - Whether the key should be extractable (default: false for security)
  * @returns {Promise<CryptoKey>} User master key for encryption
  */
 export async function deriveUserKey(password, salt, extractable = false) {
-  // Use PBKDF2 for client-side key derivation (E2EE)
-  // This is NOT used for authentication - server uses Argon2id for that
+  // Extract actual salt (remove "argon2:" prefix)
+  const argon2Prefix = new TextEncoder().encode("argon2:");
 
-  // Use PBKDF2 (current implementation)
-  const encoder = new TextEncoder();
-  const passwordData = encoder.encode(password);
+  if (salt.length < argon2Prefix.length) {
+    throw new Error("Invalid salt: too short");
+  }
 
-  // Import password as key material
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    passwordData,
-    "PBKDF2",
-    false,
-    ["deriveBits", "deriveKey"],
-  );
+  // Verify prefix
+  const hasPrefix = salt
+    .slice(0, argon2Prefix.length)
+    .every((b, i) => b === argon2Prefix[i]);
+  if (!hasPrefix) {
+    throw new Error(
+      "Invalid salt: missing 'argon2:' prefix. Migration required.",
+    );
+  }
 
-  // Derive key using PBKDF2 (600,000 iterations)
-  const masterKey = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: salt,
-      iterations: 600000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    {
-      name: "AES-GCM",
-      length: 256,
-    },
-    extractable, // Extractable flag (default: false for security)
-    ["encrypt", "decrypt"],
-  );
+  const actualSalt = salt.slice(argon2Prefix.length);
 
-  return masterKey;
+  // Validate salt length (Argon2 requires at least 8 bytes)
+  if (actualSalt.length < 8) {
+    throw new Error(
+      `Invalid salt length: ${actualSalt.length} bytes (minimum 8 bytes required)`,
+    );
+  }
+
+  // Derive key using Argon2-browser (version bundled to avoid WASM bundling issues)
+  try {
+    // Argon2-browser requires explicit parameters
+    // Use secure defaults optimized for browser environment:
+    // - time: 3 iterations (good balance between security and performance)
+    // - mem: 4096 KiB (4MB) - reasonable for browsers, still secure
+    // - parallelism: 4 threads
+    // - hashLen: 32 bytes (256 bits)
+    const result = await argon2.hash({
+      pass: password,
+      salt: actualSalt, // Uint8Array is accepted by argon2-browser
+      type: argon2.ArgonType.Argon2id,
+      time: 3, // Number of iterations
+      mem: 4096, // Memory in KiB (4MB) - reduced for browser compatibility
+      parallelism: 4, // Number of threads
+      hashLen: 32, // Output length in bytes (256 bits)
+    });
+
+    // Verify result structure
+    if (!result || !result.hash) {
+      throw new Error("Argon2 returned invalid result structure");
+    }
+
+    // Convert derived hash (32 bytes) to CryptoKey
+    const masterKeyBytes = new Uint8Array(result.hash);
+    return await crypto.subtle.importKey(
+      "raw",
+      masterKeyBytes,
+      {
+        name: "AES-GCM",
+        length: 256,
+      },
+      extractable,
+      ["encrypt", "decrypt"],
+    );
+  } catch (error) {
+    logger.error("Argon2 key derivation failed:", error);
+    logger.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      saltLength: actualSalt.length,
+      saltType: typeof actualSalt,
+    });
+    throw new Error(
+      `Failed to derive master key with Argon2: ${error.message || error.code || "Unknown error"}`,
+    );
+  }
 }
 
 /**

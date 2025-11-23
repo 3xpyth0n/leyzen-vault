@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "argon2-browser": "^1.18.0",
     "axios": "^1.6.0",
     "jszip": "^3.10.1",
     "pinia": "^2.1.7",

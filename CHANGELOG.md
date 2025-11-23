@@ -19,6 +19,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **Argon2-browser Key Derivation**: Replaced PBKDF2 with Argon2-browser for client-side master key derivation. Uses Argon2id with optimized parameters providing enhanced protection against brute-force and GPU attacks while maintaining browser compatibility.
 - **JWT Replay Protection**: Mandatory jti verification with secure fallback. Startup warning if jti column missing.
 - **Internal API Hardening**: IP whitelist, strict rate limiting (60 req/min), detailed logging, User-Agent validation.
 - **Origin Validation**: Never completely disabled, even in development. Permissive but active validation in dev mode.

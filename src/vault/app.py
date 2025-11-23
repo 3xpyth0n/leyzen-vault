@@ -741,12 +741,13 @@ def create_app(
         csp_nonce = getattr(g, "csp_nonce", "")
 
         # Content Security Policy - enhanced with trusted types and reporting
+        # Note: 'wasm-unsafe-eval' is required for Argon2-browser WebAssembly module
         csp_directives = [
             "default-src 'self'",
             (
-                f"script-src 'self' 'nonce-{csp_nonce}' https://static.cloudflareinsights.com"
+                f"script-src 'self' 'nonce-{csp_nonce}' 'wasm-unsafe-eval' https://static.cloudflareinsights.com"
                 if csp_nonce
-                else "script-src 'self' https://static.cloudflareinsights.com"
+                else "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com"
             ),
             "style-src 'self' https://fonts.googleapis.com",
             "img-src 'self' data: blob:",

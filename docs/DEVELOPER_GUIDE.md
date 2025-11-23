@@ -83,10 +83,43 @@ docker compose -f docker-generated.yml up
 
 ### End-to-End Encryption
 
-1. **User Master Key**: Derived from password with PBKDF2 (future: Argon2-browser)
+1. **User Master Key**: Derived from password with Argon2-browser
+   - All salts include an "argon2:" prefix to indicate Argon2-browser usage
+   - Argon2-browser uses the bundled version (`argon2-bundled.min.js`) to avoid WASM bundling issues with Vite/Rollup
+   - Provides better protection against brute-force and GPU attacks compared to PBKDF2
 2. **VaultSpace Key**: Randomly generated, encrypted with master key
 3. **File Key**: Randomly generated, encrypted with VaultSpace key
 4. **File Data**: Encrypted with AES-GCM using file key
+
+#### Key Derivation Migration
+
+**For new installations**: All users automatically use Argon2-browser (no action required).
+
+**For existing installations**: A one-time manual migration is required to convert existing user salts from PBKDF2 to Argon2 format:
+
+1. Run the migration script:
+
+   ```bash
+   # From Docker container (recommended):
+   docker exec -it vault_web1 python3 /app/tools/migrate_pbkdf2_to_argon2.py
+
+   # From host (if PostgreSQL port is mapped):
+   python tools/migrate_pbkdf2_to_argon2.py
+   ```
+
+2. The script will:
+   - Identify all users with salts that need migration
+   - Add the "argon2:" prefix to their salts
+   - Show a summary of migrated users
+
+3. **Important**: After migration, users must log in again for the migration to take effect. Their master key will be re-derived using Argon2-browser.
+
+4. You can test the migration with a dry run:
+   ```bash
+   python tools/migrate_pbkdf2_to_argon2.py --dry-run
+   ```
+
+**Note**: The migration script is a one-time operation. After running it, all salts will be in Argon2 format and the system will exclusively use Argon2-browser for key derivation.
 
 ### Backend Services
 
@@ -243,7 +276,6 @@ docker compose -f docker-generated.yml logs -f vault
 
 ## Future Improvements
 
-- Migration to Argon2-browser for key derivation
 - Support for more file types for preview
 - Client synchronization (PWA)
 - Mobile applications

@@ -137,15 +137,19 @@ class AuthService:
 
         # Hash password with Argon2id for authentication
         # NOTE: This is for server-side password authentication ONLY.
-        # Client-side encryption uses PBKDF2 for key derivation (see key_management.py).
+        # Client-side encryption uses Argon2-browser (new) or PBKDF2 (legacy) for key derivation.
         # Argon2id provides strong protection against brute-force and GPU attacks.
         password_hash = self.password_hasher.hash(password)
 
-        # Generate master key salt (16 bytes, base64-encoded)
+        # Generate master key salt (16 bytes, base64-encoded with "argon2:" prefix)
         # This salt will be used to derive the user's master key from their password
         # It must be persistent per user to ensure the same master key is derived each session
+        # The "argon2:" prefix indicates that Argon2-browser should be used for key derivation
         salt_bytes = secrets.token_bytes(16)
-        master_key_salt = base64.b64encode(salt_bytes).decode("utf-8")
+        # Prepend "argon2:" prefix and encode to base64
+        # When decoded, the client will detect the prefix and use Argon2-browser
+        prefixed_salt = b"argon2:" + salt_bytes
+        master_key_salt = base64.b64encode(prefixed_salt).decode("utf-8")
 
         # Create user with email_verified=False (verification always required)
         user = User(
@@ -216,7 +220,10 @@ class AuthService:
             # This handles initialization for users created before master_key_salt was required
             if not user.master_key_salt:
                 salt_bytes = secrets.token_bytes(16)
-                user.master_key_salt = base64.b64encode(salt_bytes).decode("utf-8")
+                # Prepend "argon2:" prefix and encode to base64
+                # When decoded, the client will detect the prefix and use Argon2-browser
+                prefixed_salt = b"argon2:" + salt_bytes
+                user.master_key_salt = base64.b64encode(prefixed_salt).decode("utf-8")
 
             db.session.commit()
 
