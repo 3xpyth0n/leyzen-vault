@@ -57,31 +57,61 @@ def _check_jti_column_exists() -> bool:
         from sqlalchemy.exc import ProgrammingError, InternalError
         from sqlalchemy.sql import text as sql_text
         from flask import has_app_context
+        import time
 
         # Only check if we're in Flask application context
         try:
             if not has_app_context():
                 # Not in context - assume column doesn't exist (safe default)
-                _jti_column_exists_cache = False
+                # Don't cache False here - might be called before context is ready
                 return False
         except Exception:
             # If has_app_context() itself fails, assume no context
-            _jti_column_exists_cache = False
+            # Don't cache False here - might be transient
             return False
 
-        # First check if table exists
+        # First check if table exists with retry logic (handles cases where table was just created)
+        table_exists = False
+        max_table_retries = 3
+        for table_attempt in range(max_table_retries):
+            try:
+                from sqlalchemy import inspect as sql_inspect
+
+                inspector = sql_inspect(db.engine)
+                table_names = inspector.get_table_names()
+                if "jwt_blacklist" in table_names:
+                    table_exists = True
+                    break
+                if table_attempt < max_table_retries - 1:
+                    # Table might have just been created, wait a bit
+                    time.sleep(0.2)
+            except Exception:
+                # Can't check table existence - might be transient
+                if table_attempt < max_table_retries - 1:
+                    time.sleep(0.2)
+                else:
+                    return False
+
+        if not table_exists:
+            # Table doesn't exist yet - don't cache, might be created later
+            return False
+
+        # Try multiple methods to verify column exists for robustness
+        # Method 1: Use inspector to check columns directly (more reliable for newly created tables)
         try:
             from sqlalchemy import inspect as sql_inspect
 
             inspector = sql_inspect(db.engine)
-            if "jwt_blacklist" not in inspector.get_table_names():
-                # Table doesn't exist yet - don't cache, might be created later
-                return False
+            columns = [col["name"] for col in inspector.get_columns("jwt_blacklist")]
+            if "jti" in columns:
+                # Column exists - cache the result
+                _jti_column_exists_cache = True
+                return True
         except Exception:
-            # Can't check table existence - don't cache, might be transient
-            return False
+            # Inspector method failed, try query method
+            pass
 
-        # Try a simple query that will fail if column doesn't exist
+        # Method 2: Try a simple query that will fail if column doesn't exist
         # Use a very lightweight query that won't affect performance
         try:
             # Use a query that will fail gracefully if column doesn't exist
@@ -97,7 +127,8 @@ def _check_jti_column_exists() -> bool:
             if ("column" in error_str and "jti" in error_str) or (
                 "does not exist" in error_str and "jti" in error_str
             ):
-                # Column doesn't exist
+                # Column doesn't exist - cache False only if we're certain
+                # But allow retry by not caching in case of transient issues
                 _jti_column_exists_cache = False
                 return False
             else:

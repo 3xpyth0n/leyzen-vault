@@ -19,6 +19,30 @@ function staticScriptsPlugin() {
   };
 }
 
+// Plugin to ensure all asset URLs are relative (not absolute)
+// This prevents browsers from converting relative URLs to HTTPS
+function relativeUrlsPlugin() {
+  return {
+    name: "relative-urls-plugin",
+    transformIndexHtml: {
+      order: "post",
+      handler(html) {
+        // Replace any absolute URLs (http:// or https://) with relative URLs
+        // This ensures browsers don't force HTTPS for IP addresses
+        html = html.replace(/https?:\/\/[^"'\s]+/g, (match) => {
+          // If it's an asset URL, make it relative
+          if (match.includes("/static/") || match.includes("/assets/")) {
+            const url = new URL(match);
+            return url.pathname;
+          }
+          return match;
+        });
+        return html;
+      },
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     vue({
@@ -31,6 +55,7 @@ export default defineConfig({
       },
     }),
     staticScriptsPlugin(),
+    relativeUrlsPlugin(),
   ],
   build: {
     outDir: "dist",

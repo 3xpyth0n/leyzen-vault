@@ -464,6 +464,33 @@ def create_app(
             )
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
+
+            # Final verification that jti column exists after init_db()
+            # This is a safety check to ensure the migration completed successfully
+            try:
+                from vault.services.auth_service import (
+                    _check_jti_column_exists,
+                    reset_jti_column_cache,
+                )
+
+                reset_jti_column_cache()  # Clear cache to force fresh check
+                import time
+
+                time.sleep(0.3)  # Brief wait for any pending operations
+                with app.app_context():
+                    jti_exists = _check_jti_column_exists()
+                if jti_exists:
+                    logger.log(
+                        "[INIT] jti column verified after database initialization"
+                    )
+                else:
+                    logger.log(
+                        "[WARNING] jti column not found after init_db() - this may cause startup issues"
+                    )
+            except Exception as verify_error:
+                logger.log(
+                    f"[WARNING] Failed to verify jti column after init_db(): {verify_error}"
+                )
         except Exception as db_exc:
             # Log the error with full details
             # Import traceback here to avoid importing it at module level if not needed
@@ -540,31 +567,46 @@ def create_app(
         # Wait a bit after init_db() to ensure migration is complete
         import time
 
-        time.sleep(0.5)  # Give migration time to complete
+        # Give migration more time to complete (init_db() may still be processing)
+        time.sleep(1.0)  # Increased wait time for migration to complete
 
         try:
             from vault.services.auth_service import _check_jti_column_exists
 
-            # Retry check up to 3 times with delay (migration might still be in progress)
+            # Retry check with progressive delays (migration might still be in progress)
+            # Use more retries and longer delays to handle slow database operations
             jti_available = False
-            max_retries = 3
+            max_retries = 5
+            base_delay = 0.5
+
             for attempt in range(max_retries):
                 try:
-                    jti_available = _check_jti_column_exists()
+                    # Ensure we're in app context for the check
+                    with app.app_context():
+                        jti_available = _check_jti_column_exists()
                     if jti_available:
+                        logger.log("[INIT] jti column verified successfully")
                         break
                     if attempt < max_retries - 1:
+                        # Progressive delay: longer waits for later retries
+                        delay = base_delay * (attempt + 1)
                         logger.log(
-                            f"[INFO] jti column not found yet, retrying ({attempt + 1}/{max_retries})..."
+                            f"[INFO] jti column not found yet, retrying ({attempt + 1}/{max_retries}) "
+                            f"after {delay}s delay..."
                         )
-                        time.sleep(1)  # Wait before retry
+                        time.sleep(delay)
                 except Exception as check_error:
                     if attempt < max_retries - 1:
+                        delay = base_delay * (attempt + 1)
                         logger.log(
-                            f"[INFO] jti check failed, retrying ({attempt + 1}/{max_retries}): {check_error}"
+                            f"[INFO] jti check failed, retrying ({attempt + 1}/{max_retries}) "
+                            f"after {delay}s delay: {check_error}"
                         )
-                        time.sleep(1)
+                        time.sleep(delay)
                     else:
+                        logger.log(
+                            f"[ERROR] jti check failed after {max_retries} attempts: {check_error}"
+                        )
                         raise
 
             if not jti_available:
@@ -630,11 +672,38 @@ def create_app(
                                             f"[WARNING] Failed to clear jti cache: {cache_error}"
                                         )
 
-                                    # Recheck immediately
-                                    jti_available = _check_jti_column_exists()
+                                    # Wait a moment for commit to propagate
+                                    time.sleep(0.3)
+
+                                    # Clear cache and recheck
+                                    try:
+                                        from vault.services.auth_service import (
+                                            reset_jti_column_cache,
+                                        )
+
+                                        reset_jti_column_cache()
+                                    except Exception:
+                                        pass
+
+                                    # Recheck with app context
+                                    with app.app_context():
+                                        jti_available = _check_jti_column_exists()
                                     logger.log(
                                         f"[INFO] jti recheck after creation: {jti_available}"
                                     )
+
+                                    if not jti_available:
+                                        logger.log(
+                                            "[WARNING] jti column creation reported success but verification failed. "
+                                            "Retrying verification..."
+                                        )
+                                        time.sleep(0.5)
+                                        with app.app_context():
+                                            jti_available = _check_jti_column_exists()
+                                        if jti_available:
+                                            logger.log(
+                                                "[INFO] jti column verified on retry"
+                                            )
                                 except Exception as alter_error:
                                     logger.log(
                                         f"[ERROR] Failed to execute ALTER TABLE: {alter_error}"
@@ -651,7 +720,9 @@ def create_app(
                                     )
 
                                     reset_jti_column_cache()
-                                    jti_available = _check_jti_column_exists()
+                                    time.sleep(0.3)  # Brief wait after cache clear
+                                    with app.app_context():
+                                        jti_available = _check_jti_column_exists()
                                     logger.log(
                                         f"[INFO] jti recheck after cache clear: {jti_available}"
                                     )
@@ -1083,6 +1154,8 @@ def create_app(
                     # Add cache headers for static assets
                     response.cache_control.public = True
                     response.cache_control.max_age = 31536000  # 1 year
+                    # Ensure we don't force HTTPS - remove any HSTS headers
+                    response.headers.pop("Strict-Transport-Security", None)
                     return response
                 except NotFound:
                     # File doesn't exist in dist/assets/, continue to next check
@@ -1097,6 +1170,8 @@ def create_app(
             # Add cache headers for static assets
             response.cache_control.public = True
             response.cache_control.max_age = 31536000  # 1 year
+            # Ensure we don't force HTTPS - remove any HSTS headers
+            response.headers.pop("Strict-Transport-Security", None)
             return response
         except NotFound:
             # File doesn't exist in dist/, try static/ fallback
@@ -1111,6 +1186,8 @@ def create_app(
             # Add cache headers for static assets
             response.cache_control.public = True
             response.cache_control.max_age = 31536000  # 1 year
+            # Ensure we don't force HTTPS - remove any HSTS headers that might be added by after_request
+            response.headers.pop("Strict-Transport-Security", None)
             return response
         except NotFound:
             # File not found anywhere
@@ -1210,12 +1287,16 @@ def create_app(
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",
-            "upgrade-insecure-requests",
             "trusted-types vault-html notifications-html vault-script-url vue goog#html",
             "require-trusted-types-for 'script'",
             "report-uri /orchestrator/csp-violation-report-endpoint",
             "report-to vault-csp",
         ]
+        # Only add upgrade-insecure-requests if we're actually using HTTPS
+        # For HTTP (especially on IP addresses), this directive forces browsers to use HTTPS
+        # which breaks the application when HTTPS is not available
+        if request.is_secure:
+            csp_directives.append("upgrade-insecure-requests")
         csp_policy = "; ".join(csp_directives)
 
         # Add or merge CSP policy
@@ -1271,13 +1352,34 @@ def create_app(
         response.headers.setdefault(
             "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
         )
-        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
-        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        # Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy require
+        # a "trustworthy" origin (HTTPS or localhost). For IP addresses in HTTP,
+        # these headers can force browsers to use HTTPS, causing mixed content issues.
+        # Only add them if we're using HTTPS or localhost
+        # IMPORTANT: For IP addresses in HTTP, we MUST NOT add these headers
+        # as they cause browsers to force HTTPS, breaking the application
+        is_localhost = (
+            request.host.startswith("localhost")
+            or request.host.startswith("127.0.0.1")
+            or request.host.startswith("[::1]")
+        )
+        # Only add these headers if we're actually using HTTPS (not just configured for it)
+        # For HTTP on IP addresses, these headers cause browsers to force HTTPS
+        if request.is_secure or is_localhost:
+            response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+            response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        else:
+            # For HTTP on IP addresses, explicitly remove these headers to prevent HTTPS upgrade
+            response.headers.pop("Cross-Origin-Opener-Policy", None)
+            response.headers.pop("Cross-Origin-Resource-Policy", None)
 
-        # Strict-Transport-Security (only when HTTPS is expected)
+        # Strict-Transport-Security (only when HTTPS is actually being used)
+        # Don't add HSTS header if we're using HTTP (request.is_secure will be False)
+        # This prevents browsers from forcing HTTPS when accessing via HTTP
         settings = current_app.config.get("VAULT_SETTINGS")
         enforce_https = bool(settings and settings.session_cookie_secure)
-        if enforce_https or request.is_secure:
+        # Only add HSTS if we're actually using HTTPS (not just configured to use it)
+        if enforce_https and request.is_secure:
             response.headers.setdefault(
                 "Strict-Transport-Security",
                 "max-age=31536000; includeSubDomains; preload",
@@ -1329,11 +1431,59 @@ def create_app(
     @app.route("/")
     def serve_vue_app_root():
         """Serve Vue.js SPA root - return index.html."""
-        from flask import send_file
+        from flask import send_file, request, make_response
+        import re
 
         dist_index = static_dir / "index.html"
         if dist_index.exists():
-            return send_file(str(dist_index))
+            # Read the HTML file
+            with open(dist_index, "r", encoding="utf-8") as f:
+                html_content = f.read()
+
+            # If we're using HTTP (not HTTPS), force all URLs to be relative or use HTTP
+            # Chrome and other browsers force HTTPS for IP addresses in HTTP, so we must
+            # ensure all URLs are relative or explicitly use HTTP protocol
+            if not request.is_secure:
+                # Replace any absolute HTTPS URLs with HTTP URLs
+                html_content = re.sub(
+                    r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
+                    rf"http://\1\2",
+                    html_content,
+                    flags=re.IGNORECASE,
+                )
+                # Replace any absolute HTTP URLs with relative URLs (more reliable)
+                current_origin = f"{request.scheme}://{request.host}"
+                html_content = re.sub(
+                    rf'{re.escape(current_origin)}(/static/[^"\'<>]+)',
+                    r"\1",
+                    html_content,
+                    flags=re.IGNORECASE,
+                )
+                # Inject <base> tag with HTTP protocol to force all relative URLs to use HTTP
+                # This is critical for IP addresses - browsers force HTTPS otherwise
+                if "<base" not in html_content.lower():
+                    base_url = f"{request.scheme}://{request.host}"
+                    # Insert <base> tag right after <head> to force HTTP protocol
+                    html_content = re.sub(
+                        r"(<head[^>]*>)",
+                        rf'\1\n    <base href="{base_url}/">',
+                        html_content,
+                        count=1,
+                        flags=re.IGNORECASE,
+                    )
+                # Remove any meta tags that force HTTPS upgrade
+                html_content = re.sub(
+                    r'<meta[^>]*http-equiv=["\']Content-Security-Policy["\'][^>]*upgrade-insecure-requests[^>]*>',
+                    "",
+                    html_content,
+                    flags=re.IGNORECASE,
+                )
+
+            response = make_response(html_content)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            # Ensure we don't force HTTPS - remove any HSTS headers
+            response.headers.pop("Strict-Transport-Security", None)
+            return response
 
         # Frontend must be built - return error
         return (
@@ -1433,13 +1583,53 @@ def create_app(
         # Check if this is a valid SPA route (should be handled by Vue Router)
         dist_index = static_dir / "index.html"
         if dist_index.exists():
+            # Use the same logic as serve_vue_app_root to inject <base> tag for HTTP
+            from flask import make_response
+            import re
+
+            with open(dist_index, "r", encoding="utf-8") as f:
+                html_content = f.read()
+
+            # If we're using HTTP (not HTTPS), force all URLs to be relative or use HTTP
+            # This prevents browsers from converting relative URLs to HTTPS for IP addresses
+            if not request.is_secure:
+                # Replace any absolute HTTPS URLs with HTTP URLs or relative URLs
+                html_content = re.sub(
+                    r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
+                    rf"http://\1\2",
+                    html_content,
+                    flags=re.IGNORECASE,
+                )
+                # Also replace any absolute HTTP URLs that might be converted to HTTPS
+                # by making them relative if they point to the same origin
+                current_origin = f"{request.scheme}://{request.host}"
+                html_content = re.sub(
+                    rf'{re.escape(current_origin)}(/static/[^"\'<>]+)',
+                    r"\1",
+                    html_content,
+                    flags=re.IGNORECASE,
+                )
+                # Inject <base> tag with HTTP protocol to force all relative URLs to use HTTP
+                if "<base" not in html_content.lower():
+                    base_url = f"{request.scheme}://{request.host}"
+                    html_content = re.sub(
+                        r"(<head[^>]*>)",
+                        rf'\1\n    <base href="{base_url}/">',
+                        html_content,
+                        count=1,
+                        flags=re.IGNORECASE,
+                    )
+
+            response = make_response(html_content)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            response.headers.pop("Strict-Transport-Security", None)
+
             if _is_spa_route(request.path):
                 # Valid SPA route - serve index.html with 200 so Vue Router can handle it
-                return send_file(str(dist_index))
+                return response
             else:
                 # Invalid route - serve index.html with 404 so HAProxy can intercept
                 # This allows HAProxy to intercept and serve its custom 404 page
-                response = make_response(send_file(str(dist_index)))
                 response.status_code = 404
                 return response
 

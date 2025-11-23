@@ -20,6 +20,42 @@ import { logger } from "../utils/logger.js";
 import argon2 from "argon2-browser/dist/argon2-bundled.min.js";
 
 /**
+ * Get the Web Crypto API, checking multiple possible contexts.
+ * @returns {Crypto} The crypto API object
+ * @throws {Error} If crypto API is not available
+ */
+function getCryptoAPI() {
+  const cryptoAPI =
+    (typeof window !== "undefined" && window.crypto) ||
+    (typeof self !== "undefined" && self.crypto) ||
+    (typeof globalThis !== "undefined" && globalThis.crypto) ||
+    null;
+
+  if (!cryptoAPI || !cryptoAPI.subtle) {
+    const isSecureContext =
+      (typeof window !== "undefined" && window.isSecureContext) ||
+      (typeof location !== "undefined" && location.protocol === "https:");
+    const errorMsg = isSecureContext
+      ? "Web Crypto API (crypto.subtle) is not available. Please check your browser settings."
+      : "Web Crypto API (crypto.subtle) requires a secure context (HTTPS). " +
+        "Please access the application via HTTPS or use localhost for development. " +
+        "Some browsers block crypto.subtle when accessing via IP address over HTTP.";
+    throw new Error(errorMsg);
+  }
+
+  return cryptoAPI;
+}
+
+// Verify crypto.subtle is available at module load time (warning only)
+if (typeof window !== "undefined") {
+  try {
+    getCryptoAPI();
+  } catch (error) {
+    logger.error("Web Crypto API check failed:", error.message);
+  }
+}
+
+/**
  * Derive user master key from password using Argon2-browser.
  *
  * NOTE: This is for CLIENT-SIDE ENCRYPTION KEY DERIVATION ONLY.
@@ -36,6 +72,10 @@ import argon2 from "argon2-browser/dist/argon2-bundled.min.js";
  * @returns {Promise<CryptoKey>} User master key for encryption
  */
 export async function deriveUserKey(password, salt, extractable = false) {
+  // CRITICAL: Check if crypto.subtle is available
+  // Some browsers block crypto.subtle in non-secure contexts (HTTP on IP addresses)
+  const cryptoAPI = getCryptoAPI();
+
   // Extract actual salt (remove "argon2:" prefix)
   const argon2Prefix = new TextEncoder().encode("argon2:");
 
@@ -86,8 +126,9 @@ export async function deriveUserKey(password, salt, extractable = false) {
     }
 
     // Convert derived hash (32 bytes) to CryptoKey
+    const cryptoAPI = getCryptoAPI();
     const masterKeyBytes = new Uint8Array(result.hash);
-    return await crypto.subtle.importKey(
+    return await cryptoAPI.subtle.importKey(
       "raw",
       masterKeyBytes,
       {
@@ -118,7 +159,8 @@ export async function deriveUserKey(password, salt, extractable = false) {
  * @returns {Promise<CryptoKey>} VaultSpace key
  */
 export async function generateVaultSpaceKey() {
-  return await crypto.subtle.generateKey(
+  const cryptoAPI = getCryptoAPI();
+  return await cryptoAPI.subtle.generateKey(
     {
       name: "AES-GCM",
       length: 256,
@@ -136,14 +178,15 @@ export async function generateVaultSpaceKey() {
  * @returns {Promise<string>} Encrypted VaultSpace key (base64)
  */
 export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
+  const cryptoAPI = getCryptoAPI();
   // Export VaultSpace key to raw bytes
-  const rawKey = await crypto.subtle.exportKey("raw", vaultspaceKey);
+  const rawKey = await cryptoAPI.subtle.exportKey("raw", vaultspaceKey);
 
   // Generate IV
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = cryptoAPI.getRandomValues(new Uint8Array(12));
 
   // Encrypt with user key
-  const encrypted = await crypto.subtle.encrypt(
+  const encrypted = await cryptoAPI.subtle.encrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -182,7 +225,8 @@ export async function decryptVaultSpaceKey(
   const encrypted = combined.slice(12);
 
   // Decrypt
-  const decrypted = await crypto.subtle.decrypt(
+  const cryptoAPI = getCryptoAPI();
+  const decrypted = await cryptoAPI.subtle.decrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -192,7 +236,7 @@ export async function decryptVaultSpaceKey(
   );
 
   // Import as key
-  return await crypto.subtle.importKey(
+  return await cryptoAPI.subtle.importKey(
     "raw",
     decrypted,
     {
@@ -210,7 +254,8 @@ export async function decryptVaultSpaceKey(
  * @returns {Promise<CryptoKey>} File key
  */
 export async function generateFileKey() {
-  return await crypto.subtle.generateKey(
+  const cryptoAPI = getCryptoAPI();
+  return await cryptoAPI.subtle.generateKey(
     {
       name: "AES-GCM",
       length: 256,
@@ -228,14 +273,15 @@ export async function generateFileKey() {
  * @returns {Promise<string>} Encrypted file key (base64)
  */
 export async function encryptFileKey(vaultspaceKey, fileKey) {
+  const cryptoAPI = getCryptoAPI();
   // Export file key to raw bytes
-  const rawKey = await crypto.subtle.exportKey("raw", fileKey);
+  const rawKey = await cryptoAPI.subtle.exportKey("raw", fileKey);
 
   // Generate IV
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = cryptoAPI.getRandomValues(new Uint8Array(12));
 
   // Encrypt with VaultSpace key
-  const encrypted = await crypto.subtle.encrypt(
+  const encrypted = await cryptoAPI.subtle.encrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -274,7 +320,8 @@ export async function decryptFileKey(
   const encrypted = combined.slice(12);
 
   // Decrypt
-  const decrypted = await crypto.subtle.decrypt(
+  const cryptoAPI = getCryptoAPI();
+  const decrypted = await cryptoAPI.subtle.decrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -284,7 +331,7 @@ export async function decryptFileKey(
   );
 
   // Import as key
-  return await crypto.subtle.importKey(
+  return await cryptoAPI.subtle.importKey(
     "raw",
     decrypted,
     {
@@ -304,14 +351,15 @@ export async function decryptFileKey(
  * @returns {Promise<{encrypted: ArrayBuffer, iv: Uint8Array}>} Encrypted data and IV
  */
 export async function encryptFile(fileKey, fileData) {
+  const cryptoAPI = getCryptoAPI();
   // Convert to ArrayBuffer if needed
   const data = fileData instanceof ArrayBuffer ? fileData : fileData.buffer;
 
   // Generate IV
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = cryptoAPI.getRandomValues(new Uint8Array(12));
 
   // Encrypt
-  const encrypted = await crypto.subtle.encrypt(
+  const encrypted = await cryptoAPI.subtle.encrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -335,7 +383,8 @@ export async function encryptFile(fileKey, fileData) {
  * @returns {Promise<ArrayBuffer>} Decrypted file data
  */
 export async function decryptFile(fileKey, encryptedData, iv) {
-  return await crypto.subtle.decrypt(
+  const cryptoAPI = getCryptoAPI();
+  return await cryptoAPI.subtle.decrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -382,7 +431,8 @@ export function base64ToArrayBuffer(base64) {
  * @returns {Uint8Array} Random salt
  */
 export function generateSalt(length = 16) {
-  return crypto.getRandomValues(new Uint8Array(length));
+  const cryptoAPI = getCryptoAPI();
+  return cryptoAPI.getRandomValues(new Uint8Array(length));
 }
 
 /**
@@ -469,7 +519,8 @@ export async function encryptFileLegacy(file) {
   const { encrypted, iv } = await encryptFile(fileKey, fileBuffer);
 
   // Export the key to raw format
-  const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+  const cryptoAPI = getCryptoAPI();
+  const exportedKey = await cryptoAPI.subtle.exportKey("raw", fileKey);
   const keyArray = new Uint8Array(exportedKey);
 
   // Combine IV + encrypted data
@@ -493,7 +544,8 @@ export async function encryptFileLegacy(file) {
  */
 export async function decryptFileLegacy(encryptedData, keyArray) {
   // Import the key
-  const fileKey = await crypto.subtle.importKey(
+  const cryptoAPI = getCryptoAPI();
+  const fileKey = await cryptoAPI.subtle.importKey(
     "raw",
     keyArray,
     {

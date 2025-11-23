@@ -470,6 +470,26 @@ class SSOService:
         # SECURITY: Verify state with time-constant comparison and expiration check
         stored_state = session.get("sso_state")
         state_created_at_str = session.get("sso_state_created_at")
+        stored_provider_id = session.get("sso_provider_id")
+
+        # Debug logging for session state (help diagnose session issues)
+        try:
+            current_app.logger.debug(
+                f"SSO OAuth2 callback: provider_id={provider_id}, "
+                f"stored_provider_id={stored_provider_id}, "
+                f"stored_state={'present' if stored_state else 'missing'}, "
+                f"received_state={'present' if state else 'missing'}, "
+                f"session_id={session.get('_id', 'unknown')}"
+            )
+        except Exception:
+            pass  # Don't fail if logging fails
+
+        # Verify provider_id matches stored provider_id
+        if stored_provider_id != provider_id:
+            current_app.logger.warning(
+                f"SSO provider_id mismatch: stored={stored_provider_id}, received={provider_id}"
+            )
+            return None
 
         # Check expiration (5 minutes)
         if state_created_at_str:
@@ -494,12 +514,27 @@ class SSOService:
             import hmac
 
             hmac.compare_digest(stored_state or "", state or "")
+            # Log the failure for debugging
+            try:
+                current_app.logger.warning(
+                    f"SSO OAuth2 callback: Missing state - stored_state={'present' if stored_state else 'missing'}, "
+                    f"received_state={'present' if state else 'missing'}. "
+                    f"This usually indicates a session cookie issue."
+                )
+            except Exception:
+                pass
             return None
 
         # Use constant-time comparison
         import hmac
 
         if not hmac.compare_digest(stored_state, state):
+            try:
+                current_app.logger.warning(
+                    f"SSO OAuth2 callback: State mismatch - this may indicate a CSRF attack or session issue."
+                )
+            except Exception:
+                pass
             return None
 
         provider = self.get_provider(provider_id)
@@ -607,14 +642,23 @@ class SSOService:
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
+            import secrets
 
             expiration = datetime.now(timezone.utc) + timedelta(hours=24)
+            issued_at = datetime.now(timezone.utc)
+
+            # Generate unique JWT ID (jti) for replay protection
+            jti = secrets.token_urlsafe(32)
+
             payload = {
                 "user_id": user.id,
                 "email": user.email,
                 "global_role": user.global_role.value,
                 "exp": expiration,
-                "iat": datetime.now(timezone.utc),
+                "iat": issued_at,
+                "typ": "JWT",  # Token type claim
+                "iss": "leyzen-vault",  # Issuer claim for additional validation
+                "jti": jti,  # JWT ID for replay protection (REQUIRED in production)
             }
             secret_key = current_app.config.get("SECRET_KEY", "")
             token = jwt.encode(payload, secret_key, algorithm="HS256")
@@ -1026,14 +1070,23 @@ class SSOService:
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
+            import secrets
 
             expiration = datetime.now(timezone.utc) + timedelta(hours=24)
+            issued_at = datetime.now(timezone.utc)
+
+            # Generate unique JWT ID (jti) for replay protection
+            jti = secrets.token_urlsafe(32)
+
             payload = {
                 "user_id": user.id,
                 "email": user.email,
                 "global_role": user.global_role.value,
                 "exp": expiration,
-                "iat": datetime.now(timezone.utc),
+                "iat": issued_at,
+                "typ": "JWT",  # Token type claim
+                "iss": "leyzen-vault",  # Issuer claim for additional validation
+                "jti": jti,  # JWT ID for replay protection (REQUIRED in production)
             }
             secret_key = current_app.config.get("SECRET_KEY", "")
             token = jwt.encode(payload, secret_key, algorithm="HS256")
