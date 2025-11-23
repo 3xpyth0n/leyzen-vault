@@ -9,6 +9,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Share Link Email Sending
+
+- **Email Share Links**: Send share links via email directly from the `/shared` page. Email modal with recipient address validation and styled HTML email template.
+- **Decryption Key Validation**: Automatic validation ensures the share link contains the decryption key before sending. Error modal displayed if key is missing.
+- **Email Template**: Styled HTML email template with share link, file name, and security information. Includes plain text fallback for email clients.
+
 #### Recursive File Search
 
 - **File and Folder Search**: Recursive search functionality for files and folders with pattern matching across all subfolders.

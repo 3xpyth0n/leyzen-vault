@@ -667,3 +667,105 @@ def download_shared_file(token: str):
                 False,
             )
         return jsonify({"error": "Internal server error"}), 500
+
+
+@sharing_api_bp.route("/public-links/<link_id>/send-email", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def send_share_link_email(link_id: str):
+    """Send a share link via email.
+
+    Request body:
+        {
+            "to_email": "recipient@example.com",
+            "share_url": "full_url_with_key"
+        }
+
+    Returns:
+        JSON with success message
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    to_email = data.get("to_email")
+    share_url = data.get("share_url")
+
+    if not to_email or not share_url:
+        return (
+            jsonify({"error": "to_email and share_url are required"}),
+            400,
+        )
+
+    # Validate email format
+    import re
+
+    email_pattern = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
+    if not re.match(email_pattern, to_email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    # Validate that share_url contains decryption key in fragment
+    if "#key=" not in share_url:
+        return (
+            jsonify(
+                {
+                    "error": "Share URL must include decryption key in fragment (#key=...)"
+                }
+            ),
+            400,
+        )
+
+    sharing_service = _get_sharing_service()
+
+    # Verify that the link exists and belongs to the user
+    share_link = sharing_service._get_share_link_by_identifier(link_id)
+    if not share_link:
+        return jsonify({"error": "Share link not found"}), 404
+
+    if share_link.created_by != user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # Check if link is still available
+    if not share_link.can_access():
+        return (
+            jsonify({"error": "Share link expired or limit reached"}),
+            403,
+        )
+
+    # Get file name for email template
+    file_name = "Shared File"
+    if share_link.resource_type == "file":
+        file_obj = (
+            db.session.query(File)
+            .filter_by(id=share_link.resource_id, deleted_at=None)
+            .first()
+        )
+        if file_obj:
+            file_name = file_obj.original_name
+
+    # Send email using EmailService
+    from vault.services.email_service import EmailService
+
+    email_service = EmailService()
+    sender_name = user.email if hasattr(user, "email") else None
+
+    success = email_service.send_share_link_email(
+        to_email=to_email,
+        share_url=share_url,
+        file_name=file_name,
+        sender_name=sender_name,
+    )
+
+    if not success:
+        return (
+            jsonify(
+                {"error": "Failed to send email. Please check SMTP configuration."}
+            ),
+            500,
+        )
+
+    return jsonify({"message": "Share link sent via email successfully"}), 200

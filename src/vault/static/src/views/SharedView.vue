@@ -8,6 +8,71 @@
     @confirm="handleRevokeConfirm"
     @close="showRevokeConfirm = false"
   />
+  <AlertModal
+    :show="showAlertModal"
+    :type="alertType"
+    :title="alertTitle"
+    :message="alertMessage"
+    @close="showAlertModal = false"
+    @ok="showAlertModal = false"
+  />
+  <teleport to="body">
+    <div
+      v-if="showEmailModal"
+      class="modal-overlay"
+      @click.self="closeEmailModal"
+      role="dialog"
+      aria-labelledby="email-modal-title"
+      aria-modal="true"
+    >
+      <div class="modal-container email-modal" @click.stop>
+        <div class="modal-content-email">
+          <div class="modal-header">
+            <h2 id="email-modal-title" class="modal-title">
+              Send Share Link via Email
+            </h2>
+            <button class="modal-close" @click="closeEmailModal">
+              &times;
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="recipient-email">Recipient Email</label>
+              <input
+                id="recipient-email"
+                v-model="emailForm.recipientEmail"
+                type="email"
+                placeholder="recipient@example.com"
+                class="form-input"
+                :disabled="emailForm.loading"
+                @keyup.enter="handleSendEmail"
+              />
+            </div>
+            <div v-if="emailForm.error" class="form-error">
+              {{ emailForm.error }}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              class="btn btn-secondary"
+              @click="closeEmailModal"
+              :disabled="emailForm.loading"
+            >
+              Cancel
+            </button>
+            <button
+              class="btn btn-primary"
+              @click="handleSendEmail"
+              :disabled="emailForm.loading || !emailForm.recipientEmail"
+            >
+              <span v-if="emailForm.loading">Sending...</span>
+              <span v-else>Send Email</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </teleport>
   <div class="shared-view">
     <header class="view-header">
       <h1>Shared Files</h1>
@@ -35,6 +100,20 @@
                 Size: {{ formatSize(file.size) }} • Created:
                 {{ formatDate(file.created_at) }}
               </p>
+            </div>
+            <div class="file-actions">
+              <button
+                v-if="
+                  file.share_links &&
+                  file.share_links.length > 0 &&
+                  hasAvailableLink(file.share_links)
+                "
+                @click="openSendEmailModalForFile(file)"
+                class="btn btn-small btn-send-email"
+                :title="'Send share link via email'"
+              >
+                Send Email
+              </button>
             </div>
           </div>
           <div class="share-links-info">
@@ -102,6 +181,7 @@
 
 <script>
 import ConfirmationModal from "../components/ConfirmationModal.vue";
+import AlertModal from "../components/AlertModal.vue";
 import { auth } from "../services/api";
 import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
 
@@ -109,6 +189,7 @@ export default {
   name: "SharedView",
   components: {
     ConfirmationModal,
+    AlertModal,
   },
   data() {
     return {
@@ -118,6 +199,19 @@ export default {
       showRevokeConfirm: false,
       pendingRevokeLinkId: null,
       pendingRevokeFileId: null,
+      showAlertModal: false,
+      alertType: "error",
+      alertTitle: "Error",
+      alertMessage: "",
+      showEmailModal: false,
+      emailForm: {
+        recipientEmail: "",
+        loading: false,
+        error: null,
+      },
+      pendingEmailLink: null,
+      pendingEmailFileId: null,
+      pendingEmailFileName: null,
     };
   },
   async mounted() {
@@ -442,6 +536,164 @@ export default {
       const date = new Date(dateString);
       return date.toLocaleString();
     },
+    hasAvailableLink(shareLinks) {
+      if (!shareLinks || shareLinks.length === 0) {
+        return false;
+      }
+      return shareLinks.some((link) => this.isLinkAvailable(link));
+    },
+    getFirstAvailableLink(shareLinks) {
+      if (!shareLinks || shareLinks.length === 0) {
+        return null;
+      }
+      return shareLinks.find((link) => this.isLinkAvailable(link)) || null;
+    },
+    openSendEmailModalForFile(file) {
+      // Find the first available link
+      const link = this.getFirstAvailableLink(file.share_links);
+      if (!link) {
+        this.showAlert(
+          "error",
+          "No Available Link",
+          "No available share links found for this file.",
+        );
+        return;
+      }
+
+      this.openSendEmailModal(link, file.id, file.original_name);
+    },
+    openSendEmailModal(link, fileId, fileName) {
+      // Validate that the share URL contains the decryption key
+      const shareUrl = this.getShareUrl(link, fileId);
+      if (!shareUrl.includes("#key=")) {
+        this.showAlert(
+          "error",
+          "Cannot Send Email",
+          "The share link is missing the decryption key. Please ensure you have access to the file key before sending the link.",
+        );
+        return;
+      }
+
+      // Check if link is available
+      if (!this.isLinkAvailable(link)) {
+        this.showAlert(
+          "error",
+          "Link Not Available",
+          "This share link is no longer available (expired or limit reached).",
+        );
+        return;
+      }
+
+      this.pendingEmailLink = link;
+      this.pendingEmailFileId = fileId;
+      this.pendingEmailFileName = fileName;
+      this.emailForm.recipientEmail = "";
+      this.emailForm.error = null;
+      this.showEmailModal = true;
+    },
+    closeEmailModal() {
+      // Allow closing even if loading (will be handled by the finally block)
+      this.showEmailModal = false;
+      this.emailForm.recipientEmail = "";
+      this.emailForm.error = null;
+      this.emailForm.loading = false;
+      this.pendingEmailLink = null;
+      this.pendingEmailFileId = null;
+      this.pendingEmailFileName = null;
+    },
+    async handleSendEmail() {
+      if (!this.emailForm.recipientEmail || this.emailForm.loading) {
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(this.emailForm.recipientEmail)) {
+        this.emailForm.error = "Please enter a valid email address";
+        return;
+      }
+
+      this.emailForm.loading = true;
+      this.emailForm.error = null;
+
+      try {
+        // Get the full share URL with key
+        const shareUrl = this.getShareUrl(
+          this.pendingEmailLink,
+          this.pendingEmailFileId,
+        );
+
+        // Double-check that the key is present
+        if (!shareUrl.includes("#key=")) {
+          throw new Error(
+            "The share link is missing the decryption key. Cannot send email.",
+          );
+        }
+
+        const jwtToken = localStorage.getItem("jwt_token");
+        if (!jwtToken) {
+          throw new Error("Not authenticated");
+        }
+
+        const response = await fetch(
+          `/api/v2/sharing/public-links/${this.pendingEmailLink.link_id}/send-email`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              "Content-Type": "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              to_email: this.emailForm.recipientEmail,
+              share_url: shareUrl,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to send email");
+        }
+
+        // Parse response to ensure it's successful
+        const result = await response.json().catch(() => ({}));
+
+        // Success - close modal first, then show notification
+        this.emailForm.loading = false;
+        this.closeEmailModal();
+
+        // Show success notification
+        if (window.Notifications) {
+          window.Notifications.success(
+            "Share link sent via email successfully",
+          );
+        } else {
+          // Fallback if Notifications is not available
+          this.showAlert(
+            "success",
+            "Email Sent",
+            "The share link has been sent successfully via email.",
+          );
+        }
+      } catch (err) {
+        console.error("Failed to send email:", err);
+        this.emailForm.loading = false;
+        this.emailForm.error = err.message || "Failed to send email";
+        this.showAlert(
+          "error",
+          "Failed to Send Email",
+          err.message ||
+            "An error occurred while sending the email. Please try again.",
+        );
+      }
+    },
+    showAlert(type, title, message) {
+      this.alertType = type;
+      this.alertTitle = title;
+      this.alertMessage = message;
+      this.showAlertModal = true;
+    },
   },
 };
 </script>
@@ -494,6 +746,54 @@ export default {
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
+  position: relative;
+  width: 100%;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  margin-left: auto;
+}
+
+.file-actions .btn,
+.file-actions .btn-send-email {
+  margin: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.btn.btn-small.btn-send-email {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.5rem 1rem !important;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  line-height: 1.5 !important;
+  text-align: center;
+  vertical-align: middle;
+  transition: all 0.3s ease;
+  transform: translateY(0);
+}
+
+.btn.btn-small.btn-send-email:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.4);
+  opacity: 0.95;
+}
+
+.btn.btn-small.btn-send-email:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(88, 166, 255, 0.3);
 }
 
 .file-icon {
@@ -674,5 +974,172 @@ export default {
 .copy-animation-overlay.copy-animation-hide .copy-animation-checkmark {
   opacity: 0;
   transform: scale(0.8);
+}
+
+/* Email Modal Styles */
+.email-modal .modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(7, 14, 28, 0.4);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  animation: fadeIn 0.2s ease;
+}
+
+.email-modal .modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.email-modal .modal-content-email {
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
+  padding: 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.email-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.email-modal .modal-title {
+  margin: 0;
+  color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.email-modal .modal-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.email-modal .modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6eef6;
+}
+
+.email-modal .modal-body {
+  margin-bottom: 1.5rem;
+}
+
+.email-modal .form-group {
+  margin-bottom: 1rem;
+}
+
+.email-modal .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #cbd5e1;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.email-modal .form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  color: #e6eef6;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.email-modal .form-input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.email-modal .form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.email-modal .form-error {
+  color: #ef4444;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.375rem;
+}
+
+.email-modal .modal-footer {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.email-modal .btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.email-modal .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.email-modal .btn-primary {
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  color: white;
+}
+
+.email-modal .btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.email-modal .btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.email-modal .btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
 }
 </style>
