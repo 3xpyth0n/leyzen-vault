@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The Leyzen Vault project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Recursive File Search
+
+- **File and Folder Search**: Recursive search functionality for files and folders with pattern matching across all subfolders.
+- **Full Path Display**: Search results display complete file paths for location clarity.
+- **Advanced Filters**: Filtering by file type, size range, and file/folder toggle with automatic application. Sort by relevance, name, date, or size.
+- **Search Panel**: Dropdown results panel with pagination support that auto-closes after file selection.
+- **Backend Optimization**: Whoosh full-text search index with fuzzy matching and SQL ILIKE fallback, including relevance scoring.
+
 ## [2.2.0] - 2025-11-22
 
 ### Added
@@ -55,8 +67,6 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **View Synchronization**: Synchronized file view functionality across VaultSpaceView, StarredView, and RecentView by implementing a shared composable for selection management, view mode switching, and encryption overlay handling, ensuring consistent behavior across all views.
 - **Origin Validation Security**: Strengthened origin validation to block unauthorized origins and explicitly reject "null" origin in production mode, preventing CSRF attacks.
 - **Timing Attack Protection**: Implemented constant-time comparisons for password and token verification to prevent timing-based enumeration attacks.
-
-## [Unreleased]
 
 ## [2.1.0] - 2025-11-15
 

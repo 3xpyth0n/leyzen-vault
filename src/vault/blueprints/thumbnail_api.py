@@ -57,11 +57,7 @@ def get_thumbnail(file_id: str):
         if not file_obj:
             return jsonify({"error": "File not found"}), 404
 
-        # Check if thumbnail exists
-        if not file_obj.has_thumbnail:
-            return jsonify({"error": "Thumbnail not available"}), 404
-
-        # Get thumbnail from storage
+        # Get thumbnail from storage (if it exists)
         thumbnail_data = thumbnail_service.get_thumbnail(file_id, size)
         if not thumbnail_data:
             return jsonify({"error": "Thumbnail not found"}), 404

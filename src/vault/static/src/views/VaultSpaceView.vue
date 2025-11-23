@@ -23,6 +23,16 @@
       class="view-main"
     >
       <!-- Breadcrumbs -->
+      <!-- Search Bar -->
+      <div class="search-container">
+        <SearchBar
+          :vaultspaceId="$route.params.id"
+          :parentId="currentParentId"
+          placeholder="Search files and folders..."
+          @result-click="handleSearchResultClick"
+        />
+      </div>
+
       <div
         v-if="breadcrumbs.length > 0 || currentParentId"
         class="breadcrumbs glass"
@@ -339,6 +349,7 @@ import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import ProgressBar from "../components/ProgressBar.vue";
+import SearchBar from "../components/SearchBar.vue";
 import { clipboardManager } from "../utils/clipboard";
 import {
   generateFileKey,
@@ -371,6 +382,7 @@ export default {
     FileListView,
     FileProperties,
     ConfirmationModal,
+    SearchBar,
     ProgressBar,
     AlertModal,
   },
@@ -552,6 +564,12 @@ export default {
     };
   },
   beforeUnmount() {
+    // Deselect all items when component is unmounted
+    this.clearSelection();
+    if (window.selectionManager) {
+      window.selectionManager.deselectAll();
+    }
+
     // Cleanup resize handler
     if (this._overlayResizeHandler) {
       window.removeEventListener("resize", this._overlayResizeHandler);
@@ -591,6 +609,12 @@ export default {
   watch: {
     "$route.query.folder": {
       handler(newFolderId, oldFolderId) {
+        // Deselect all items when folder parameter changes
+        this.clearSelection();
+        if (window.selectionManager) {
+          window.selectionManager.deselectAll();
+        }
+
         // Load files when folder parameter changes
         // This handles browser back/forward navigation and external navigation (from starred/recent)
         if (this.vaultspace) {
@@ -605,6 +629,18 @@ export default {
           ) {
             // Use loadFilesInternal directly to bypass debounce for route changes
             this.loadFilesInternal(folderId, false);
+          }
+        }
+      },
+      immediate: false,
+    },
+    "$route.path": {
+      handler(newPath, oldPath) {
+        // Deselect all items when route path changes (e.g., navigating to a different page)
+        if (newPath !== oldPath && oldPath !== undefined) {
+          this.clearSelection();
+          if (window.selectionManager) {
+            window.selectionManager.deselectAll();
           }
         }
       },
@@ -782,6 +818,13 @@ export default {
       // This prevents state inconsistencies
       const targetParentId = parentId || null;
 
+      // Deselect all items when loading files (folder change)
+      // Do this before loading to ensure clean state
+      this.clearSelection();
+      if (window.selectionManager) {
+        window.selectionManager.deselectAll();
+      }
+
       return files
         .list(
           this.$route.params.id,
@@ -817,6 +860,18 @@ export default {
           } else {
             this.breadcrumbs = [];
           }
+
+          // Ensure selection UI is updated after files are loaded
+          // This ensures that any lingering selection state is cleared from the DOM
+          this.$nextTick(() => {
+            // Clear selection again after DOM update to ensure it's really cleared
+            this.clearSelection();
+            if (window.selectionManager) {
+              window.selectionManager.deselectAll();
+              window.selectionManager.updateUI();
+            }
+          });
+
           return result;
         })
         .catch((err) => {
@@ -911,6 +966,12 @@ export default {
     },
 
     async navigateToFolder(folderId) {
+      // Deselect all items when changing folder
+      this.clearSelection();
+      if (window.selectionManager) {
+        window.selectionManager.deselectAll();
+      }
+
       // Update URL with folder parameter
       const currentFolderId = this.$route.query.folder || null;
       const newFolderId = folderId || null;
@@ -2275,6 +2336,62 @@ export default {
       }
     },
 
+    async handleSearchResultClick(item) {
+      // Navigate to the file or folder from search results
+      if (item.mime_type === "application/x-directory") {
+        // Navigate to folder
+        await this.navigateToFolder(item.id);
+      } else {
+        // Navigate to file - first navigate to its parent folder, then select the file
+        const parentId = item.folder_id || item.parent_id || null;
+        await this.navigateToFolder(parentId);
+
+        // Wait for files to load and render
+        await this.$nextTick();
+
+        // Retry mechanism to find and select the file
+        const maxRetries = 10;
+        let retries = 0;
+
+        const trySelectFile = () => {
+          // Find the file in the loaded files
+          const allItems = [...this.folders, ...this.filesList];
+          const fileItem = allItems.find((f) => f.id === item.id);
+
+          if (fileItem) {
+            // Clear selection and select the file
+            this.clearSelection();
+            this.toggleSelection(fileItem);
+
+            // Scroll to the file after a short delay to ensure it's rendered
+            setTimeout(() => {
+              const fileElement = document.querySelector(
+                `[data-file-id="${item.id}"], [data-folder-id="${item.id}"]`,
+              );
+              if (fileElement) {
+                fileElement.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                });
+                // Add a highlight effect
+                fileElement.classList.add("search-highlighted");
+                setTimeout(() => {
+                  fileElement.classList.remove("search-highlighted");
+                }, 2000);
+              }
+            }, 100);
+          } else if (retries < maxRetries) {
+            // File not found yet, retry after a short delay
+            retries++;
+            setTimeout(trySelectFile, 100);
+          }
+        };
+
+        // Start trying to select the file
+        setTimeout(trySelectFile, 200);
+      }
+    },
+
     handleItemClick(item, event) {
       // If clicking checkbox, don't navigate
       if (event.target.type === "checkbox") {
@@ -2307,6 +2424,11 @@ export default {
 
       // Normal click: navigate for folders, select for files
       if (item.mime_type === "application/x-directory") {
+        // Clear selection before navigating to folder
+        this.clearSelection();
+        if (window.selectionManager) {
+          window.selectionManager.deselectAll();
+        }
         // navigateToFolder will update the URL
         this.navigateToFolder(item.id);
       } else {
@@ -3146,6 +3268,11 @@ export default {
   font-weight: 600;
 }
 
+.search-container {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
 .header-actions {
   display: flex;
   gap: 0.75rem;
@@ -3253,6 +3380,50 @@ export default {
 .file-card.selected {
   border-color: var(--accent-blue, #38bdf8);
   background: rgba(56, 189, 248, 0.1);
+}
+
+.file-card.search-highlighted,
+.grid-body-row.search-highlighted {
+  position: relative;
+  animation: searchHighlight 0.5s ease-in-out;
+  border-color: var(--accent-blue, #38bdf8) !important;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+}
+
+.file-card.search-highlighted::before,
+.grid-body-row.search-highlighted::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(56, 189, 248, 0.2);
+  border-radius: inherit;
+  z-index: -1;
+  animation: searchPulse 2s ease-in-out;
+}
+
+@keyframes searchHighlight {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes searchPulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .file-checkbox {

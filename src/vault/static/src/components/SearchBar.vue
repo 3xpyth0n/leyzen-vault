@@ -33,7 +33,11 @@
     <div v-if="showFilters" class="search-filters glass glass-card">
       <div class="filter-group">
         <label>Type:</label>
-        <select v-model="filters.mimeType" class="input">
+        <select
+          v-model="filters.mimeType"
+          @change="applyFiltersAuto"
+          class="input"
+        >
           <option value="">All types</option>
           <option value="image">Images</option>
           <option value="video">Videos</option>
@@ -49,6 +53,7 @@
         <div class="size-range">
           <input
             v-model.number="filters.minSize"
+            @input="applyFiltersAuto"
             type="number"
             placeholder="Min (bytes)"
             class="input"
@@ -56,6 +61,7 @@
           <span>to</span>
           <input
             v-model.number="filters.maxSize"
+            @input="applyFiltersAuto"
             type="number"
             placeholder="Max (bytes)"
             class="input"
@@ -65,31 +71,63 @@
 
       <div class="filter-group">
         <label>Sort by:</label>
-        <select v-model="filters.sortBy" class="input">
+        <select
+          v-model="filters.sortBy"
+          @change="applyFiltersAuto"
+          class="input"
+        >
           <option value="relevance">Relevance</option>
           <option value="name">Name</option>
           <option value="date">Date</option>
           <option value="size">Size</option>
         </select>
-        <select v-model="filters.sortOrder" class="input">
+        <select
+          v-model="filters.sortOrder"
+          @change="applyFiltersAuto"
+          class="input"
+        >
           <option value="desc">Descending</option>
           <option value="asc">Ascending</option>
         </select>
       </div>
 
       <div class="filter-group">
-        <label>
-          <input v-model="filters.filesOnly" type="checkbox" />
-          Files only
-        </label>
-        <label>
-          <input v-model="filters.foldersOnly" type="checkbox" />
-          Folders only
-        </label>
+        <label>Type filter:</label>
+        <div class="toggle-switch">
+          <button
+            @click="
+              filters.fileTypeFilter = 'folders';
+              applyFiltersAuto();
+            "
+            :class="{ active: filters.fileTypeFilter === 'folders' }"
+            class="toggle-option"
+          >
+            Folders only
+          </button>
+          <button
+            @click="
+              filters.fileTypeFilter = 'all';
+              applyFiltersAuto();
+            "
+            :class="{ active: filters.fileTypeFilter === 'all' }"
+            class="toggle-option"
+          >
+            All
+          </button>
+          <button
+            @click="
+              filters.fileTypeFilter = 'files';
+              applyFiltersAuto();
+            "
+            :class="{ active: filters.fileTypeFilter === 'files' }"
+            class="toggle-option"
+          >
+            Files only
+          </button>
+        </div>
       </div>
 
       <div class="filter-actions">
-        <button @click="applyFilters" class="btn btn-primary">Apply</button>
         <button @click="resetFilters" class="btn btn-secondary">Reset</button>
       </div>
     </div>
@@ -114,7 +152,12 @@
             {{ item.mime_type === "application/x-directory" ? "📁" : "📄" }}
           </div>
           <div class="result-info">
-            <h4>{{ item.original_name }}</h4>
+            <h4 v-html="highlightText(item.original_name, query)"></h4>
+            <p
+              v-if="item.full_path"
+              class="result-path"
+              v-html="highlightText(item.full_path, query)"
+            ></p>
             <p class="result-meta">
               {{ formatSize(item.size) }} • {{ formatDate(item.created_at) }}
             </p>
@@ -144,6 +187,10 @@ export default {
   name: "SearchBar",
   props: {
     vaultspaceId: {
+      type: String,
+      default: null,
+    },
+    parentId: {
       type: String,
       default: null,
     },
@@ -178,8 +225,7 @@ export default {
       maxSize: null,
       sortBy: "relevance",
       sortOrder: "desc",
-      filesOnly: false,
-      foldersOnly: false,
+      fileTypeFilter: "all", // "all", "files", "folders"
     });
 
     let searchTimeout = null;
@@ -211,6 +257,7 @@ export default {
         const searchOptions = {
           query: query.value.trim(),
           vaultspaceId: props.vaultspaceId,
+          parentId: props.parentId,
           limit,
           offset: offset.value,
           sortBy: filters.value.sortBy,
@@ -226,10 +273,10 @@ export default {
         if (filters.value.maxSize !== null) {
           searchOptions.maxSize = filters.value.maxSize;
         }
-        if (filters.value.filesOnly) {
+        if (filters.value.fileTypeFilter === "files") {
           searchOptions.filesOnly = true;
         }
-        if (filters.value.foldersOnly) {
+        if (filters.value.fileTypeFilter === "folders") {
           searchOptions.foldersOnly = true;
         }
 
@@ -258,11 +305,28 @@ export default {
         const searchOptions = {
           query: query.value.trim(),
           vaultspaceId: props.vaultspaceId,
+          parentId: props.parentId,
           limit,
           offset: offset.value,
           sortBy: filters.value.sortBy,
           sortOrder: filters.value.sortOrder,
         };
+
+        if (filters.value.mimeType) {
+          searchOptions.mimeType = filters.value.mimeType;
+        }
+        if (filters.value.minSize !== null) {
+          searchOptions.minSize = filters.value.minSize;
+        }
+        if (filters.value.maxSize !== null) {
+          searchOptions.maxSize = filters.value.maxSize;
+        }
+        if (filters.value.fileTypeFilter === "files") {
+          searchOptions.filesOnly = true;
+        }
+        if (filters.value.fileTypeFilter === "folders") {
+          searchOptions.foldersOnly = true;
+        }
 
         const response = await searchApi.searchFiles(searchOptions);
         results.value = [...results.value, ...(response.results || [])];
@@ -287,8 +351,8 @@ export default {
       showResults.value = false;
     };
 
-    const applyFilters = () => {
-      showFilters.value = false;
+    const applyFiltersAuto = () => {
+      // Apply filters automatically when they change
       if (query.value.trim()) {
         performSearch();
       }
@@ -301,8 +365,7 @@ export default {
         maxSize: null,
         sortBy: "relevance",
         sortOrder: "desc",
-        filesOnly: false,
-        foldersOnly: false,
+        fileTypeFilter: "all",
       };
       if (query.value.trim()) {
         performSearch();
@@ -312,12 +375,8 @@ export default {
     const handleResultClick = (item) => {
       emit("result-click", item);
 
-      // Navigate to file/folder
-      if (item.mime_type === "application/x-directory") {
-        router.push(`/vaultspace/${item.vaultspace_id}?folder=${item.id}`);
-      } else {
-        router.push(`/vaultspace/${item.vaultspace_id}?file=${item.id}`);
-      }
+      // Close search results after clicking
+      showResults.value = false;
     };
 
     const formatSize = (bytes) => {
@@ -334,6 +393,43 @@ export default {
       return date.toLocaleDateString();
     };
 
+    const highlightText = (text, query) => {
+      if (!text || !query) return escapeHtml(text || "");
+      const queryLower = query.toLowerCase();
+      const textLower = text.toLowerCase();
+
+      // Find all occurrences (case-insensitive)
+      const parts = [];
+      let lastIndex = 0;
+      let index = textLower.indexOf(queryLower, lastIndex);
+
+      while (index !== -1) {
+        // Add text before match
+        if (index > lastIndex) {
+          parts.push(escapeHtml(text.substring(lastIndex, index)));
+        }
+        // Add highlighted match
+        parts.push(
+          `<mark class="search-highlight">${escapeHtml(text.substring(index, index + query.length))}</mark>`,
+        );
+        lastIndex = index + query.length;
+        index = textLower.indexOf(queryLower, lastIndex);
+      }
+
+      // Add remaining text
+      if (lastIndex < text.length) {
+        parts.push(escapeHtml(text.substring(lastIndex)));
+      }
+
+      return parts.length > 0 ? parts.join("") : escapeHtml(text);
+    };
+
+    const escapeHtml = (text) => {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
     return {
       query,
       results,
@@ -347,11 +443,12 @@ export default {
       loadMore,
       clearSearch,
       closeResults,
-      applyFilters,
+      applyFiltersAuto,
       resetFilters,
       handleResultClick,
       formatSize,
       formatDate,
+      highlightText,
     };
   },
 };
@@ -378,7 +475,7 @@ export default {
   flex: 1;
   border: none;
   background: transparent;
-  padding: 0;
+  padding: 0.5rem;
   font-size: 1rem;
 }
 
@@ -441,6 +538,39 @@ export default {
 
 .filter-group label input[type="checkbox"] {
   margin-right: 0.5rem;
+}
+
+.toggle-switch {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-radius: var(--radius-md, 8px);
+  padding: 0.25rem;
+}
+
+.toggle-option {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-secondary, #cbd5e1);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.toggle-option:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #f1f5f9);
+}
+
+.toggle-option.active {
+  background: var(--accent-blue, #38bdf8);
+  color: var(--text-primary, #f1f5f9);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
 }
 
 .filter-actions {
@@ -508,6 +638,14 @@ export default {
   color: var(--text-primary, #f1f5f9);
 }
 
+.result-path {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #cbd5e1);
+  font-family: monospace;
+  opacity: 0.8;
+}
+
 .result-meta {
   margin: 0;
   font-size: 0.85rem;
@@ -537,5 +675,13 @@ export default {
 
 .btn-icon:hover {
   color: var(--text-primary, #f1f5f9);
+}
+
+.search-highlight {
+  background-color: var(--accent-blue, #38bdf8);
+  color: var(--text-primary, #f1f5f9);
+  padding: 0.1em 0.2em;
+  border-radius: 0.2em;
+  font-weight: 600;
 }
 </style>

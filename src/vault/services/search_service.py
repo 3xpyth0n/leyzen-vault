@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from flask import current_app
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, case
 from sqlalchemy.orm import Query
 
 from vault.database.schema import (
     File,
     VaultSpace,
+    VaultSpaceType,
     db,
 )
 from vault.services.search_index_service import SearchIndexService
@@ -45,6 +46,7 @@ class SearchService:
         user_id: str,
         query: str | None = None,
         vaultspace_id: str | None = None,
+        parent_id: str | None = None,
         mime_type: str | None = None,
         min_size: int | None = None,
         max_size: int | None = None,
@@ -66,6 +68,7 @@ class SearchService:
             user_id: User ID performing search
             query: Search query (for filename search)
             vaultspace_id: Optional VaultSpace ID to limit search
+            parent_id: Optional parent folder ID to limit search to this folder and its subfolders
             mime_type: Optional MIME type filter
             min_size: Optional minimum file size in bytes
             max_size: Optional maximum file size in bytes
@@ -86,6 +89,22 @@ class SearchService:
         """
         # Start with base query for files user has access to
         base_query = self._get_accessible_files_query(user_id, vaultspace_id)
+
+        # Filter by parent_id if specified (recursive search within folder)
+        if parent_id is not None:
+            # Get all file IDs in the folder and its subfolders recursively
+            folder_file_ids = self._get_folder_file_ids_recursive(parent_id)
+            if folder_file_ids:
+                base_query = base_query.filter(File.id.in_(folder_file_ids))
+            else:
+                # No files in this folder, return empty results
+                return {
+                    "results": [],
+                    "total": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": False,
+                }
 
         # Apply filters
         if files_only:
@@ -128,6 +147,11 @@ class SearchService:
                 if file_ids_from_index:
                     # Filter base query to only include indexed files
                     base_query = base_query.filter(File.id.in_(file_ids_from_index))
+                else:
+                    # If Whoosh returns no results, fallback to ILIKE
+                    base_query = base_query.filter(
+                        File.original_name.ilike(f"%{query}%")
+                    )
             except Exception:
                 # Fallback to simple ILIKE if Whoosh fails
                 base_query = base_query.filter(File.original_name.ilike(f"%{query}%"))
@@ -164,7 +188,7 @@ class SearchService:
             if query:
                 # Use PostgreSQL's similarity or simple ordering
                 # Files with query at start of name get higher priority
-                order_by = func.case(
+                order_by = case(
                     (File.original_name.ilike(f"{query}%"), 1),
                     (File.original_name.ilike(f"%{query}%"), 2),
                     else_=3,
@@ -204,6 +228,9 @@ class SearchService:
                 )
             else:
                 file_dict["match_score"] = 1.0
+
+            # Add full path for the file/folder
+            file_dict["full_path"] = self._get_file_path(file_obj.id)
             results.append(file_dict)
 
         # Sort by match score if relevance sorting
@@ -240,12 +267,75 @@ class SearchService:
                 return db.session.query(File).filter(False)
             accessible_vaultspace_ids = [vaultspace_id]
 
-        # Base query: files in accessible VaultSpaces
+        # Base query: files in accessible VaultSpaces, excluding deleted files
         query = db.session.query(File).filter(
-            File.vaultspace_id.in_(accessible_vaultspace_ids)
+            and_(
+                File.vaultspace_id.in_(accessible_vaultspace_ids),
+                File.deleted_at.is_(None),  # Exclude deleted files
+            )
         )
 
         return query
+
+    def _get_folder_file_ids_recursive(self, folder_id: str | None) -> list[str]:
+        """Get all file IDs in a folder and its subfolders recursively.
+
+        Args:
+            folder_id: Folder ID (None for root folder)
+
+        Returns:
+            List of file IDs
+        """
+        file_ids = []
+        visited_folders = set()
+        max_depth = 100
+        depth = 0
+
+        def collect_files_recursive(current_folder_id: str | None, current_depth: int):
+            """Recursively collect file IDs from folder and subfolders."""
+            if current_depth > max_depth:
+                return
+
+            # Get all files and folders in current folder
+            if current_folder_id is None:
+                # Root folder - get files with parent_id = None
+                children = (
+                    db.session.query(File)
+                    .filter(
+                        and_(
+                            File.parent_id.is_(None),
+                            File.deleted_at.is_(None),
+                        )
+                    )
+                    .all()
+                )
+            else:
+                # Subfolder - get files with parent_id = current_folder_id
+                if current_folder_id in visited_folders:
+                    return  # Avoid cycles
+                visited_folders.add(current_folder_id)
+
+                children = (
+                    db.session.query(File)
+                    .filter(
+                        and_(
+                            File.parent_id == current_folder_id,
+                            File.deleted_at.is_(None),
+                        )
+                    )
+                    .all()
+                )
+
+            for child in children:
+                if child.mime_type == "application/x-directory":
+                    # It's a folder, recurse into it
+                    collect_files_recursive(child.id, current_depth + 1)
+                else:
+                    # It's a file, add its ID
+                    file_ids.append(child.id)
+
+        collect_files_recursive(folder_id, depth)
+        return file_ids
 
     def _get_accessible_vaultspace_ids(self, user_id: str) -> list[str]:
         """Get list of VaultSpace IDs accessible by user.
@@ -272,6 +362,56 @@ class SearchService:
         vaultspace_ids.extend([vs.id for vs in personal])
 
         return list(set(vaultspace_ids))  # Remove duplicates
+
+    def _get_file_path(self, file_id: str) -> str:
+        """Get the full path for a file or folder.
+
+        Args:
+            file_id: File ID
+
+        Returns:
+            Full path string (e.g., "Documents/Projects/file.pdf")
+        """
+        try:
+            file_obj = (
+                db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
+            )
+
+            if not file_obj:
+                return ""
+
+            # Build path by traversing up the parent chain
+            path_parts = []
+            current = file_obj
+            visited = set()
+            max_depth = 50
+            depth = 0
+
+            while current is not None and depth < max_depth:
+                if current.id in visited:
+                    break  # Avoid cycles
+                visited.add(current.id)
+
+                # Add current file/folder name to path
+                if current.original_name:
+                    path_parts.insert(0, current.original_name)
+
+                # Move to parent
+                if current.parent_id:
+                    current = (
+                        db.session.query(File)
+                        .filter_by(id=current.parent_id, deleted_at=None)
+                        .first()
+                    )
+                else:
+                    current = None
+
+                depth += 1
+
+            return "/".join(path_parts) if path_parts else file_obj.original_name or ""
+        except Exception:
+            # If path calculation fails, return empty string
+            return ""
 
     def _calculate_match_score(self, filename: str, query: str) -> float:
         """Calculate match score for relevance sorting.

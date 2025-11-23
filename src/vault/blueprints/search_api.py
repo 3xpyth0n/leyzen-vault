@@ -52,6 +52,7 @@ def search_files():
     # Parse query parameters
     query = request.args.get("q", "").strip() or None
     vaultspace_id = request.args.get("vaultspace_id", "").strip() or None
+    parent_id = request.args.get("parent_id", "").strip() or None
     mime_type = request.args.get("mime_type", "").strip() or None
     encrypted_query = request.args.get("encrypted_query", "").strip() or None
 
@@ -104,6 +105,7 @@ def search_files():
             user_id=user.id,
             query=query,
             vaultspace_id=vaultspace_id,
+            parent_id=parent_id,
             mime_type=mime_type,
             min_size=min_size,
             max_size=max_size,

@@ -38,6 +38,7 @@ export const search = {
     if (options.query) params.append("q", options.query);
     if (options.vaultspaceId)
       params.append("vaultspace_id", options.vaultspaceId);
+    if (options.parentId) params.append("parent_id", options.parentId);
     if (options.mimeType) params.append("mime_type", options.mimeType);
     if (options.minSize !== undefined)
       params.append("min_size", options.minSize.toString());

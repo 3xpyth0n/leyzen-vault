@@ -1239,33 +1239,96 @@ export default {
       return thumbnailUrls.value[fileId] || "";
     };
 
-    // Load thumbnail URL when it becomes available
-    const loadThumbnailUrl = async (fileId) => {
+    // Load thumbnail URL - for images, load the image directly without checking for thumbnail
+    // This avoids 404 errors in the network tab
+    const loadThumbnailUrl = async (fileId, file = null) => {
       if (thumbnailUrls.value[fileId]) {
         return; // Already loaded
       }
 
+      // Find file object if not provided
+      if (!file) {
+        file = allItems.value.find((f) => f.id === fileId);
+      }
+
+      // If file is not an image, don't try to load thumbnail
+      if (!file || !isImageFile(file)) {
+        return;
+      }
+
+      // For images, load the image directly without checking for thumbnail first
+      // This avoids 404 errors in the network tab
       try {
-        const blobUrl = await thumbnails.getUrl(fileId, "256x256");
-        if (blobUrl) {
-          // Force reactivity by creating a new object
-          const newUrls = { ...thumbnailUrls.value };
-          newUrls[fileId] = blobUrl;
-          thumbnailUrls.value = newUrls;
+        await loadImageAsThumbnail(file);
+      } catch (imageError) {
+        console.error(
+          `Failed to load image as thumbnail for ${fileId}:`,
+          imageError,
+        );
+      }
+    };
 
-          // Force Vue to update by incrementing trigger
-          thumbnailUpdateTrigger.value++;
+    // Load image directly as thumbnail (fallback when thumbnail doesn't exist)
+    const loadImageAsThumbnail = async (file) => {
+      const vaultspaceId = props.vaultspaceId || file.vaultspace_id;
+      if (!vaultspaceId) {
+        return;
+      }
 
-          // Wait for next tick to ensure DOM update
-          await nextTick();
+      try {
+        // Get VaultSpace key
+        const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
+        if (!vaultspaceKey) {
+          return;
         }
+
+        // Download encrypted file
+        const encryptedData = await files.download(file.id, vaultspaceId);
+
+        // Get file key
+        const fileData = await files.get(file.id, vaultspaceId);
+        if (!fileData.file_key) {
+          return;
+        }
+
+        // Decrypt file key
+        const fileKey = await decryptFileKey(
+          vaultspaceKey,
+          fileData.file_key.encrypted_key,
+        );
+
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const encryptedDataArray = new Uint8Array(encryptedData);
+        const iv = encryptedDataArray.slice(0, 12);
+        const encrypted = encryptedDataArray.slice(12);
+
+        // Decrypt file
+        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Create blob URL for the image
+        const blob = new Blob([decryptedData], { type: file.mime_type });
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Store in cache
+        const newUrls = { ...thumbnailUrls.value };
+        newUrls[file.id] = blobUrl;
+        thumbnailUrls.value = newUrls;
+
+        // Force Vue to update
+        thumbnailUpdateTrigger.value++;
+        await nextTick();
       } catch (error) {
-        console.error(`Failed to load thumbnail URL for ${fileId}:`, error);
+        console.error(
+          `Failed to load image as thumbnail for ${file.id}:`,
+          error,
+        );
       }
     };
 
     const hasThumbnail = (file) => {
-      return file.has_thumbnail || generatedThumbnails.value.has(file.id);
+      // For images, always try to show thumbnail (either from storage or load image directly)
+      // The actual check is done when loading the thumbnail
+      return isImageFile(file) || generatedThumbnails.value.has(file.id);
     };
 
     // Check if file is an image based on mime_type or file extension
@@ -1555,7 +1618,7 @@ export default {
 
         // Load thumbnail URL for display
         try {
-          await loadThumbnailUrl(file.id);
+          await loadThumbnailUrl(file.id, file);
         } catch (error) {
           // Don't mark as failed, will retry later
         }
@@ -1619,10 +1682,14 @@ export default {
                 if (
                   file &&
                   isImageFile(file) &&
-                  !hasThumbnail(file) &&
+                  !thumbnailUrls.value[file.id] && // Thumbnail not loaded yet
                   !generatingThumbnails.value.has(file.id) &&
                   !failedThumbnails.value.has(file.id)
                 ) {
+                  // Try to load thumbnail first (will fallback to image if 404)
+                  loadThumbnailUrl(file.id, file);
+
+                  // Also observe for thumbnail generation if needed
                   thumbnailObserver.observe(card);
 
                   // Check if card is already visible and trigger generation immediately
@@ -1653,9 +1720,8 @@ export default {
 
     // Load existing thumbnails on mount
     const loadExistingThumbnails = async () => {
-      const filesToLoad = allItems.value.filter(
-        (file) => hasThumbnail(file) && isImageFile(file),
-      );
+      // Load thumbnails for all image files (will fallback to image if thumbnail doesn't exist)
+      const filesToLoad = allItems.value.filter((file) => isImageFile(file));
 
       // Wait for DOM to be ready
       await nextTick();
@@ -1663,7 +1729,7 @@ export default {
 
       // Load thumbnails sequentially to avoid race conditions
       for (const file of filesToLoad) {
-        await loadThumbnailUrl(file.id);
+        await loadThumbnailUrl(file.id, file);
         // Small delay between loads to ensure reactivity
         await nextTick();
       }

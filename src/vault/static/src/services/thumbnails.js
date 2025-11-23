@@ -21,7 +21,10 @@ export const thumbnails = {
     const response = await apiRequest(`/v2/thumbnails/${fileId}?size=${size}`);
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to get thumbnail");
+      const error = new Error(errorData.error || "Failed to get thumbnail");
+      // Include status code for error handling
+      error.status = errorData.status || response.status;
+      throw error;
     }
     return await response.blob();
   },
@@ -35,14 +38,8 @@ export const thumbnails = {
    * @returns {Promise<string>} Blob URL for the thumbnail
    */
   async getUrl(fileId, size = "256x256") {
-    try {
-      const blob = await this.get(fileId, size);
-      return URL.createObjectURL(blob);
-    } catch (error) {
-      console.error(`Failed to get thumbnail URL for ${fileId}:`, error);
-      // Return empty string or a placeholder image URL
-      return "";
-    }
+    const blob = await this.get(fileId, size);
+    return URL.createObjectURL(blob);
   },
 
   /**

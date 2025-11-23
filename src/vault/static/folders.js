@@ -320,6 +320,11 @@ async function renderFoldersListView(folders, parentId) {
 
 // Navigate to folder
 async function navigateToFolder(folderId) {
+  // Deselect all items when changing folder
+  if (window.selectionManager) {
+    window.selectionManager.deselectAll();
+  }
+
   currentFolderId = folderId;
   await renderBreadcrumbs(folderId);
   await loadFolderContents(folderId);
