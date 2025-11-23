@@ -246,6 +246,20 @@ def create_app(
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
 
+            # Check if jti column exists for JWT replay protection
+            try:
+                from vault.services.auth_service import _check_jti_column_exists
+
+                if not _check_jti_column_exists():
+                    logger.log(
+                        "[CRITICAL] JWT replay protection (jti column) not available - "
+                        "database migration required. JWT tokens may be vulnerable to replay attacks."
+                    )
+            except Exception as jti_check_error:
+                logger.log(
+                    f"[WARNING] Failed to check jti column existence: {jti_check_error}"
+                )
+
             # Initialize TOTP service for 2FA
             init_totp_service(settings.secret_key)
             logger.log("[INIT] TOTP service initialized")
@@ -345,6 +359,26 @@ def create_app(
         for normalized in (_normalize_origin(origin) for origin in allowed_origins)
         if normalized
     }
+
+    # Configure development allowed origins (for permissive but still active validation)
+    allowed_origins_dev_value = env_values.get("ALLOWED_ORIGINS_DEV", "")
+    allowed_origins_dev: list[str] = []
+    if allowed_origins_dev_value:
+        for origin in allowed_origins_dev_value.split(","):
+            normalized = origin.strip()
+            if normalized:
+                allowed_origins_dev.append(normalized.rstrip("/"))
+    app.config["ALLOWED_ORIGINS_DEV"] = allowed_origins_dev
+
+    # Configure internal API IP whitelist (optional, for additional security)
+    internal_api_allowed_ips_value = env_values.get("INTERNAL_API_ALLOWED_IPS", "")
+    internal_api_allowed_ips: list[str] = []
+    if internal_api_allowed_ips_value:
+        for ip in internal_api_allowed_ips_value.split(","):
+            normalized_ip = ip.strip()
+            if normalized_ip:
+                internal_api_allowed_ips.append(normalized_ip)
+    app.config["INTERNAL_API_ALLOWED_IPS"] = internal_api_allowed_ips
     # Default list of headers allowed for CORS requests
     app.config.setdefault(
         "ALLOWED_CORS_HEADERS",

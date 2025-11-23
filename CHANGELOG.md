@@ -17,6 +17,18 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Search Panel**: Dropdown results panel with pagination support that auto-closes after file selection.
 - **Backend Optimization**: Whoosh full-text search index with fuzzy matching and SQL ILIKE fallback, including relevance scoring.
 
+### Security
+
+- **JWT Replay Protection**: Mandatory jti verification with secure fallback. Startup warning if jti column missing.
+- **Internal API Hardening**: IP whitelist, strict rate limiting (60 req/min), detailed logging, User-Agent validation.
+- **Origin Validation**: Never completely disabled, even in development. Permissive but active validation in dev mode.
+- **JSON DoS Protection**: Safe JSON parsing with size and depth limits across all endpoints.
+- **API Key Prefix**: Configurable or random per-instance prefix to prevent predictability.
+- **TOTP Security**: Zero-tolerance window, code reuse protection with cache.
+- **Log Sanitization**: Enhanced masking of tokens (4 chars only), secrets, full paths. Safe logging utility.
+- **File Validation**: Magic bytes validation for whitelisted files to detect tampering.
+- **Error Standardization**: Unique error codes (ERR\_\*) to prevent information leakage.
+
 ## [2.2.0] - 2025-11-22
 
 ### Added

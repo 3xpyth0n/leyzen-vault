@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from ..database.schema import AuditLogEntry, db
 from ..models import AuditLog
+from ..utils.safe_json import safe_json_loads
 
 
 class AuditService:
@@ -97,7 +98,16 @@ class AuditService:
                         file_id=entry.file_id,
                         user_ip=entry.user_ip,
                         timestamp=entry.timestamp,
-                        details=json.loads(entry.details) if entry.details else {},
+                        details=(
+                            safe_json_loads(
+                                entry.details,
+                                max_size=10 * 1024,  # 10KB for audit details
+                                max_depth=20,
+                                context="audit log details",
+                            )
+                            if entry.details
+                            else {}
+                        ),
                         success=entry.success,
                     )
                 )

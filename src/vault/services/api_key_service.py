@@ -16,9 +16,26 @@ class ApiKeyService:
     """Service for API key management."""
 
     def __init__(self):
-        """Initialize API key service."""
+        """Initialize API key service.
+
+        The key prefix is configurable via API_KEY_PREFIX environment variable.
+        If not set, a random prefix is generated per instance (stored in memory).
+        Note: The prefix is only for display purposes, not for security.
+        """
+        import os
+
         self.hasher = PasswordHasher()
-        self.key_prefix = "leyz_"
+        # Configurable or random prefix per instance
+        prefix_env = os.environ.get("API_KEY_PREFIX", "")
+        if prefix_env:
+            self.key_prefix = prefix_env
+        else:
+            # Generate random prefix per instance (8 characters)
+            # This makes the prefix unpredictable across instances
+            random_prefix = (
+                secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
+            )
+            self.key_prefix = f"leyz_{random_prefix}_"
 
     def generate_api_key(self, user_id: str, name: str) -> tuple[ApiKey, str]:
         """Generate a new API key for a user.

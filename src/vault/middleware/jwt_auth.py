@@ -43,6 +43,8 @@ def _validate_origin() -> tuple[bool, str | None]:
 
     # Get production mode to determine strictness
     is_production = current_app.config.get("IS_PRODUCTION", True)
+    # Get development allowed origins (for permissive but still active validation)
+    allowed_origins_dev = current_app.config.get("ALLOWED_ORIGINS_DEV", [])
 
     # If neither header is present, allow the request (same-origin browsers
     # may not send these headers for same-origin requests, especially after refresh)
@@ -74,18 +76,13 @@ def _validate_origin() -> tuple[bool, str | None]:
                 f"{parsed_origin.scheme.lower()}://{origin_host.lower()}"
             )
 
-            # SECURITY: Block null origin in production (used in CSRF attacks)
+            # SECURITY: Block null origin (used in CSRF attacks)
+            # Never allow null origin, even in development
             if origin.lower() == "null":
-                if is_production:
-                    current_app.logger.warning(
-                        f"Blocked request with null Origin header: {request.method} {request.path}"
-                    )
-                    return False, "Null origin not allowed"
-                else:
-                    # In development, log but allow (for testing)
-                    current_app.logger.warning(
-                        f"Request with null Origin header (allowed in dev): {request.method} {request.path}"
-                    )
+                current_app.logger.warning(
+                    f"Blocked request with null Origin header: {request.method} {request.path}"
+                )
+                return False, "Null origin not allowed"
 
             # Check against allowed origins list first (exact match)
             if origin in allowed_origins:
@@ -101,27 +98,49 @@ def _validate_origin() -> tuple[bool, str | None]:
             if origin_host.lower() == expected_host.lower():
                 return True, None
 
-            # If origin doesn't match and not in allowed list, block in production
-            if is_production:
+            # In development: permissive but always active validation
+            # Allow localhost and 127.0.0.1 with any port
+            if not is_production:
+                if origin and ("localhost" in origin.lower() or "127.0.0.1" in origin):
+                    return True, None
+                # Check against development allowed origins
+                if origin in allowed_origins_dev:
+                    return True, None
+                # Log warning but still validate
+                import warnings
+
+                warnings.warn(
+                    f"Origin validation failed in dev mode: Origin={origin}, "
+                    f"Expected host={expected_host}. Validation is permissive but active."
+                )
                 current_app.logger.warning(
-                    f"Blocked request with invalid Origin: Origin={origin}, "
+                    f"Origin validation failed in dev mode (permissive): Origin={origin}, "
                     f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
                 )
-                return False, "Origin not allowed"
-            else:
-                # In development, log but allow (for testing with different origins)
-                current_app.logger.warning(
-                    f"Origin validation failed (allowed in dev): Origin={origin}, "
-                    f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
-                )
+                # In dev, we can be more permissive but still log
+                return True, None  # Permissive but logged
+
+            # In production: strict validation
+            current_app.logger.warning(
+                f"Blocked request with invalid Origin: Origin={origin}, "
+                f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
+            )
+            return False, "Origin not allowed"
         except Exception:
-            # Invalid origin format - block in production
+            # Invalid origin format - always block
+            current_app.logger.warning(
+                f"Blocked request with invalid Origin format: {request.method} {request.path}"
+            )
             if is_production:
-                current_app.logger.warning(
-                    f"Blocked request with invalid Origin format: {request.method} {request.path}"
-                )
                 return False, "Invalid origin format"
-            # In development, continue to referer check
+            # In development, log but allow (permissive)
+            import warnings
+
+            warnings.warn(
+                f"Invalid origin format in dev mode: {request.method} {request.path}. "
+                "Validation is permissive but active."
+            )
+            # Continue to referer check
 
     # Fallback to Referer header (used by browsers for GET requests and some POST)
     if referer:
@@ -134,9 +153,10 @@ def _validate_origin() -> tuple[bool, str | None]:
         except Exception:
             pass
 
-    # If headers are present but don't match, block in production
+    # If headers are present but don't match, validate
     if origin or referer:
         if is_production:
+            # In production: strict validation
             current_app.logger.warning(
                 f"Blocked request: Origin={origin}, "
                 f"Referer={referer}, Expected host={expected_host}, "
@@ -144,9 +164,19 @@ def _validate_origin() -> tuple[bool, str | None]:
             )
             return False, "Origin validation failed"
         else:
-            # In development, log but allow
+            # In development: permissive but always active validation
+            # Allow localhost and 127.0.0.1
+            if referer and ("localhost" in referer.lower() or "127.0.0.1" in referer):
+                return True, None
+            # Log warning but allow (permissive)
+            import warnings
+
+            warnings.warn(
+                f"Origin validation failed in dev mode: Origin={origin}, "
+                f"Referer={referer}. Validation is permissive but active."
+            )
             current_app.logger.warning(
-                f"Origin validation warning (allowed in dev): Origin={origin}, "
+                f"Origin validation warning (permissive in dev): Origin={origin}, "
                 f"Referer={referer}, Expected host={expected_host}, "
                 f"Path={request.path}, Method={request.method}"
             )

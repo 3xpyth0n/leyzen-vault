@@ -255,32 +255,44 @@ class AuthService:
                 jti = None
 
             # Check if jti is blacklisted (replay protection)
-            # Handle case where jti column might not exist yet (database migration pending)
+            # SECURITY: jti verification is mandatory if jti is present in token
             if jti:
                 # Check if jti column exists before using it
-                # _check_jti_column_exists() never raises exceptions, so this is safe
-                try:
-                    jti_column_exists = _check_jti_column_exists()
-                    if jti_column_exists:
-                        try:
-                            blacklisted_jti = (
-                                db.session.query(JWTBlacklist)
-                                .filter_by(jti=jti)
-                                .first()
+                jti_column_exists = _check_jti_column_exists()
+                if jti_column_exists:
+                    try:
+                        blacklisted_jti = (
+                            db.session.query(JWTBlacklist).filter_by(jti=jti).first()
+                        )
+                        if blacklisted_jti:
+                            # Use constant-time comparison to prevent timing attacks
+                            constant_time_compare(
+                                token, "dummy_token_for_timing_protection"
                             )
-                            if blacklisted_jti:
-                                # Use constant-time comparison to prevent timing attacks
-                                constant_time_compare(
-                                    token, "dummy_token_for_timing_protection"
-                                )
-                                return None
-                        except Exception:
-                            # Database error during jti check - continue without jti validation
-                            # This is expected if column doesn't exist or database is unavailable
-                            pass
-                except Exception:
-                    # If _check_jti_column_exists() somehow raises (shouldn't happen), continue
-                    pass
+                            return None
+                    except Exception:
+                        # Database error during jti check - fail securely
+                        # Log critical error and reject token
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.critical(
+                            "JWT jti verification failed due to database error - rejecting token for security"
+                        )
+                        constant_time_compare(
+                            token, "dummy_token_for_timing_protection"
+                        )
+                        return None
+                else:
+                    # Column doesn't exist: fallback to full token check
+                    # But log a critical warning - this should not happen in production
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.critical(
+                        "JWT replay protection (jti) not available - database migration required. "
+                        "Falling back to full token blacklist check."
+                    )
 
             # Check if token is blacklisted (full token match)
             # Protect database query to avoid ProgrammingError being logged as JWT error

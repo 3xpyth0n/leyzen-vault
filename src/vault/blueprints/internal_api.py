@@ -23,11 +23,22 @@ def _validate_internal_token() -> bool:
     Tokens are generated deterministically, so all services using the same SECRET_KEY
     will generate the same tokens without needing to share or persist them.
 
+    Additional security measures:
+    - IP whitelist verification (if configured)
+    - Strict rate limiting (max 60 requests/minute)
+    - Detailed logging of all access attempts
+    - User-Agent validation (optional)
+
     Returns:
         True if token is valid, False otherwise
     """
+    from vault.blueprints.utils import get_client_ip
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        current_app.logger.warning(
+            "Internal API access denied: Missing or invalid Authorization header"
+        )
         return False
 
     token = auth_header[len("Bearer ") :].strip()
@@ -42,9 +53,53 @@ def _validate_internal_token() -> bool:
         )
         return False
 
+    # 1. IP whitelist verification (if configured)
+    allowed_ips = current_app.config.get("INTERNAL_API_ALLOWED_IPS", [])
+    if allowed_ips:
+        client_ip = get_client_ip() or "unknown"
+        if client_ip not in allowed_ips:
+            current_app.logger.warning(
+                f"Internal API access denied from IP: {client_ip} (not in whitelist)"
+            )
+            return False
+
+    # 2. Strict rate limiting (max 60 requests/minute)
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=60,
+            window_seconds=60,
+            action_name="internal_api",
+            user_id=None,
+        )
+        if not is_allowed:
+            current_app.logger.warning(
+                f"Internal API rate limit exceeded from IP: {client_ip}"
+            )
+            return False
+
+    # 3. Token validation using constant-time comparison
     import hmac
 
-    return hmac.compare_digest(token, expected_token)
+    token_valid = hmac.compare_digest(token, expected_token)
+
+    # 4. Detailed logging of all access attempts
+    client_ip = get_client_ip() or "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    if token_valid:
+        current_app.logger.info(
+            f"Internal API access granted: IP={client_ip}, "
+            f"Path={request.path}, Method={request.method}, User-Agent={user_agent[:50]}"
+        )
+    else:
+        current_app.logger.warning(
+            f"Internal API access denied: Invalid token from IP={client_ip}, "
+            f"Path={request.path}, Method={request.method}, User-Agent={user_agent[:50]}"
+        )
+
+    return token_valid
 
 
 def _validate_container_name(container_name: str) -> bool:

@@ -5,12 +5,15 @@
       :type="showPassword ? 'text' : 'password'"
       :value="modelValue"
       @input="$emit('update:modelValue', $event.target.value)"
+      @keyup="$emit('keyup', $event)"
+      @keydown="$emit('keydown', $event)"
       :placeholder="placeholder"
       :required="required"
       :disabled="disabled"
       :autocomplete="autocomplete"
       :minlength="minlength"
       :maxlength="maxlength"
+      :autofocus="autofocus"
       class="password-input"
     />
     <button
@@ -92,9 +95,13 @@ const props = defineProps({
     type: [Number, String],
     default: undefined,
   },
+  autofocus: {
+    type: Boolean,
+    default: false,
+  },
 });
 
-defineEmits(["update:modelValue"]);
+defineEmits(["update:modelValue", "keyup", "keydown"]);
 
 const showPassword = ref(false);
 
@@ -120,6 +127,31 @@ const togglePassword = () => {
   /* Prevent input from changing size on hover/focus which could affect toggle position */
   min-height: inherit;
   height: auto;
+  /* Apply form-input styles when used in modals */
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.password-input-wrapper :deep(.password-input):focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+.password-input-wrapper :deep(.password-input):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-input-wrapper :deep(.password-input)::placeholder {
+  color: rgba(148, 163, 184, 0.6);
 }
 
 .password-toggle {

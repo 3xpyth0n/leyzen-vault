@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from vault.database.schema import Workflow, WorkflowExecution, db
+from vault.utils.safe_json import safe_json_loads
 
 
 class WorkflowService:
@@ -74,7 +75,12 @@ class WorkflowService:
 
         for workflow in workflows:
             # Check conditions
-            conditions = json.loads(workflow.trigger_conditions)
+            conditions = safe_json_loads(
+                workflow.trigger_conditions,
+                max_size=10 * 1024,  # 10KB for workflow conditions
+                max_depth=20,
+                context="workflow trigger conditions",
+            )
             if not self._check_conditions(conditions, event_data):
                 continue
 
@@ -94,7 +100,12 @@ class WorkflowService:
             try:
                 with db_transaction():
                     # Execute actions
-                    actions = json.loads(workflow.actions)
+                    actions = safe_json_loads(
+                        workflow.actions,
+                        max_size=10 * 1024,  # 10KB for workflow actions
+                        max_depth=20,
+                        context="workflow actions",
+                    )
                     for action in actions:
                         self._execute_action(action, event_data)
 

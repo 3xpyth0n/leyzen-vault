@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from vault.database.schema import File, db
+from vault.utils.safe_json import safe_json_loads
 
 
 class SearchableEncryptionService:
@@ -41,7 +42,12 @@ class SearchableEncryptionService:
             metadata = {}
             if file_obj.encrypted_metadata:
                 try:
-                    metadata = json.loads(file_obj.encrypted_metadata)
+                    metadata = safe_json_loads(
+                        file_obj.encrypted_metadata,
+                        max_size=1024 * 1024,  # 1MB for metadata
+                        max_depth=50,
+                        context="file encrypted_metadata",
+                    )
                 except Exception:
                     # If metadata is invalid JSON, start with empty metadata
                     # This can happen if metadata was corrupted or stored in an invalid format
@@ -81,7 +87,12 @@ class SearchableEncryptionService:
                 continue
 
             try:
-                metadata = json.loads(file_obj.encrypted_metadata)
+                metadata = safe_json_loads(
+                    file_obj.encrypted_metadata,
+                    max_size=1024 * 1024,  # 1MB for metadata
+                    max_depth=50,
+                    context="file encrypted_metadata",
+                )
                 searchable_index = metadata.get("searchable_index", {})
                 keywords = searchable_index.get("keywords", [])
 

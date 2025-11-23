@@ -63,7 +63,10 @@
     <div
       v-if="showEncryptionOverlay && isMasterKeyRequired"
       class="encryption-overlay"
-      :style="overlayStyle"
+      :style="{
+        ...overlayStyle,
+        'pointer-events': showPasswordModal ? 'none' : 'auto',
+      }"
       data-encryption-overlay="true"
     >
       <div class="encryption-overlay-content">
@@ -127,13 +130,11 @@
         </div>
         <div class="form-group">
           <label for="password-input">Password</label>
-          <input
+          <PasswordInput
             id="password-input"
             v-model="passwordModalPassword"
-            type="password"
-            class="form-input"
             placeholder="Enter your encryption password"
-            @keydown.enter="handlePasswordSubmit"
+            @keyup.enter="handlePasswordSubmit"
             :disabled="passwordModalLoading"
           />
         </div>
@@ -232,6 +233,7 @@ import CustomSelect from "../components/CustomSelect.vue";
 import { folderPicker } from "../utils/FolderPicker";
 import { decryptFileKey, decryptFile } from "../services/encryption.js";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
+import PasswordInput from "../components/PasswordInput.vue";
 
 export default {
   name: "RecentView",
@@ -996,10 +998,10 @@ export default {
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: none;
-  border-radius: 0;
+  border-radius: 0 0 0 1rem; /* Rounded bottom-left corner to match sidebar */
   box-shadow: none;
   animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-  pointer-events: auto;
+  /* pointer-events is controlled via inline style */
   isolation: isolate;
 }
 
@@ -1023,6 +1025,9 @@ export default {
   padding: 3rem 2rem;
   max-width: 500px;
   animation: gentlePulse 3s ease-in-out infinite;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes gentlePulse {

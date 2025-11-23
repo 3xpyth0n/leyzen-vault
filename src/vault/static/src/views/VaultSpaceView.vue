@@ -221,11 +221,9 @@
             </p>
             <div class="form-group">
               <label for="password-modal-password">Password</label>
-              <input
+              <PasswordInput
                 id="password-modal-password"
                 v-model="passwordModalPassword"
-                type="password"
-                class="form-input"
                 placeholder="Enter your encryption password"
                 :disabled="passwordModalLoading"
                 @keyup.enter="handlePasswordModalSubmit"
@@ -283,7 +281,11 @@
     <div
       v-if="showEncryptionOverlay && isMasterKeyRequired"
       class="encryption-overlay"
-      :style="overlayStyle"
+      :style="{
+        ...overlayStyle,
+        'pointer-events': showPasswordModal ? 'none' : 'auto',
+        'z-index': '9999',
+      }"
       data-encryption-overlay="true"
     >
       <div class="encryption-overlay-content">
@@ -319,9 +321,16 @@
           server.
         </p>
         <button
-          @click="openPasswordModal"
+          @click.stop.prevent="openPasswordModal"
+          @mousedown.stop
+          @mouseup.stop
           class="encryption-unlock-btn"
           type="button"
+          style="
+            pointer-events: auto !important;
+            z-index: 10001 !important;
+            position: relative !important;
+          "
         >
           Unlock Files
         </button>
@@ -373,6 +382,7 @@ import { folderPicker } from "../utils/FolderPicker";
 import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
 import { zipFolder, extractZip } from "../services/zipService.js";
+import PasswordInput from "../components/PasswordInput.vue";
 
 export default {
   name: "VaultSpaceView",
@@ -385,6 +395,7 @@ export default {
     SearchBar,
     ProgressBar,
     AlertModal,
+    PasswordInput,
   },
   data() {
     return {
@@ -2594,17 +2605,28 @@ export default {
     calculateOverlayPosition() {
       // Calculate position to cover page-content (which contains view-header and view-main)
       // but not app-header (which is outside page-content)
+      // The overlay should cover the entire content area without margins,
+      // starting below the header and next to the sidebar
       this.$nextTick(() => {
+        const header = document.querySelector(".app-header");
         const pageContent = document.querySelector(".page-content");
-        if (pageContent) {
-          const rect = pageContent.getBoundingClientRect();
+        if (header && pageContent) {
+          const headerRect = header.getBoundingClientRect();
+          const pageContentRect = pageContent.getBoundingClientRect();
+          // Calculate overlay to start exactly below the header
+          // and extend to the right edge of viewport and bottom of viewport
+          const overlayTop = headerRect.bottom; // Start exactly below header
+          const overlayLeft = pageContentRect.left; // Start at page-content left edge
+          const overlayWidth = window.innerWidth - overlayLeft;
+          const overlayHeight = window.innerHeight - overlayTop;
+
           this.overlayStyle = {
             position: "fixed",
-            top: `${rect.top}px`,
-            left: `${rect.left}px`,
-            width: `${rect.width}px`,
-            height: `${rect.height}px`,
-            zIndex: 2,
+            top: `${overlayTop}px`,
+            left: `${overlayLeft}px`,
+            width: `${overlayWidth}px`,
+            height: `${overlayHeight}px`,
+            zIndex: 0, // Below header (z-index: 1) and sidebar (z-index: 100)
           };
         }
       });
@@ -2621,6 +2643,17 @@ export default {
         });
         observer.observe(sidebar);
         this._sidebarResizeObserver = observer;
+      }
+
+      // Observe header changes (height might change)
+      const header = document.querySelector(".app-header");
+      if (header && window.ResizeObserver) {
+        const observer = new ResizeObserver(() => {
+          requestAnimationFrame(() => {
+            this.calculateOverlayPosition();
+          });
+        });
+        observer.observe(header);
       }
 
       // Also observe main-content changes (which moves when sidebar toggles)
@@ -4021,23 +4054,24 @@ export default {
 
 /* Encryption Overlay (Glassmorphic) */
 .encryption-overlay {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   background: linear-gradient(
     140deg,
     rgba(30, 41, 59, 0.15),
     rgba(15, 23, 42, 0.12)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-  pointer-events: auto;
+  ) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: none !important;
+  border-radius: 0 0 0 1rem !important; /* Rounded bottom-left corner to match sidebar */
+  box-shadow: none !important;
+  animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) !important;
+  /* pointer-events is controlled via inline style */
   /* Ensure overlay covers content but stays below modals */
-  isolation: isolate;
+  isolation: isolate !important;
+  pointer-events: auto !important;
 }
 
 @keyframes overlayFadeIn {
@@ -4052,14 +4086,17 @@ export default {
 }
 
 .encryption-overlay-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 3rem 2rem;
-  max-width: 500px;
-  animation: gentlePulse 3s ease-in-out infinite;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 3rem 2rem !important;
+  max-width: 500px !important;
+  animation: gentlePulse 3s ease-in-out infinite !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 10000 !important;
 }
 
 @keyframes gentlePulse {
@@ -4117,27 +4154,31 @@ export default {
 }
 
 .encryption-unlock-btn {
-  padding: 0.875rem 2rem;
-  font-size: 1rem;
-  font-weight: 500;
-  color: #ffffff;
+  padding: 0.875rem 2rem !important;
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  color: #ffffff !important;
   background: linear-gradient(
     135deg,
     rgba(88, 166, 255, 0.2),
     rgba(56, 189, 248, 0.15)
-  );
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 0.75rem;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  ) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border: 1px solid rgba(88, 166, 255, 0.3) !important;
+  border-radius: 0.75rem !important;
+  cursor: pointer !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   box-shadow:
     0 4px 16px rgba(88, 166, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  font-family: inherit;
-  position: relative;
-  overflow: hidden;
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  font-family: inherit !important;
+  position: relative !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  z-index: 10001 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 .encryption-unlock-btn::before {

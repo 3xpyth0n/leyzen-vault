@@ -23,6 +23,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from vault.utils.safe_json import safe_json_loads
+
 db = SQLAlchemy()
 
 
@@ -117,8 +119,6 @@ class SSOProvider(db.Model):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        import json
-
         # Handle both enum member and string (for backward compatibility)
         provider_type_value = (
             self.provider_type.value
@@ -131,7 +131,16 @@ class SSOProvider(db.Model):
             "name": self.name,
             "provider_type": provider_type_value,
             "is_active": self.is_active,
-            "config": json.loads(self.config) if self.config else {},
+            "config": (
+                safe_json_loads(
+                    self.config,
+                    max_size=10 * 1024,  # 10KB for SSO config
+                    max_depth=20,
+                    context="SSO provider config",
+                )
+                if self.config
+                else {}
+            ),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -1040,15 +1049,22 @@ class AuditLogEntry(db.Model):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        import json
-
         return {
             "id": self.id,
             "action": self.action,
             "file_id": self.file_id,
             "user_ip": self.user_ip,
             "timestamp": self.timestamp.isoformat(),
-            "details": json.loads(self.details) if self.details else {},
+            "details": (
+                safe_json_loads(
+                    self.details,
+                    max_size=10 * 1024,  # 10KB for audit details
+                    max_depth=20,
+                    context="audit log details",
+                )
+                if self.details
+                else {}
+            ),
             "success": self.success,
         }
 

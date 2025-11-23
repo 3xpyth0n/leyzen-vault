@@ -19,6 +19,7 @@ from vault.blueprints.validators import (
     validate_pagination_params,
 )
 from vault.utils.mime_type_detection import detect_mime_type
+from vault.utils.safe_json import safe_json_loads
 
 files_api_bp = Blueprint("files_api", __name__, url_prefix="/api/v2/files")
 
@@ -1576,9 +1577,12 @@ def upload_chunk():
         if not session_data_from_client:
             return jsonify({"error": "session_data is required for chunk upload"}), 400
 
-        import json
-
-        client_session_data = json.loads(session_data_from_client)
+        client_session_data = safe_json_loads(
+            session_data_from_client,
+            max_size=10 * 1024,  # 10KB for session data
+            max_depth=20,
+            context="upload session_data",
+        )
 
         # Validate required fields from client
         total_size = client_session_data.get("total_size")

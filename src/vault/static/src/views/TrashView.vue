@@ -50,15 +50,8 @@
             <div class="file-icon" v-html="getFileIcon(file)"></div>
             <div class="file-info">
               <h3>{{ file.original_name }}</h3>
-              <p class="file-type">
-                {{
-                  file.mime_type === "application/x-directory"
-                    ? "Folder"
-                    : file.mime_type
-                }}
-              </p>
               <p class="file-size" v-if="file.size">
-                {{ formatSize(file.size) }}
+                Size: {{ formatSize(file.size) }}
               </p>
               <p class="file-date">
                 Deleted: {{ formatDate(file.deleted_at) }}

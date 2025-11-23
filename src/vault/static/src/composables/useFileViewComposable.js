@@ -285,19 +285,31 @@ export function useFileViewComposable(options = {}) {
 
   /**
    * Calculate overlay position to cover page-content
+   * The overlay should cover the entire content area without margins,
+   * starting below the header and next to the sidebar
    */
   const calculateOverlayPosition = () => {
     nextTick(() => {
+      const header = document.querySelector(".app-header");
       const pageContent = document.querySelector(".page-content");
-      if (pageContent) {
-        const rect = pageContent.getBoundingClientRect();
+      if (header && pageContent) {
+        const headerRect = header.getBoundingClientRect();
+        const pageContentRect = pageContent.getBoundingClientRect();
+        // Calculate overlay to start exactly below the header
+        // and extend to the right edge of viewport and bottom of viewport
+        const overlayTop = headerRect.bottom; // Start exactly below header
+        const overlayLeft = pageContentRect.left; // Start at page-content left edge
+        const overlayWidth = window.innerWidth - overlayLeft;
+        const overlayHeight = window.innerHeight - overlayTop;
+
         overlayStyle.value = {
           position: "fixed",
-          top: `${rect.top}px`,
-          left: `${rect.left}px`,
-          width: `${rect.width}px`,
-          height: `${rect.height}px`,
-          zIndex: 2,
+          top: `${overlayTop}px`,
+          left: `${overlayLeft}px`,
+          width: `${overlayWidth}px`,
+          height: `${overlayHeight}px`,
+          zIndex: 9999, // Above content but below password modal (z-index: 100000)
+          pointerEvents: "auto", // Ensure overlay is interactive
         };
       }
     });
@@ -317,6 +329,17 @@ export function useFileViewComposable(options = {}) {
       });
       observer.observe(sidebar);
       _sidebarResizeObserver.value = observer;
+    }
+
+    // Observe header changes (height might change)
+    const header = document.querySelector(".app-header");
+    if (header && window.ResizeObserver) {
+      const observer = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          calculateOverlayPosition();
+        });
+      });
+      observer.observe(header);
     }
 
     // Observe main-content changes (which moves when sidebar toggles)

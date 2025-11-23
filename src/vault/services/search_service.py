@@ -18,6 +18,7 @@ from vault.database.schema import (
     db,
 )
 from vault.services.search_index_service import SearchIndexService
+from vault.utils.safe_json import safe_json_loads
 
 
 class SearchService:
@@ -486,7 +487,12 @@ class SearchService:
                 continue
 
             try:
-                metadata = json.loads(file_obj.encrypted_metadata)
+                metadata = safe_json_loads(
+                    file_obj.encrypted_metadata,
+                    max_size=1024 * 1024,  # 1MB for metadata
+                    max_depth=50,
+                    context="file encrypted_metadata",
+                )
                 searchable_index = metadata.get("searchable_index", {})
                 file_tags = searchable_index.get("tags", [])
 

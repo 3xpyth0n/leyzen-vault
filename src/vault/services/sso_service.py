@@ -22,6 +22,7 @@ from vault.database.schema import (
 from vault.services.auth_service import AuthService
 from vault.services.email_service import EmailService
 from vault.security.url_validator import SSRFProtection, SSRFProtectionError
+from vault.utils.safe_json import safe_json_loads
 
 
 class SSOService:
@@ -245,7 +246,12 @@ class SSOService:
             )
 
         try:
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             saml_settings = {
                 "sp": {
                     "entityId": config.get("sp_entity_id", "leyzen-vault"),
@@ -307,7 +313,12 @@ class SSOService:
 
         try:
 
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             saml_settings = {
                 "sp": {
                     "entityId": config.get("sp_entity_id", "leyzen-vault"),
@@ -399,7 +410,12 @@ class SSOService:
         try:
             from authlib.integrations.flask_client import OAuth
 
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             client_id = config.get("client_id")
             authorization_url = config.get("authorization_url")
             redirect_uri = config.get(
@@ -455,7 +471,12 @@ class SSOService:
         try:
             import requests
 
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             client_id = config.get("client_id")
             client_secret = config.get("client_secret")
             token_url = config.get("token_url")
@@ -581,7 +602,12 @@ class SSOService:
         try:
             import requests
 
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             issuer_url = config.get("issuer_url")
 
             # Discover OIDC endpoints
@@ -678,7 +704,12 @@ class SSOService:
         try:
             import requests
 
-            config = json.loads(provider.config)
+            config = safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             discovery = session.get("sso_discovery", {})
             token_url = discovery.get("token_endpoint") or config.get("token_url")
             userinfo_url = discovery.get("userinfo_endpoint") or config.get(
@@ -807,7 +838,12 @@ class SSOService:
 
                             header_part = id_token.split(".")[0]
                             header_data = base64.urlsafe_b64decode(header_part + "==")
-                            header = json.loads(header_data)
+                            header = safe_json_loads(
+                                header_data.decode("utf-8"),
+                                max_size=1024,  # 1KB for JWT header
+                                max_depth=10,
+                                context="JWT header",
+                            )
                             kid = header.get("kid")
 
                             # Find the key in JWKS
@@ -874,7 +910,12 @@ class SSOService:
                         parts = id_token.split(".")
                         if len(parts) >= 2:
                             payload = base64.urlsafe_b64decode(parts[1] + "==")
-                            userinfo = json.loads(payload)
+                            userinfo = safe_json_loads(
+                                payload.decode("utf-8"),
+                                max_size=10 * 1024,  # 10KB for JWT payload
+                                max_depth=20,
+                                context="JWT payload",
+                            )
                         else:
                             return None
             except requests.Timeout:
@@ -941,7 +982,12 @@ class SSOService:
             raise ValueError("Provider is not a magic link provider")
 
         config = (
-            json.loads(provider.config)
+            safe_json_loads(
+                provider.config,
+                max_size=10 * 1024,  # 10KB for SSO config
+                max_depth=20,
+                context="SSO provider config",
+            )
             if isinstance(provider.config, str)
             else provider.config
         )
@@ -1119,7 +1165,14 @@ The Leyzen Vault Team
 
         for active_provider in active_providers:
             active_config = (
-                json.loads(active_provider.config) if active_provider.config else {}
+                safe_json_loads(
+                    active_provider.config,
+                    max_size=10 * 1024,  # 10KB for SSO config
+                    max_depth=20,
+                    context="SSO provider config",
+                )
+                if active_provider.config
+                else {}
             )
             active_preset = active_config.get("provider_preset")
             if not active_preset:
@@ -1190,7 +1243,16 @@ The Leyzen Vault Team
         # Check if activating would conflict with another active provider of the same preset
         if is_active is True:
             # Get the preset for the current provider
-            provider_config = json.loads(provider.config) if provider.config else {}
+            provider_config = (
+                safe_json_loads(
+                    provider.config,
+                    max_size=10 * 1024,  # 10KB for SSO config
+                    max_depth=20,
+                    context="SSO provider config",
+                )
+                if provider.config
+                else {}
+            )
             provider_preset = provider_config.get("provider_preset")
             if not provider_preset:
                 provider_preset = self._detect_provider_preset(
@@ -1227,10 +1289,28 @@ The Leyzen Vault Team
             provider.name = name
         if config is not None:
             # Ensure provider_preset is preserved or set in config
-            config_dict = config if isinstance(config, dict) else json.loads(config)
+            config_dict = (
+                config
+                if isinstance(config, dict)
+                else safe_json_loads(
+                    config,
+                    max_size=10 * 1024,  # 10KB for SSO config
+                    max_depth=20,
+                    context="SSO provider config",
+                )
+            )
             if "provider_preset" not in config_dict:
                 # If preset not provided, detect it or preserve existing
-                existing_config = json.loads(provider.config) if provider.config else {}
+                existing_config = (
+                    safe_json_loads(
+                        provider.config,
+                        max_size=10 * 1024,  # 10KB for SSO config
+                        max_depth=20,
+                        context="SSO provider config",
+                    )
+                    if provider.config
+                    else {}
+                )
                 existing_preset = existing_config.get("provider_preset")
                 if not existing_preset:
                     existing_preset = self._detect_provider_preset(

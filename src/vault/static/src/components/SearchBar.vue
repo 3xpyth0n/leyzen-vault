@@ -24,9 +24,8 @@
         class="search-filter-btn"
         :class="{ active: showFilters }"
         aria-label="Toggle filters"
-      >
-        ⚙️
-      </button>
+        v-html="getIcon('funnel', 20)"
+      ></button>
     </div>
 
     <!-- Filters Panel -->
@@ -430,6 +429,13 @@ export default {
       return div.innerHTML;
     };
 
+    const getIcon = (iconName, size = 24) => {
+      if (!window.Icons || !window.Icons[iconName]) {
+        return "";
+      }
+      return window.Icons[iconName](size, "currentColor");
+    };
+
     return {
       query,
       results,
@@ -449,6 +455,7 @@ export default {
       formatSize,
       formatDate,
       highlightText,
+      getIcon,
     };
   },
 };
@@ -457,8 +464,8 @@ export default {
 <style scoped>
 .search-bar {
   position: relative;
-  width: 100%;
-  max-width: 600px;
+  width: 85%;
+  max-width: 90%;
   margin: 0 auto;
 }
 
@@ -492,6 +499,15 @@ export default {
   color: var(--text-secondary, #cbd5e1);
   font-size: 1rem;
   transition: color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.3rem;
+}
+
+.search-filter-btn svg {
+  display: block;
+  vertical-align: middle;
 }
 
 .search-clear-btn:hover,

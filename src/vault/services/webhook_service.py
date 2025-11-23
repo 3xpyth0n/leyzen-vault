@@ -13,6 +13,7 @@ from typing import Any
 import requests
 from vault.database.schema import Webhook, db
 from vault.security.url_validator import SSRFProtection, SSRFProtectionError
+from vault.utils.safe_json import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,12 @@ class WebhookService:
 
         for webhook in webhooks:
             try:
-                events = json.loads(webhook.events)
+                events = safe_json_loads(
+                    webhook.events,
+                    max_size=1024,  # 1KB for webhook events
+                    max_depth=10,
+                    context="webhook events",
+                )
                 if event_type not in events:
                     continue
 

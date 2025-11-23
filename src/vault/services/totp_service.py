@@ -15,6 +15,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 
+from vault.utils.safe_json import safe_json_loads
+
 
 class TOTPService:
     """Service for managing Two-Factor Authentication (TOTP).
@@ -53,6 +55,12 @@ class TOTPService:
         )
         fernet_key = base64.urlsafe_b64encode(kdf.derive(encryption_key))
         self.cipher = Fernet(fernet_key)
+        # Cache for used TOTP tokens to prevent reuse (token -> timestamp)
+        # Tokens expire after 3 minutes (6 time periods)
+        self._used_tokens: dict[str, float] = {}
+        import time
+
+        self._time = time
 
     def generate_secret(self) -> str:
         """Generate a new TOTP secret.
@@ -107,14 +115,38 @@ class TOTPService:
 
         return f"data:image/png;base64,{img_base64}"
 
-    def verify_token(self, secret: str, token: str, window: int = 1) -> bool:
+    def __init__(self, secret_key: bytes):
+        """Initialize TOTP service.
+
+        Args:
+            secret_key: Secret key for encrypting TOTP secrets
+        """
+        self.secret_key = secret_key
+        # Derive Fernet key from secret_key using PBKDF2
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"leyzen_totp_salt",  # Fixed salt for deterministic key derivation
+            iterations=100000,
+            backend=default_backend(),
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(secret_key))
+        self.cipher = Fernet(key)
+        # Cache for used TOTP tokens to prevent reuse (token -> timestamp)
+        # Tokens expire after 3 minutes (6 time periods)
+        self._used_tokens: dict[str, float] = {}
+        import time
+
+        self._time = time
+
+    def verify_token(self, secret: str, token: str, window: int = 0) -> bool:
         """Verify a TOTP token.
 
         Args:
             secret: TOTP secret (base32)
             token: 6-digit TOTP token from user
             window: Number of time periods to check before/after current
-                   (default: 1 = ±30 seconds tolerance)
+                   (default: 0 = no tolerance, exact match only)
 
         Returns:
             True if token is valid, False otherwise
@@ -122,8 +154,32 @@ class TOTPService:
         if not token or not token.isdigit() or len(token) != 6:
             return False
 
+        # Check if token was already used (replay protection)
+        current_time = self._time.time()
+        cache_key = f"{secret}:{token}"
+
+        # Clean up expired entries (older than 3 minutes)
+        expired_keys = [
+            k
+            for k, ts in self._used_tokens.items()
+            if current_time - ts > 180  # 3 minutes
+        ]
+        for k in expired_keys:
+            del self._used_tokens[k]
+
+        # Check if token was recently used
+        if cache_key in self._used_tokens:
+            # Token was already used - reject to prevent replay
+            return False
+
         totp = pyotp.TOTP(secret)
-        return totp.verify(token, valid_window=window)
+        is_valid = totp.verify(token, valid_window=window)
+
+        # If valid, mark token as used
+        if is_valid:
+            self._used_tokens[cache_key] = current_time
+
+        return is_valid
 
     def generate_backup_codes(self, count: int = 10) -> list[str]:
         """Generate backup recovery codes.
@@ -237,7 +293,12 @@ class TOTPService:
         try:
             encrypted_bytes = base64.b64decode(encrypted_codes)
             decrypted = self.cipher.decrypt(encrypted_bytes)
-            return json.loads(decrypted.decode("utf-8"))
+            return safe_json_loads(
+                decrypted.decode("utf-8"),
+                max_size=1024,  # 1KB for backup codes
+                max_depth=10,
+                context="TOTP backup codes",
+            )
         except Exception as e:
             raise ValueError(f"Failed to decrypt backup codes: {e}")
 

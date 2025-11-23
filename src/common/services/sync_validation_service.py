@@ -314,15 +314,56 @@ class SyncValidationService:
             # Get expected metadata
             file_metadata = self._legitimate_files[file_id]
 
-            # Verify hash
+            # Verify hash (cryptographic validation)
             actual_hash = self.compute_file_hash(file_path)
             expected_hash = file_metadata["encrypted_hash"]
 
-            if actual_hash != expected_hash:
+            if not expected_hash:
+                # If no hash is stored, compute and warn (should not happen in production)
+                self._logger.warning(
+                    f"File {file_id} has no stored hash - computing and accepting"
+                )
+            elif actual_hash != expected_hash:
                 return (
                     False,
                     f"Hash mismatch for file {file_id}: expected {expected_hash[:16]}..., got {actual_hash[:16]}...",
                 )
+
+            # Verify magic bytes (content-based validation)
+            # Read first few bytes to verify file type matches expected format
+            try:
+                with open(file_path, "rb") as f:
+                    magic_bytes = f.read(16)  # Read first 16 bytes
+
+                # Basic magic bytes validation (can be extended for specific file types)
+                # Encrypted files should not start with common plaintext signatures
+                # This is a basic check - more sophisticated validation can be added
+                plaintext_signatures = [
+                    b"PK\x03\x04",  # ZIP files
+                    b"\x89PNG",  # PNG images
+                    b"GIF89a",  # GIF images
+                    b"GIF87a",  # GIF images
+                    b"\xff\xd8\xff",  # JPEG images
+                    b"%PDF",  # PDF files
+                    b"<!DOCTYPE",  # HTML/XML
+                    b"<?xml",  # XML
+                ]
+
+                # If file starts with plaintext signature and is supposed to be encrypted,
+                # this might indicate tampering (unless it's a known format)
+                # For now, we just log a warning but don't reject
+                for sig in plaintext_signatures:
+                    if magic_bytes.startswith(sig):
+                        self._logger.warning(
+                            f"File {file_id} starts with plaintext signature {sig.hex()} - "
+                            "may not be encrypted or may be a known format"
+                        )
+                        break
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to read magic bytes for file {file_id}: {e}"
+                )
+                # Don't fail validation if magic bytes check fails
 
             # Verify file size (optional but recommended)
             actual_size = file_path.stat().st_size

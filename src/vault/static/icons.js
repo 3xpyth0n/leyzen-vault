@@ -520,4 +520,18 @@ window.Icons = {
       true, // use fill instead of stroke
     );
   },
+
+  // Funnel/filter icon
+  funnel: function (size, color) {
+    // Use custom viewBox (0 0 48 48) and fill for better styling
+    const fillAttr = `fill="${color}"`;
+    const strokeAttr = `stroke="none"`;
+    // Main path (outer funnel)
+    const mainPath =
+      '<path d="M20,43.45a.94.94,0,0,1-.51-.14,1,1,0,0,1-.49-.86V28.34L6.21,11.61A1,1,0,0,1,6,11V5.19a1,1,0,0,1,1-1H41a1,1,0,0,1,1,1V11a1,1,0,0,1-.21.61L29,28.34v9.75a1,1,0,0,1-.52.88l-8,4.36A1,1,0,0,1,20,43.45ZM8,10.66,20.79,27.39A1,1,0,0,1,21,28V40.77l6-3.27V28a1,1,0,0,1,.21-.61L40,10.66V6.19H8Z" opacity="0.9"></path>';
+    // Highlight path (inner detail)
+    const highlightPath =
+      '<path d="M38,5V9.13a2,2,0,0,1-.41,1.21L25.41,26.27A2,2,0,0,0,25,27.48v8.23a2,2,0,0,1-1,1.75l-4,2.16v2.64l8-4.36V27.81l13-17V5Z" opacity="0.35"></path>';
+    return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" ${fillAttr} ${strokeAttr}>${mainPath}${highlightPath}</svg>`;
+  },
 };

@@ -14,6 +14,7 @@ from vault.database.schema import (
     VaultSpaceType,
     db,
 )
+from vault.utils.safe_json import safe_json_loads
 
 
 class TemplateService:
@@ -78,7 +79,12 @@ class TemplateService:
         if not template.is_public and template.created_by != user_id:
             raise ValueError("Template not accessible")
 
-        template_config = json.loads(template.template_config)
+        template_config = safe_json_loads(
+            template.template_config,
+            max_size=10 * 1024,  # 10KB for template config
+            max_depth=20,
+            context="template config",
+        )
 
         # Create VaultSpace
         vaultspace = VaultSpace(
