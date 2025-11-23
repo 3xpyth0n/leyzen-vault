@@ -39,7 +39,6 @@ from common.env import load_env_with_override, parse_container_names, parse_time
 from common.exceptions import ConfigurationError
 from common.token_utils import (
     derive_docker_proxy_token,
-    derive_internal_api_token,
 )
 
 
@@ -146,6 +145,111 @@ def _validate_url(url: str, variable_name: str) -> str:
         raise ConfigurationError(f"{variable_name} is not a valid URL: {exc}") from exc
 
     return url
+
+
+def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str) -> str:
+    """Get INTERNAL_API_TOKEN from database (SystemSecrets table).
+
+    The orchestrator reads the token from the same PostgreSQL database as the vault.
+    The token is encrypted in the database and decrypted using SECRET_KEY.
+
+    Args:
+        env_values: Dictionary containing environment variables
+        secret_key: Secret key for decrypting the token
+
+    Returns:
+        The internal API token string, or empty string if not available
+    """
+    import os
+
+    # Check environment variable first (explicit override)
+    internal_api_token = env_values.get("INTERNAL_API_TOKEN", "")
+    if not internal_api_token:
+        internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
+
+    # If explicitly set in environment, use it
+    if internal_api_token:
+        return internal_api_token
+
+    # Try to read from database using SQLAlchemy directly (no dependency on vault module)
+    try:
+        from sqlalchemy import create_engine, text
+        from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.backends import default_backend
+        import base64
+
+        # Build PostgreSQL connection URL from environment
+        postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+        postgres_port = env_values.get("POSTGRES_PORT", "5432")
+        postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+        postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+        postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+        if not postgres_password:
+            # Password required for connection
+            return ""
+
+        # Create SQLAlchemy engine
+        postgres_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+        engine = create_engine(postgres_url, pool_pre_ping=True)
+
+        try:
+            with engine.connect() as conn:
+                # Query for the encrypted token value
+                result = conn.execute(
+                    text("SELECT encrypted_value FROM system_secrets WHERE key = :key"),
+                    {"key": "internal_api_token"},
+                )
+                row = result.fetchone()
+
+                if not row:
+                    # Token not found in database
+                    return ""
+
+                encrypted_value = row[0]
+
+                # Derive Fernet key from SECRET_KEY for decryption
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=b"leyzen-vault-internal-token-v1",
+                    iterations=100000,
+                    backend=default_backend(),
+                )
+                fernet_key = base64.urlsafe_b64encode(kdf.derive(secret_key.encode()))
+                cipher = Fernet(fernet_key)
+
+                # Decrypt and return the token
+                try:
+                    decrypted_token = cipher.decrypt(encrypted_value.encode()).decode()
+                    return decrypted_token
+                except Exception as e:
+                    # Decryption failed - token may be corrupted
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Failed to decrypt INTERNAL_API_TOKEN from database: {e}. "
+                        "Orchestrator will wait for vault to generate the token."
+                    )
+                    return ""
+        finally:
+            engine.dispose()
+
+    except Exception as e:
+        # Database access failed - return empty string
+        # Orchestrator can still work, but internal API calls will fail until token is available
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"Failed to read INTERNAL_API_TOKEN from database: {e}. "
+            "Orchestrator will wait for vault to generate the token. "
+            "Set INTERNAL_API_TOKEN environment variable to bypass database lookup."
+        )
+        return ""
 
 
 def load_settings() -> Settings:
@@ -262,11 +366,12 @@ def load_settings() -> Settings:
     secret_key = env_values.get("SECRET_KEY", "")
     validate_secret_entropy(secret_key, min_length=32, secret_name="SECRET_KEY")
 
-    # Generate tokens automatically from SECRET_KEY
-    # Tokens are derived deterministically, so all services using the same SECRET_KEY
-    # will generate the same tokens without needing to share or persist them
+    # Generate docker proxy token automatically from SECRET_KEY
     docker_proxy_token = derive_docker_proxy_token(secret_key)
-    internal_api_token = derive_internal_api_token(secret_key)
+
+    # Internal API token is now stored in database (SystemSecrets table)
+    # Try to read from database, fallback to environment variable if set
+    internal_api_token = _get_internal_api_token_from_db(env_values, secret_key)
 
     sse_stream_interval_ms = parse_int_env_var(
         "ORCH_SSE_INTERVAL_MS",
@@ -325,4 +430,28 @@ def load_settings() -> Settings:
     )
 
 
-__all__ = ["Settings", "load_settings"]
+def reload_internal_api_token_from_db(settings: Settings) -> str:
+    """Reload INTERNAL_API_TOKEN from database.
+
+    This is a helper function for services that need to reload the token
+    dynamically after initial settings load.
+
+    Args:
+        settings: Current orchestrator settings
+
+    Returns:
+        The internal API token string, or empty string if not available
+    """
+    import os
+    from common.env import load_env_with_override
+
+    # Load environment values
+    root_dir = settings.html_dir.parent.parent
+    env_values = load_env_with_override(root_dir)
+    env_values.update(os.environ)
+
+    # Get token from database
+    return _get_internal_api_token_from_db(env_values, settings.secret_key)
+
+
+__all__ = ["Settings", "load_settings", "reload_internal_api_token_from_db"]

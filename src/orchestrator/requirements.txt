@@ -48,3 +48,11 @@ wtforms==3.2.1
     # via flask-wtf
 sqlalchemy==2.0.36
     # via -r orchestrator/requirements.in
+psycopg2-binary==2.9.11
+    # via -r orchestrator/requirements.in
+cryptography==46.0.3
+    # via -r orchestrator/requirements.in
+cffi==2.0.0
+    # via cryptography
+pycparser==2.23
+    # via cffi

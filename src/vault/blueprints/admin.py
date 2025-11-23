@@ -1071,7 +1071,8 @@ def list_api_keys():
     """List all API keys (admin and superadmin only)."""
     from vault.services.api_key_service import ApiKeyService
 
-    api_key_service = ApiKeyService()
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    api_key_service = ApiKeyService(secret_key=secret_key)
     api_keys = api_key_service.list_all_api_keys()
 
     return (
@@ -1148,7 +1149,8 @@ def create_api_key():
                 403,
             )
 
-    api_key_service = ApiKeyService()
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    api_key_service = ApiKeyService(secret_key=secret_key)
 
     try:
         api_key, plaintext_key = api_key_service.generate_api_key(
@@ -1178,7 +1180,8 @@ def revoke_api_key(key_id: str):
     """
     from vault.services.api_key_service import ApiKeyService
 
-    api_key_service = ApiKeyService()
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    api_key_service = ApiKeyService(secret_key=secret_key)
 
     try:
         api_key_service.revoke_api_key(key_id)
@@ -1194,7 +1197,8 @@ def list_user_api_keys(user_id: str):
     """List all API keys for a specific user (admin and superadmin only)."""
     from vault.services.api_key_service import ApiKeyService
 
-    api_key_service = ApiKeyService()
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    api_key_service = ApiKeyService(secret_key=secret_key)
     api_keys = api_key_service.list_user_api_keys(user_id)
 
     return (
@@ -1309,10 +1313,26 @@ The Leyzen Vault Team
             400,
         )
     except smtplib.SMTPException as e:
-        return jsonify({"success": False, "error": f"SMTP error: {str(e)}"}), 400
+        # SECURITY: Never expose error details in production
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if is_production:
+            return jsonify({"success": False, "error": "SMTP error occurred"}), 400
+        else:
+            return jsonify({"success": False, "error": f"SMTP error: {str(e)}"}), 400
     except Exception as e:
         current_app.logger.error(f"Error testing SMTP: {e}")
-        return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
+        # SECURITY: Never expose error details in production
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if is_production:
+            return (
+                jsonify({"success": False, "error": "An unexpected error occurred"}),
+                500,
+            )
+        else:
+            return (
+                jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}),
+                500,
+            )
 
 
 @admin_api_bp.route("/storage/reconcile", methods=["GET"])

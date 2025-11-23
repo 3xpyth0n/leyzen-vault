@@ -46,9 +46,19 @@ def _validate_origin() -> tuple[bool, str | None]:
     # Get development allowed origins (for permissive but still active validation)
     allowed_origins_dev = current_app.config.get("ALLOWED_ORIGINS_DEV", [])
 
-    # If neither header is present, allow the request (same-origin browsers
-    # may not send these headers for same-origin requests, especially after refresh)
+    # SECURITY: In production, require Origin or Referer for state-changing requests
+    # GET requests are allowed without headers (same-origin browsers may not send them)
+    # POST/PUT/DELETE/PATCH require Origin or Referer in production
     if not origin and not referer:
+        if is_production and request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            current_app.logger.warning(
+                f"Blocked {request.method} request without Origin or Referer header in production: {request.path}"
+            )
+            return (
+                False,
+                "Origin or Referer header required for state-changing requests in production",
+            )
+        # In development or for GET requests, allow without headers
         return True, None
 
     # Get expected origin from request (same origin as the request itself)
@@ -99,8 +109,9 @@ def _validate_origin() -> tuple[bool, str | None]:
                 return True, None
 
             # In development: permissive but always active validation
-            # Allow localhost and 127.0.0.1 with any port
+            # SECURITY: Never allow localhost/127.0.0.1 in production, even if misconfigured
             if not is_production:
+                # Only allow localhost in development mode
                 if origin and ("localhost" in origin.lower() or "127.0.0.1" in origin):
                     return True, None
                 # Check against development allowed origins
@@ -119,6 +130,14 @@ def _validate_origin() -> tuple[bool, str | None]:
                 )
                 # In dev, we can be more permissive but still log
                 return True, None  # Permissive but logged
+            else:
+                # In production: never allow localhost or 127.0.0.1, even if they match
+                # This prevents misconfiguration from allowing insecure origins
+                if origin and ("localhost" in origin.lower() or "127.0.0.1" in origin):
+                    current_app.logger.error(
+                        f"SECURITY: Blocked request with localhost/127.0.0.1 origin in production: {origin}"
+                    )
+                    return False, "Localhost origins are not allowed in production"
 
             # In production: strict validation
             current_app.logger.warning(
@@ -131,7 +150,11 @@ def _validate_origin() -> tuple[bool, str | None]:
             current_app.logger.warning(
                 f"Blocked request with invalid Origin format: {request.method} {request.path}"
             )
+            # In production: always reject invalid origin format
             if is_production:
+                current_app.logger.error(
+                    f"SECURITY: Blocked request with invalid Origin format in production: {request.method} {request.path}"
+                )
                 return False, "Invalid origin format"
             # In development, log but allow (permissive)
             import warnings
@@ -165,21 +188,34 @@ def _validate_origin() -> tuple[bool, str | None]:
             return False, "Origin validation failed"
         else:
             # In development: permissive but always active validation
-            # Allow localhost and 127.0.0.1
-            if referer and ("localhost" in referer.lower() or "127.0.0.1" in referer):
-                return True, None
-            # Log warning but allow (permissive)
-            import warnings
+            # SECURITY: Never allow localhost/127.0.0.1 in production
+            if not is_production:
+                # Only allow localhost in development mode
+                if referer and (
+                    "localhost" in referer.lower() or "127.0.0.1" in referer
+                ):
+                    return True, None
+                # Log warning but allow (permissive)
+                import warnings
 
-            warnings.warn(
-                f"Origin validation failed in dev mode: Origin={origin}, "
-                f"Referer={referer}. Validation is permissive but active."
-            )
-            current_app.logger.warning(
-                f"Origin validation warning (permissive in dev): Origin={origin}, "
-                f"Referer={referer}, Expected host={expected_host}, "
-                f"Path={request.path}, Method={request.method}"
-            )
+                warnings.warn(
+                    f"Origin validation failed in dev mode: Origin={origin}, "
+                    f"Referer={referer}. Validation is permissive but active."
+                )
+                current_app.logger.warning(
+                    f"Origin validation warning (permissive in dev): Origin={origin}, "
+                    f"Referer={referer}, Expected host={expected_host}, "
+                    f"Path={request.path}, Method={request.method}"
+                )
+            else:
+                # In production: never allow localhost or 127.0.0.1 in referer
+                if referer and (
+                    "localhost" in referer.lower() or "127.0.0.1" in referer
+                ):
+                    current_app.logger.error(
+                        f"SECURITY: Blocked request with localhost/127.0.0.1 referer in production: {referer}"
+                    )
+                    return False, "Localhost origins are not allowed in production"
 
     return True, None
 
@@ -298,7 +334,8 @@ def jwt_required(f: F) -> F:
 
         # If JWT authentication failed, try API key authentication
         if not user:
-            api_key_service = ApiKeyService()
+            secret_key = current_app.config.get("SECRET_KEY", "")
+            api_key_service = ApiKeyService(secret_key=secret_key)
             user = api_key_service.verify_api_key(token)
 
         if not user:

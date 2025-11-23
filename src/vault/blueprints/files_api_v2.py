@@ -306,6 +306,30 @@ def upload_file_v2():
     if file.filename == "":
         return jsonify({"error": "File is required"}), 400
 
+    # SECURITY: Validate file size before reading into memory
+    # Check Content-Length header first (if available)
+    content_length = request.headers.get("Content-Length")
+    if content_length:
+        try:
+            content_length_int = int(content_length)
+            # Get max file size from settings
+            settings = current_app.config.get("VAULT_SETTINGS")
+            max_file_size_bytes = (
+                (settings.max_file_size_mb if settings else 100) * 1024 * 1024
+            )
+            if content_length_int > max_file_size_bytes:
+                return (
+                    jsonify(
+                        {
+                            "error": f"File size exceeds maximum allowed size ({settings.max_file_size_mb if settings else 100}MB)"
+                        }
+                    ),
+                    413,  # Payload Too Large
+                )
+        except (ValueError, TypeError):
+            # Invalid Content-Length header - continue with file read validation
+            pass
+
     file_service = _get_file_service()
     storage = _get_storage()
     quota_service = _get_quota_service()
@@ -314,6 +338,21 @@ def upload_file_v2():
         # Read file data first to check size
         file_data = file.read()
         file_size = len(file_data)
+
+        # SECURITY: Validate file size after reading
+        settings = current_app.config.get("VAULT_SETTINGS")
+        max_file_size_bytes = (
+            (settings.max_file_size_mb if settings else 100) * 1024 * 1024
+        )
+        if file_size > max_file_size_bytes:
+            return (
+                jsonify(
+                    {
+                        "error": f"File size exceeds maximum allowed size ({settings.max_file_size_mb if settings else 100}MB)"
+                    }
+                ),
+                413,  # Payload Too Large
+            )
 
         # Check storage quota before upload
         # Estimate encrypted size (add ~33% overhead for AES-GCM)

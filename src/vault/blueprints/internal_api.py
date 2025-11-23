@@ -460,7 +460,12 @@ def storage_cleanup():
 
     except Exception as e:
         current_app.logger.error(f"Storage cleanup failed: {e}", exc_info=True)
-        return jsonify({"error": "Storage cleanup failed", "details": str(e)}), 500
+        # SECURITY: Never expose error details in production
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if is_production:
+            return jsonify({"error": "Storage cleanup failed"}), 500
+        else:
+            return jsonify({"error": "Storage cleanup failed", "details": str(e)}), 500
 
 
 @internal_api_bp.route("/security-metrics", methods=["GET"])
@@ -678,10 +683,15 @@ def security_metrics():
 
     except Exception as e:
         current_app.logger.error(f"Failed to get security metrics: {e}", exc_info=True)
-        return (
-            jsonify({"error": "Failed to get security metrics", "details": str(e)}),
-            500,
-        )
+        # SECURITY: Never expose error details in production
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if is_production:
+            return jsonify({"error": "Failed to get security metrics"}), 500
+        else:
+            return (
+                jsonify({"error": "Failed to get security metrics", "details": str(e)}),
+                500,
+            )
 
 
 @internal_api_bp.route("/prepare-rotation", methods=["POST"])
@@ -1094,7 +1104,12 @@ def prepare_rotation():
         current_app.logger.error(
             f"[PREPARE ROTATION] Preparation failed: {e}", exc_info=True
         )
-        return jsonify({"error": "Preparation failed", "details": str(e)}), 500
+        # SECURITY: Never expose error details in production
+        is_production = current_app.config.get("IS_PRODUCTION", True)
+        if is_production:
+            return jsonify({"error": "An internal error occurred"}), 500
+        else:
+            return jsonify({"error": "Preparation failed", "details": str(e)}), 500
 
 
 __all__ = ["internal_api_bp"]

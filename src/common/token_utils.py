@@ -28,22 +28,8 @@ def derive_docker_proxy_token(secret_key: str) -> str:
     return token_bytes.hex()
 
 
-def derive_internal_api_token(secret_key: str) -> str:
-    """Derive INTERNAL_API_TOKEN from SECRET_KEY using HMAC.
+# derive_internal_api_token removed - now using random token generation stored in database
+# The token is generated randomly by the vault service and stored encrypted in SystemSecrets table
+# Orchestrator reads the token from the database
 
-    This function generates a deterministic token for internal API authentication.
-    All services using the same SECRET_KEY will generate the same token.
-    The token is distinct from DOCKER_PROXY_TOKEN due to a different context.
-
-    Args:
-        secret_key: The SECRET_KEY to derive the token from
-
-    Returns:
-        A 64-character hexadecimal token (256 bits)
-    """
-    context = b"internal-api-token-v1"
-    token_bytes = hmac.new(secret_key.encode(), context, hashlib.sha256).digest()
-    return token_bytes.hex()
-
-
-__all__ = ["derive_docker_proxy_token", "derive_internal_api_token"]
+__all__ = ["derive_docker_proxy_token"]

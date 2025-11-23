@@ -30,10 +30,16 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **File Validation**: Magic bytes validation for whitelisted files to detect tampering.
 - **Error Standardization**: Unique error codes (ERR\_\*) to prevent information leakage.
 
+### Security
+
+- **Internal API Token**: Random token generation with automatic storage in encrypted `system_secrets` table. Removed deprecated `derive_internal_api_token()` function.
+- **JWT Replay Protection**: Automatic `jti` column migration with retry logic. Application no longer blocks startup if column missing.
+- **Rate Limiting**: Enforced fail-closed behavior. All rate limiting errors result in request denial, even in development.
+
 ### Fixed
 
-- **Container Rotation**: Fixed SyncValidationService import error and replaced orchestrator-based file promotion with local FilePromotionService in prepare_rotation endpoint.
-- **2FA Bypass via SSO**: Fixed security issue where users with 2FA enabled could bypass two-factor authentication when logging in via SSO. All SSO providers (SAML, OAuth2, OIDC, Magic Link) now require 2FA verification if enabled.
+- **Database Initialization**: Fixed startup errors with automatic creation of `system_secrets` table and `jti` column migration.
+- **CORS Configuration**: Changed from blocking to warning in production to allow application startup.
 
 ## [2.2.0] - 2025-11-22
 

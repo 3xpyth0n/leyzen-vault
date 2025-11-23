@@ -69,11 +69,16 @@ class StorageCleanupService:
             Response data from API, or None if call failed
         """
         import requests
-        from common.token_utils import derive_internal_api_token
 
         try:
-            # Generate internal API token from secret key
-            internal_api_token = derive_internal_api_token(self.settings.secret_key)
+            # Get internal API token from settings (read from database)
+            internal_api_token = self.settings.internal_api_token
+            if not internal_api_token:
+                # Token not available - skip cleanup
+                self.logger.warning(
+                    "INTERNAL_API_TOKEN not available. Skipping storage cleanup."
+                )
+                return
 
             # Get vault container URL (use first available container)
             # In production, there should always be at least one container running

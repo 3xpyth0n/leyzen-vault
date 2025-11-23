@@ -20,7 +20,8 @@ else:
         sys.path.insert(0, str(_SRC_DIR))
 
 from common.path_setup import bootstrap_entry_point  # noqa: E402
-from common.token_utils import derive_internal_api_token  # noqa: E402
+
+# derive_internal_api_token removed - now using random token generation stored in database
 
 bootstrap_entry_point()
 
@@ -135,37 +136,230 @@ def _get_or_generate_internal_api_token(
     env_values: dict[str, str],
     secret_key: str | None = None,
     logger=None,
+    app=None,
 ) -> str:
-    """Get or generate INTERNAL_API_TOKEN from environment or SECRET_KEY.
+    """Get or generate INTERNAL_API_TOKEN from environment or database.
 
     This function centralizes the logic for obtaining the INTERNAL_API_TOKEN.
-    It first checks environment variables, then generates from SECRET_KEY if needed.
+    Priority:
+    1. Environment variable INTERNAL_API_TOKEN (if explicitly set)
+    2. Database (SystemSecrets table) - generated randomly on first use
+    3. If neither available and SECRET_KEY provided, generate and store in database
 
     Args:
         env_values: Dictionary containing environment variables
-        secret_key: Optional secret key to use for token generation
+        secret_key: Secret key for encrypting/decrypting the token in database
         logger: Optional logger instance for warning messages
+        app: Optional Flask app instance (required for database access)
 
     Returns:
         The internal API token string
     """
     import os
+    import secrets
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.backends import default_backend
+    import base64
 
-    # Check environment variables first
+    # Check environment variables first (explicit override)
     internal_api_token = env_values.get("INTERNAL_API_TOKEN", "")
     if not internal_api_token:
         internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
 
-    # If not set, generate automatically from SECRET_KEY
-    if not internal_api_token and secret_key:
-        internal_api_token = derive_internal_api_token(secret_key)
-    elif not internal_api_token and logger:
-        logger.log(
-            "[WARNING] INTERNAL_API_TOKEN not set and SECRET_KEY not available. "
-            "Internal API endpoints will be disabled."
-        )
+    # If explicitly set in environment, use it
+    if internal_api_token:
+        return internal_api_token
 
-    return internal_api_token or ""
+    # If not set, try to get from database or generate new one
+    if not secret_key:
+        if logger:
+            logger.log(
+                "[WARNING] INTERNAL_API_TOKEN not set and SECRET_KEY not available. "
+                "Internal API endpoints will be disabled."
+            )
+        return ""
+
+    # Need app context for database access
+    if not app:
+        # Try to get current app
+        try:
+            from flask import current_app
+
+            app = current_app
+        except RuntimeError:
+            # Not in app context - cannot access database
+            if logger:
+                logger.log(
+                    "[WARNING] Cannot access database for INTERNAL_API_TOKEN. "
+                    "Internal API endpoints will be disabled."
+                )
+            return ""
+
+    # Derive Fernet key from SECRET_KEY for encryption
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"leyzen-vault-internal-token-v1",
+        iterations=100000,
+        backend=default_backend(),
+    )
+    fernet_key = base64.urlsafe_b64encode(kdf.derive(secret_key.encode()))
+    cipher = Fernet(fernet_key)
+
+    # Ensure we're in app context and database is initialized
+    # Use app.app_context() to ensure database is accessible
+    from vault.database.schema import SystemSecrets, db
+
+    # Try to get existing token from database
+    secret_key_name = "internal_api_token"
+    secret_record = None
+    try:
+        # Verify we can access the database
+        with app.app_context():
+            # Check if SystemSecrets table exists before querying
+            # Handle all exceptions gracefully - table might not exist yet
+            try:
+                from sqlalchemy import inspect as sql_inspect
+
+                inspector = sql_inspect(db.engine)
+                table_exists = "system_secrets" in inspector.get_table_names()
+            except Exception:
+                # Inspection failed - assume table doesn't exist
+                table_exists = False
+
+            if not table_exists:
+                # Table doesn't exist - create it
+                if logger:
+                    logger.log(
+                        "[INFO] SystemSecrets table does not exist. Creating it..."
+                    )
+                try:
+                    SystemSecrets.__table__.create(db.engine, checkfirst=True)
+                    if logger:
+                        logger.log("[INFO] SystemSecrets table created successfully.")
+                except Exception as create_error:
+                    # Creation failed - might already exist or other issue
+                    if logger:
+                        logger.log(
+                            f"[WARNING] Failed to create SystemSecrets table: {create_error}"
+                        )
+                secret_record = None
+            else:
+                # Table exists - query for existing token
+                try:
+                    secret_record = (
+                        db.session.query(SystemSecrets)
+                        .filter_by(key=secret_key_name)
+                        .first()
+                    )
+                except Exception as query_error:
+                    # Query failed - table might not actually exist despite inspection
+                    error_str = str(query_error).lower()
+                    if "does not exist" in error_str or "undefinedtable" in error_str:
+                        if logger:
+                            logger.log(
+                                "[INFO] SystemSecrets table does not exist (detected via query error). Creating it..."
+                            )
+                        try:
+                            SystemSecrets.__table__.create(db.engine, checkfirst=True)
+                        except Exception:
+                            pass  # Ignore creation errors
+                        secret_record = None
+                    else:
+                        # Other query error - log and continue
+                        if logger:
+                            logger.log(
+                                f"[WARNING] Query failed for SystemSecrets: {query_error}"
+                            )
+                        secret_record = None
+    except Exception as e:
+        # Any exception - log but don't fail
+        # This includes RuntimeError, AttributeError, ProgrammingError, etc.
+        if logger:
+            error_str = str(e).lower()
+            if "does not exist" in error_str or "undefinedtable" in error_str:
+                logger.log(
+                    "[INFO] SystemSecrets table does not exist. Will be created when storing token."
+                )
+            else:
+                logger.log(
+                    f"[WARNING] Database not available for INTERNAL_API_TOKEN: {e}. "
+                    "Internal API endpoints will be disabled."
+                )
+        return ""
+
+    if secret_record:
+        # Decrypt and return existing token
+        try:
+            decrypted_token = cipher.decrypt(
+                secret_record.encrypted_value.encode()
+            ).decode()
+            return decrypted_token
+        except Exception as e:
+            # Decryption failed - log error and generate new token
+            if logger:
+                logger.log(
+                    f"[WARNING] Failed to decrypt stored INTERNAL_API_TOKEN: {e}. "
+                    "Generating new token."
+                )
+            # Delete corrupted record
+            with app.app_context():
+                db.session.delete(secret_record)
+                db.session.commit()
+
+    # Generate new random token
+    new_token = secrets.token_urlsafe(32)  # 32 bytes = 256 bits, URL-safe base64
+
+    # Encrypt token before storing
+    encrypted_token = cipher.encrypt(new_token.encode()).decode()
+
+    # Store in database
+    try:
+        with app.app_context():
+            # Ensure SystemSecrets table exists before storing
+            # If table doesn't exist, create it (this can happen if init_db() hasn't created it yet)
+            try:
+                # Try to create the table if it doesn't exist
+                from sqlalchemy import inspect as sql_inspect
+
+                inspector = sql_inspect(db.engine)
+                if "system_secrets" not in inspector.get_table_names():
+                    if logger:
+                        logger.log("[INFO] Creating SystemSecrets table...")
+                    SystemSecrets.__table__.create(db.engine, checkfirst=True)
+            except Exception as create_error:
+                # Table creation failed - log but continue (might already exist)
+                if logger:
+                    logger.debug(f"SystemSecrets table check/create: {create_error}")
+
+            new_secret = SystemSecrets(
+                key=secret_key_name,
+                encrypted_value=encrypted_token,
+            )
+            db.session.add(new_secret)
+            db.session.commit()
+
+            if logger:
+                logger.log(
+                    "[INIT] Generated and stored new INTERNAL_API_TOKEN in database"
+                )
+
+            return new_token
+    except Exception as e:
+        # Database error - rollback and return empty
+        try:
+            with app.app_context():
+                db.session.rollback()
+        except Exception:
+            pass  # Ignore rollback errors
+        if logger:
+            logger.log(
+                f"[ERROR] Failed to store INTERNAL_API_TOKEN in database: {e}. "
+                "Internal API endpoints will be disabled."
+            )
+        return ""
 
 
 def create_app(
@@ -207,10 +401,42 @@ def create_app(
     except Exception:
         pass
 
-    # Detect production environment
+    # SECURITY: Detect production environment with strict validation
     # Default to production for security (hide error details by default)
     leylen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
     is_production = leylen_env not in ("dev", "development")
+
+    # Additional production checks: verify critical production settings
+    if is_production:
+        # In production, verify critical security settings
+        secret_key = env_values.get("SECRET_KEY", "").strip()
+        if len(secret_key) < 32:
+            raise RuntimeError(
+                "SECURITY ERROR: SECRET_KEY must be at least 32 characters in production. "
+                "Generate a secure key with: openssl rand -hex 32"
+            )
+
+        # Check for development indicators that should not be present in production
+        if leylen_env in ("dev", "development"):
+            raise RuntimeError(
+                "SECURITY ERROR: LEYZEN_ENVIRONMENT is set to development mode in production. "
+                "This is a security risk. Remove LEYZEN_ENVIRONMENT or set it to 'production'."
+            )
+
+        # Warn if session cookies are not secure in production
+        session_cookie_secure = (
+            env_values.get("SESSION_COOKIE_SECURE", "").strip().lower()
+        )
+        if session_cookie_secure not in ("true", "1", "yes"):
+            import warnings
+
+            warnings.warn(
+                "SECURITY WARNING: SESSION_COOKIE_SECURE is not enabled in production. "
+                "Session cookies should be marked as Secure when using HTTPS. "
+                "Set SESSION_COOKIE_SECURE=true in your .env file.",
+                UserWarning,
+            )
+
     app.config["IS_PRODUCTION"] = is_production
 
     # Load settings
@@ -228,13 +454,6 @@ def create_app(
         logger = FileLogger(settings)
         app.config["LOGGER"] = logger
 
-        # Internal API token for orchestrator operations
-        # Auto-generate from SECRET_KEY if not explicitly set
-        internal_api_token = _get_or_generate_internal_api_token(
-            env_values, settings.secret_key, logger
-        )
-        app.config["INTERNAL_API_TOKEN"] = internal_api_token
-
         # Configure PostgreSQL database
         try:
             postgres_url = get_postgres_url(env_values)
@@ -245,37 +464,6 @@ def create_app(
             )
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
-
-            # Check if jti column exists for JWT replay protection
-            try:
-                from vault.services.auth_service import _check_jti_column_exists
-
-                if not _check_jti_column_exists():
-                    logger.log(
-                        "[CRITICAL] JWT replay protection (jti column) not available - "
-                        "database migration required. JWT tokens may be vulnerable to replay attacks."
-                    )
-            except Exception as jti_check_error:
-                logger.log(
-                    f"[WARNING] Failed to check jti column existence: {jti_check_error}"
-                )
-
-            # Initialize TOTP service for 2FA
-            init_totp_service(settings.secret_key)
-            logger.log("[INIT] TOTP service initialized")
-
-            # Check if setup is complete
-            try:
-                if not is_setup_complete(app):
-                    logger.log(
-                        "[WARNING] Setup not complete. Visit /setup to create superadmin account."
-                    )
-                else:
-                    logger.log("[INIT] Setup complete - users exist in database")
-            except Exception as setup_check_error:
-                logger.log(
-                    f"[WARNING] Failed to check setup status: {setup_check_error}"
-                )
         except Exception as db_exc:
             # Log the error with full details
             # Import traceback here to avoid importing it at module level if not needed
@@ -302,6 +490,228 @@ def create_app(
                     "This is not recommended for production use."
                 )
                 # Continue without PostgreSQL for development/testing only
+
+        # Internal API token for orchestrator operations
+        # Generate random token and store in database if not explicitly set in environment
+        # Must be called AFTER init_db() so database is available
+        # Isolate in try/except to avoid treating token generation failure as fatal DB error
+        # This is OUTSIDE the init_db try/except block to avoid confusion
+        try:
+            internal_api_token = _get_or_generate_internal_api_token(
+                env_values, settings.secret_key, logger, app
+            )
+            app.config["INTERNAL_API_TOKEN"] = internal_api_token
+        except Exception as token_error:
+            # Token generation failed - log but don't fail startup
+            # This allows the app to start even if token generation fails
+            logger.log(
+                f"[WARNING] Failed to generate INTERNAL_API_TOKEN: {token_error}. "
+                "Internal API endpoints will be disabled. "
+                "This is non-fatal - application will continue to start."
+            )
+            app.config["INTERNAL_API_TOKEN"] = ""
+
+        # SECURITY: Verify production mode detection at startup
+        if is_production:
+            logger.log("[INIT] Running in PRODUCTION mode - security checks enabled")
+            # Double-check that we're not in development mode
+            leylen_env_check = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+            if leylen_env_check in ("dev", "development"):
+                raise RuntimeError(
+                    "CRITICAL SECURITY ERROR: Production mode detected but LEYZEN_ENVIRONMENT "
+                    "is set to development. This is a security risk. "
+                    "Remove LEYZEN_ENVIRONMENT or set it to 'production'."
+                )
+        else:
+            logger.log(
+                "[INIT] Running in DEVELOPMENT mode - permissive security checks"
+            )
+            import warnings
+
+            warnings.warn(
+                "WARNING: Application is running in DEVELOPMENT mode. "
+                "This should never be used in production. "
+                "Set LEYZEN_ENVIRONMENT=production for production deployments.",
+                UserWarning,
+            )
+
+        # SECURITY: Check if jti column exists for JWT replay protection
+        # In production, this is mandatory - block startup if not available
+        # Wait a bit after init_db() to ensure migration is complete
+        import time
+
+        time.sleep(0.5)  # Give migration time to complete
+
+        try:
+            from vault.services.auth_service import _check_jti_column_exists
+
+            # Retry check up to 3 times with delay (migration might still be in progress)
+            jti_available = False
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    jti_available = _check_jti_column_exists()
+                    if jti_available:
+                        break
+                    if attempt < max_retries - 1:
+                        logger.log(
+                            f"[INFO] jti column not found yet, retrying ({attempt + 1}/{max_retries})..."
+                        )
+                        time.sleep(1)  # Wait before retry
+                except Exception as check_error:
+                    if attempt < max_retries - 1:
+                        logger.log(
+                            f"[INFO] jti check failed, retrying ({attempt + 1}/{max_retries}): {check_error}"
+                        )
+                        time.sleep(1)
+                    else:
+                        raise
+
+            if not jti_available:
+                # If still not available, try to create it directly
+                logger.log(
+                    "[INFO] jti column not found after retries, attempting to create it directly..."
+                )
+                try:
+                    with app.app_context():
+                        from sqlalchemy import inspect as sql_inspect, text
+                        from vault.database.schema import db
+
+                        logger.log("[INFO] Checking if jwt_blacklist table exists...")
+                        inspector = sql_inspect(db.engine)
+                        table_names = inspector.get_table_names()
+                        logger.log(f"[INFO] Found tables: {', '.join(table_names)}")
+
+                        if "jwt_blacklist" in table_names:
+                            logger.log(
+                                "[INFO] jwt_blacklist table exists, checking columns..."
+                            )
+                            columns = [
+                                col["name"]
+                                for col in inspector.get_columns("jwt_blacklist")
+                            ]
+                            logger.log(
+                                f"[INFO] jwt_blacklist columns: {', '.join(columns)}"
+                            )
+
+                            if "jti" not in columns:
+                                logger.log(
+                                    "[INFO] jti column missing, creating it now..."
+                                )
+                                try:
+                                    db.session.execute(
+                                        text(
+                                            "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
+                                        )
+                                    )
+                                    logger.log(
+                                        "[INFO] jti column added, creating index..."
+                                    )
+                                    db.session.execute(
+                                        text(
+                                            "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
+                                        )
+                                    )
+                                    db.session.commit()
+                                    logger.log(
+                                        "[INFO] jti column and index created successfully!"
+                                    )
+
+                                    # Clear cache and recheck
+                                    try:
+                                        from vault.services.auth_service import (
+                                            reset_jti_column_cache,
+                                        )
+
+                                        reset_jti_column_cache()
+                                        logger.log("[INFO] jti cache cleared")
+                                    except Exception as cache_error:
+                                        logger.log(
+                                            f"[WARNING] Failed to clear jti cache: {cache_error}"
+                                        )
+
+                                    # Recheck immediately
+                                    jti_available = _check_jti_column_exists()
+                                    logger.log(
+                                        f"[INFO] jti recheck after creation: {jti_available}"
+                                    )
+                                except Exception as alter_error:
+                                    logger.log(
+                                        f"[ERROR] Failed to execute ALTER TABLE: {alter_error}"
+                                    )
+                                    db.session.rollback()
+                                    raise
+                            else:
+                                logger.log(
+                                    "[INFO] jti column already exists in table, but check returned False - clearing cache..."
+                                )
+                                try:
+                                    from vault.services.auth_service import (
+                                        reset_jti_column_cache,
+                                    )
+
+                                    reset_jti_column_cache()
+                                    jti_available = _check_jti_column_exists()
+                                    logger.log(
+                                        f"[INFO] jti recheck after cache clear: {jti_available}"
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            logger.log(
+                                "[WARNING] jwt_blacklist table does not exist yet - will be created by db.create_all()"
+                            )
+                except Exception as create_error:
+                    logger.log(f"[ERROR] Failed to create jti column: {create_error}")
+                    import traceback
+
+                    logger.log(f"[ERROR] Traceback: {traceback.format_exc()}")
+
+            if not jti_available:
+                if is_production:
+                    # In production, jti is mandatory - block startup
+                    raise RuntimeError(
+                        "CRITICAL SECURITY ERROR: JWT replay protection (jti column) not available. "
+                        "The jti column is required in production for security. "
+                        "Please ensure the database migration completed successfully. "
+                        "Check database logs for migration errors."
+                    )
+                else:
+                    logger.log(
+                        "[WARNING] JWT replay protection (jti column) not available - "
+                        "database migration required. JWT tokens may be vulnerable to replay attacks."
+                    )
+            else:
+                logger.log("[INIT] JWT replay protection (jti) available and active")
+        except RuntimeError:
+            # Re-raise RuntimeError (production blocking error)
+            raise
+        except Exception as jti_check_error:
+            if is_production:
+                # In production, any error checking jti is critical
+                raise RuntimeError(
+                    f"CRITICAL SECURITY ERROR: Failed to verify JWT replay protection (jti column): {jti_check_error}. "
+                    "This check is mandatory in production."
+                ) from jti_check_error
+            else:
+                logger.log(
+                    f"[WARNING] Failed to check jti column existence: {jti_check_error}"
+                )
+
+        # Initialize TOTP service for 2FA
+        init_totp_service(settings.secret_key)
+        logger.log("[INIT] TOTP service initialized")
+
+        # Check if setup is complete
+        try:
+            if not is_setup_complete(app):
+                logger.log(
+                    "[WARNING] Setup not complete. Visit /setup to create superadmin account."
+                )
+            else:
+                logger.log("[INIT] Setup complete - users exist in database")
+        except Exception as setup_check_error:
+            logger.log(f"[WARNING] Failed to check setup status: {setup_check_error}")
     except Exception as exc:
         # Fallback for development/testing only - NOT allowed in production
         # Note: This fallback now requires environment variables to be set
@@ -331,13 +741,20 @@ def create_app(
         app.config["VAULT_SETTINGS"] = fallback_settings
         app.config["LOGGER"] = FileLogger(fallback_settings)
         # Internal API token for orchestrator operations
-        # Auto-generate from SECRET_KEY if available
-        internal_api_token = _get_or_generate_internal_api_token(
-            env_values, fallback_settings.secret_key, None
+        # In fallback mode, database may not be available, so use environment variable only
+        import os
+
+        internal_api_token = env_values.get("INTERNAL_API_TOKEN", "") or os.environ.get(
+            "INTERNAL_API_TOKEN", ""
         )
+        if not internal_api_token:
+            # In fallback mode without database, cannot generate token
+            # This is acceptable for development/testing only
+            internal_api_token = ""
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
-    # Configure allowed origins (CORS + Origin validation)
+    # SECURITY: Configure allowed origins (CORS + Origin validation)
+    # In production, ALLOWED_ORIGINS must be set and non-empty
     vault_settings = app.config.get("VAULT_SETTINGS")
     allowed_origins_value = (
         env_values.get("VAULT_ALLOWED_ORIGINS")
@@ -350,6 +767,38 @@ def create_app(
             normalized = origin.strip()
             if normalized:
                 allowed_origins.append(normalized.rstrip("/"))
+
+    # SECURITY: Validate CORS configuration at startup
+    if is_production:
+        if not allowed_origins:
+            # In production, log warning but allow startup with empty origins
+            # This allows the application to start and CORS can be configured later
+            logger.log(
+                "[WARNING] ALLOWED_ORIGINS is empty in production. "
+                "CORS is not configured. Set VAULT_ALLOWED_ORIGINS or ALLOWED_ORIGINS in your .env file. "
+                "Application will start but CORS requests may be blocked."
+            )
+            # Don't block startup - allow configuration to be set later
+            # raise RuntimeError(
+            #     "SECURITY ERROR: ALLOWED_ORIGINS is empty in production. "
+            #     "CORS must be configured for production deployments. "
+            #     "Set VAULT_ALLOWED_ORIGINS or ALLOWED_ORIGINS in your .env file."
+            # )
+        # Validate that origins are not wildcards or localhost in production
+        for origin in allowed_origins:
+            if origin == "*":
+                raise RuntimeError(
+                    "SECURITY ERROR: Wildcard CORS origin (*) is not allowed in production. "
+                    "Specify explicit origins in ALLOWED_ORIGINS."
+                )
+            if "localhost" in origin.lower() or "127.0.0.1" in origin:
+                import warnings
+
+                warnings.warn(
+                    f"SECURITY WARNING: Localhost origin '{origin}' is configured in production. "
+                    "This should only be used in development.",
+                    UserWarning,
+                )
     elif vault_settings and vault_settings.vault_url:
         allowed_origins.append(vault_settings.vault_url.rstrip("/"))
 
@@ -460,13 +909,17 @@ def create_app(
     app.config["VAULT_AUDIT"] = audit_service
     app.config["VAULT_SHARE"] = share_service
     app.config["VAULT_RATE_LIMITER"] = rate_limiter
-    # Internal API token for orchestrator operations
-    # Auto-generate from SECRET_KEY if not explicitly set
-    secret_key = app.config.get("SECRET_KEY") or env_values.get("SECRET_KEY", "")
-    internal_api_token = _get_or_generate_internal_api_token(
-        env_values, secret_key, None
-    )
-    app.config["INTERNAL_API_TOKEN"] = internal_api_token
+    # Internal API token is already set earlier after database initialization
+    # If not set (e.g., in fallback mode), try to get from environment
+    if "INTERNAL_API_TOKEN" not in app.config or not app.config.get(
+        "INTERNAL_API_TOKEN"
+    ):
+        import os
+
+        internal_api_token = env_values.get("INTERNAL_API_TOKEN", "") or os.environ.get(
+            "INTERNAL_API_TOKEN", ""
+        )
+        app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
     # Start background thread for automatic audit log cleanup
     def _audit_cleanup_worker() -> None:

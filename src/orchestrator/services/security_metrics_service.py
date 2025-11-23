@@ -6,7 +6,7 @@ import httpx
 import time
 from typing import Any
 
-from ..config import Settings
+from ..config import Settings, reload_internal_api_token_from_db
 from common.services.logging import FileLogger
 
 
@@ -34,6 +34,15 @@ class SecurityMetricsService:
         self._metrics_cache: dict[str, dict[str, Any]] = {}
         self._cache_timestamp: dict[str, float] = {}
         self._cache_ttl = 30.0  # Cache metrics for 30 seconds
+        self._token_unavailable_last_logged: float = 0.0
+        self._token_unavailable_log_interval = (
+            300.0  # Log once every 5 minutes when token unavailable
+        )
+        self._token_reload_interval = (
+            60.0  # Try to reload token from DB every 60 seconds if unavailable
+        )
+        self._token_last_reload_attempt: float = 0.0
+        self._cached_token: str | None = None
 
     def get_security_metrics(self, container_name: str) -> dict[str, Any] | None:
         """Get security metrics from a vault container.
@@ -53,12 +62,23 @@ class SecurityMetricsService:
         try:
             # Call internal API endpoint
             url = f"http://{container_name}/api/internal/security-metrics"
-            internal_token = self._settings.internal_api_token
+
+            # Get token, with dynamic reload from database if not available
+            internal_token = self._get_internal_api_token()
 
             if not internal_token:
-                self._logger.log(
-                    f"[SECURITY METRICS] INTERNAL_API_TOKEN not available for {container_name}"
-                )
+                # Only log this error periodically to avoid log spam
+                current_time = time.time()
+                if (
+                    current_time - self._token_unavailable_last_logged
+                    >= self._token_unavailable_log_interval
+                ):
+                    self._logger.log(
+                        f"[SECURITY METRICS] INTERNAL_API_TOKEN not available for {container_name}. "
+                        "Security metrics collection is disabled until token is available. "
+                        "Set INTERNAL_API_TOKEN environment variable or ensure vault has generated the token in database."
+                    )
+                    self._token_unavailable_last_logged = current_time
                 return None
 
             headers = {
@@ -201,6 +221,51 @@ class SecurityMetricsService:
         """
         metrics = self.get_security_metrics(container_name)
         return self.calculate_risk_score(metrics) if metrics else 0
+
+    def _get_internal_api_token(self) -> str:
+        """Get internal API token, with dynamic reload from database if not available.
+
+        Priority:
+        1. Cached token (if available)
+        2. Token from settings (from environment variable or initial DB read)
+        3. Periodic reload from database if token is not available
+
+        Returns:
+            The internal API token string, or empty string if not available
+        """
+        # If we have a cached token, use it
+        if self._cached_token:
+            return self._cached_token
+
+        # Try settings token (from environment variable or initial DB read)
+        internal_token = self._settings.internal_api_token
+        if internal_token:
+            self._cached_token = internal_token
+            return internal_token
+
+        # Token not available - try to reload from database periodically
+        current_time = time.time()
+        if (
+            current_time - self._token_last_reload_attempt
+            >= self._token_reload_interval
+        ):
+            self._token_last_reload_attempt = current_time
+
+            # Try to reload from database
+            try:
+                reloaded_token = reload_internal_api_token_from_db(self._settings)
+
+                if reloaded_token:
+                    self._cached_token = reloaded_token
+                    self._logger.log(
+                        "[SECURITY METRICS] Successfully loaded INTERNAL_API_TOKEN from database"
+                    )
+                    return reloaded_token
+            except Exception:
+                # Silently fail - we'll try again later
+                pass
+
+        return ""
 
     def close(self) -> None:
         """Close the HTTP client and release resources."""

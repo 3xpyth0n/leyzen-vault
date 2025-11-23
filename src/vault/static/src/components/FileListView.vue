@@ -2254,11 +2254,13 @@ export default {
 
 .file-icon-large {
   font-size: 3.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 60px;
+  box-sizing: border-box;
 }
 
 .file-icon-large svg {
@@ -2273,6 +2275,8 @@ export default {
   height: auto;
   object-fit: contain;
   border-radius: 8px;
+  display: block;
+  margin: 0 auto;
 }
 
 .star-icon-large {

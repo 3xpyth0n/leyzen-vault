@@ -283,45 +283,77 @@ class AuthService:
             except Exception:
                 jti = None
 
-            # Check if jti is blacklisted (replay protection)
-            # SECURITY: jti verification is mandatory if jti is present in token
-            if jti:
-                # Check if jti column exists before using it
-                jti_column_exists = _check_jti_column_exists()
-                if jti_column_exists:
-                    try:
-                        blacklisted_jti = (
-                            db.session.query(JWTBlacklist).filter_by(jti=jti).first()
-                        )
-                        if blacklisted_jti:
-                            # Use constant-time comparison to prevent timing attacks
-                            constant_time_compare(
-                                token, "dummy_token_for_timing_protection"
-                            )
-                            return None
-                    except Exception:
-                        # Database error during jti check - fail securely
-                        # Log critical error and reject token
-                        import logging
+            # Check if jti column exists before using it
+            jti_column_exists = _check_jti_column_exists()
 
-                        logger = logging.getLogger(__name__)
-                        logger.critical(
-                            "JWT jti verification failed due to database error - rejecting token for security"
-                        )
-                        constant_time_compare(
-                            token, "dummy_token_for_timing_protection"
-                        )
-                        return None
-                else:
-                    # Column doesn't exist: fallback to full token check
-                    # But log a critical warning - this should not happen in production
+            # SECURITY: In production, jti is mandatory for all tokens
+            # Check if we're in production mode
+            from flask import current_app
+
+            is_production = current_app.config.get("IS_PRODUCTION", True)
+
+            if is_production:
+                if not jti_column_exists:
+                    # In production, jti column must exist - fail securely
                     import logging
 
                     logger = logging.getLogger(__name__)
                     logger.critical(
-                        "JWT replay protection (jti) not available - database migration required. "
-                        "Falling back to full token blacklist check."
+                        "JWT replay protection (jti column) not available in production - "
+                        "database migration required. Rejecting all tokens for security."
                     )
+                    constant_time_compare(
+                        token or "", "dummy_token_for_timing_protection"
+                    )
+                    return None
+
+                if not jti:
+                    # In production, all tokens must have jti - reject tokens without jti
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        "JWT token without jti claim rejected in production mode"
+                    )
+                    constant_time_compare(
+                        token or "", "dummy_token_for_timing_protection"
+                    )
+                    return None
+
+            # Check if jti is blacklisted (replay protection)
+            # SECURITY: jti verification is mandatory if jti is present in token
+            if jti and jti_column_exists:
+                try:
+                    blacklisted_jti = (
+                        db.session.query(JWTBlacklist).filter_by(jti=jti).first()
+                    )
+                    if blacklisted_jti:
+                        # Use constant-time comparison to prevent timing attacks
+                        constant_time_compare(
+                            token, "dummy_token_for_timing_protection"
+                        )
+                        return None
+                except Exception:
+                    # Database error during jti check - fail securely
+                    # Log critical error and reject token
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.critical(
+                        "JWT jti verification failed due to database error - rejecting token for security"
+                    )
+                    constant_time_compare(token, "dummy_token_for_timing_protection")
+                    return None
+            elif jti and not jti_column_exists and not is_production:
+                # Column doesn't exist in development: fallback to full token check
+                # But log a warning
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "JWT replay protection (jti) not available - database migration required. "
+                    "Falling back to full token blacklist check."
+                )
 
             # Check if token is blacklisted (full token match)
             # Protect database query to avoid ProgrammingError being logged as JWT error

@@ -67,6 +67,7 @@ from vault.database.schema import (
     UserInvitation,
     DomainRule,
     SystemSettings,
+    SystemSecrets,
     ApiKey,
 )
 
@@ -97,6 +98,7 @@ EXPECTED_TABLES = {
     "user_invitations",
     "domain_rules",
     "system_settings",
+    "system_secrets",
     "api_keys",
 }
 

@@ -1432,6 +1432,50 @@ class SystemSettings(db.Model):
         return f"<SystemSettings key={self.key}>"
 
 
+class SystemSecrets(db.Model):
+    """System secrets model for storing encrypted system-level secrets.
+
+    This table stores secrets that are generated at runtime and need to be
+    shared across all instances (e.g., internal API token).
+    Secrets are encrypted using SECRET_KEY before storage.
+    """
+
+    __tablename__ = "system_secrets"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    key: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )  # Secret key name, e.g., "internal_api_token"
+    encrypted_value: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # Encrypted secret value
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (Index("ix_system_secrets_key", "key", unique=True),)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary (without decrypted value for security)."""
+        return {
+            "id": self.id,
+            "key": self.key,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    def __repr__(self) -> str:
+        return f"<SystemSecrets key={self.key}>"
+
+
 class ApiKey(db.Model):
     """API key model for automation and external integrations."""
 
@@ -1629,10 +1673,12 @@ def init_db(app) -> None:
 
             # Migrate jwt_blacklist table to add jti column if missing
             # This handles cases where the table was created before jti column was added
+            # SECURITY: In production, jti column is mandatory for JWT replay protection
             try:
                 from sqlalchemy import inspect as sql_inspect
                 from sqlalchemy.sql import text as sql_text
                 from sqlalchemy.exc import ProgrammingError, InternalError
+                import time
 
                 # Check if jwt_blacklist table exists first
                 inspector = sql_inspect(db.engine)
@@ -1641,11 +1687,31 @@ def init_db(app) -> None:
                         "jwt_blacklist table does not exist yet, skipping jti migration"
                     )
                 else:
-                    columns = [
-                        col["name"] for col in inspector.get_columns("jwt_blacklist")
-                    ]
+                    # Retry logic for checking columns (handles transient database issues)
+                    columns = None
+                    max_retries = 3
+                    retry_delay = 0.5
 
-                    if "jti" not in columns:
+                    for attempt in range(max_retries):
+                        try:
+                            columns = [
+                                col["name"]
+                                for col in inspector.get_columns("jwt_blacklist")
+                            ]
+                            break
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                logger.debug(
+                                    f"Retry {attempt + 1}/{max_retries} for checking jti column: {e}"
+                                )
+                                time.sleep(retry_delay)
+                            else:
+                                logger.warning(
+                                    f"Failed to check jti column after {max_retries} attempts: {e}"
+                                )
+                                raise
+
+                    if columns is not None and "jti" not in columns:
                         logger.info("Adding jti column to jwt_blacklist table...")
                         try:
                             db.session.execute(
@@ -1683,17 +1749,55 @@ def init_db(app) -> None:
                                     "jti column already exists in jwt_blacklist table"
                                 )
                             else:
-                                logger.warning(
+                                logger.error(
                                     f"Failed to add jti column to jwt_blacklist table: {db_error}"
                                 )
                                 db.session.rollback()
-                    else:
+                                # In production, this is critical - raise exception
+                                try:
+                                    from flask import current_app
+
+                                    is_production = current_app.config.get(
+                                        "IS_PRODUCTION", True
+                                    )
+                                    if is_production:
+                                        raise RuntimeError(
+                                            "CRITICAL: Failed to add jti column to jwt_blacklist table. "
+                                            "JWT replay protection is required in production. "
+                                            "Please check database permissions and retry."
+                                        )
+                                except RuntimeError:
+                                    raise
+                                except Exception:
+                                    # If we can't check production mode, log error but continue
+                                    pass
+                    elif columns is not None:
                         logger.debug("jti column already exists in jwt_blacklist table")
             except Exception as migration_error:
-                # If migration fails, log but don't fail initialization
-                logger.warning(
-                    f"Error during jti column migration check: {migration_error}"
-                )
+                # Check if we're in production - if so, this is critical
+                try:
+                    from flask import current_app
+
+                    is_production = current_app.config.get("IS_PRODUCTION", True)
+                    if is_production:
+                        logger.error(
+                            f"CRITICAL: Error during jti column migration check in production: {migration_error}"
+                        )
+                        raise RuntimeError(
+                            "CRITICAL: JWT replay protection (jti column) migration failed in production. "
+                            "This is a security requirement. Please check database connectivity and permissions."
+                        ) from migration_error
+                    else:
+                        logger.warning(
+                            f"Error during jti column migration check: {migration_error}"
+                        )
+                except RuntimeError:
+                    raise
+                except Exception:
+                    # If we can't check production mode, log warning but continue
+                    logger.warning(
+                        f"Error during jti column migration check: {migration_error}"
+                    )
 
             logger.info("Database initialization completed successfully")
         except Exception as e:

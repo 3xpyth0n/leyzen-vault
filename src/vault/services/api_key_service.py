@@ -15,27 +15,59 @@ from vault.database.schema import ApiKey, User, db
 class ApiKeyService:
     """Service for API key management."""
 
-    def __init__(self):
+    def __init__(self, secret_key: str | None = None):
         """Initialize API key service.
 
-        The key prefix is configurable via API_KEY_PREFIX environment variable.
-        If not set, a random prefix is generated per instance (stored in memory).
-        Note: The prefix is only for display purposes, not for security.
+        The key prefix is derived deterministically from SECRET_KEY using HMAC.
+        This ensures all instances using the same SECRET_KEY generate the same prefix,
+        allowing API keys to work across instances without requiring prefix sharing.
+
+        Args:
+            secret_key: The SECRET_KEY to derive the prefix from. If None, tries to get from Flask config.
         """
         import os
+        import hmac
+        import hashlib
 
         self.hasher = PasswordHasher()
-        # Configurable or random prefix per instance
-        prefix_env = os.environ.get("API_KEY_PREFIX", "")
-        if prefix_env:
-            self.key_prefix = prefix_env
+
+        # Get SECRET_KEY from parameter or Flask config
+        if not secret_key:
+            try:
+                from flask import current_app
+
+                secret_key = current_app.config.get("SECRET_KEY", "")
+            except RuntimeError:
+                # Not in Flask context, try environment variable
+                secret_key = os.environ.get("SECRET_KEY", "")
+
+        if secret_key:
+            # SECURITY: Derive deterministic prefix from SECRET_KEY using HMAC
+            # This ensures all instances with the same SECRET_KEY use the same prefix
+            context = b"api-key-prefix-v1"
+            prefix_hash = hmac.new(
+                secret_key.encode(), context, hashlib.sha256
+            ).hexdigest()[:8]
+            self.key_prefix = f"leyz_{prefix_hash}_"
         else:
-            # Generate random prefix per instance (8 characters)
-            # This makes the prefix unpredictable across instances
-            random_prefix = (
-                secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
-            )
-            self.key_prefix = f"leyz_{random_prefix}_"
+            # Fallback: use environment variable if set
+            prefix_env = os.environ.get("API_KEY_PREFIX", "")
+            if prefix_env:
+                self.key_prefix = prefix_env
+            else:
+                # Last resort: generate random prefix (not recommended)
+                import warnings
+
+                warnings.warn(
+                    "SECURITY WARNING: SECRET_KEY not available for API key prefix derivation. "
+                    "Using random prefix. API keys may not work across instances. "
+                    "Set SECRET_KEY in environment or Flask config.",
+                    UserWarning,
+                )
+                random_prefix = (
+                    secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
+                )
+                self.key_prefix = f"leyz_{random_prefix}_"
 
     def generate_api_key(self, user_id: str, name: str) -> tuple[ApiKey, str]:
         """Generate a new API key for a user.

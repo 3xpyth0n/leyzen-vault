@@ -427,12 +427,15 @@ class SSOService:
             )
             scopes = config.get("scopes", "openid email profile")
 
-            # Store state and return_url in session
+            # SECURITY: Store state and return_url in session with timestamp
+            # State expires after 5 minutes for security
             import secrets
+            from datetime import datetime, timezone, timedelta
 
             state = secrets.token_urlsafe(32)
             session["sso_provider_id"] = provider_id
             session["sso_state"] = state
+            session["sso_state_created_at"] = datetime.now(timezone.utc).isoformat()
             session["sso_return_url"] = return_url
 
             # Build authorization URL
@@ -464,8 +467,39 @@ class SSOService:
         Returns:
             Tuple of (User, JWT token) if authentication succeeds, (User, None) if 2FA is required, None otherwise
         """
-        # Verify state
-        if state != session.get("sso_state"):
+        # SECURITY: Verify state with time-constant comparison and expiration check
+        stored_state = session.get("sso_state")
+        state_created_at_str = session.get("sso_state_created_at")
+
+        # Check expiration (5 minutes)
+        if state_created_at_str:
+            try:
+                from datetime import datetime, timezone, timedelta
+
+                state_created_at = datetime.fromisoformat(state_created_at_str)
+                if datetime.now(timezone.utc) - state_created_at > timedelta(minutes=5):
+                    # State expired - clear it and reject
+                    session.pop("sso_state", None)
+                    session.pop("sso_state_created_at", None)
+                    return None
+            except (ValueError, TypeError):
+                # Invalid timestamp - clear and reject
+                session.pop("sso_state", None)
+                session.pop("sso_state_created_at", None)
+                return None
+
+        # Time-constant comparison to prevent timing attacks
+        if not stored_state or not state:
+            # Use constant-time comparison even for None/empty
+            import hmac
+
+            hmac.compare_digest(stored_state or "", state or "")
+            return None
+
+        # Use constant-time comparison
+        import hmac
+
+        if not hmac.compare_digest(stored_state, state):
             return None
 
         provider = self.get_provider(provider_id)
@@ -657,14 +691,17 @@ class SSOService:
             )
             scopes = config.get("scopes", "openid email profile")
 
-            # Store state and return_url in session
+            # SECURITY: Store state and return_url in session with timestamp
+            # State expires after 5 minutes for security
             import secrets
+            from datetime import datetime, timezone
 
             state = secrets.token_urlsafe(32)
             # SECURITY: Generate and store nonce for ID token validation
             nonce = secrets.token_urlsafe(32)
             session["sso_provider_id"] = provider_id
             session["sso_state"] = state
+            session["sso_state_created_at"] = datetime.now(timezone.utc).isoformat()
             session["sso_nonce"] = nonce  # Store nonce for ID token validation
             session["sso_return_url"] = return_url
             session["sso_discovery"] = discovery  # Store for callback
@@ -701,8 +738,39 @@ class SSOService:
         Returns:
             Tuple of (User, JWT token) if authentication succeeds, (User, None) if 2FA is required, None otherwise
         """
-        # Verify state
-        if state != session.get("sso_state"):
+        # SECURITY: Verify state with time-constant comparison and expiration check
+        stored_state = session.get("sso_state")
+        state_created_at_str = session.get("sso_state_created_at")
+
+        # Check expiration (5 minutes)
+        if state_created_at_str:
+            try:
+                from datetime import datetime, timezone, timedelta
+
+                state_created_at = datetime.fromisoformat(state_created_at_str)
+                if datetime.now(timezone.utc) - state_created_at > timedelta(minutes=5):
+                    # State expired - clear it and reject
+                    session.pop("sso_state", None)
+                    session.pop("sso_state_created_at", None)
+                    return None
+            except (ValueError, TypeError):
+                # Invalid timestamp - clear and reject
+                session.pop("sso_state", None)
+                session.pop("sso_state_created_at", None)
+                return None
+
+        # Time-constant comparison to prevent timing attacks
+        if not stored_state or not state:
+            # Use constant-time comparison even for None/empty
+            import hmac
+
+            hmac.compare_digest(stored_state or "", state or "")
+            return None
+
+        # Use constant-time comparison
+        import hmac
+
+        if not hmac.compare_digest(stored_state, state):
             return None
 
         provider = self.get_provider(provider_id)

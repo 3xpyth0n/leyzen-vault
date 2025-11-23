@@ -34,6 +34,59 @@ def validate_password_strength(password: str) -> tuple[bool, str | None]:
             "Password must contain at least one uppercase letter, one lowercase letter, and one digit",
         )
 
+    # SECURITY: Check against common passwords list
+    # This helps prevent users from using easily guessable passwords
+    common_passwords = [
+        "password",
+        "password123",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "qwerty",
+        "abc123",
+        "letmein",
+        "welcome",
+        "admin",
+        "root",
+        "Password1",
+        "Password123",
+        "Welcome1",
+        "Admin123",
+    ]
+    password_lower = password.lower()
+    for common in common_passwords:
+        if password_lower == common.lower() or password_lower.startswith(
+            common.lower()
+        ):
+            return (
+                False,
+                "Password is too common. Please choose a more unique password.",
+            )
+
+    # SECURITY: Check password strength score
+    # Simple scoring: length + character variety
+    score = 0
+    if len(password) >= 16:
+        score += 2
+    elif len(password) >= 12:
+        score += 1
+
+    # Check for special characters
+    if has_special:
+        score += 1
+
+    # Check character variety
+    variety_count = sum([has_upper, has_lower, has_digit, has_special])
+    if variety_count >= 3:
+        score += 1
+
+    # Minimum score of 2 required (basic password)
+    if score < 2:
+        return (
+            False,
+            "Password is too weak. Use a longer password with more character variety.",
+        )
+
     return True, None
 
 

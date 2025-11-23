@@ -109,51 +109,29 @@ class RateLimiter:
             return True, None
 
         except Exception as e:
-            # Check if we're in production mode
-            # Fail-closed in production (deny request), fail-open in development (allow request)
+            # SECURITY: Always fail-closed (deny request) if rate limiting fails
+            # This prevents bypassing rate limits due to errors
             import logging
             import traceback
 
             logger = logging.getLogger(__name__)
 
-            # Try to get production mode from Flask app config
-            is_production = True  # Default to fail-closed for safety
+            # Log detailed error for debugging
+            logger.error(
+                f"Rate limiting error in check_rate_limit (fail-closed): {e}\n{traceback.format_exc()}"
+            )
+
+            # Always rollback on error
             try:
-                from flask import current_app
-
-                if current_app:
-                    is_production = current_app.config.get("IS_PRODUCTION", True)
-            except RuntimeError:
-                # Not in Flask application context, default to fail-closed
-                pass
+                db.session.rollback()
             except Exception:
-                # Any other error accessing Flask config, default to fail-closed
-                pass
+                pass  # Ignore rollback errors
 
-            if is_production:
-                # Fail-closed in production: deny request if rate limiting fails
-                logger.error(
-                    f"Rate limiting error (fail-closed in production): {e}\n{traceback.format_exc()}"
-                )
-                try:
-                    db.session.rollback()
-                except Exception:
-                    pass  # Ignore rollback errors
-                return (
-                    False,
-                    "Rate limiting service unavailable. Please try again later.",
-                )
-            else:
-                # Fail-open in development: allow request if rate limiting fails
-                logger.warning(
-                    f"Rate limiting error (fail-open in development): {e}\n{traceback.format_exc()}"
-                )
-                try:
-                    db.session.rollback()
-                except Exception:
-                    pass  # Ignore rollback errors
-                # Fail-open: allow request to proceed
-                return True, None
+            # Always fail-closed: deny request if rate limiting fails
+            return (
+                False,
+                "Rate limiting service unavailable. Please try again later.",
+            )
 
     def check_rate_limit_custom(
         self,
@@ -353,51 +331,29 @@ class RateLimiter:
             return True, None
 
         except Exception as e:
-            # Check if we're in production mode
-            # Fail-closed in production (deny request), fail-open in development (allow request)
+            # SECURITY: Always fail-closed (deny request) if rate limiting fails
+            # This prevents bypassing rate limits due to errors
             import logging
             import traceback
 
             logger = logging.getLogger(__name__)
 
-            # Try to get production mode from Flask app config
-            is_production = True  # Default to fail-closed for safety
+            # Log detailed error for debugging
+            logger.error(
+                f"Rate limiting error in check_rate_limit_custom (fail-closed): {e}\n{traceback.format_exc()}"
+            )
+
+            # Always rollback on error
             try:
-                from flask import current_app
-
-                if current_app:
-                    is_production = current_app.config.get("IS_PRODUCTION", True)
-            except RuntimeError:
-                # Not in Flask application context, default to fail-closed
-                pass
+                db.session.rollback()
             except Exception:
-                # Any other error accessing Flask config, default to fail-closed
-                pass
+                pass  # Ignore rollback errors
 
-            if is_production:
-                # Fail-closed in production: deny request if rate limiting fails
-                logger.error(
-                    f"Rate limiting error in check_rate_limit_custom (fail-closed in production): {e}\n{traceback.format_exc()}"
-                )
-                try:
-                    db.session.rollback()
-                except Exception:
-                    pass  # Ignore rollback errors
-                return (
-                    False,
-                    "Rate limiting service unavailable. Please try again later.",
-                )
-            else:
-                # Fail-open in development: allow request if rate limiting fails
-                logger.warning(
-                    f"Rate limiting error in check_rate_limit_custom (fail-open in development): {e}\n{traceback.format_exc()}"
-                )
-                try:
-                    db.session.rollback()
-                except Exception:
-                    pass  # Ignore rollback errors
-                # Fail-open: allow request to proceed
-                return True, None
+            # Always fail-closed: deny request if rate limiting fails
+            return (
+                False,
+                "Rate limiting service unavailable. Please try again later.",
+            )
 
     def get_remaining_uploads(self, ip: str) -> int:
         """Get remaining uploads for an IP in the current hour."""

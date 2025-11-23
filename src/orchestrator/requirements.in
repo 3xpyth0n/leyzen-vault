@@ -4,3 +4,5 @@ httpx
 Pillow
 uvicorn
 sqlalchemy
+psycopg2-binary
+cryptography
