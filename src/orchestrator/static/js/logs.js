@@ -1,18 +1,38 @@
-// Elements
-const pre = document.getElementById("log");
-const refreshBtn = document.getElementById("refreshBtn");
-const periodButtons = document.querySelectorAll(".period-btn");
-const customRange = document.getElementById("customRange");
-const startDateEl = document.getElementById("startDate");
-const endDateEl = document.getElementById("endDate");
-const applyCustomBtn = document.getElementById("applyCustom");
-const autoSwitch = document.getElementById("autoSwitch");
-const linesMeta = document.getElementById("linesMeta");
-const searchInput = document.getElementById("searchInput");
-const emptyState = document.getElementById("emptyState");
-const searchResults = document.getElementById("searchResults");
-const btnText = refreshBtn?.querySelector(".btn-text");
-const btnSpinner = refreshBtn?.querySelector(".btn-spinner");
+// Debug: Check if script is loaded
+console.log("logs.js: Script loaded");
+
+// Elements - wait for DOM
+let pre,
+  refreshBtn,
+  periodButtons,
+  customRange,
+  startDateEl,
+  endDateEl,
+  applyCustomBtn;
+let autoSwitch, linesMeta, searchInput, emptyState, searchResults, logArea;
+let btnText, btnSpinner;
+
+function initElements() {
+  pre = document.getElementById("log");
+  refreshBtn = document.getElementById("refreshBtn");
+  periodButtons = document.querySelectorAll(".period-btn");
+  customRange = document.getElementById("customRange");
+  startDateEl = document.getElementById("startDate");
+  endDateEl = document.getElementById("endDate");
+  applyCustomBtn = document.getElementById("applyCustom");
+  autoSwitch = document.getElementById("autoSwitch");
+  linesMeta = document.getElementById("linesMeta");
+  searchInput = document.getElementById("searchInput");
+  emptyState = document.getElementById("emptyState");
+  searchResults = document.getElementById("searchResults");
+  logArea = document.querySelector(".log-area");
+  btnText = refreshBtn?.querySelector(".btn-text");
+  btnSpinner = refreshBtn?.querySelector(".btn-spinner");
+}
+
+// Initialize elements immediately
+initElements();
+console.log("logs.js: Elements initialized, logArea:", logArea);
 
 // State
 let allLogs = pre && pre.textContent ? pre.textContent : "";
@@ -36,6 +56,24 @@ function parseLogDate(line) {
 // Update metadata (lines count)
 function updateMeta(count) {
   linesMeta.textContent = `Lines: ${count}`;
+}
+
+// Update log area padding based on whether there are logs
+function updateLogAreaPadding(hasLogs) {
+  const area = logArea || document.querySelector(".log-area");
+  if (!area) {
+    console.error("Could not find .log-area element in updateLogAreaPadding!");
+    return;
+  }
+  if (hasLogs) {
+    area.style.padding = "0px";
+    area.classList.add("has-logs");
+    console.log("Added has-logs class, padding set to 0");
+  } else {
+    area.style.padding = "3rem";
+    area.classList.remove("has-logs");
+    console.log("Removed has-logs class, padding set to 3rem");
+  }
 }
 
 // Display filtered logs (client-side)
@@ -103,6 +141,15 @@ function displayLogs(scrollBottom = false) {
     pre.textContent = "";
     emptyState.classList.add("is-visible");
     pre.setAttribute("aria-hidden", "true");
+    // Force padding to 3rem when no logs
+    const area = document.querySelector(".log-area");
+    if (area) {
+      area.style.setProperty("padding", "3rem", "important");
+      area.classList.remove("has-logs");
+      console.log("Applied padding 3rem to log-area");
+    } else {
+      console.error("Could not find .log-area element!");
+    }
     updateMeta(0);
     if (scrollBottom) {
       pre.scrollTop = 0;
@@ -113,6 +160,15 @@ function displayLogs(scrollBottom = false) {
   emptyState.classList.remove("is-visible");
   pre.removeAttribute("aria-hidden");
   pre.textContent = filtered.join("\n");
+  // Force padding to 0 when logs are displayed
+  const area = document.querySelector(".log-area");
+  if (area) {
+    area.style.setProperty("padding", "0px", "important");
+    area.classList.add("has-logs");
+    console.log("Applied padding 0px to log-area");
+  } else {
+    console.error("Could not find .log-area element!");
+  }
   updateMeta(filtered.length);
 
   if (scrollBottom) {
@@ -214,7 +270,10 @@ searchInput.addEventListener("input", (event) => {
 });
 
 // initial boot: ensure Day is active and fetch logs
-(function init() {
+function init() {
+  // Ensure elements are initialized
+  initElements();
+
   // mark default active
   periodButtons.forEach((b) => {
     if (b.dataset.period === "day") {
@@ -224,6 +283,41 @@ searchInput.addEventListener("input", (event) => {
       b.setAttribute("aria-pressed", "false");
     }
   });
+
+  // Set initial state based on existing content
+  setTimeout(() => {
+    const area = document.querySelector(".log-area");
+    if (area) {
+      if (allLogs && allLogs.trim().length > 0) {
+        area.style.padding = "0px";
+        area.classList.add("has-logs");
+      } else {
+        area.style.padding = "3rem";
+        area.classList.remove("has-logs");
+      }
+    }
+  }, 100);
+
   // initial fetch (will scroll to bottom)
   fetchLogs(true);
-})();
+}
+
+// Run init when DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+// Test: Force update padding after a short delay to ensure DOM is ready
+setTimeout(() => {
+  const testArea = document.querySelector(".log-area");
+  if (testArea) {
+    console.log("Test: Found .log-area element", testArea);
+    const hasContent = allLogs && allLogs.trim().length > 0;
+    console.log("Test: Has content?", hasContent);
+    updateLogAreaPadding(hasContent);
+  } else {
+    console.error("Test: Could not find .log-area element");
+  }
+}, 1000);

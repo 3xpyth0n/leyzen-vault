@@ -476,9 +476,12 @@ def security_metrics():
 
     Returns:
         JSON with security metrics including:
-        - suspicious_requests: Number of suspicious requests
-        - auth_failures: Number of authentication failures
-        - anomalies: List of detected anomalies
+        - suspicious_requests: Number of suspicious requests (anomalies + denied access + rate limit exceeded)
+        - auth_failures: Number of authentication failures (last hour)
+        - auth_failures_by_ip: Dictionary mapping IP addresses to failure counts
+        - auth_failures_by_user: Dictionary mapping user IDs to failure counts
+        - auth_failures_by_action: Dictionary mapping action types to failure counts
+        - anomalies: List of detected anomalies from BehavioralAnalysisService
         - app_errors: Number of application errors
         - memory_usage_percent: Memory usage percentage
     """
@@ -487,46 +490,175 @@ def security_metrics():
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
+        from datetime import datetime, timedelta, timezone
+        from collections import defaultdict
+
+        from vault.database.schema import (
+            AuditLogEntry,
+            BehaviorAnalytics,
+            RateLimitTracking,
+            User,
+            db,
+        )
+        from vault.utils.safe_json import safe_json_loads
+
         metrics: dict[str, Any] = {
             "suspicious_requests": 0,
             "auth_failures": 0,
+            "auth_failures_by_ip": {},
+            "auth_failures_by_user": {},
+            "auth_failures_by_action": {},
             "anomalies": [],
             "app_errors": 0,
             "memory_usage_percent": 0,
         }
 
-        # Get rate limiter for suspicious requests count
-        rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
-        if rate_limiter:
-            # This is a simplified metric - in production, you'd track this properly
-            metrics["suspicious_requests"] = 0  # TODO: Track actual suspicious requests
+        recent_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
 
-        # Get authentication failures from audit logs
-        try:
-            from vault.services.audit import AuditService
+        # Track suspicious requests
+        suspicious_count = 0
 
-            audit = current_app.config.get("VAULT_AUDIT")
-            if audit:
-                # Get recent auth failures (last hour)
-                from datetime import datetime, timedelta
-
-                recent_threshold = datetime.now() - timedelta(hours=1)
-                # This is simplified - in production, query audit logs properly
-                metrics["auth_failures"] = 0  # TODO: Query actual auth failures
-        except Exception:
-            pass
-
-        # Get behavioral anomalies
+        # 1. Count anomalies from BehavioralAnalysisService for active users
         try:
             from vault.services.behavioral_analysis_service import (
                 BehavioralAnalysisService,
             )
 
-            # This would require user context - simplified for now
-            # In production, aggregate anomalies across all users
-            metrics["anomalies"] = []
-        except Exception:
-            pass
+            behavioral_service = BehavioralAnalysisService()
+
+            # Get active users (users with activity in last 24 hours)
+            # Limit to first 100 users to avoid performance issues
+            active_users_threshold = datetime.now(timezone.utc) - timedelta(hours=24)
+            active_users = (
+                db.session.query(User.id)
+                .join(
+                    BehaviorAnalytics,
+                    BehaviorAnalytics.user_id == User.id,
+                )
+                .filter(BehaviorAnalytics.timestamp >= active_users_threshold)
+                .distinct()
+                .limit(100)
+                .all()
+            )
+
+            all_anomalies = []
+            for (user_id,) in active_users:
+                try:
+                    user_anomalies = behavioral_service.detect_anomalies(user_id)
+                    all_anomalies.extend(user_anomalies)
+                    suspicious_count += len(user_anomalies)
+                except Exception:
+                    # Skip users with errors in anomaly detection
+                    pass
+
+            metrics["anomalies"] = all_anomalies
+        except Exception as e:
+            current_app.logger.debug(
+                f"Error getting behavioral anomalies: {e}", exc_info=True
+            )
+
+        # 2. Count access denied from ZeroTrustService via audit logs
+        try:
+            # Query audit logs for access denied (success=False with suspicious actions)
+            # Actions that indicate suspicious access attempts
+            suspicious_actions = [
+                "access_denied",
+                "unauthorized_access",
+                "forbidden",
+                "zero_trust_denied",
+            ]
+
+            denied_access_count = (
+                db.session.query(AuditLogEntry)
+                .filter(
+                    AuditLogEntry.action.in_(suspicious_actions),
+                    AuditLogEntry.success == False,
+                    AuditLogEntry.timestamp >= recent_threshold,
+                )
+                .count()
+            )
+
+            suspicious_count += denied_access_count
+        except Exception as e:
+            current_app.logger.debug(
+                f"Error counting denied access: {e}", exc_info=True
+            )
+
+        # 3. Count rate limit exceeded requests
+        try:
+            rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+            if rate_limiter:
+                # Count entries where request_count >= max_attempts (rate limit exceeded)
+                # This indicates suspicious activity
+                # Use the same timezone as RateLimiter for consistency
+                rate_limiter_timezone = rate_limiter._timezone
+                rate_limit_threshold = datetime.now(rate_limiter_timezone) - timedelta(
+                    hours=1
+                )
+                rate_limit_exceeded = (
+                    db.session.query(RateLimitTracking)
+                    .filter(
+                        RateLimitTracking.window_start >= rate_limit_threshold,
+                        RateLimitTracking.request_count >= rate_limiter._max_uploads,
+                    )
+                    .count()
+                )
+
+                suspicious_count += rate_limit_exceeded
+        except Exception as e:
+            current_app.logger.debug(
+                f"Error counting rate limit exceeded: {e}", exc_info=True
+            )
+
+        metrics["suspicious_requests"] = suspicious_count
+
+        # Get authentication failures from audit logs
+        try:
+            # Query audit logs for auth failures
+            auth_failures_query = db.session.query(AuditLogEntry).filter(
+                AuditLogEntry.action.in_(["auth_login", "auth_signup"]),
+                AuditLogEntry.success == False,
+                AuditLogEntry.timestamp >= recent_threshold,
+            )
+
+            auth_failures = auth_failures_query.all()
+
+            # Calculate total
+            metrics["auth_failures"] = len(auth_failures)
+
+            # Calculate aggregations
+            failures_by_ip: dict[str, int] = defaultdict(int)
+            failures_by_user: dict[str, int] = defaultdict(int)
+            failures_by_action: dict[str, int] = defaultdict(int)
+
+            for entry in auth_failures:
+                # By IP
+                failures_by_ip[entry.user_ip] += 1
+
+                # By action
+                failures_by_action[entry.action] += 1
+
+                # By user (extract from details JSON)
+                try:
+                    if entry.details:
+                        details = safe_json_loads(
+                            entry.details,
+                            max_size=10 * 1024,  # 10KB for audit details
+                            max_depth=20,
+                            context="audit log details",
+                        )
+                        user_id = details.get("user_id")
+                        if user_id:
+                            failures_by_user[user_id] += 1
+                except Exception:
+                    # Skip entries with invalid JSON in details
+                    pass
+
+            metrics["auth_failures_by_ip"] = dict(failures_by_ip)
+            metrics["auth_failures_by_user"] = dict(failures_by_user)
+            metrics["auth_failures_by_action"] = dict(failures_by_action)
+        except Exception as e:
+            current_app.logger.debug(f"Error getting auth failures: {e}", exc_info=True)
 
         # Get memory usage
         try:
@@ -578,6 +710,9 @@ def prepare_rotation():
     )
 
     try:
+        from common.services.sync_validation_service import SyncValidationService
+        from vault.database.schema import File, db
+
         storage = current_app.config.get("VAULT_STORAGE")
         if not storage:
             return jsonify({"error": "Storage not configured"}), 500
@@ -597,7 +732,9 @@ def prepare_rotation():
 
         # Step 1: Validation
         current_app.logger.info("[PREPARE ROTATION] Starting validation phase")
-        validation_service = SyncValidationService()
+        validation_service = SyncValidationService(
+            db_session=db.session, File_model=File, logger=current_app.logger
+        )
         validation_service.load_whitelist()
 
         # Log whitelist size for debugging
@@ -706,7 +843,7 @@ def prepare_rotation():
                 "[PREPARE ROTATION] No files directory in tmpfs (empty cache is normal)"
             )
 
-        # Step 2: Secure promotion via orchestrator
+        # Step 2: Secure promotion to persistent storage
         # Update stats with files in queue
         stats["validation"]["files_in_queue"] = len(validated_files)
         current_app.logger.info(
@@ -734,15 +871,80 @@ def prepare_rotation():
             current_app.logger.info(
                 f"[PREPARE ROTATION] Sample files to promote: {sample_file_ids}"
             )
-            promotion_result = _send_files_to_orchestrator(validated_files)
-            stats["promotion"]["promoted"] = promotion_result.get("promoted", 0)
-            stats["promotion"]["failed"] = promotion_result.get("failed", 0)
-            stats["promotion"]["errors"] = promotion_result.get("errors", [])
-            if stats["promotion"]["failed"] > 0:
+
+            # Initialize promotion service
+            from common.services.file_promotion_service import FilePromotionService
+
+            promotion_service = FilePromotionService(
+                validation_service=validation_service,
+                logger_instance=current_app.logger,
+            )
+
+            # Promote files directly to persistent storage
+            promoted_count = 0
+            failed_count = 0
+            promotion_errors = []
+
+            for file_info in validated_files:
+                file_id = file_info["file_id"]
+                try:
+                    # Get source path from tmpfs (files are already validated and in tmpfs)
+                    source_path = storage.get_file_path(file_id)
+                    target_dir = storage.source_dir
+
+                    if not source_path.exists():
+                        error_msg = f"File {file_id} not found at {source_path}"
+                        current_app.logger.warning(f"[PREPARE ROTATION] {error_msg}")
+                        failed_count += 1
+                        promotion_errors.append(error_msg)
+                        continue
+
+                    if not target_dir:
+                        error_msg = "Target directory not configured"
+                        current_app.logger.warning(f"[PREPARE ROTATION] {error_msg}")
+                        failed_count += 1
+                        promotion_errors.append(error_msg)
+                        continue
+
+                    # Promote file using FilePromotionService
+                    success, error_msg = promotion_service.promote_file(
+                        file_id=file_id,
+                        source_path=source_path,
+                        target_dir=target_dir,
+                        base_dir=base_dir,
+                    )
+
+                    if success:
+                        promoted_count += 1
+                        current_app.logger.info(
+                            f"[PREPARE ROTATION] Successfully promoted file {file_id}"
+                        )
+                    else:
+                        failed_count += 1
+                        error_msg = error_msg or "Unknown promotion error"
+                        promotion_errors.append(f"File {file_id}: {error_msg}")
+                        current_app.logger.warning(
+                            f"[PREPARE ROTATION] Failed to promote file {file_id}: {error_msg}"
+                        )
+
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = f"File {file_id}: {str(e)}"
+                    promotion_errors.append(error_msg)
+                    current_app.logger.error(
+                        f"[PREPARE ROTATION] Exception promoting file {file_id}: {e}",
+                        exc_info=True,
+                    )
+
+            stats["promotion"]["promoted"] = promoted_count
+            stats["promotion"]["failed"] = failed_count
+            stats["promotion"]["errors"] = promotion_errors
+
+            if failed_count > 0:
                 current_app.logger.warning(
-                    f"[PREPARE ROTATION] Promotion had {stats['promotion']['failed']} failures"
+                    f"[PREPARE ROTATION] Promotion had {failed_count} failures"
                 )
-                for error in promotion_result.get("errors", [])[:5]:
+                for error in promotion_errors[:5]:
                     current_app.logger.warning(
                         f"[PREPARE ROTATION] Promotion error: {error}"
                     )
@@ -893,104 +1095,6 @@ def prepare_rotation():
             f"[PREPARE ROTATION] Preparation failed: {e}", exc_info=True
         )
         return jsonify({"error": "Preparation failed", "details": str(e)}), 500
-
-
-def _send_files_to_orchestrator(files: list[dict[str, Any]]) -> dict[str, Any]:
-    """Send validated files to orchestrator for secure promotion.
-
-    Args:
-        files: List of file dictionaries with file_id, file_data, expected_hash, expected_size
-
-    Returns:
-        Dictionary with promotion results
-    """
-    import base64
-    import httpx
-    import os
-
-    current_app.logger.info(
-        f"[PREPARE ROTATION] Sending {len(files)} files to orchestrator for promotion"
-    )
-
-    try:
-        # Get orchestrator URL
-        orchestrator_url = os.environ.get("ORCHESTRATOR_URL", "http://orchestrator:80")
-        promote_url = f"{orchestrator_url}/orchestrator/api/promote-files"
-
-        current_app.logger.debug(f"[PREPARE ROTATION] Promotion URL: {promote_url}")
-
-        # Get internal API token
-        internal_token = current_app.config.get("INTERNAL_API_TOKEN")
-        if not internal_token:
-            current_app.logger.error(
-                "[PREPARE ROTATION] INTERNAL_API_TOKEN not available"
-            )
-            return {
-                "promoted": 0,
-                "failed": len(files),
-                "errors": ["INTERNAL_API_TOKEN not available"],
-            }
-
-        # Prepare batch data - use base64 encoding for binary data
-        batch_data = []
-        for file_info in files:
-            batch_data.append(
-                {
-                    "file_id": file_info["file_id"],
-                    "file_data": base64.b64encode(file_info["file_data"]).decode(
-                        "utf-8"
-                    ),
-                    "expected_hash": file_info["expected_hash"],
-                    "expected_size": file_info["expected_size"],
-                }
-            )
-
-        # Send to orchestrator
-        headers = {
-            "Authorization": f"Bearer {internal_token}",
-            "Content-Type": "application/json",
-        }
-
-        with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
-            current_app.logger.debug(
-                f"[PREPARE ROTATION] Sending POST request to orchestrator with {len(batch_data)} files"
-            )
-            response = client.post(
-                promote_url, headers=headers, json={"files": batch_data}
-            )
-
-            current_app.logger.debug(
-                f"[PREPARE ROTATION] Orchestrator response: status={response.status_code}"
-            )
-
-            if response.status_code == 200:
-                result = response.json()
-                current_app.logger.info(
-                    f"[PREPARE ROTATION] Orchestrator promotion result: {result.get('promoted', 0)} promoted, "
-                    f"{result.get('failed', 0)} failed"
-                )
-                return result
-            else:
-                current_app.logger.error(
-                    f"[PREPARE ROTATION] Orchestrator returned error status {response.status_code}: {response.text}"
-                )
-                return {
-                    "promoted": 0,
-                    "failed": len(files),
-                    "errors": [
-                        f"Orchestrator returned status {response.status_code}: {response.text}"
-                    ],
-                }
-
-    except Exception as e:
-        current_app.logger.error(
-            f"[PREPARE ROTATION] Failed to send files to orchestrator: {e}"
-        )
-        return {
-            "promoted": 0,
-            "failed": len(files),
-            "errors": [f"Failed to send files to orchestrator: {e}"],
-        }
 
 
 __all__ = ["internal_api_bp"]

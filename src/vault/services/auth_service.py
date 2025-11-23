@@ -23,10 +23,22 @@ from vault.utils.constant_time import constant_time_compare
 _jti_column_exists_cache = None
 
 
+def reset_jti_column_cache() -> None:
+    """Reset the jti column existence cache.
+
+    This should be called after database migrations that add the jti column
+    to ensure the cache is refreshed in the current process.
+    """
+    global _jti_column_exists_cache
+    _jti_column_exists_cache = None
+
+
 def _check_jti_column_exists() -> bool:
     """Check if jti column exists in jwt_blacklist table.
 
     Uses a cached result to avoid repeated database queries.
+    If cache is False, we always re-check to handle cases where the column
+    was added after the initial check (e.g., via migration).
     Returns False if check fails (safe default - assumes column doesn't exist).
     This function NEVER raises exceptions - all errors are caught and return False.
 
@@ -35,10 +47,11 @@ def _check_jti_column_exists() -> bool:
     """
     global _jti_column_exists_cache
 
-    # Return cached result if available
-    if _jti_column_exists_cache is not None:
-        return _jti_column_exists_cache
+    # If cache is True, return immediately (column definitely exists)
+    if _jti_column_exists_cache is True:
+        return True
 
+    # If cache is False or None, always check (handles migration case)
     # Check if column exists - wrap everything in try/except to ensure no exceptions escape
     try:
         from sqlalchemy.exc import ProgrammingError, InternalError
@@ -56,6 +69,18 @@ def _check_jti_column_exists() -> bool:
             _jti_column_exists_cache = False
             return False
 
+        # First check if table exists
+        try:
+            from sqlalchemy import inspect as sql_inspect
+
+            inspector = sql_inspect(db.engine)
+            if "jwt_blacklist" not in inspector.get_table_names():
+                # Table doesn't exist yet - don't cache, might be created later
+                return False
+        except Exception:
+            # Can't check table existence - don't cache, might be transient
+            return False
+
         # Try a simple query that will fail if column doesn't exist
         # Use a very lightweight query that won't affect performance
         try:
@@ -69,24 +94,21 @@ def _check_jti_column_exists() -> bool:
         except (ProgrammingError, InternalError) as e:
             # Check if error is about missing column
             error_str = str(e).lower()
-            if (
-                "column" in error_str and "jti" in error_str
-            ) or "does not exist" in error_str:
+            if ("column" in error_str and "jti" in error_str) or (
+                "does not exist" in error_str and "jti" in error_str
+            ):
                 # Column doesn't exist
                 _jti_column_exists_cache = False
                 return False
             else:
-                # Other database error - assume column doesn't exist (safe default)
-                _jti_column_exists_cache = False
+                # Other database error - don't cache False, might be transient
+                # Return False but don't cache to allow retry
                 return False
         except Exception:
-            # Any other error - assume column doesn't exist (safe default)
-            _jti_column_exists_cache = False
+            # Any other error - don't cache False, might be transient
             return False
     except Exception:
-        # Any error during check - assume column doesn't exist (safe default)
-        # This outer catch ensures NO exceptions can escape this function
-        _jti_column_exists_cache = False
+        # Any error during check - don't cache False, might be transient
         return False
 
 

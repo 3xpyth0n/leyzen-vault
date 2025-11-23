@@ -427,7 +427,7 @@
             title="Logout"
           >
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-            <button type="submit" class="logout-button">Logout</button>
+            <button type="submit" class="footer-btn-logout">Logout</button>
           </form>
 
           <span class="text-slate-600">•</span>
@@ -435,18 +435,14 @@
           <span class="text-slate-600">•</span>
           <a
             href="/orchestrator/logs"
-            class="text-xs text-slate-400 underline hover:text-slate-200"
+            class="footer-btn-secondary"
             title="Logs"
           >
             View Logs
           </a>
           <span class="text-slate-600">•</span>
-          <a
-            href="/"
-            class="text-xs text-slate-400 underline hover:text-slate-200"
-            title="Vault"
-          >
-            Vault
+          <a href="/" class="footer-btn-secondary" title="Vault">
+            Access Vault
           </a>
         </div>
       </footer>

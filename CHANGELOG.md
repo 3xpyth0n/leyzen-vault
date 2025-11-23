@@ -30,6 +30,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **File Validation**: Magic bytes validation for whitelisted files to detect tampering.
 - **Error Standardization**: Unique error codes (ERR\_\*) to prevent information leakage.
 
+### Fixed
+
+- **Container Rotation**: Fixed SyncValidationService import error and replaced orchestrator-based file promotion with local FilePromotionService in prepare_rotation endpoint.
+
 ## [2.2.0] - 2025-11-22
 
 ### Added

@@ -1005,8 +1005,26 @@ function initStateWaveChartLoading() {
   const loadingEl = document.getElementById("stateWaveChartLoading");
   if (!loadingEl) return;
 
+  const canvas = document.getElementById("stateWaveChart");
+
   setTimeout(() => {
     loadingEl.classList.add("fade-out");
+    // Ensure canvas has no blur
+    if (canvas) {
+      canvas.style.filter = "none";
+      canvas.style.transition = "";
+    }
+    // Remove overlay completely from DOM after animation completes
+    // Animation duration is 1.4s according to CSS
+    setTimeout(() => {
+      if (loadingEl.parentNode) {
+        loadingEl.remove();
+      }
+      // Double-check canvas has no blur
+      if (canvas) {
+        canvas.style.filter = "none";
+      }
+    }, 1400);
   }, 1000);
 }
 
@@ -1262,10 +1280,6 @@ function initStateWaveChart(initialSnapshot = null) {
   }
 
   chart._stateWave.ready = true;
-
-  // Ensure canvas is blurred
-  canvas.style.filter = "blur(20px)";
-  canvas.style.transition = "filter 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 
   // Initialize loading overlay with 2 second delay
   initStateWaveChartLoading();

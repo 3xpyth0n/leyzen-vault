@@ -1626,6 +1626,75 @@ def init_db(app) -> None:
         # If objects already exist, that's fine - database is already initialized
         try:
             db.create_all()
+
+            # Migrate jwt_blacklist table to add jti column if missing
+            # This handles cases where the table was created before jti column was added
+            try:
+                from sqlalchemy import inspect as sql_inspect
+                from sqlalchemy.sql import text as sql_text
+                from sqlalchemy.exc import ProgrammingError, InternalError
+
+                # Check if jwt_blacklist table exists first
+                inspector = sql_inspect(db.engine)
+                if "jwt_blacklist" not in inspector.get_table_names():
+                    logger.debug(
+                        "jwt_blacklist table does not exist yet, skipping jti migration"
+                    )
+                else:
+                    columns = [
+                        col["name"] for col in inspector.get_columns("jwt_blacklist")
+                    ]
+
+                    if "jti" not in columns:
+                        logger.info("Adding jti column to jwt_blacklist table...")
+                        try:
+                            db.session.execute(
+                                sql_text(
+                                    "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
+                                )
+                            )
+                            # Add unique constraint separately if needed
+                            db.session.execute(
+                                sql_text(
+                                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
+                                )
+                            )
+                            db.session.commit()
+                            logger.info(
+                                "jti column added successfully to jwt_blacklist table"
+                            )
+
+                            # Clear the cache in auth_service if it exists
+                            try:
+                                from vault.services.auth_service import (
+                                    reset_jti_column_cache,
+                                )
+
+                                reset_jti_column_cache()
+                            except Exception:
+                                pass  # Cache reset is optional
+                        except (ProgrammingError, InternalError) as db_error:
+                            error_msg = str(db_error).lower()
+                            if (
+                                "already exists" in error_msg
+                                or "duplicate" in error_msg
+                            ):
+                                logger.debug(
+                                    "jti column already exists in jwt_blacklist table"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Failed to add jti column to jwt_blacklist table: {db_error}"
+                                )
+                                db.session.rollback()
+                    else:
+                        logger.debug("jti column already exists in jwt_blacklist table")
+            except Exception as migration_error:
+                # If migration fails, log but don't fail initialization
+                logger.warning(
+                    f"Error during jti column migration check: {migration_error}"
+                )
+
             logger.info("Database initialization completed successfully")
         except Exception as e:
             # Check if it's a duplicate/already exists error

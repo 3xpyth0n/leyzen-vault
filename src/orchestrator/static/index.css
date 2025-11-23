@@ -415,12 +415,32 @@ footer {
   border: 1px solid rgba(148, 163, 184, 0.18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
+  /* Prevent backdrop-filter blur from affecting canvas */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .state-wave-chart canvas {
   width: 100%;
   height: 100%;
   display: block;
+  /* Ensure canvas is never blurred */
+  filter: none !important;
+}
+
+@keyframes fade-out-disperse {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.08) translateY(-8px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2) translateY(-25px);
+  }
 }
 
 .state-wave-chart-loading {
@@ -439,22 +459,16 @@ footer {
   z-index: 10;
   opacity: 1;
   visibility: visible;
-  transition:
-    opacity 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    visibility 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    filter 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    transform 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   pointer-events: auto;
-  filter: blur(0px);
   transform: scale(1);
 }
 
 .state-wave-chart-loading.fade-out {
-  opacity: 0;
-  visibility: hidden;
+  animation: fade-out-disperse 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)
+    forwards;
   pointer-events: none;
-  filter: blur(8px);
-  transform: scale(1.02);
+  visibility: hidden;
+  transition: visibility 0s linear 1.4s;
 }
 
 .state-wave-chart-loading-spinner {
