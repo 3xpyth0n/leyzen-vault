@@ -111,6 +111,17 @@ class RotationService:
             )
         return self._security_metrics
 
+    def _get_internal_api_token(self) -> str:
+        """Get INTERNAL_API_TOKEN from settings.
+
+        The token is now derived deterministically from SECRET_KEY (like DOCKER_PROXY_TOKEN),
+        so it's always available in settings without needing database access.
+
+        Returns:
+            The internal API token string, or empty string if not available
+        """
+        return self._settings.internal_api_token or ""
+
     def cleanup(self) -> None:
         """Clean up resources, including closing the SyncService and SecurityMetricsService HTTP clients."""
         # Signal threads to stop
@@ -200,11 +211,12 @@ class RotationService:
         try:
             # Call prepare-rotation endpoint
             url = f"http://{container_name}/api/internal/prepare-rotation"
-            internal_token = self._settings.internal_api_token
+            internal_token = self._get_internal_api_token()
 
             if not internal_token:
                 self._logger.log(
-                    f"[PREPARE ROTATION ERROR] INTERNAL_API_TOKEN not available"
+                    f"[PREPARE ROTATION ERROR] INTERNAL_API_TOKEN not available. "
+                    f"Vault may not have generated the token yet. Will retry on next rotation attempt."
                 )
                 return False
 

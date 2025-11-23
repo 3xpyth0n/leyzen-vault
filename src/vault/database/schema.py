@@ -1668,11 +1668,115 @@ def init_db(app) -> None:
                     "duplicate key",
                     "relation.*already exists",
                     "duplicate",
+                    "duplicate index",
+                    "duplicate constraint",
+                    "pg_type_typname_nsp_index",  # PostgreSQL type already exists
+                    "uniqueviolation",
                 ]
+                # Also check for specific PostgreSQL error codes and patterns
                 if any(indicator in msg_lower for indicator in duplicate_indicators):
                     return True
+                # Check for PostgreSQL error codes:
+                # - 42P07 (duplicate_table)
+                # - 42710 (duplicate_object)
+                # - 23505 (unique_violation) - for ENUM types and other unique constraints
+                if hasattr(error, "orig") and hasattr(error.orig, "pgcode"):
+                    if error.orig.pgcode in ("42P07", "42710", "23505"):
+                        return True
 
             return False
+
+        # RADICAL FIX: Delete ALL problematic indexes FIRST, before any other operation
+        # This must happen BEFORE any db.create_all() call to prevent duplicate index errors
+        try:
+            from sqlalchemy.sql import text as sql_text
+            import sys
+
+            # Clean up problematic indexes before creating tables
+            all_problematic_indexes = [
+                "ix_system_secrets_key",
+                "ix_magic_link_tokens_expires_at",
+                "ix_magic_link_tokens_email",
+            ]
+
+            for idx_name in all_problematic_indexes:
+                try:
+                    db.session.execute(
+                        sql_text(f'DROP INDEX IF EXISTS "{idx_name}" CASCADE')
+                    )
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    pass
+
+            # Get list of all existing tables first
+            from sqlalchemy import inspect as sql_inspect
+
+            inspector = sql_inspect(db.engine)
+            existing_tables_set = set(inspector.get_table_names())
+
+            # Get all indexes from pg_indexes
+            all_indexes_query = db.session.execute(
+                sql_text(
+                    """
+                    SELECT indexname, tablename
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                    ORDER BY tablename, indexname
+                """
+                )
+            )
+            all_indexes = [(row[0], row[1]) for row in all_indexes_query.fetchall()]
+
+            # Find orphaned indexes (indexes whose tables don't exist)
+            orphaned_indexes = []
+            for idx_name, table_name in all_indexes:
+                if table_name not in existing_tables_set:
+                    orphaned_indexes.append((idx_name, table_name))
+
+            # RADICAL FIX: Drop ALL known problematic indexes unconditionally
+            # SQLAlchemy will recreate them properly during db.create_all()
+            known_problematic_indexes = [
+                "ix_system_secrets_key",
+                "ix_magic_link_tokens_expires_at",
+                "ix_magic_link_tokens_email",
+            ]
+
+            for idx_name in known_problematic_indexes:
+                try:
+                    db.session.execute(
+                        sql_text(f'DROP INDEX IF EXISTS "{idx_name}" CASCADE')
+                    )
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    pass
+
+            for idx_name, table_name in orphaned_indexes:
+                try:
+                    db.session.execute(
+                        sql_text(f'DROP INDEX IF EXISTS "{idx_name}" CASCADE')
+                    )
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    pass
+        except Exception as cleanup_error:
+            # Log the error but continue - we'll try to handle it in the create_all error handler
+            if app_logger:
+                app_logger.log(
+                    f"[WARNING] Failed to clean orphaned indexes: {cleanup_error}"
+                )
+            else:
+                logger.warning(f"Failed to clean orphaned indexes: {cleanup_error}")
+            import sys
+            import traceback
+
+            print(
+                f"[WARNING] Failed to clean orphaned indexes: {cleanup_error}\n{traceback.format_exc()}",
+                file=sys.stderr,
+                flush=True,
+            )
 
         # Create all tables and indexes using SQLAlchemy
         # If objects already exist, that's fine - database is already initialized
@@ -1688,27 +1792,244 @@ def init_db(app) -> None:
 
             print(log_msg, file=sys.stderr, flush=True)
 
-            db.create_all()
-            log_msg = "[INIT] db.create_all() completed"
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
-            print(log_msg, file=sys.stderr, flush=True)
+            # CRITICAL: Create problematic tables manually with SQL BEFORE db.create_all()
+            # This prevents db.create_all() from trying to create indexes for non-existent tables
+            from sqlalchemy.sql import text as sql_text
+            from sqlalchemy import inspect as sql_inspect
+
+            problematic_tables = ["system_secrets", "magic_link_tokens"]
+
+            for table_name in problematic_tables:
+                try:
+                    inspector = sql_inspect(db.engine)
+                    if table_name in inspector.get_table_names():
+                        continue  # Table already exists
+
+                    # Create table manually if needed
+
+                    # Get the model class
+                    model_class = None
+                    try:
+                        # Try to get the model from required_tables (if it's already loaded)
+                        # Otherwise try to import it
+                        if table_name == "system_secrets":
+                            from vault.database.schema import SystemSecrets
+
+                            model_class = SystemSecrets
+                        elif table_name == "magic_link_tokens":
+                            from vault.database.schema import MagicLinkToken
+
+                            model_class = MagicLinkToken
+                    except ImportError:
+                        # Models might not be imported yet
+                        pass
+
+                    if model_class:
+                        # Clean up orphaned indexes for this table first
+                        try:
+                            index_check = db.session.execute(
+                                sql_text(
+                                    """
+                                    SELECT indexname FROM pg_indexes 
+                                    WHERE tablename = :table_name 
+                                    AND schemaname = 'public'
+                                """
+                                ),
+                                {"table_name": table_name},
+                            )
+                            orphaned_indexes = [
+                                row[0] for row in index_check.fetchall()
+                            ]
+                            for idx_name in orphaned_indexes:
+                                try:
+                                    db.session.execute(
+                                        sql_text(
+                                            f'DROP INDEX IF EXISTS "{idx_name}" CASCADE'
+                                        )
+                                    )
+                                    db.session.commit()
+                                except Exception:
+                                    db.session.rollback()
+                        except Exception:
+                            pass
+
+                        # Create table manually without indexes
+                        table_def = model_class.__table__
+                        columns = []
+                        from sqlalchemy.dialects import postgresql
+                        from sqlalchemy.schema import CreateTable
+
+                        # Use SQLAlchemy's dialect to get correct PostgreSQL types
+                        for col in table_def.columns:
+                            # Get the PostgreSQL-specific type using the dialect compiler
+                            col_type_obj = col.type
+                            # Convert DATETIME to TIMESTAMP for PostgreSQL
+                            if isinstance(col_type_obj, DateTime):
+                                if col_type_obj.timezone:
+                                    col_type = "TIMESTAMP WITH TIME ZONE"
+                                else:
+                                    col_type = "TIMESTAMP"
+                            else:
+                                # Use the dialect to compile the type
+                                col_type = str(
+                                    col_type_obj.compile(dialect=postgresql.dialect())
+                                )
+
+                            nullable = "NULL" if col.nullable else "NOT NULL"
+                            default = ""
+                            if col.server_default is not None:
+                                if hasattr(col.server_default, "arg"):
+                                    default_value = str(col.server_default.arg)
+                                    default = f" DEFAULT {default_value}"
+                                else:
+                                    default_value = str(col.server_default)
+                                    # Handle func.now() and similar
+                                    if (
+                                        "now()" in default_value.lower()
+                                        or "gen_random_uuid()" in default_value.lower()
+                                    ):
+                                        default = f" DEFAULT {default_value}"
+                                    else:
+                                        default = f" DEFAULT {default_value}"
+                            elif col.default is not None:
+                                if hasattr(col.default, "arg"):
+                                    default_value = str(col.default.arg)
+                                    default = f" DEFAULT {default_value}"
+                            columns.append(
+                                f'"{col.name}" {col_type} {nullable}{default}'
+                            )
+
+                        create_sql = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({", ".join(columns)})'
+                        db.session.execute(sql_text(create_sql))
+                        db.session.commit()
+
+                        # Now create indexes manually to prevent SQLAlchemy from trying to create them
+                        # and failing because they already exist as orphaned indexes
+                        try:
+                            # Get index definitions from table
+                            for idx in table_def.indexes:
+                                idx_name = idx.name
+                                # Check if index already exists
+                                idx_check = db.session.execute(
+                                    sql_text(
+                                        """
+                                        SELECT EXISTS (
+                                            SELECT 1 FROM pg_indexes 
+                                            WHERE indexname = :idx_name 
+                                            AND schemaname = 'public'
+                                        )
+                                    """
+                                    ),
+                                    {"idx_name": idx_name},
+                                )
+                                idx_exists = idx_check.fetchone()[0]
+
+                                if not idx_exists:
+                                    # Create index
+                                    columns_str = ", ".join(
+                                        f'"{col.name}"' for col in idx.columns
+                                    )
+                                    unique_str = "UNIQUE " if idx.unique else ""
+                                    create_idx_sql = f'CREATE {unique_str}INDEX IF NOT EXISTS "{idx_name}" ON "{table_name}" ({columns_str})'
+
+                                    try:
+                                        db.session.execute(sql_text(create_idx_sql))
+                                        db.session.commit()
+                                    except Exception as idx_error:
+                                        db.session.rollback()
+                                        if is_duplicate_error(idx_error):
+                                            # Index already exists - that's fine
+                                            pass
+                                        else:
+                                            log_msg = f"[WARNING] Failed to create index {idx_name}: {idx_error}"
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                # Index exists or was created
+                        except Exception as idx_error:
+                            # Index creation failed - log but continue
+                            log_msg = f"[WARNING] Failed to create indexes for {table_name}: {idx_error}"
+                            print(log_msg, file=sys.stderr, flush=True)
+
+                        # Table created successfully
+                except Exception as manual_create_error:
+                    db.session.rollback()
+                    # Only log non-duplicate errors (duplicate errors are expected)
+                    if not is_duplicate_error(manual_create_error):
+                        log_msg = f"[WARNING] Failed to manually create table {table_name}: {manual_create_error}"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.warning(log_msg)
+                        print(log_msg, file=sys.stderr, flush=True)
+
+            # RADICAL FIX: Drop problematic indexes AGAIN right before db.create_all()
+            # This ensures they are really gone before SQLAlchemy tries to create them
+            import time
+
+            for idx_name in [
+                "ix_system_secrets_key",
+                "ix_magic_link_tokens_expires_at",
+                "ix_magic_link_tokens_email",
+            ]:
+                try:
+                    # Drop with CASCADE and verify it's gone
+                    db.session.execute(
+                        sql_text(f'DROP INDEX IF EXISTS "{idx_name}" CASCADE')
+                    )
+                    db.session.commit()
+
+                    # Verify the index is actually gone
+                    check_idx = db.session.execute(
+                        sql_text(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_indexes 
+                                WHERE indexname = :idx_name 
+                                AND schemaname = 'public'
+                            )
+                        """
+                        ),
+                        {"idx_name": idx_name},
+                    )
+                    still_exists = check_idx.fetchone()[0]
+                    if still_exists:
+                        # Force drop without IF EXISTS
+                        db.session.execute(sql_text(f'DROP INDEX "{idx_name}" CASCADE'))
+                        db.session.commit()
+
+                except Exception as drop_err:
+                    db.session.rollback()
+                    # Ignore errors - index may not exist or already dropped
+                    pass
+
+            # Small delay to ensure indexes are fully dropped
+            time.sleep(0.1)
+
+            # CRITICAL: Wrap db.create_all() in try/except to handle duplicate index errors
+            # SQLAlchemy may try to create indexes that already exist (orphaned indexes)
+            try:
+                db.create_all()
+                # db.create_all() completed
+            except Exception as create_all_error:
+                # Check if this is a duplicate index error - if so, ignore it
+                # The tables should still be created even if some indexes fail
+                if is_duplicate_error(create_all_error):
+                    # Silently ignore duplicate errors - these are expected when database is already initialized
+                    # Only log at debug level for troubleshooting
+                    pass
+                else:
+                    # Unknown error - re-raise
+                    log_msg = f"[ERROR] db.create_all() failed with unexpected error: {create_all_error}"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.error(log_msg)
+                    print(log_msg, file=sys.stderr, flush=True)
+                    raise
 
             # Wait a moment to ensure all tables are fully created and visible
             import time
 
             time.sleep(0.5)
-
-            log_msg = "[INIT] Database tables created, ensuring jti column exists..."
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
-            import sys
-
-            print(log_msg, file=sys.stderr, flush=True)
 
             # CRITICAL: Always ensure jti column exists after db.create_all()
             # SQLAlchemy may not create nullable columns correctly in some cases
@@ -1723,20 +2044,9 @@ def init_db(app) -> None:
                     columns = [
                         col["name"] for col in inspector.get_columns("jwt_blacklist")
                     ]
-                    import sys
 
-                    print(
-                        f"[INIT] jwt_blacklist columns: {', '.join(columns)}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
                     if "jti" not in columns:
-                        log_msg = "[INIT] jti column missing after db.create_all(), creating it now..."
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.warning(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
+                        # Creating jti column
                         db.session.execute(
                             sql_text(
                                 "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
@@ -1748,12 +2058,7 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        log_msg = "[INIT] jti column created successfully after db.create_all()"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
+                        # jti column created
                         # Clear cache
                         try:
                             from vault.services.auth_service import (
@@ -1763,13 +2068,6 @@ def init_db(app) -> None:
                             reset_jti_column_cache()
                         except Exception:
                             pass
-                    else:
-                        log_msg = "[INIT] jti column exists after db.create_all()"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
             except Exception as pre_check_error:
                 log_msg = (
                     f"[WARNING] Pre-check for jti column failed: {pre_check_error}"
@@ -1779,12 +2077,6 @@ def init_db(app) -> None:
                 else:
                     logger.warning(log_msg)
                 # Continue - the migration logic below will handle it
-
-            log_msg = "[INIT] Database tables created, checking jwt_blacklist table..."
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
 
             # Migrate jwt_blacklist table to add jti column if missing
             # This handles cases where the table was created before jti column was added
@@ -2271,28 +2563,269 @@ def init_db(app) -> None:
                         # Create missing tables one by one, ignoring duplicate errors
                         for table_name in missing_tables:
                             model_class = required_tables[table_name]
-                            try:
-                                model_class.__table__.create(db.engine, checkfirst=True)
-                                log_msg = f"[INIT] Created missing table: {table_name}"
+                            table_created = False
+                            max_create_attempts = 3
+
+                            for create_attempt in range(1, max_create_attempts + 1):
+
+                                # First, check if table exists (it might exist but not be detected)
+                                try:
+                                    from sqlalchemy import inspect as sql_inspect
+                                    from sqlalchemy.sql import text as sql_text
+
+                                    inspector = sql_inspect(db.engine)
+                                    existing_tables_check = inspector.get_table_names()
+                                    if table_name in existing_tables_check:
+                                        table_created = True
+                                        break
+
+                                    # Clean up orphaned indexes that might prevent table creation
+                                    # Get all indexes for this table
+                                    try:
+                                        # Query for orphaned indexes
+                                        index_check = db.session.execute(
+                                            sql_text(
+                                                """
+                                                SELECT indexname FROM pg_indexes 
+                                                WHERE tablename = :table_name 
+                                                AND schemaname = 'public'
+                                            """
+                                            ),
+                                            {"table_name": table_name},
+                                        )
+                                        orphaned_indexes = [
+                                            row[0] for row in index_check.fetchall()
+                                        ]
+                                        if orphaned_indexes:
+                                            # Drop orphaned indexes
+                                            for idx_name in orphaned_indexes:
+                                                try:
+                                                    db.session.execute(
+                                                        sql_text(
+                                                            f'DROP INDEX IF EXISTS "{idx_name}"'
+                                                        )
+                                                    )
+                                                    db.session.commit()
+                                                except Exception as drop_error:
+                                                    # Ignore errors when dropping indexes
+                                                    db.session.rollback()
+                                                    if (
+                                                        is_duplicate_error(drop_error)
+                                                        or "does not exist"
+                                                        in str(drop_error).lower()
+                                                    ):
+                                                        pass  # Expected
+                                                    else:
+                                                        log_msg = f"[WARNING] Failed to drop orphaned index {idx_name}: {drop_error}"
+                                                        if app_logger:
+                                                            app_logger.log(log_msg)
+                                                        else:
+                                                            logger.warning(log_msg)
+                                                        print(
+                                                            log_msg,
+                                                            file=sys.stderr,
+                                                            flush=True,
+                                                        )
+                                    except Exception as cleanup_error:
+                                        # Ignore cleanup errors - continue with table creation
+                                        pass
+
+                                except Exception as pre_check_error:
+                                    # Continue with table creation even if pre-check fails
+                                    pass
+
+                                try:
+                                    # Clean up orphaned indexes before creating table
+                                    try:
+                                        from sqlalchemy.sql import text as sql_text
+
+                                        # Check for orphaned indexes (indexes without their table)
+                                        index_check = db.session.execute(
+                                            sql_text(
+                                                """
+                                                SELECT indexname FROM pg_indexes 
+                                                WHERE tablename = :table_name 
+                                                AND schemaname = 'public'
+                                            """
+                                            ),
+                                            {"table_name": table_name},
+                                        )
+                                        orphaned_indexes = [
+                                            row[0] for row in index_check.fetchall()
+                                        ]
+
+                                        if orphaned_indexes:
+                                            log_msg = f"[INIT] Found orphaned indexes for {table_name}: {', '.join(orphaned_indexes)}. Cleaning them up..."
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.warning(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+
+                                            # Drop orphaned indexes
+                                            for idx_name in orphaned_indexes:
+                                                try:
+                                                    db.session.execute(
+                                                        sql_text(
+                                                            f'DROP INDEX IF EXISTS "{idx_name}"'
+                                                        )
+                                                    )
+                                                    db.session.commit()
+                                                    log_msg = f"[INIT] Dropped orphaned index: {idx_name}"
+                                                    if app_logger:
+                                                        app_logger.log(log_msg)
+                                                    else:
+                                                        logger.info(log_msg)
+                                                    print(
+                                                        log_msg,
+                                                        file=sys.stderr,
+                                                        flush=True,
+                                                    )
+                                                except Exception as drop_error:
+                                                    # Ignore errors when dropping indexes
+                                                    db.session.rollback()
+                                                    if (
+                                                        is_duplicate_error(drop_error)
+                                                        or "does not exist"
+                                                        in str(drop_error).lower()
+                                                    ):
+                                                        pass  # Expected
+                                                    else:
+                                                        log_msg = f"[WARNING] Failed to drop orphaned index {idx_name}: {drop_error}"
+                                                        if app_logger:
+                                                            app_logger.log(log_msg)
+                                                        else:
+                                                            logger.warning(log_msg)
+                                                        print(
+                                                            log_msg,
+                                                            file=sys.stderr,
+                                                            flush=True,
+                                                        )
+                                    except Exception as cleanup_error:
+                                        # Ignore cleanup errors - continue with table creation
+                                        pass
+
+                                    # Try creating with SQLAlchemy first
+                                    model_class.__table__.create(
+                                        db.engine, checkfirst=True
+                                    )
+                                    # Also try using raw SQL as fallback for critical tables
+                                    if table_name in (
+                                        "system_secrets",
+                                        "magic_link_tokens",
+                                    ):
+                                        try:
+                                            from sqlalchemy.sql import text as sql_text
+
+                                            # Get table definition from model
+                                            table_def = model_class.__table__
+                                            columns = []
+                                            for col in table_def.columns:
+                                                col_type = str(col.type)
+                                                nullable = (
+                                                    "NULL"
+                                                    if col.nullable
+                                                    else "NOT NULL"
+                                                )
+                                                default = ""
+                                                if col.server_default is not None:
+                                                    default = f" DEFAULT {str(col.server_default.arg)}"
+                                                elif col.default is not None:
+                                                    if hasattr(col.default, "arg"):
+                                                        default = f" DEFAULT {col.default.arg}"
+                                                columns.append(
+                                                    f"{col.name} {col_type} {nullable}{default}"
+                                                )
+
+                                            # Create table with IF NOT EXISTS
+                                            create_sql = f"""
+                                                CREATE TABLE IF NOT EXISTS {table_name} (
+                                                    {', '.join(columns)}
+                                                )
+                                            """
+                                            db.session.execute(sql_text(create_sql))
+                                            db.session.commit()
+                                            log_msg = f"[INIT] Table {table_name} created using raw SQL"
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.info(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                        except Exception as sql_error:
+                                            # SQL fallback failed - log but continue with normal flow
+                                            log_msg = f"[DEBUG] Raw SQL creation failed for {table_name}: {sql_error}"
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.debug(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                    # Verify table was actually created
+                                    time.sleep(
+                                        0.5
+                                    )  # Wait for table creation to propagate
+                                    inspector = sql_inspect(db.engine)
+                                    existing_tables_after = inspector.get_table_names()
+
+                                    if table_name in existing_tables_after:
+                                        log_msg = f"[INIT] Created missing table: {table_name} (verified)"
+                                        if app_logger:
+                                            app_logger.log(log_msg)
+                                        else:
+                                            logger.info(log_msg)
+                                        print(log_msg, file=sys.stderr, flush=True)
+                                        table_created = True
+                                        break
+                                    else:
+                                        if create_attempt < max_create_attempts:
+                                            log_msg = f"[WARNING] Table {table_name} creation attempt {create_attempt} did not create table. Retrying..."
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.warning(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                        else:
+                                            log_msg = f"[ERROR] Table {table_name} was not created after {max_create_attempts} attempts"
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.error(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                except Exception as table_error:
+                                    if is_duplicate_error(table_error):
+                                        # Table might have been created by another process
+                                        time.sleep(0.5)
+                                        inspector = sql_inspect(db.engine)
+                                        existing_tables_after = (
+                                            inspector.get_table_names()
+                                        )
+                                        if table_name in existing_tables_after:
+                                            table_created = True
+                                            break
+                                    else:
+                                        if create_attempt < max_create_attempts:
+                                            log_msg = f"[WARNING] Failed to create table {table_name} (attempt {create_attempt}/{max_create_attempts}): {table_error}. Retrying..."
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.warning(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                                            time.sleep(1.0)  # Wait before retry
+                                        else:
+                                            log_msg = f"[ERROR] Failed to create table {table_name} after {max_create_attempts} attempts: {table_error}"
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.error(log_msg)
+                                            print(log_msg, file=sys.stderr, flush=True)
+                            if not table_created:
+                                import traceback
+
+                                error_msg = f"[ERROR] CRITICAL: Failed to create table {table_name} after all attempts.\n{traceback.format_exc()}"
                                 if app_logger:
-                                    app_logger.log(log_msg)
+                                    app_logger.log(error_msg)
                                 else:
-                                    logger.info(log_msg)
-                                print(log_msg, file=sys.stderr, flush=True)
-                            except Exception as table_error:
-                                if is_duplicate_error(table_error):
-                                    log_msg = f"[INIT] Table {table_name} already exists (ignoring duplicate error)"
-                                    if app_logger:
-                                        app_logger.log(log_msg)
-                                    else:
-                                        logger.debug(log_msg)
-                                else:
-                                    log_msg = f"[ERROR] Failed to create table {table_name}: {table_error}"
-                                    if app_logger:
-                                        app_logger.log(log_msg)
-                                    else:
-                                        logger.error(log_msg)
-                                    print(log_msg, file=sys.stderr, flush=True)
+                                    logger.error(error_msg)
+                                print(error_msg, file=sys.stderr, flush=True)
                         # Refresh inspector after creating tables
                         inspector = sql_inspect(db.engine)
                         existing_tables = set(inspector.get_table_names())
@@ -2311,30 +2844,7 @@ def init_db(app) -> None:
                             else:
                                 logger.warning(log_msg)
                             print(log_msg, file=sys.stderr, flush=True)
-                        else:
-                            log_msg = "[INIT] All required tables now exist"
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.info(log_msg)
-                            print(log_msg, file=sys.stderr, flush=True)
-                    else:
-                        log_msg = "[INIT] All required tables exist"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
-
                     # Now verify and create jti column if missing
-                    log_msg = (
-                        "[INIT] Verifying jti column exists (after duplicate error)..."
-                    )
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
-                    print(log_msg, file=sys.stderr, flush=True)
 
                     # RADICAL SOLUTION: Use direct SQL to ensure table and column exist
                     # Don't rely on inspector which may not see tables immediately

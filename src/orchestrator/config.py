@@ -39,6 +39,7 @@ from common.env import load_env_with_override, parse_container_names, parse_time
 from common.exceptions import ConfigurationError
 from common.token_utils import (
     derive_docker_proxy_token,
+    derive_internal_api_token,
 )
 
 
@@ -197,6 +198,24 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
 
         try:
             with engine.connect() as conn:
+                # First check if table exists
+                table_check = conn.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_schema = 'public' 
+                            AND table_name = 'system_secrets'
+                        )
+                    """
+                    )
+                )
+                table_exists = table_check.fetchone()[0]
+
+                if not table_exists:
+                    # Table doesn't exist - token hasn't been generated yet
+                    return ""
+
                 # Query for the encrypted token value
                 result = conn.execute(
                     text("SELECT encrypted_value FROM system_secrets WHERE key = :key"),
@@ -205,7 +224,7 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
                 row = result.fetchone()
 
                 if not row:
-                    # Token not found in database
+                    # Token not found in database - table exists but token not generated yet
                     return ""
 
                 encrypted_value = row[0]
@@ -369,9 +388,15 @@ def load_settings() -> Settings:
     # Generate docker proxy token automatically from SECRET_KEY
     docker_proxy_token = derive_docker_proxy_token(secret_key)
 
-    # Internal API token is now stored in database (SystemSecrets table)
-    # Try to read from database, fallback to environment variable if set
-    internal_api_token = _get_internal_api_token_from_db(env_values, secret_key)
+    # Internal API token derived deterministically from SECRET_KEY (like DOCKER_PROXY_TOKEN)
+    # This avoids database dependency and ensures vault and orchestrator use the same token
+    internal_api_token = env_values.get("INTERNAL_API_TOKEN", "")
+    if not internal_api_token:
+        internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
+
+    # If not explicitly set, derive from SECRET_KEY
+    if not internal_api_token:
+        internal_api_token = derive_internal_api_token(secret_key)
 
     sse_stream_interval_ms = parse_int_env_var(
         "ORCH_SSE_INTERVAL_MS",

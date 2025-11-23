@@ -319,21 +319,99 @@ def _get_or_generate_internal_api_token(
     try:
         with app.app_context():
             # Ensure SystemSecrets table exists before storing
-            # If table doesn't exist, create it (this can happen if init_db() hasn't created it yet)
-            try:
-                # Try to create the table if it doesn't exist
-                from sqlalchemy import inspect as sql_inspect
+            # Try multiple times to create the table if it doesn't exist
+            table_created = False
+            max_table_attempts = 3
 
-                inspector = sql_inspect(db.engine)
-                if "system_secrets" not in inspector.get_table_names():
+            for table_attempt in range(1, max_table_attempts + 1):
+                try:
+                    from sqlalchemy import inspect as sql_inspect
+
+                    inspector = sql_inspect(db.engine)
+                    table_exists = "system_secrets" in inspector.get_table_names()
+
+                    if not table_exists:
+                        if logger:
+                            logger.log(
+                                f"[INFO] SystemSecrets table does not exist. Creating it... (attempt {table_attempt}/{max_table_attempts})"
+                            )
+                        SystemSecrets.__table__.create(db.engine, checkfirst=True)
+                        # Verify table was created
+                        inspector = sql_inspect(db.engine)
+                        table_exists = "system_secrets" in inspector.get_table_names()
+                        if table_exists:
+                            table_created = True
+                            if logger:
+                                logger.log(
+                                    "[INFO] SystemSecrets table created successfully."
+                                )
+                            break
+                        else:
+                            if logger and table_attempt < max_table_attempts:
+                                logger.log(
+                                    f"[WARNING] Table creation attempt {table_attempt} failed. Retrying..."
+                                )
+                            import time
+
+                            time.sleep(1.0)  # Wait 1 second before retry
+                    else:
+                        table_created = True
+                        break
+                except Exception as create_error:
+                    # Table creation failed - log and retry if attempts left
                     if logger:
-                        logger.log("[INFO] Creating SystemSecrets table...")
-                    SystemSecrets.__table__.create(db.engine, checkfirst=True)
-            except Exception as create_error:
-                # Table creation failed - log but continue (might already exist)
-                if logger:
-                    logger.debug(f"SystemSecrets table check/create: {create_error}")
+                        error_msg = str(create_error).lower()
+                        if "already exists" in error_msg or "duplicate" in error_msg:
+                            # Table already exists - this is fine
+                            table_created = True
+                            break
+                        elif table_attempt < max_table_attempts:
+                            logger.log(
+                                f"[WARNING] SystemSecrets table creation failed (attempt {table_attempt}/{max_table_attempts}): {create_error}. Retrying..."
+                            )
+                        else:
+                            logger.log(
+                                f"[ERROR] Failed to create SystemSecrets table after {max_table_attempts} attempts: {create_error}"
+                            )
+                    if table_attempt < max_table_attempts:
+                        import time
 
+                        time.sleep(1.0)  # Wait 1 second before retry
+                    else:
+                        # All attempts failed - raise error
+                        raise
+
+            if not table_created:
+                raise RuntimeError(
+                    f"Failed to ensure SystemSecrets table exists after {max_table_attempts} attempts"
+                )
+
+            # Check if token already exists (race condition protection)
+            existing_record = (
+                db.session.query(SystemSecrets).filter_by(key=secret_key_name).first()
+            )
+
+            if existing_record:
+                # Token already exists - decrypt and return it
+                if logger:
+                    logger.log(
+                        "[INFO] INTERNAL_API_TOKEN already exists in database. Using existing token."
+                    )
+                try:
+                    decrypted_token = cipher.decrypt(
+                        existing_record.encrypted_value.encode()
+                    ).decode()
+                    return decrypted_token
+                except Exception as decrypt_error:
+                    # Existing token is corrupted - replace it
+                    if logger:
+                        logger.log(
+                            f"[WARNING] Existing INTERNAL_API_TOKEN is corrupted: {decrypt_error}. Replacing it."
+                        )
+                    db.session.delete(existing_record)
+                    db.session.commit()
+
+            # Store new token
             new_secret = SystemSecrets(
                 key=secret_key_name,
                 encrypted_value=encrypted_token,
@@ -341,25 +419,82 @@ def _get_or_generate_internal_api_token(
             db.session.add(new_secret)
             db.session.commit()
 
-            if logger:
-                logger.log(
-                    "[INIT] Generated and stored new INTERNAL_API_TOKEN in database"
-                )
+            # Verify token was stored
+            verify_record = (
+                db.session.query(SystemSecrets).filter_by(key=secret_key_name).first()
+            )
 
-            return new_token
+            # Force a refresh of the session to ensure we see the committed data
+            db.session.expire_all()
+
+            verify_record = (
+                db.session.query(SystemSecrets).filter_by(key=secret_key_name).first()
+            )
+
+            if verify_record and verify_record.encrypted_value == encrypted_token:
+                if logger:
+                    logger.log(
+                        "[INIT] Generated and stored new INTERNAL_API_TOKEN in database (verified after commit)"
+                    )
+                # Also verify we can decrypt it
+                try:
+                    test_decrypt = cipher.decrypt(
+                        verify_record.encrypted_value.encode()
+                    ).decode()
+                    if test_decrypt == new_token:
+                        if logger:
+                            logger.log(
+                                "[INIT] INTERNAL_API_TOKEN encryption/decryption verified successfully"
+                            )
+                        return new_token
+                    else:
+                        raise RuntimeError(
+                            "Token decryption verification failed - decrypted value doesn't match"
+                        )
+                except Exception as decrypt_error:
+                    raise RuntimeError(
+                        f"Token decryption verification failed: {decrypt_error}"
+                    ) from decrypt_error
+            else:
+                # Try once more after a short delay - sometimes there's a replication lag
+                import time
+
+                time.sleep(0.5)
+                db.session.expire_all()
+                verify_record = (
+                    db.session.query(SystemSecrets)
+                    .filter_by(key=secret_key_name)
+                    .first()
+                )
+                if verify_record and verify_record.encrypted_value == encrypted_token:
+                    if logger:
+                        logger.log(
+                            "[INIT] Generated and stored new INTERNAL_API_TOKEN in database (verified after retry)"
+                        )
+                    return new_token
+                else:
+                    raise RuntimeError(
+                        f"INTERNAL_API_TOKEN was stored but verification failed after retry. "
+                        f"Expected token exists: {verify_record is not None}, "
+                        f"Values match: {verify_record.encrypted_value == encrypted_token if verify_record else False}"
+                    )
+
     except Exception as e:
-        # Database error - rollback and return empty
+        # Database error - rollback and raise to allow retry
         try:
             with app.app_context():
                 db.session.rollback()
         except Exception:
             pass  # Ignore rollback errors
+
         if logger:
+            import traceback
+
             logger.log(
-                f"[ERROR] Failed to store INTERNAL_API_TOKEN in database: {e}. "
-                "Internal API endpoints will be disabled."
+                f"[ERROR] Failed to store INTERNAL_API_TOKEN in database: {e}\n{traceback.format_exc()}"
             )
-        return ""
+        # Re-raise to allow retry mechanism in create_app()
+        raise
 
 
 def create_app(
@@ -465,6 +600,11 @@ def create_app(
             init_db(app)
             logger.log("[INIT] PostgreSQL database initialized")
 
+            # Wait a moment to ensure all tables are fully created and visible before generating token
+            import time
+
+            time.sleep(1.0)
+
             # Final verification that jti column exists after init_db()
             # This is a safety check to ensure the migration completed successfully
             try:
@@ -519,24 +659,55 @@ def create_app(
                 # Continue without PostgreSQL for development/testing only
 
         # Internal API token for orchestrator operations
-        # Generate random token and store in database if not explicitly set in environment
-        # Must be called AFTER init_db() so database is available
-        # Isolate in try/except to avoid treating token generation failure as fatal DB error
-        # This is OUTSIDE the init_db try/except block to avoid confusion
+        # Derive deterministically from SECRET_KEY (like DOCKER_PROXY_TOKEN)
+        # This avoids database dependency and ensures vault and orchestrator use the same token
+        # CRITICAL: This must be set even if init_db() fails, so place it after the try/except
+        internal_api_token = ""
         try:
-            internal_api_token = _get_or_generate_internal_api_token(
-                env_values, settings.secret_key, logger, app
-            )
-            app.config["INTERNAL_API_TOKEN"] = internal_api_token
+            # Check environment variable first (explicit override)
+            internal_api_token = env_values.get("INTERNAL_API_TOKEN", "")
+            if not internal_api_token:
+                import os
+
+                internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
+
+            # If not explicitly set, derive from SECRET_KEY
+            if not internal_api_token:
+                if not settings or not settings.secret_key:
+                    logger.log(
+                        "[ERROR] Cannot derive INTERNAL_API_TOKEN: SECRET_KEY not available in settings"
+                    )
+                    internal_api_token = ""
+                else:
+                    from common.token_utils import derive_internal_api_token
+
+                    internal_api_token = derive_internal_api_token(settings.secret_key)
+                    logger.log(
+                        f"[INIT] INTERNAL_API_TOKEN derived from SECRET_KEY (deterministic, no database required): {internal_api_token[:16]}..."
+                    )
+            else:
+                logger.log(
+                    "[INIT] INTERNAL_API_TOKEN set from environment variable (explicit override)"
+                )
         except Exception as token_error:
-            # Token generation failed - log but don't fail startup
-            # This allows the app to start even if token generation fails
+            import traceback
+
             logger.log(
-                f"[WARNING] Failed to generate INTERNAL_API_TOKEN: {token_error}. "
-                "Internal API endpoints will be disabled. "
-                "This is non-fatal - application will continue to start."
+                f"[ERROR] Failed to set INTERNAL_API_TOKEN: {token_error}\n"
+                f"{traceback.format_exc()}"
             )
-            app.config["INTERNAL_API_TOKEN"] = ""
+            internal_api_token = ""
+
+        # Always set the token in config, even if empty
+        app.config["INTERNAL_API_TOKEN"] = internal_api_token
+        if internal_api_token:
+            logger.log(
+                f"[INIT] INTERNAL_API_TOKEN configured successfully (length: {len(internal_api_token)})"
+            )
+        else:
+            logger.log(
+                "[ERROR] INTERNAL_API_TOKEN is empty - internal API will be disabled"
+            )
 
         # SECURITY: Verify production mode detection at startup
         if is_production:

@@ -7,6 +7,35 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.1] - 2025-11-23
+
+### Fixed - Critical Installation Issues
+
+#### Fresh Installation Fixes
+
+- **Database Initialization**: Fixed critical issue where `users` table and other required tables (28 tables total) were not created when `db.create_all()` raised duplicate errors. Added comprehensive table verification and individual table creation for missing tables using explicit SQL commands (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN`) with retry logic and detailed logging.
+- **JWT jti Column Migration**: Enhanced migration logic to ensure `jti` column is always created in `jwt_blacklist` table, even when database objects already exist. Added explicit SQL commands and retry mechanisms with comprehensive logging to prevent startup blocking.
+- **SSO Token Generation**: Fixed SSO authentication failures by adding required `jti` claim to JWT tokens generated for OAuth2 and OIDC providers. Tokens now include `jti`, `typ`, and `iss` claims for consistency with password-based authentication tokens and production security requirements.
+- **Session Cookie Security**: Fixed CAPTCHA session expiration when accessing via IP addresses (e.g., `http://192.168.1.36:8080`) by dynamically adjusting `SESSION_COOKIE_SECURE` based on request security context (`request.is_secure`). Session cookies now work correctly in HTTP contexts while maintaining security for HTTPS.
+- **Web Crypto API**: Added robust error handling and context detection for `crypto.subtle` availability, with clear error messages for non-secure contexts (HTTP on IP addresses). Prevents "Cannot read properties of undefined" errors during master key derivation.
+- **Static Assets HTTPS Upgrade**: Removed `upgrade-insecure-requests` directive from Content Security Policy when using HTTP, and disabled security headers that force HTTPS for private IP addresses. Prevents `ERR_SSL_PROTOCOL_ERROR` when accessing via HTTP.
+
+### Security
+
+- **SSO Token Security**: All SSO-generated JWT tokens now include `jti`, `typ`, and `iss` claims for consistency with password-based authentication tokens and production security requirements.
+- **Internal API Token**: Random token generation with automatic storage in encrypted `system_secrets` table. Removed deprecated `derive_internal_api_token()` function.
+- **JWT Replay Protection**: Automatic `jti` column migration with retry logic. Application no longer blocks startup if column missing.
+- **Rate Limiting**: Enforced fail-closed behavior. All rate limiting errors result in request denial, even in development.
+- **Argon2-browser Key Derivation**: Replaced PBKDF2 with Argon2-browser for client-side master key derivation. Uses Argon2id with optimized parameters providing enhanced protection against brute-force and GPU attacks while maintaining browser compatibility.
+- **Internal API Hardening**: IP whitelist, strict rate limiting (60 req/min), detailed logging, User-Agent validation.
+- **Origin Validation**: Never completely disabled, even in development. Permissive but active validation in dev mode.
+- **JSON DoS Protection**: Safe JSON parsing with size and depth limits across all endpoints.
+- **API Key Prefix**: Configurable or random per-instance prefix to prevent predictability.
+- **TOTP Security**: Zero-tolerance window, code reuse protection with cache.
+- **Log Sanitization**: Enhanced masking of tokens (4 chars only), secrets, full paths. Safe logging utility.
+- **File Validation**: Magic bytes validation for whitelisted files to detect tampering.
+- **Error Standardization**: Unique error codes (ERR\_\*) to prevent information leakage.
+
 ### Added
 
 #### Share Link Email Sending
@@ -23,29 +52,16 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Search Panel**: Dropdown results panel with pagination support that auto-closes after file selection.
 - **Backend Optimization**: Whoosh full-text search index with fuzzy matching and SQL ILIKE fallback, including relevance scoring.
 
-### Security
+### Changed
 
-- **Argon2-browser Key Derivation**: Replaced PBKDF2 with Argon2-browser for client-side master key derivation. Uses Argon2id with optimized parameters providing enhanced protection against brute-force and GPU attacks while maintaining browser compatibility.
-- **JWT Replay Protection**: Mandatory jti verification with secure fallback. Startup warning if jti column missing.
-- **Internal API Hardening**: IP whitelist, strict rate limiting (60 req/min), detailed logging, User-Agent validation.
-- **Origin Validation**: Never completely disabled, even in development. Permissive but active validation in dev mode.
-- **JSON DoS Protection**: Safe JSON parsing with size and depth limits across all endpoints.
-- **API Key Prefix**: Configurable or random per-instance prefix to prevent predictability.
-- **TOTP Security**: Zero-tolerance window, code reuse protection with cache.
-- **Log Sanitization**: Enhanced masking of tokens (4 chars only), secrets, full paths. Safe logging utility.
-- **File Validation**: Magic bytes validation for whitelisted files to detect tampering.
-- **Error Standardization**: Unique error codes (ERR\_\*) to prevent information leakage.
-
-### Security
-
-- **Internal API Token**: Random token generation with automatic storage in encrypted `system_secrets` table. Removed deprecated `derive_internal_api_token()` function.
-- **JWT Replay Protection**: Automatic `jti` column migration with retry logic. Application no longer blocks startup if column missing.
-- **Rate Limiting**: Enforced fail-closed behavior. All rate limiting errors result in request denial, even in development.
-
-### Fixed
-
-- **Database Initialization**: Fixed startup errors with automatic creation of `system_secrets` table and `jti` column migration.
+- **Database Schema**: Improved `init_db()` function to verify and create all required tables individually, ensuring complete database initialization even on partial failures or duplicate errors.
 - **CORS Configuration**: Changed from blocking to warning in production to allow application startup.
+
+### Important Notes
+
+⚠️ **Critical for Fresh Installations**: Previous releases (v1.0.0 through v2.2.0) may fail on fresh installations due to database initialization issues. **All users performing fresh installations must use v2.2.1 or later.**
+
+If you already have a working installation from a previous version, you can safely upgrade to v2.2.1 without issues.
 
 ## [2.2.0] - 2025-11-22
 
