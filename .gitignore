@@ -22,8 +22,11 @@ Thumbs.db
 .idea/
 
 # Development
-*cache*
-dist/
+# Cache directories from tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 .tox/
+dist/
