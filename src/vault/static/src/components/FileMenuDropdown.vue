@@ -45,6 +45,10 @@ export default {
     return {
       clickOutsideHandler: null,
       escapeKeyHandler: null,
+      scrollHandler: null,
+      wheelHandler: null,
+      touchMoveHandler: null,
+      scrollableElements: [],
       menuTop: 0,
       menuLeft: 0,
     };
@@ -66,6 +70,15 @@ export default {
         (this.item.original_name &&
           this.item.original_name.toLowerCase().endsWith(".zip"));
       const options = [];
+
+      if (!isFolder) {
+        options.push({
+          action: "preview",
+          label: "Preview",
+          icon: "eye",
+          disabled: false,
+        });
+      }
 
       options.push({
         action: "rename",
@@ -128,7 +141,7 @@ export default {
       options.push({
         action: "properties",
         label: "Properties",
-        icon: "eye",
+        icon: "info",
         disabled: false,
       });
 
@@ -151,6 +164,7 @@ export default {
           this.adjustPosition();
           this.setupClickOutside();
           this.setupEscapeKey();
+          this.setupScroll();
         });
       } else {
         this.cleanup();
@@ -183,6 +197,9 @@ export default {
     },
     handleOptionClick(action) {
       this.$emit("action", action, this.item);
+      this.closeMenu();
+    },
+    closeMenu() {
       this.$emit("close");
     },
     positionMenu() {
@@ -226,7 +243,7 @@ export default {
       this.menuLeft = adjustedLeft;
     },
     setupClickOutside() {
-      // Clean up old handler first if it exists
+      // Clean up existing handler before creating a new one
       this.cleanupClickOutside();
 
       // Create a new handler
@@ -276,7 +293,7 @@ export default {
       }, 50);
     },
     setupEscapeKey() {
-      // Clean up old handler first if it exists
+      // Clean up existing handler before creating a new one
       this.cleanupEscapeKey();
 
       // Create a new handler
@@ -305,9 +322,136 @@ export default {
         this.escapeKeyHandler = null;
       }
     },
+    setupScroll() {
+      // Clean up existing handler before creating a new one
+      this.cleanupScroll();
+
+      // Create handlers that close the menu
+      const closeMenuHandler = () => {
+        if (this.show) {
+          this.closeMenu();
+        }
+      };
+
+      this.scrollHandler = closeMenuHandler;
+      this.wheelHandler = closeMenuHandler;
+      this.touchMoveHandler = closeMenuHandler;
+
+      // Listen to scroll events on document and window (capture phase)
+      document.addEventListener("scroll", this.scrollHandler, true);
+      window.addEventListener("scroll", this.scrollHandler, true);
+
+      // Also listen to wheel events (mouse wheel scrolling)
+      document.addEventListener("wheel", this.wheelHandler, true);
+      window.addEventListener("wheel", this.wheelHandler, true);
+
+      // Listen to touchmove events (touch scrolling)
+      document.addEventListener("touchmove", this.touchMoveHandler, true);
+      window.addEventListener("touchmove", this.touchMoveHandler, true);
+
+      // Listen on body as well
+      if (document.body) {
+        document.body.addEventListener("scroll", this.scrollHandler, true);
+        document.body.addEventListener("wheel", this.wheelHandler, true);
+        document.body.addEventListener(
+          "touchmove",
+          this.touchMoveHandler,
+          true,
+        );
+      }
+
+      // Also listen on all possible scrollable containers
+      this.$nextTick(() => {
+        // Find all scrollable elements
+        const allElements = document.querySelectorAll("*");
+        allElements.forEach((el) => {
+          const style = window.getComputedStyle(el);
+          if (
+            style.overflow === "auto" ||
+            style.overflow === "scroll" ||
+            style.overflowY === "auto" ||
+            style.overflowY === "scroll" ||
+            style.overflowX === "auto" ||
+            style.overflowX === "scroll"
+          ) {
+            el.addEventListener("scroll", this.scrollHandler, true);
+            el.addEventListener("wheel", this.wheelHandler, true);
+            el.addEventListener("touchmove", this.touchMoveHandler, true);
+            this.scrollableElements.push(el);
+          }
+        });
+
+        // Also listen on known container classes
+        const knownContainers = document.querySelectorAll(
+          ".view-main, .files-list, .file-list-view, .grid-view, .list-view, .grid-container, .files-grid, main",
+        );
+        knownContainers.forEach((container) => {
+          if (!this.scrollableElements.includes(container)) {
+            container.addEventListener("scroll", this.scrollHandler, true);
+            container.addEventListener("wheel", this.wheelHandler, true);
+            container.addEventListener(
+              "touchmove",
+              this.touchMoveHandler,
+              true,
+            );
+            this.scrollableElements.push(container);
+          }
+        });
+      });
+    },
+    cleanupScroll() {
+      // Remove scroll handlers
+      if (this.scrollHandler) {
+        document.removeEventListener("scroll", this.scrollHandler, true);
+        window.removeEventListener("scroll", this.scrollHandler, true);
+        if (document.body) {
+          document.body.removeEventListener("scroll", this.scrollHandler, true);
+        }
+        this.scrollHandler = null;
+      }
+
+      // Remove wheel handlers
+      if (this.wheelHandler) {
+        document.removeEventListener("wheel", this.wheelHandler, true);
+        window.removeEventListener("wheel", this.wheelHandler, true);
+        if (document.body) {
+          document.body.removeEventListener("wheel", this.wheelHandler, true);
+        }
+        this.wheelHandler = null;
+      }
+
+      // Remove touchmove handlers
+      if (this.touchMoveHandler) {
+        document.removeEventListener("touchmove", this.touchMoveHandler, true);
+        window.removeEventListener("touchmove", this.touchMoveHandler, true);
+        if (document.body) {
+          document.body.removeEventListener(
+            "touchmove",
+            this.touchMoveHandler,
+            true,
+          );
+        }
+        this.touchMoveHandler = null;
+      }
+
+      // Remove from all tracked scrollable elements
+      this.scrollableElements.forEach((el) => {
+        if (this.scrollHandler) {
+          el.removeEventListener("scroll", this.scrollHandler, true);
+        }
+        if (this.wheelHandler) {
+          el.removeEventListener("wheel", this.wheelHandler, true);
+        }
+        if (this.touchMoveHandler) {
+          el.removeEventListener("touchmove", this.touchMoveHandler, true);
+        }
+      });
+      this.scrollableElements = [];
+    },
     cleanup() {
       this.cleanupClickOutside();
       this.cleanupEscapeKey();
+      this.cleanupScroll();
     },
   },
 };
@@ -332,7 +476,7 @@ export default {
   backdrop-filter: blur(40px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  border-radius: 2rem !important;
+  border-radius: 1rem !important;
   padding: 0.5rem;
   min-width: 180px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
@@ -351,7 +495,7 @@ export default {
   background: transparent;
   color: var(--text-primary, #e6eef6);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 10px;
   font-size: 0.9rem;
   transition: background-color 0.2s;
   text-align: left;

@@ -10,7 +10,7 @@ from common.constants import REPO_ROOT
 from common.env import resolve_env_file_name
 
 BASE_VOLUMES: OrderedDict[str, dict[str, object]] = OrderedDict(
-    (("orchestrator-logs", {}),)
+    (("orchestrator-logs", {"name": "leyzen-vault-orchestrator-logs"}),)
 )
 
 BASE_NETWORKS: OrderedDict[str, dict[str, object]] = OrderedDict(

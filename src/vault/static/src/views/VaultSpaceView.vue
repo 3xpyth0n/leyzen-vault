@@ -276,6 +276,22 @@
     "
   />
 
+  <!-- File Preview Modal -->
+  <FilePreview
+    :show="showPreview"
+    :fileId="previewFileId"
+    :fileName="previewFileName"
+    :mimeType="previewMimeType"
+    :vaultspaceId="$route.params.id"
+    @close="
+      showPreview = false;
+      previewFileId = null;
+      previewFileName = '';
+      previewMimeType = '';
+    "
+    @download="handlePreviewDownload"
+  />
+
   <!-- Encryption Overlay (Glassmorphic) - Fixed position covering page-content -->
   <Teleport to="body">
     <div
@@ -356,6 +372,7 @@ import BatchActions from "../components/BatchActions.vue";
 import DragDropUpload from "../components/DragDropUpload.vue";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
+import FilePreview from "../components/FilePreview.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import ProgressBar from "../components/ProgressBar.vue";
 import SearchBar from "../components/SearchBar.vue";
@@ -391,6 +408,7 @@ export default {
     DragDropUpload,
     FileListView,
     FileProperties,
+    FilePreview,
     ConfirmationModal,
     SearchBar,
     ProgressBar,
@@ -445,6 +463,10 @@ export default {
       viewMode: "grid", // 'grid' or 'list'
       showProperties: false,
       propertiesFileId: null,
+      showPreview: false,
+      previewFileId: null,
+      previewFileName: "",
+      previewMimeType: "",
       editingItemId: null,
       showRevokeConfirm: false,
       revokeConfirmMessage: "",
@@ -469,11 +491,11 @@ export default {
     // Check if user master key is available first
     const userMasterKey = await getUserMasterKey();
     if (!userMasterKey) {
-      // Check if salt exists - this means master key was lost
+      // Check if salt exists - indicates master key is not available
       const storedSalt = getStoredSalt();
       if (storedSalt) {
-        // User is authenticated but master key is lost (likely after page refresh)
-        // This is normal - user needs to re-enter password to access encrypted content
+        // User is authenticated but master key is not available
+        // User needs to re-enter password to access encrypted content
         // Don't logout - keep JWT token so user doesn't need to re-authenticate
         console.warn(
           "Master key lost from memory but salt exists. This is normal after page refresh.",
@@ -734,19 +756,16 @@ export default {
             // Cache the decrypted key
             cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
           } catch (decryptErr) {
-            // Decryption failed - this means the VaultSpace key was encrypted with a different master key
-            // This can happen for existing users whose VaultSpace keys were encrypted before the salt was made persistent
+            // Decryption failed - VaultSpace key was encrypted with a different master key
             logger.error("Failed to decrypt VaultSpace key:", decryptErr);
             if (decryptErr.name === "OperationError") {
               logger.warn(
                 "OperationError: The VaultSpace key was encrypted with a different master key.",
               );
-              logger.warn(
-                "This can happen for existing users. Creating a new VaultSpace key...",
-              );
+              logger.warn("Creating a new VaultSpace key...");
 
-              // For existing users, create a new VaultSpace key with the current master key
-              // Note: This means existing files encrypted with the old VaultSpace key will become inaccessible
+              // Create a new VaultSpace key with the current master key
+              // Files encrypted with the previous VaultSpace key will become inaccessible
               try {
                 const currentUser = await auth.getCurrentUser();
 
@@ -1084,9 +1103,9 @@ export default {
           // If not found, we need to load it
           if (!currentFolder) {
             if (pathFolders.length === 0) {
-              // First iteration: looking for current folder
+              // Looking for current folder
               // The current folder is not in this.folders (which contains its children)
-              // Solution: use files.get() to get folder info directly
+              // Use files.get() to get folder info directly
               try {
                 const folderData = await files.get(
                   currentFolderId,
@@ -1108,15 +1127,11 @@ export default {
                 );
               }
             } else {
-              // Subsequent iterations: looking for parent of previous folder
+              // Looking for parent of previous folder
               // The previous folder's parent_id is currentFolderId
-              // To find currentFolderId, we need to search in its parent
-              // The key insight: if previousFolder.parent_id = currentFolderId,
-              // then to find currentFolderId, we load the contents of currentFolderId's parent
-              // But we don't know currentFolderId's parent_id yet...
-
-              // Solution: use files.get() to get the folder info directly
-              // This gives us the parent_id, which we can then use to find it
+              // To find currentFolderId, search in its parent
+              // Use files.get() to get the folder info directly
+              // This provides the parent_id needed to locate the folder
               try {
                 const folderData = await files.get(
                   currentFolderId,
@@ -1164,14 +1179,11 @@ export default {
               break; // Reached root
             }
           } else if (pathFolders.length === 0) {
-            // First iteration failed - can't find current folder
-            // This means the folder is not in root and we don't know its parent_id
-            // We can't construct the breadcrumb without at least the current folder name
-            //
-            // Last resort: try to get folder name from a different source
-            // Actually, we could try to use the files.get() API if it exists for folders
-            // But for now, we'll just break and let the template show "Loading..."
-            // This happens when the folder is nested and we can't find it in root
+            // Cannot find current folder
+            // The folder is not in root and its parent_id is unknown
+            // Cannot construct the breadcrumb without at least the current folder name
+            // Break and let the template show "Loading..."
+            // This occurs when the folder is nested and cannot be found in root
             break;
           } else {
             // Can't find parent folder, stop here
@@ -2454,6 +2466,8 @@ export default {
     handleFileAction(action, item, newName = null) {
       if (action === "download") {
         this.downloadFile(item);
+      } else if (action === "preview") {
+        this.showFilePreview(item);
       } else if (action === "delete") {
         this.showDeleteConfirm(item);
       } else if (action === "properties") {
@@ -2502,6 +2516,27 @@ export default {
     showFileProperties(fileId) {
       this.propertiesFileId = fileId;
       this.showProperties = true;
+    },
+
+    showFilePreview(item) {
+      // Clear selection when opening preview
+      this.clearSelection();
+      if (window.selectionManager) {
+        window.selectionManager.deselectAll();
+        window.selectionManager.updateUI();
+      }
+
+      this.previewFileId = item.id;
+      this.previewFileName = item.original_name || item.name || "File";
+      this.previewMimeType = item.mime_type || "";
+      this.showPreview = true;
+    },
+
+    handlePreviewDownload(fileId) {
+      const file = this.filesList.find((f) => f.id === fileId);
+      if (file) {
+        this.downloadFile(file);
+      }
     },
 
     handleRevokeConfirm() {

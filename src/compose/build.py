@@ -216,11 +216,20 @@ def build_vault_volumes(web_containers: list[str]) -> OrderedDict[str, dict]:
 
     Note: tmpfs volumes are now mounted directly in services using the tmpfs option,
     so we only need to define the shared source volume here.
+
+    The vault-data-source volume is marked as external with a fixed name to ensure
+    persistence across Docker Compose project name changes and prevent accidental
+    volume recreation.
     """
     volumes: OrderedDict[str, dict] = OrderedDict()
 
     # Source volume (read-only, shared) - persistent volume
-    volumes["vault-data-source"] = {}
+    # Use fixed name to ensure persistence across restarts and prevent
+    # recreation if Docker Compose project name changes.
+    # Docker Compose will create the volume if it doesn't exist.
+    volumes["vault-data-source"] = {
+        "name": "leyzen-vault-data-source",
+    }
 
     # Note: tmpfs volumes are mounted directly in services using tmpfs option
     # This provides better security and avoids volume driver issues
@@ -256,7 +265,7 @@ def build_compose_manifest(
 
     # Add PostgreSQL volume
     postgres_volume_name = env.get("POSTGRES_DATA_VOLUME", "postgres-data").strip()
-    postgres_volume = {postgres_volume_name: {}}
+    postgres_volume = {postgres_volume_name: {"name": "leyzen-vault-postgres-data"}}
 
     volumes: OrderedDict[str, dict[str, object]] = OrderedDict()
     # Add PostgreSQL volume first

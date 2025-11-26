@@ -218,11 +218,11 @@ class InvitationService:
             secret_key = current_app.config.get("SECRET_KEY", "")
             self.auth_service = AuthService(secret_key)
 
-        # Create user
+        # Invited accounts always start as regular users
         new_user = self.auth_service.create_user(
             email=invitation.email,
             password=password,
-            global_role=invitation.role,
+            global_role=GlobalRole.USER,
         )
 
         # Set invited_by

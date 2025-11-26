@@ -3,6 +3,50 @@ import { getUserMasterKey, getStoredSalt } from "../services/keyManager";
 import { auth } from "../services/api";
 
 /**
+ * Clear all browser storage (cookies, localStorage, sessionStorage).
+ * Used when accessing setup page to ensure a clean state.
+ */
+function clearAllStorage() {
+  // Clear all localStorage items
+  try {
+    localStorage.clear();
+  } catch (err) {
+    // Silently fail
+  }
+
+  // Clear all sessionStorage items
+  try {
+    sessionStorage.clear();
+  } catch (err) {
+    // Silently fail
+  }
+
+  // Clear all cookies
+  try {
+    const cookies = document.cookie.split(";");
+    for (let cookie of cookies) {
+      const eqPos = cookie.indexOf("=");
+      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+      if (name) {
+        // Delete cookie by setting it to expire in the past
+        // Try with different path and domain combinations
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        const hostname = window.location.hostname;
+        if (hostname) {
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${hostname}`;
+          // Try with leading dot for subdomain cookies
+          if (hostname.indexOf(".") > 0) {
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${hostname}`;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+/**
  * Check if user is authenticated (has JWT token).
  *
  * @returns {boolean} True if authenticated
@@ -45,7 +89,7 @@ async function requireAuth(to, from, next) {
   ) {
     const masterKeyAvailable = await hasMasterKey();
     if (!masterKeyAvailable) {
-      // Check if salt exists - this means master key was lost (likely after page refresh)
+      // Check if salt exists - indicates master key is not available
       const storedSalt = getStoredSalt();
       if (storedSalt) {
         // User is authenticated (JWT valid) but master key is lost from memory
@@ -132,24 +176,32 @@ const routes = [
     name: "Setup",
     component: () => import("../views/Setup.vue"),
     beforeEnter: async (to, from, next) => {
-      // Check if user is authenticated
-      if (isAuthenticated()) {
-        next("/dashboard");
-        return;
-      }
+      // Clear all browser storage when accessing setup page
+      // This ensures a clean state, simulating a "fresh install" from browser perspective
+      // Important: This removes cookies, localStorage, and sessionStorage that might
+      // contain authentication tokens or session data
+      clearAllStorage();
+
+      // Allow access to setup page - don't check authentication here
+      // The setup page will handle showing confirmation and redirecting to login
+      // We don't want to redirect authenticated users away from setup page
+      // because they might be completing the setup process
 
       // Check if setup is already complete
+      // If check fails (network error, database not available), allow access to setup page
       try {
         const setupComplete = await auth.isSetupComplete();
         if (setupComplete) {
+          // Setup is complete, redirect to login
           next("/login");
           return;
         }
       } catch (err) {
-        console.error("Failed to check setup status:", err);
-        // Allow access if check fails
+        // Network errors are expected on fresh install or when database is unavailable
+        // Always allow access to setup page if check fails
       }
 
+      // Always allow access to setup page
       next();
     },
   },
@@ -173,8 +225,7 @@ const routes = [
           return;
         }
       } catch (err) {
-        console.error("Failed to check setup status:", err);
-        // Allow access if check fails
+        // Network errors are expected on fresh install - allow access
       }
 
       next();
@@ -282,23 +333,9 @@ const routes = [
   {
     path: "/",
     name: "Root",
-    beforeEnter: async (to, from, next) => {
-      // Check if setup is complete first
-      try {
-        const setupComplete = await auth.isSetupComplete();
-        if (!setupComplete) {
-          // Setup not complete, redirect to setup
-          next("/setup");
-          return;
-        }
-      } catch (err) {
-        console.error("[Router] Failed to check setup status:", err);
-        // If check fails, redirect to setup (secure default)
-        next("/setup");
-        return;
-      }
-
-      // Setup is complete, redirect based on auth status
+    beforeEnter: (to, from, next) => {
+      // Setup check is handled by global beforeEach guard
+      // If we reach here, setup is complete, redirect based on auth status
       if (isAuthenticated()) {
         next("/dashboard");
       } else {
@@ -318,6 +355,8 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   // Handle root path explicitly - check setup before any route-level guards
   if (to.path === "/" || to.path === "" || to.name === "Root") {
+    // On fresh install, the API might not be ready yet
+    // Try to check setup status, but redirect to setup if it fails
     try {
       const setupComplete = await auth.isSetupComplete();
       if (!setupComplete) {
@@ -326,8 +365,8 @@ router.beforeEach(async (to, from, next) => {
         return;
       }
     } catch (err) {
-      console.error("Failed to check setup status for root:", err);
-      // If check fails, redirect to setup (secure default)
+      // Network errors are expected on fresh install - redirect to setup
+      // This handles the case where the database is not initialized yet
       next("/setup");
       return;
     }
@@ -358,8 +397,7 @@ router.beforeEach(async (to, from, next) => {
       return;
     }
   } catch (err) {
-    console.error("Failed to check setup status:", err);
-    // If check fails, allow navigation (setup might be complete)
+    // Network errors are expected on fresh install - allow navigation
   }
 
   next();

@@ -3,7 +3,7 @@
 **Version 2.0.0 (Major Release)**
 
 [![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
-[![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](LICENSE)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
 
 > **Modular Moving-Target Defense Orchestrator — Enterprise-Grade Secure File Storage**
@@ -128,10 +128,6 @@ Security disclosures follow the process documented in [`docs/SECURITY.md`](docs/
 
 We welcome pull requests and feature ideas! Start with the [Developer Guide](https://docs.leyzen.com/developer-guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
 
-## License
-
-Source code is available under the Business Source License 1.1 (BSL 1.1). Commercial use after the change date or alternative licensing terms requires permission from the authors. See [`LICENSE`](LICENSE) and [`docs/TRADEMARKS.md`](docs/TRADEMARKS.md) for details.
-
 ## Support & Contact
 
 - File bugs or feature requests in [GitHub Issues](https://github.com/3xpyth0n/leyzen-vault/issues).
@@ -147,3 +143,11 @@ The repository is organized as follows:
   - `infra/` - Infrastructure components (HAProxy config, Docker proxy, vault Dockerfile)
   - `tools/cli/` - Go CLI source code (`leyzenctl`)
   - `docs/` - Developer documentation and policies
+
+## Activity
+
+![Alt](https://repobeats.axiom.co/api/embed/dacac14edc54fdcb66274584d1ba09544c99d929.svg "Repobeats analytics image")
+
+## License
+
+Source code is available under the Business Source License 1.1 (BSL 1.1).

@@ -96,6 +96,13 @@ class FileMenuManager {
           },
         },
         {
+          icon: "edit",
+          label: "Rename",
+          action: () => {
+            alert("Rename functionality coming soon");
+          },
+        },
+        {
           icon: "download",
           label: "Download",
           action: () => {
@@ -125,13 +132,6 @@ class FileMenuManager {
           label: "Move",
           action: () => {
             this.handleMove(fileId, fileType, resource);
-          },
-        },
-        {
-          icon: "edit",
-          label: "Rename",
-          action: () => {
-            alert("Rename functionality coming soon");
           },
         },
         {

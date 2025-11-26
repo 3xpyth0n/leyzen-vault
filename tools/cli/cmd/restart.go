@@ -15,6 +15,17 @@ func init() {
 		Short: "Restart the Leyzen Vault Docker stack",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			color.HiCyan("Restarting Docker stack...")
+			
+			// Promote files to persistent storage before shutdown
+			color.HiYellow("Promoting files to persistent storage...")
+			if err := internal.PrepareRotation(EnvFilePath()); err != nil {
+				// Log warning but don't fail - files may still be in tmpfs
+				color.HiYellow("⚠ Warning: Failed to promote files before restart: %v", err)
+				color.HiYellow("  Files in tmpfs will be lost. Continuing with restart...")
+			} else {
+				color.HiGreen("✓ Files promoted to persistent storage")
+			}
+			
 			color.HiYellow("Stopping containers...")
 			if err := internal.RunCompose(EnvFilePath(), "down", "--remove-orphans"); err != nil {
 				return fmt.Errorf("failed to stop stack: %w", err)

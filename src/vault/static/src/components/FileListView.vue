@@ -158,6 +158,7 @@
             @dragleave="handleDragLeave(item, $event)"
             @drop="handleDrop(item, $event)"
             @click="handleRowClick(item, $event)"
+            @dblclick="handleRowDoubleClick(item, $event)"
             @contextmenu="handleContextMenu(item, $event)"
           >
             <div class="grid-cell grid-cell-checkbox">
@@ -239,6 +240,7 @@
           @dragleave="handleDragLeave(item, $event)"
           @drop="handleDrop(item, $event)"
           @click="handleCardClick(item, $event)"
+          @dblclick="handleCardDoubleClick(item, $event)"
           @contextmenu="handleContextMenu(item, $event)"
         >
           <input
@@ -721,11 +723,14 @@ export default {
         return "";
       }
       if (window.Icons[iconName]) {
-        const icon = window.Icons[iconName](16, "#ffffff");
-        if (!icon || icon.trim() === "") {
-          console.warn(`Icon ${iconName} returned empty string`);
+        const iconFunction = window.Icons[iconName];
+        if (typeof iconFunction === "function") {
+          const icon = iconFunction.call(window.Icons, 16, "#ffffff");
+          if (!icon || icon.trim() === "") {
+            console.warn(`Icon ${iconName} returned empty string`);
+          }
+          return icon;
         }
-        return icon;
       }
       console.warn(`Icon ${iconName} not found`);
       return "";
@@ -744,17 +749,18 @@ export default {
         return window.Icons.folder(iconSize, "currentColor");
       }
 
-      // Check if file is a ZIP archive
-      const isZipFile =
-        item.mime_type === "application/zip" ||
-        item.mime_type === "application/x-zip-compressed" ||
-        (item.original_name &&
-          item.original_name.toLowerCase().endsWith(".zip"));
+      // Use the centralized icon helper function
+      const iconName = window.Icons.getFileIconName
+        ? window.Icons.getFileIconName(item.mime_type, item.original_name)
+        : "file";
 
-      if (isZipFile && window.Icons.zip) {
-        return window.Icons.zip(iconSize, "currentColor");
+      // Get the icon function and call it with proper context
+      const iconFunction = window.Icons[iconName];
+      if (iconFunction && typeof iconFunction === "function") {
+        return iconFunction.call(window.Icons, iconSize, "currentColor");
       }
 
+      // Fallback to generic file icon
       return window.Icons.file(iconSize, "currentColor");
     };
 
@@ -925,6 +931,22 @@ export default {
       focusedItemIndex.value = sortedAndFilteredItems.value.findIndex(
         (i) => i.id === item.id,
       );
+    };
+
+    const handleRowDoubleClick = (item, event) => {
+      event.stopPropagation();
+      // Only preview files, not folders
+      if (item.mime_type !== "application/x-directory") {
+        emit("action", "preview", item);
+      }
+    };
+
+    const handleCardDoubleClick = (item, event) => {
+      event.stopPropagation();
+      // Only preview files, not folders
+      if (item.mime_type !== "application/x-directory") {
+        emit("action", "preview", item);
+      }
     };
 
     const handleMenuClick = (item, event) => {
@@ -1792,6 +1814,8 @@ export default {
       handleSelectAll,
       handleRowClick,
       handleCardClick,
+      handleRowDoubleClick,
+      handleCardDoubleClick,
       handleMenuClick,
       openMenuForItem,
       handleMenuAction,

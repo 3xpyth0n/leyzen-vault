@@ -895,9 +895,9 @@ def move_file(file_id: str):
 @csrf.exempt  # JWT-authenticated API endpoint
 @jwt_required
 def share_file_v2(file_id: str):
-    """Share file endpoint (removed).
+    """Share file endpoint.
 
-    This endpoint has been removed. Please use share links (ShareService) or public links (AdvancedSharingService) instead.
+    This endpoint returns HTTP 410 Gone. Use share links (ShareService) or public links (AdvancedSharingService) instead.
 
     Returns:
         HTTP 410 Gone with error message

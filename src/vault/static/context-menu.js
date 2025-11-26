@@ -112,11 +112,11 @@ class ContextMenu {
   getMenuItems(type) {
     if (type === "file") {
       return [
-        { icon: "⬇️", label: "Download", action: "download" },
         { icon: "👁️", label: "Preview", action: "preview" },
-        { icon: "🔗", label: "Share", action: "share" },
-        "divider",
         { icon: "✏️", label: "Rename", action: "rename" },
+        "divider",
+        { icon: "⬇️", label: "Download", action: "download" },
+        { icon: "🔗", label: "Share", action: "share" },
         { icon: "📋", label: "Properties", action: "properties" },
         "divider",
         { icon: "🗑️", label: "Delete", action: "delete", dangerous: true },

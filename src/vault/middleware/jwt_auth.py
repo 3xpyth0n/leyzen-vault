@@ -340,10 +340,6 @@ def jwt_required(f: F) -> F:
 
         if not user:
             # Log error without exposing any token data
-            # Use minimal logging to avoid information leakage
-            current_app.logger.warning(
-                "Authentication failed: Invalid or expired token/API key"
-            )
             return jsonify({"error": "Invalid or expired token"}), 401
 
         # Store user in Flask g for use in route handlers

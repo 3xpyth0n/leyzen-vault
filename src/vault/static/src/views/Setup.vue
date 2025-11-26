@@ -8,7 +8,22 @@
         </p>
       </div>
 
-      <form @submit.prevent="handleSetup" class="setup-form">
+      <div v-if="success" class="success-section">
+        <div class="success-icon">✓</div>
+        <h2>Account Created Successfully!</h2>
+        <p class="success-message">
+          Your superadmin account has been created. Please log in to continue.
+        </p>
+        <button
+          type="button"
+          class="btn btn-primary btn-setup"
+          @click="goToLogin"
+        >
+          Go to Login
+        </button>
+      </div>
+
+      <form v-else @submit.prevent="handleSetup" class="setup-form">
         <div v-if="error" class="error-message glass">
           {{ error }}
         </div>
@@ -86,9 +101,49 @@ export default {
     const confirmPassword = ref("");
     const error = ref("");
     const loading = ref(false);
+    const success = ref(false);
+
+    const clearAllStorage = () => {
+      // Clear all localStorage items
+      try {
+        localStorage.clear();
+      } catch (err) {
+        // Silently fail
+      }
+
+      // Clear all sessionStorage items
+      try {
+        sessionStorage.clear();
+      } catch (err) {
+        // Silently fail
+      }
+
+      // Clear all cookies
+      try {
+        const cookies = document.cookie.split(";");
+        for (let cookie of cookies) {
+          const eqPos = cookie.indexOf("=");
+          const name =
+            eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+          // Delete cookie by setting it to expire in the past
+          // Try with different path and domain combinations
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
+        }
+      } catch (err) {
+        // Silently fail
+      }
+    };
 
     onMounted(async () => {
+      // Clear all browser storage (cookies, localStorage, sessionStorage)
+      // This ensures a clean state when accessing setup page
+      // Important: This simulates a "fresh install" from browser perspective
+      clearAllStorage();
+
       // Check if setup is already complete
+      // If check fails (network error, database not available), allow user to proceed with setup
       try {
         const setupComplete = await auth.isSetupComplete();
         if (setupComplete) {
@@ -96,8 +151,8 @@ export default {
           router.push("/login");
         }
       } catch (err) {
-        logger.error("Failed to check setup status:", err);
-        // Continue with setup if check fails
+        // Network errors are expected on fresh install or when database is unavailable
+        // Allow user to proceed with setup page
       }
     });
 
@@ -119,16 +174,44 @@ export default {
           confirmPassword.value,
         );
 
+        // Force clear all storage again after setup to ensure no token remains
+        clearAllStorage();
+
+        // Verify that token is NOT stored (should be null)
+        const tokenAfterSetup = localStorage.getItem("jwt_token");
+        if (tokenAfterSetup) {
+          // Token was stored somehow - remove it
+          localStorage.removeItem("jwt_token");
+        }
+
+        // Verify no token in response
         if (response.token) {
-          // Setup successful, redirect to dashboard
-          router.push("/dashboard");
+          // Don't use the token even if it's in the response
+          delete response.token;
+        }
+
+        // Setup successful, show confirmation
+        if (response.user || response.message) {
+          success.value = true;
+          // Clear password from memory
+          password.value = "";
+          confirmPassword.value = "";
+          loading.value = false;
+        } else {
+          // Unexpected response format
+          error.value =
+            "Setup completed but received unexpected response format";
+          loading.value = false;
         }
       } catch (err) {
         error.value = err.message || "Setup failed. Please try again.";
         logger.error("Setup error:", err);
-      } finally {
         loading.value = false;
       }
+    };
+
+    const goToLogin = () => {
+      router.push("/login");
     };
 
     return {
@@ -137,7 +220,9 @@ export default {
       confirmPassword,
       error,
       loading,
+      success,
       handleSetup,
+      goToLogin,
     };
   },
 };
@@ -279,5 +364,30 @@ export default {
 .password-toggle:focus {
   transform: none !important;
   margin-top: -12px !important;
+}
+
+.success-section {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.success-icon {
+  font-size: 4rem;
+  color: #86efac;
+  margin-bottom: 1rem;
+}
+
+.success-section h2 {
+  margin: 0 0 1rem 0;
+  color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.success-message {
+  color: #94a3b8;
+  margin-bottom: 2rem;
+  line-height: 1.6;
+  font-size: 1rem;
 }
 </style>

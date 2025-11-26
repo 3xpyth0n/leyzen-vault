@@ -36,17 +36,35 @@ fi
 # Note: This will run as root if we're root, but files will be owned by vault user
 # after the chown above. The sync happens before dropping privileges so we have
 # the necessary permissions.
-if [ -d "/data-source" ] && [ "$(ls -A /data-source 2>/dev/null)" ]; then
-  log "Synchronizing from source to local storage..."
-  rsync -a --update /data-source/ /data/ || {
-    log "Warning: Failed to synchronize from source"
-  }
-  # Ensure vault user owns synced files
-  if [ "$(id -u)" = "0" ]; then
-    chown -R "${VAULT_USER}:${VAULT_USER}" /data 2>/dev/null || {
-      log "Warning: Failed to change ownership of synced files"
+if [ -d "/data-source" ]; then
+  if [ "$(ls -A /data-source 2>/dev/null)" ]; then
+    log "Synchronizing from source to local storage..."
+    # Count files before sync for logging
+    source_file_count=$(find /data-source -type f 2>/dev/null | wc -l)
+    log "Found ${source_file_count} files in /data-source"
+    
+    rsync -a --update /data-source/ /data/ || {
+      log "Error: Failed to synchronize from source (exit code: $?)"
+      log "This may indicate a permission or filesystem issue"
     }
+    
+    # Count files after sync
+    data_file_count=$(find /data -type f 2>/dev/null | wc -l)
+    log "Synchronized ${data_file_count} files to /data"
+    
+    # Ensure vault user owns synced files
+    if [ "$(id -u)" = "0" ]; then
+      chown -R "${VAULT_USER}:${VAULT_USER}" /data 2>/dev/null || {
+        log "Warning: Failed to change ownership of synced files"
+      }
+    fi
+  else
+    log "Source directory /data-source exists but is empty"
+    log "This is normal on first startup or if no files have been promoted yet"
   fi
+else
+  log "Warning: /data-source directory does not exist"
+  log "Persistent storage volume may not be mounted correctly"
 fi
 
 # Drop privileges to vault user if running as root

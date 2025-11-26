@@ -1492,7 +1492,7 @@ class ApiKey(db.Model):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     key_prefix: Mapped[str] = mapped_column(
-        String(20), nullable=False
+        String(64), nullable=False
     )  # Prefix for display, e.g., "leyz_..."
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1686,13 +1686,13 @@ def init_db(app) -> None:
 
             return False
 
-        # RADICAL FIX: Delete ALL problematic indexes FIRST, before any other operation
-        # This must happen BEFORE any db.create_all() call to prevent duplicate index errors
+        # Clean up indexes that may conflict with table creation
+        # Drop indexes before db.create_all() to prevent duplicate index errors
         try:
             from sqlalchemy.sql import text as sql_text
             import sys
 
-            # Clean up problematic indexes before creating tables
+            # Clean up indexes before creating tables
             all_problematic_indexes = [
                 "ix_system_secrets_key",
                 "ix_magic_link_tokens_expires_at",
@@ -1734,7 +1734,7 @@ def init_db(app) -> None:
                 if table_name not in existing_tables_set:
                     orphaned_indexes.append((idx_name, table_name))
 
-            # RADICAL FIX: Drop ALL known problematic indexes unconditionally
+            # Drop known indexes that may conflict
             # SQLAlchemy will recreate them properly during db.create_all()
             known_problematic_indexes = [
                 "ix_system_secrets_key",
@@ -1792,8 +1792,8 @@ def init_db(app) -> None:
 
             print(log_msg, file=sys.stderr, flush=True)
 
-            # CRITICAL: Create problematic tables manually with SQL BEFORE db.create_all()
-            # This prevents db.create_all() from trying to create indexes for non-existent tables
+            # Create specific tables manually with SQL before db.create_all()
+            # Prevents db.create_all() from trying to create indexes for non-existent tables
             from sqlalchemy.sql import text as sql_text
             from sqlalchemy import inspect as sql_inspect
 
@@ -1961,8 +1961,8 @@ def init_db(app) -> None:
                             logger.warning(log_msg)
                         print(log_msg, file=sys.stderr, flush=True)
 
-            # RADICAL FIX: Drop problematic indexes AGAIN right before db.create_all()
-            # This ensures they are really gone before SQLAlchemy tries to create them
+            # Drop indexes again right before db.create_all()
+            # Ensures indexes are removed before SQLAlchemy attempts to create them
             import time
 
             for idx_name in [
@@ -2004,20 +2004,18 @@ def init_db(app) -> None:
             # Small delay to ensure indexes are fully dropped
             time.sleep(0.1)
 
-            # CRITICAL: Wrap db.create_all() in try/except to handle duplicate index errors
-            # SQLAlchemy may try to create indexes that already exist (orphaned indexes)
+            # Wrap db.create_all() in try/except to handle duplicate index errors
+            # SQLAlchemy may try to create indexes that already exist
             try:
                 db.create_all()
-                # db.create_all() completed
             except Exception as create_all_error:
                 # Check if this is a duplicate index error - if so, ignore it
-                # The tables should still be created even if some indexes fail
+                # Tables are still created even if some indexes fail
                 if is_duplicate_error(create_all_error):
-                    # Silently ignore duplicate errors - these are expected when database is already initialized
-                    # Only log at debug level for troubleshooting
+                    # Ignore duplicate errors when database is already initialized
                     pass
                 else:
-                    # Unknown error - re-raise
+                    # Re-raise unexpected errors
                     log_msg = f"[ERROR] db.create_all() failed with unexpected error: {create_all_error}"
                     if app_logger:
                         app_logger.log(log_msg)
@@ -2030,6 +2028,79 @@ def init_db(app) -> None:
             import time
 
             time.sleep(0.5)
+
+            # Validate api_keys.key_prefix column can store full prefixes (e.g., "leyz_<base64>")
+            from sqlalchemy import inspect as sql_inspect
+            from sqlalchemy.sql import text as sql_text
+
+            try:
+                desired_prefix_length = 64
+                inspector = sql_inspect(db.engine)
+
+                # Ensure the api_keys table exists before validating column length
+                # Handles both fresh installs and upgrades
+                if "api_keys" not in inspector.get_table_names():
+                    try:
+                        ApiKey.__table__.create(bind=db.engine, checkfirst=True)
+                    except Exception:
+                        # Continue to column verification below
+                        pass
+
+                    # Refresh inspector to pick up the newly created table if creation succeeded
+                    inspector = sql_inspect(db.engine)
+
+                if "api_keys" in inspector.get_table_names():
+                    columns = inspector.get_columns("api_keys")
+                    key_prefix_column = next(
+                        (col for col in columns if col.get("name") == "key_prefix"),
+                        None,
+                    )
+
+                    if key_prefix_column:
+                        column_type = key_prefix_column.get("type")
+                        current_length = (
+                            column_type.length
+                            if hasattr(column_type, "length")
+                            else None
+                        )
+
+                        if (
+                            current_length is not None
+                            and current_length < desired_prefix_length
+                        ):
+                            db.session.execute(
+                                sql_text(
+                                    f"ALTER TABLE api_keys ALTER COLUMN key_prefix TYPE VARCHAR({desired_prefix_length})"
+                                )
+                            )
+                            db.session.commit()
+
+                            log_msg = (
+                                "[INIT] api_keys.key_prefix length increased "
+                                f"from {current_length} to {desired_prefix_length}"
+                            )
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.info(log_msg)
+                            print(log_msg, file=sys.stderr, flush=True)
+                else:
+                    log_msg = "[WARNING] api_keys table missing; could not verify key_prefix length"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.warning(log_msg)
+                    print(log_msg, file=sys.stderr, flush=True)
+            except Exception as api_key_prefix_error:
+                log_msg = (
+                    "[WARNING] Failed to ensure api_keys.key_prefix length: "
+                    f"{api_key_prefix_error}"
+                )
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.warning(log_msg)
+                print(log_msg, file=sys.stderr, flush=True)
 
             # CRITICAL: Always ensure jti column exists after db.create_all()
             # SQLAlchemy may not create nullable columns correctly in some cases
@@ -2079,7 +2150,6 @@ def init_db(app) -> None:
                 # Continue - the migration logic below will handle it
 
             # Migrate jwt_blacklist table to add jti column if missing
-            # This handles cases where the table was created before jti column was added
             # SECURITY: In production, jti column is mandatory for JWT replay protection
             try:
                 from sqlalchemy import inspect as sql_inspect
@@ -2087,7 +2157,7 @@ def init_db(app) -> None:
                 from sqlalchemy.exc import ProgrammingError, InternalError
 
                 # Check if jwt_blacklist table exists first
-                # Retry logic to handle cases where table was just created
+                # Retry logic handles transient database visibility issues
                 inspector = sql_inspect(db.engine)
                 table_exists = False
                 max_table_retries = 5
@@ -2458,18 +2528,16 @@ def init_db(app) -> None:
                 )
                 logger.info(log_msg)
                 print(f"[INFO] {log_msg}", file=sys.stderr, flush=True)
-                # Don't raise - database is already properly initialized
-                # The schema exists, so we can continue
-                # BUT: We still need to verify ALL tables exist, not just jwt_blacklist!
-                # Even if db.create_all() raised a duplicate error, some tables might be missing
+                # Database is already initialized, continue with verification
+                # Verify all required tables exist, not just jwt_blacklist
                 try:
                     from sqlalchemy import inspect as sql_inspect
                     from sqlalchemy.sql import text as sql_text
                     import time
 
-                    # CRITICAL: Verify all required tables exist, not just jwt_blacklist
-                    # Even if db.create_all() raised a duplicate error, some tables might be missing
-                    log_msg = "[INIT] Verifying all required tables exist (after duplicate error)..."
+                    # Verify all required tables exist
+                    # Some tables may be missing even if db.create_all() raised a duplicate error
+                    log_msg = "[INIT] Verifying all required tables exist..."
                     if app_logger:
                         app_logger.log(log_msg)
                     else:

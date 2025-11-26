@@ -77,80 +77,86 @@
     </main>
 
     <!-- Restore Confirmation Modal -->
-    <div
-      v-if="showRestoreConfirm"
-      class="modal-overlay"
-      @click="showRestoreConfirm = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <h2>Restore File</h2>
-        <p>
-          Are you sure you want to restore "{{ itemToRestore?.original_name }}"?
-        </p>
-        <div v-if="restoreError" class="error-message glass">
-          {{ restoreError }}
-        </div>
-        <div class="form-actions">
-          <button
-            @click="confirmRestore"
-            :disabled="restoring"
-            class="btn btn-primary"
-          >
-            {{ restoring ? "Restoring..." : "Restore" }}
-          </button>
-          <button
-            type="button"
-            @click="
-              showRestoreConfirm = false;
-              restoreError = null;
-              itemToRestore = null;
-            "
-            class="btn btn-secondary"
-          >
-            Cancel
-          </button>
+    <teleport to="body">
+      <div
+        v-if="showRestoreConfirm"
+        class="modal-overlay"
+        @click="showRestoreConfirm = false"
+      >
+        <div class="modal glass glass-card" @click.stop>
+          <h2>Restore File</h2>
+          <p>
+            Are you sure you want to restore "{{
+              itemToRestore?.original_name
+            }}"?
+          </p>
+          <div v-if="restoreError" class="error-message glass">
+            {{ restoreError }}
+          </div>
+          <div class="form-actions">
+            <button
+              @click="confirmRestore"
+              :disabled="restoring"
+              class="btn btn-primary"
+            >
+              {{ restoring ? "Restoring..." : "Restore" }}
+            </button>
+            <button
+              type="button"
+              @click="
+                showRestoreConfirm = false;
+                restoreError = null;
+                itemToRestore = null;
+              "
+              class="btn btn-secondary"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </teleport>
 
     <!-- Permanent Delete Confirmation Modal -->
-    <div
-      v-if="showDeleteConfirm"
-      class="modal-overlay"
-      @click="showDeleteConfirm = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <h2>Permanently Delete File</h2>
-        <p>
-          Are you sure you want to permanently delete "{{
-            itemToDelete?.original_name
-          }}"? This action cannot be undone.
-        </p>
-        <div v-if="deleteError" class="error-message glass">
-          {{ deleteError }}
-        </div>
-        <div class="form-actions">
-          <button
-            @click="confirmPermanentDelete"
-            :disabled="deleting"
-            class="btn btn-danger"
-          >
-            {{ deleting ? "Deleting..." : "Delete Permanently" }}
-          </button>
-          <button
-            type="button"
-            @click="
-              showDeleteConfirm = false;
-              deleteError = null;
-              itemToDelete = null;
-            "
-            class="btn btn-secondary"
-          >
-            Cancel
-          </button>
+    <teleport to="body">
+      <div
+        v-if="showDeleteConfirm"
+        class="modal-overlay"
+        @click="showDeleteConfirm = false"
+      >
+        <div class="modal glass glass-card" @click.stop>
+          <h2>Permanently Delete File</h2>
+          <p>
+            Are you sure you want to permanently delete "{{
+              itemToDelete?.original_name
+            }}"? This action cannot be undone.
+          </p>
+          <div v-if="deleteError" class="error-message glass">
+            {{ deleteError }}
+          </div>
+          <div class="form-actions">
+            <button
+              @click="confirmPermanentDelete"
+              :disabled="deleting"
+              class="btn btn-danger"
+            >
+              {{ deleting ? "Deleting..." : "Delete Permanently" }}
+            </button>
+            <button
+              type="button"
+              @click="
+                showDeleteConfirm = false;
+                deleteError = null;
+                itemToDelete = null;
+              "
+              class="btn btn-secondary"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </teleport>
 
     <!-- Empty Trash Confirmation Modal -->
     <teleport to="body">
@@ -159,7 +165,7 @@
         class="modal-overlay"
         @click="showEmptyTrashConfirm = false"
       >
-        <div class="modal" @click.stop>
+        <div class="trash-modal" @click.stop>
           <h2>Empty Trash</h2>
           <p>
             Are you sure you want to permanently delete all
@@ -452,14 +458,24 @@ export default {
       if (!window.Icons || !window.Icons[iconName]) {
         return "";
       }
-      return window.Icons[iconName](size, "currentColor");
+      const iconFunction = window.Icons[iconName];
+      if (typeof iconFunction === "function") {
+        return iconFunction.call(window.Icons, size, "currentColor");
+      }
+      return "";
     };
 
     const getFileIcon = (file) => {
       if (file.mime_type === "application/x-directory") {
         return getIcon("folder", 48);
       }
-      return getIcon("file", 48);
+
+      // Use the centralized icon helper function
+      const iconName = window.Icons.getFileIconName
+        ? window.Icons.getFileIconName(file.mime_type, file.original_name)
+        : "file";
+
+      return getIcon(iconName, 48);
     };
 
     onMounted(() => {
@@ -684,7 +700,7 @@ export default {
   overflow-y: auto;
 }
 
-.modal {
+.trash-modal {
   background: linear-gradient(
     140deg,
     rgba(30, 41, 59, 0.1),
@@ -696,7 +712,7 @@ export default {
   border-radius: 2rem;
   padding: 2rem;
   max-width: 500px;
-  width: 100%;
+  width: 60%;
   max-height: 90vh;
   display: flex;
   flex-direction: column;

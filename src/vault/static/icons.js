@@ -149,6 +149,15 @@ window.Icons = {
     );
   },
 
+  // Mail/envelope icon
+  mail: function (size, color) {
+    return this.createSVG(
+      '<rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><polyline points="22 6 12 13 2 6"></polyline>',
+      size,
+      color,
+    );
+  },
+
   // Edit icon
   edit: function (size, color) {
     return this.createSVG(
@@ -351,7 +360,6 @@ window.Icons = {
 
   // Sparkles icon (multiple sparkles/stars)
   sparkles: function (size, color) {
-    // Use custom viewBox to fit the provided paths (0 0 32 32)
     // Sparkles arrangement: top-right (medium), center-left (large), bottom-right (small)
     const fillAttr = `fill="none"`;
     const strokeAttr = `stroke="${color}"`;
@@ -523,7 +531,6 @@ window.Icons = {
 
   // Funnel/filter icon
   funnel: function (size, color) {
-    // Use custom viewBox (0 0 48 48) and fill for better styling
     const fillAttr = `fill="${color}"`;
     const strokeAttr = `stroke="none"`;
     // Main path (outer funnel)
@@ -533,5 +540,431 @@ window.Icons = {
     const highlightPath =
       '<path d="M38,5V9.13a2,2,0,0,1-.41,1.21L25.41,26.27A2,2,0,0,0,25,27.48v8.23a2,2,0,0,1-1,1.75l-4,2.16v2.64l8-4.36V27.81l13-17V5Z" opacity="0.35"></path>';
     return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" ${fillAttr} ${strokeAttr}>${mainPath}${highlightPath}</svg>`;
+  },
+
+  // Markdown icon
+  markdown: function (size, color) {
+    return this.createSVG(
+      '<path d="M3 5m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"></path><path d="M7 15v-6l2 2l2 -2v6"></path><path d="M14 13l2 2l2 -2m-2 2v-6"></path>',
+      size,
+      color,
+    );
+  },
+
+  // HTML icon
+  html: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M7 10h10M7 14h10M7 18h6"></path>',
+      size,
+      color,
+    );
+  },
+
+  // PDF icon
+  pdf: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M7 10h10M7 14h8M7 18h6"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Word document icon
+  word: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M7 10h10M7 14h10M7 18h8"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Excel/Spreadsheet icon
+  excel: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="7" y1="10" x2="17" y2="10"></line><line x1="7" y1="14" x2="17" y2="14"></line><line x1="7" y1="18" x2="15" y2="18"></line>',
+      size,
+      color,
+    );
+  },
+
+  // PowerPoint/Presentation icon
+  powerpoint: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><circle cx="10" cy="12" r="3"></circle><line x1="10" y1="9" x2="10" y2="15"></line>',
+      size,
+      color,
+    );
+  },
+
+  // Code icon
+  code: function (size, color) {
+    return this.createSVG(
+      '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>',
+      size,
+      color,
+    );
+  },
+
+  // JSON icon
+  json: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 10h8M8 14h6M8 18h8"></path>',
+      size,
+      color,
+    );
+  },
+
+  // XML icon
+  xml: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M7 10l2 4-2 4M11 10l2 4-2 4M15 10h2"></path>',
+      size,
+      color,
+    );
+  },
+
+  // CSV icon
+  csv: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="7" y1="10" x2="17" y2="10"></line><line x1="7" y1="14" x2="17" y2="14"></line><line x1="7" y1="18" x2="15" y2="18"></line>',
+      size,
+      color,
+    );
+  },
+
+  // Text file icon
+  text: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M7 10h10M7 14h8M7 18h6"></path>',
+      size,
+      color,
+    );
+  },
+
+  // ISO icon (disk icon)
+  iso: function (size, color) {
+    const viewBox = "0 0 32 32";
+    const outerCircle =
+      '<circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.5"></circle>';
+    const sideArcs =
+      '<path d="M23.994,15.995c-0,4.416 -3.585,8 -8,8c-0.552,0 -1,0.448 -1,1c-0,0.552 0.448,1 1,1c5.519,0 10,-4.481 10,-10c-0,-0.552 -0.448,-1 -1,-1c-0.552,0 -1,0.448 -1,1Zm-16,0c-0,-4.415 3.584,-8 8,-8c0.552,0 1,-0.448 1,-1c-0,-0.552 -0.448,-1 -1,-1c-5.519,0 -10,4.481 -10,10c-0,0.552 0.448,1 1,1c0.552,0 1,-0.448 1,-1Z" fill="none" stroke="currentColor" stroke-width="1.5"></path>';
+    const centerDot =
+      '<circle cx="16" cy="16" r="1.5" fill="currentColor"></circle>';
+    return `<svg width="${size}" height="${size}" viewBox="${viewBox}" fill="${color}" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">${outerCircle}${sideArcs}${centerDot}</svg>`;
+  },
+
+  // Executable icon
+  executable: function (size, color) {
+    return this.createSVG(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 12h6M9 16h4"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Archive icon (for RAR, 7Z, TAR, etc.)
+  archive: function (size, color) {
+    return this.createSVG(
+      '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line>',
+      size,
+      color,
+    );
+  },
+
+  // Helper function to get file icon based on mime type and extension
+  getFileIconName: function (mimeType, fileName) {
+    if (!mimeType && !fileName) {
+      return "file";
+    }
+
+    const ext = fileName ? fileName.split(".").pop()?.toLowerCase() || "" : "";
+
+    // Check mime type first
+    if (mimeType) {
+      // Images
+      if (mimeType.startsWith("image/")) {
+        return "image";
+      }
+
+      // Videos
+      if (mimeType.startsWith("video/")) {
+        return "video";
+      }
+
+      // Audio
+      if (mimeType.startsWith("audio/")) {
+        return "music";
+      }
+
+      // PDF
+      if (mimeType === "application/pdf") {
+        return "pdf";
+      }
+
+      // Word documents
+      if (
+        mimeType === "application/msword" ||
+        mimeType ===
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        return "word";
+      }
+
+      // Excel spreadsheets
+      if (
+        mimeType === "application/vnd.ms-excel" ||
+        mimeType ===
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ) {
+        return "excel";
+      }
+
+      // PowerPoint presentations
+      if (
+        mimeType === "application/vnd.ms-powerpoint" ||
+        mimeType ===
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      ) {
+        return "powerpoint";
+      }
+
+      // ZIP archives
+      if (
+        mimeType === "application/zip" ||
+        mimeType === "application/x-zip-compressed"
+      ) {
+        return "zip";
+      }
+
+      // Other archives
+      if (
+        mimeType === "application/x-rar-compressed" ||
+        mimeType === "application/x-rar" ||
+        mimeType === "application/x-7z-compressed" ||
+        mimeType === "application/x-tar" ||
+        mimeType === "application/gzip" ||
+        mimeType === "application/x-gzip"
+      ) {
+        return "archive";
+      }
+
+      // Markdown
+      if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
+        return "markdown";
+      }
+
+      // HTML
+      if (mimeType === "text/html") {
+        return "html";
+      }
+
+      // JSON
+      if (mimeType === "application/json" || mimeType === "text/json") {
+        return "json";
+      }
+
+      // XML
+      if (mimeType === "text/xml" || mimeType === "application/xml") {
+        return "xml";
+      }
+
+      // CSV
+      if (mimeType === "text/csv") {
+        return "csv";
+      }
+
+      // Text files
+      if (mimeType === "text/plain") {
+        return "text";
+      }
+
+      // ISO
+      if (
+        mimeType === "application/x-iso9660-image" ||
+        mimeType === "application/x-cd-image"
+      ) {
+        return "iso";
+      }
+
+      // Executables
+      if (mimeType === "application/x-executable") {
+        return "executable";
+      }
+
+      // Code files
+      if (
+        mimeType === "text/javascript" ||
+        mimeType === "application/javascript" ||
+        mimeType === "application/x-python" ||
+        mimeType === "text/x-python" ||
+        mimeType === "text/x-java" ||
+        mimeType === "text/x-c" ||
+        mimeType === "text/x-c++" ||
+        mimeType === "text/x-csharp" ||
+        mimeType === "text/css" ||
+        mimeType === "application/x-sh" ||
+        mimeType === "application/x-bash"
+      ) {
+        return "code";
+      }
+    }
+
+    // Fallback to extension if mime type not recognized
+    if (ext) {
+      // Images
+      if (
+        [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "svg",
+          "bmp",
+          "tiff",
+          "ico",
+        ].includes(ext)
+      ) {
+        return "image";
+      }
+
+      // Videos
+      if (
+        [
+          "mp4",
+          "avi",
+          "mov",
+          "wmv",
+          "flv",
+          "webm",
+          "mkv",
+          "mpeg",
+          "mpg",
+        ].includes(ext)
+      ) {
+        return "video";
+      }
+
+      // Audio
+      if (["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"].includes(ext)) {
+        return "music";
+      }
+
+      // Documents
+      if (ext === "pdf") {
+        return "pdf";
+      }
+
+      if (ext === "doc" || ext === "docx") {
+        return "word";
+      }
+
+      if (ext === "xls" || ext === "xlsx") {
+        return "excel";
+      }
+
+      if (ext === "ppt" || ext === "pptx") {
+        return "powerpoint";
+      }
+
+      // Archives
+      if (ext === "zip") {
+        return "zip";
+      }
+
+      if (["rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+        return "archive";
+      }
+
+      // Markdown
+      if (ext === "md" || ext === "markdown") {
+        return "markdown";
+      }
+
+      // HTML
+      if (ext === "html" || ext === "htm") {
+        return "html";
+      }
+
+      // JSON
+      if (ext === "json") {
+        return "json";
+      }
+
+      // XML
+      if (ext === "xml") {
+        return "xml";
+      }
+
+      // CSV
+      if (ext === "csv") {
+        return "csv";
+      }
+
+      // Text files
+      if (
+        ext === "txt" ||
+        ext === "log" ||
+        ext === "ini" ||
+        ext === "conf" ||
+        ext === "cfg"
+      ) {
+        return "text";
+      }
+
+      // ISO
+      if (ext === "iso" || ext === "dmg") {
+        return "iso";
+      }
+
+      // Executables
+      if (["exe", "app", "deb", "rpm", "msi", "dmg", "pkg"].includes(ext)) {
+        return "executable";
+      }
+
+      // Code files
+      if (
+        [
+          "js",
+          "ts",
+          "jsx",
+          "tsx",
+          "py",
+          "java",
+          "c",
+          "cpp",
+          "cc",
+          "cxx",
+          "h",
+          "hpp",
+          "cs",
+          "php",
+          "rb",
+          "go",
+          "rs",
+          "swift",
+          "kt",
+          "scala",
+          "sh",
+          "bash",
+          "zsh",
+          "fish",
+          "ps1",
+          "bat",
+          "cmd",
+          "css",
+          "scss",
+          "sass",
+          "less",
+          "vue",
+          "svelte",
+        ].includes(ext)
+      ) {
+        return "code";
+      }
+    }
+
+    // Default fallback
+    return "file";
   },
 };

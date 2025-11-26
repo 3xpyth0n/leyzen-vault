@@ -444,13 +444,10 @@ class RotationService:
             try:
                 now: datetime = datetime.now(self._settings.timezone)
 
-                # Synchronise with any manual rotation that may have happened
-                # since the previous loop iteration. Without this check the
-                # orchestrator would continue operating with stale
-                # ``active_name`` / ``active_index`` values which leads to it
-                # trying to stop the previously active container (already
-                # stopped by the manual rotation). That in turn prevents the
-                # automated rotation from progressing as expected.
+                # Synchronise with any manual rotation that may have occurred
+                # This check ensures the orchestrator uses current active_name/active_index values
+                # Prevents attempting to stop containers that were already stopped by manual rotation
+                # Ensures automated rotation progresses correctly
                 with self._rotation_lock:
                     shared_index = self._active_index
                     shared_name = self.last_active_container
@@ -642,10 +639,10 @@ class RotationService:
                 # Stop rotation if preparation fails to prevent data loss
                 return False, active_index, active_name
 
-            # 2. Start the new container WITHOUT stopping the old one
+            # 2. Start the new container WITHOUT stopping the current active one
             next_cont = self._docker.start_container(next_name, reason=start_reason)
             if not next_cont:
-                # If startup fails, try the next candidate (the old one remains active)
+                # If startup fails, try the next candidate (the current active container remains active)
                 self._logger.log(
                     f"[WARNING] Failed to start {next_name} — trying next candidate."
                 )
@@ -660,9 +657,9 @@ class RotationService:
                 self._docker.stop_container(
                     next_name, reason="failed rotation health check"
                 )
-                continue  # Try the next candidate, the old one remains active
+                continue  # Try the next candidate, the current active container remains active
 
-            # 4. The new container is healthy: stop the old one now
+            # 4. The new container is healthy: stop the previous active container now
             elapsed = self.accumulate_and_clear_active(active_name)
             if elapsed > 0:
                 total_seconds = self.container_total_active_seconds.get(active_name, 0)
@@ -678,7 +675,7 @@ class RotationService:
                 self._logger.log(
                     f"[WARNING] Failed to stop {active_name} after {next_name} became healthy."
                 )
-                # Stop the new one because we couldn't stop the old one
+                # Stop the new container because we couldn't stop the previous active container
                 self._docker.stop_container(
                     next_name, reason="failed to stop previous active container"
                 )

@@ -706,8 +706,12 @@ def setup_status():
         setup_complete = is_setup_complete(current_app)
         return jsonify({"is_setup_complete": setup_complete}), 200
     except Exception as e:
-        current_app.logger.error(f"Error checking setup status: {e}")
-        return jsonify({"error": "Failed to check setup status"}), 500
+        # If database is not available or any error occurs, assume setup is not complete
+        # This allows access to /setup page on fresh installs without database
+        current_app.logger.warning(
+            f"Error checking setup status (assuming incomplete): {e}"
+        )
+        return jsonify({"is_setup_complete": False}), 200
 
 
 @auth_api_bp.route("/setup", methods=["POST"])
@@ -770,7 +774,8 @@ def setup():
     try:
         # Create superadmin user
         user = auth_service.create_user(email, password, GlobalRole.SUPERADMIN)
-        token = auth_service._generate_token(user)
+        # Don't generate token - user must login via /login to initialize master key
+        # token = auth_service._generate_token(user)
 
         current_app.logger.info(
             f"Setup completed: superadmin user created with email {email}"
@@ -780,8 +785,8 @@ def setup():
             jsonify(
                 {
                     "user": user.to_dict(),
-                    "token": token,
-                    "message": "Superadmin account created successfully",
+                    # Don't return token - user must login via /login to initialize master key
+                    "message": "Superadmin account created successfully. Please log in to continue.",
                 }
             ),
             201,

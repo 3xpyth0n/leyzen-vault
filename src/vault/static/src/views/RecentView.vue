@@ -48,6 +48,26 @@
     @action="handlePropertiesAction"
   />
 
+  <!-- File Preview Modal -->
+  <FilePreview
+    :show="showPreview"
+    :fileId="previewFileId"
+    :fileName="previewFileName"
+    :mimeType="previewMimeType"
+    :vaultspaceId="
+      previewFileId
+        ? recentFiles.find((f) => f.id === previewFileId)?.vaultspace_id || null
+        : null
+    "
+    @close="
+      showPreview = false;
+      previewFileId = null;
+      previewFileName = '';
+      previewMimeType = '';
+    "
+    @download="handlePreviewDownload"
+  />
+
   <!-- Batch Actions Bar -->
   <BatchActions
     v-if="selectedItems.length > 0"
@@ -226,6 +246,7 @@ import { useRouter } from "vue-router";
 import { files, auth } from "../services/api";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
+import FilePreview from "../components/FilePreview.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import BatchActions from "../components/BatchActions.vue";
@@ -240,6 +261,7 @@ export default {
   components: {
     FileListView,
     FileProperties,
+    FilePreview,
     ConfirmationModal,
     AlertModal,
     BatchActions,
@@ -263,6 +285,10 @@ export default {
     const showProperties = ref(false);
     const propertiesFileId = ref(null);
     const propertiesVaultspaceId = ref(null);
+    const showPreview = ref(false);
+    const previewFileId = ref(null);
+    const previewFileName = ref("");
+    const previewMimeType = ref("");
     const showAlertModal = ref(false);
     const alertModalConfig = ref({
       type: "error",
@@ -355,7 +381,17 @@ export default {
       if (item.mime_type === "application/x-directory") {
         router.push(`/vaultspace/${item.vaultspace_id}?folder=${item.id}`);
       } else {
-        router.push(`/vaultspace/${item.vaultspace_id}`);
+        // For files, check if it's a double-click to open preview
+        if (event && event.detail === 2) {
+          handleFileAction("preview", item);
+        }
+      }
+    };
+
+    const handlePreviewDownload = (fileId) => {
+      const file = recentFiles.value.find((f) => f.id === fileId);
+      if (file) {
+        handleFileAction("download", file);
       }
     };
 
@@ -565,6 +601,18 @@ export default {
       } else if (action === "properties") {
         // Show properties modal
         showFileProperties(item.id, item.vaultspace_id);
+      } else if (action === "preview") {
+        // Clear selection when opening preview
+        clearSelection();
+        if (window.selectionManager) {
+          window.selectionManager.deselectAll();
+          window.selectionManager.updateUI();
+        }
+        // Show file preview
+        previewFileId.value = item.id;
+        previewFileName.value = item.original_name || item.name || "File";
+        previewMimeType.value = item.mime_type || "";
+        showPreview.value = true;
       } else if (action === "copy") {
         handleCopyAction(item);
       } else if (action === "move") {
@@ -876,6 +924,11 @@ export default {
       showProperties,
       propertiesFileId,
       propertiesVaultspaceId,
+      showPreview,
+      previewFileId,
+      previewFileName,
+      previewMimeType,
+      handlePreviewDownload,
       showAlertModal,
       alertModalConfig,
       handleAlertModalClose: () => {

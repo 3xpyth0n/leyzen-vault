@@ -220,17 +220,28 @@ export const auth = {
    */
   async isSetupComplete() {
     try {
+      // Add timeout to prevent hanging on network errors
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
       const response = await fetch("/api/auth/setup/status", {
         method: "GET",
+        signal: controller.signal,
+        credentials: "same-origin", // Include cookies for same-origin requests
       });
+
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        return true; // Default to complete if check fails
+        // If response is not OK, assume setup is incomplete
+        return false;
       }
       const data = await response.json();
       return data.is_setup_complete === true;
     } catch (err) {
-      console.error("Failed to check setup status:", err);
-      return true; // Default to complete if check fails
+      // Network errors are expected on fresh install or when database is unavailable
+      // Return false to allow access to setup page
+      return false; // Default to incomplete if check fails
     }
   },
 
@@ -258,9 +269,7 @@ export const auth = {
     }
 
     const data = await response.json();
-    if (data.token) {
-      setToken(data.token);
-    }
+    // Don't store token - user must login via /login to initialize master key
     return data;
   },
 

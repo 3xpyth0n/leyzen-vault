@@ -88,13 +88,20 @@ function escapeHtml(text) {
 
 // Get file icon based on extension
 function getFileIcon(fileName) {
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
   // Use SVG icons from Icons system
   if (window.Icons) {
-    // Check if file is a ZIP archive
-    if (ext === "zip" && window.Icons.zip) {
-      return window.Icons.zip(24, "currentColor");
+    // Use the centralized icon helper function (pass null for mimeType since we only have fileName)
+    const iconName = window.Icons.getFileIconName
+      ? window.Icons.getFileIconName(null, fileName)
+      : "file";
+
+    // Get the icon function and call it with proper context
+    const iconFunction = window.Icons[iconName];
+    if (iconFunction && typeof iconFunction === "function") {
+      return iconFunction.call(window.Icons, 24, "currentColor");
     }
+
+    // Fallback to generic file icon
     if (window.Icons.file) {
       return window.Icons.file(24, "currentColor");
     }
@@ -173,12 +180,12 @@ function attachFileMenuListeners(container) {
 }
 
 // Modify attachFileActionListeners to handle menu buttons instead
-// Keep the old listeners for backward compatibility but attach menu listeners
+// Attach menu listeners and maintain compatibility with existing action buttons
 function attachFileActionListeners(container) {
   // Attach menu listeners
   attachFileMenuListeners(container);
 
-  // Keep old action listeners for backward compatibility (if old buttons exist)
+  // Attach action listeners for compatibility with existing action buttons
   container.addEventListener("click", (e) => {
     const button = e.target.closest(".file-action-btn");
     if (!button) return;
@@ -206,7 +213,7 @@ function attachFileActionListeners(container) {
         if (window.sharingManager && window.sharingManager.showShareModal) {
           window.sharingManager.showShareModal(fileId);
         } else if (window.shareFile) {
-          // Fallback to old share method
+          // Fallback to alternative share method
           shareFile(fileId);
         }
         break;
@@ -1496,7 +1503,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (files.length > 0 && window.uploadManager) {
         window.uploadManager.queueFiles(files);
       } else if (files.length > 0) {
-        // Fallback to old upload method
+        // Fallback to alternative upload method
         files.forEach((file) => uploadFile(file));
       }
     });
@@ -1518,7 +1525,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (files.length > 0 && window.uploadManager) {
         window.uploadManager.queueFiles(files);
       } else if (files.length > 0) {
-        // Fallback to old upload method
+        // Fallback to alternative upload method
         files.forEach((file) => uploadFile(file));
       }
     });

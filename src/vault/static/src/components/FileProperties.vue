@@ -1,7 +1,7 @@
 <template>
   <div v-if="show" class="file-properties-overlay" @click="close">
     <div class="file-properties-modal" @click.stop>
-      <div class="modal-header">
+      <div class="file-properties-header">
         <h2>File Properties</h2>
         <button @click="close" class="btn-icon">✕</button>
       </div>
@@ -336,7 +336,6 @@ export default {
   justify-content: center;
   z-index: 99999;
   padding: 4rem 2rem 2rem 2rem;
-  /* Optimisations */
   will-change: opacity;
   transform: translateZ(0);
 }
@@ -363,16 +362,16 @@ export default {
   isolation: isolate;
 }
 
-.file-properties-modal .modal-header {
+.file-properties-modal .file-properties-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  padding: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
-.file-properties-modal .modal-header h2 {
+.file-properties-modal .file-properties-header h2 {
   margin: 0;
   padding: 0;
   font-size: 1.25rem;

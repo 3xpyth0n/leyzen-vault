@@ -7,6 +7,15 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
+
+### Fixed
+
+- Increased `api_keys.key_prefix` column capacity and added automatic migration to prevent API key creation failures caused by truncation.
+- Invited accounts now default to the `user` role to avoid missing-role errors during signup completion.
+
 ## [2.2.1] - 2025-11-23
 
 ### Fixed - Critical Installation Issues

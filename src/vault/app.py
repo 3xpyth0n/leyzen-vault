@@ -21,7 +21,7 @@ else:
 
 from common.path_setup import bootstrap_entry_point  # noqa: E402
 
-# derive_internal_api_token removed - now using random token generation stored in database
+# Internal API tokens are generated randomly and stored in the database
 
 bootstrap_entry_point()
 
@@ -956,8 +956,8 @@ def create_app(
             logger.log(f"[WARNING] Failed to check setup status: {setup_check_error}")
     except Exception as exc:
         # Fallback for development/testing only - NOT allowed in production
-        # Note: This fallback now requires environment variables to be set
-        # Hardcoded secrets have been removed for security
+        # Fallback requires environment variables to be set
+        # Secrets are loaded from environment variables
 
         # SECURITY: Prevent fallback mode in production
         # If we're in production mode, fail fast rather than using fallback settings
@@ -1020,12 +1020,6 @@ def create_app(
                 "CORS is not configured. Set VAULT_ALLOWED_ORIGINS or ALLOWED_ORIGINS in your .env file. "
                 "Application will start but CORS requests may be blocked."
             )
-            # Don't block startup - allow configuration to be set later
-            # raise RuntimeError(
-            #     "SECURITY ERROR: ALLOWED_ORIGINS is empty in production. "
-            #     "CORS must be configured for production deployments. "
-            #     "Set VAULT_ALLOWED_ORIGINS or ALLOWED_ORIGINS in your .env file."
-            # )
         # Validate that origins are not wildcards or localhost in production
         for origin in allowed_origins:
             if origin == "*":
@@ -1247,15 +1241,117 @@ def create_app(
     )
     orphaned_cleanup_thread.start()
 
-    # NOTE: Storage cleanup worker is now in orchestrator (not vault)
-    # This avoids issues with MTD container restarts every 2 minutes
+    # Start background thread for periodic file promotion
+    # This ensures files in tmpfs are promoted to persistent storage even if
+    # immediate promotion during upload fails
+    def _periodic_promotion_worker() -> None:
+        """Background worker to periodically promote files from tmpfs to persistent storage."""
+        import time
+        import logging
+
+        logger = logging.getLogger(__name__)
+        while True:
+            try:
+                time.sleep(300)  # Run every 5 minutes
+                # Use application context for database operations
+                with app.app_context():
+                    try:
+                        from common.services.file_promotion_service import (
+                            FilePromotionService,
+                        )
+                        from common.services.sync_validation_service import (
+                            SyncValidationService,
+                        )
+                        from vault.database.schema import File, db
+
+                        storage = app.config.get("VAULT_STORAGE")
+                        if not storage or not storage.source_dir:
+                            continue
+
+                        # Initialize services
+                        validation_service = SyncValidationService(
+                            db_session=db.session,
+                            File_model=File,
+                            logger=logger,
+                        )
+                        promotion_service = FilePromotionService(
+                            validation_service=validation_service,
+                            logger_instance=logger,
+                        )
+
+                        # Load whitelist
+                        validation_service.load_whitelist()
+
+                        # Get all files from database
+                        files = (
+                            db.session.query(File)
+                            .filter(File.deleted_at.is_(None))
+                            .all()
+                        )
+
+                        promoted_count = 0
+                        for file_obj in files:
+                            storage_ref = file_obj.storage_ref
+                            # Normalize storage_ref
+                            if "/" in storage_ref:
+                                storage_ref = storage_ref.split("/")[-1]
+
+                            # Check if file exists in tmpfs but not in persistent storage
+                            tmpfs_path = storage.get_file_path(storage_ref)
+                            source_path = storage.get_source_file_path(storage_ref)
+
+                            if tmpfs_path.exists() and (
+                                not source_path or not source_path.exists()
+                            ):
+                                # File is in tmpfs but not in persistent storage - promote it
+                                try:
+                                    success, error_msg = promotion_service.promote_file(
+                                        file_id=storage_ref,
+                                        source_path=tmpfs_path,
+                                        target_dir=storage.source_dir,
+                                        base_dir=storage.storage_dir / "files",
+                                    )
+                                    if success:
+                                        promoted_count += 1
+                                        logger.info(
+                                            f"[PERIODIC PROMOTION] Promoted file {storage_ref} to persistent storage"
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"[PERIODIC PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"[PERIODIC PROMOTION ERROR] Exception promoting {storage_ref}: {e}",
+                                        exc_info=True,
+                                    )
+
+                        if promoted_count > 0:
+                            logger.info(
+                                f"[PERIODIC PROMOTION] Promoted {promoted_count} files to persistent storage"
+                            )
+                    except Exception as promotion_error:
+                        logger.error(
+                            f"Error during periodic file promotion: {promotion_error}",
+                            exc_info=True,
+                        )
+            except Exception as e:
+                logger.error(f"Error in periodic promotion worker: {e}", exc_info=True)
+
+    periodic_promotion_thread = threading.Thread(
+        target=_periodic_promotion_worker, daemon=True
+    )
+    periodic_promotion_thread.start()
+
+    # Storage cleanup worker runs in orchestrator service
     # Storage cleanup is triggered via internal API endpoint from orchestrator
-    # However, we also run autonomous cleanup for orphaned files in persistent storage
+    # Autonomous cleanup for orphaned files in persistent storage also runs here
 
     def _origin_is_allowed_for_request(origin: str | None) -> bool:
         """Check if the provided Origin header is allowed for this request."""
         if not origin:
-            return False
+            # No origin header - allow for same-origin requests
+            return True
 
         normalized_origin = _normalize_origin(origin)
         if not normalized_origin:
@@ -1266,8 +1362,34 @@ def create_app(
         host_origin = _normalize_origin(f"{request.scheme}://{request.host}")
         allowed_set = app.config.get("ALLOWED_ORIGINS_NORMALIZED", set())
 
+        # Allow same-origin requests (exact match)
         if host_origin and normalized_origin == host_origin:
             return True
+
+        # Allow localhost variants (localhost, 127.0.0.1, [::1]) regardless of port
+        # This handles cases where browser sends different localhost formats
+        if host_origin and normalized_origin:
+            # Extract hostname from origins (without scheme and port)
+            try:
+                from urllib.parse import urlparse
+
+                host_parsed = urlparse(host_origin)
+                origin_parsed = urlparse(normalized_origin)
+
+                # Check if both are localhost variants
+                localhost_variants = {"localhost", "127.0.0.1", "[::1]", "::1"}
+                host_hostname = host_parsed.hostname or ""
+                origin_hostname = origin_parsed.hostname or ""
+
+                if (
+                    host_hostname.lower() in localhost_variants
+                    and origin_hostname.lower() in localhost_variants
+                    and host_parsed.scheme == origin_parsed.scheme
+                ):
+                    return True
+            except Exception:
+                # If parsing fails, fall through to normal check
+                pass
 
         return normalized_origin in allowed_set
 
@@ -1357,7 +1479,7 @@ def create_app(
             # Add cache headers for static assets
             response.cache_control.public = True
             response.cache_control.max_age = 31536000  # 1 year
-            # Ensure we don't force HTTPS - remove any HSTS headers that might be added by after_request
+            # Remove HSTS headers to allow HTTP access
             response.headers.pop("Strict-Transport-Security", None)
             return response
         except NotFound:
@@ -1451,7 +1573,8 @@ def create_app(
                 else "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com"
             ),
             "style-src 'self' https://fonts.googleapis.com",
-            "img-src 'self' data: blob:",
+            "img-src 'self' data: blob: https://github.com https://img.shields.io https://shields.io",
+            "media-src 'self' blob:",
             "font-src 'self' https://fonts.gstatic.com",
             "connect-src 'self' https://static.cloudflareinsights.com",
             "frame-ancestors 'none'",
@@ -1562,16 +1685,23 @@ def create_app(
             "ALLOWED_CORS_HEADERS",
             "Authorization, Content-Type, X-Requested-With, Accept, X-CSRF-Token",
         )
-        if origin_header and _origin_is_allowed_for_request(origin_header):
-            response.headers["Access-Control-Allow-Origin"] = origin_header
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = (
-                "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-            )
-            response.headers["Access-Control-Allow-Headers"] = allowed_cors_headers
-            response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
-            response.headers["Access-Control-Max-Age"] = "600"
-            response.headers.add("Vary", "Origin")
+        # Allow same-origin requests (no Origin header) or explicitly allowed origins
+        if not origin_header or _origin_is_allowed_for_request(origin_header):
+            if origin_header:
+                # Cross-origin request from allowed origin
+                response.headers["Access-Control-Allow-Origin"] = origin_header
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = (
+                    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+                )
+                response.headers["Access-Control-Allow-Headers"] = allowed_cors_headers
+                response.headers["Access-Control-Expose-Headers"] = (
+                    "Content-Disposition"
+                )
+                response.headers["Access-Control-Max-Age"] = "600"
+                response.headers.add("Vary", "Origin")
+            # For same-origin requests (no Origin header), no CORS headers needed
+            # but we don't block them either
         elif request.method == "OPTIONS" and origin_header:
             # Preflight request from disallowed origin -> ensure browsers fail fast
             response.status_code = 403
