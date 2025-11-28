@@ -188,6 +188,14 @@ class AuthService:
         if existing_user:
             raise ValueError(f"User with email {email} already exists")
 
+        # Constraint: Only one superadmin can exist at a time
+        if global_role == GlobalRole.SUPERADMIN:
+            superadmin_count = self.count_superadmins()
+            if superadmin_count > 0:
+                raise ValueError(
+                    "A superadmin already exists. Only one superadmin can exist at a time."
+                )
+
         # Hash password with Argon2id for authentication
         # NOTE: This is for server-side password authentication ONLY.
         # Client-side encryption uses Argon2-browser (new) or PBKDF2 (legacy) for key derivation.
@@ -245,9 +253,9 @@ class AuthService:
             except VerifyMismatchError:
                 return None
 
-            # SECURITY: Check if email is verified (always required)
-            # Exception: superadmin created during setup may not have verified email initially
-            # but we allow them to login to complete setup
+            # SECURITY: Check if email is verified (required for all users except superadmin)
+            # Exception: The superadmin can login without email verification to allow initial setup
+            # All other users must verify their email before they can access Leyzen Vault
             if not user.email_verified and user.global_role != GlobalRole.SUPERADMIN:
                 raise ValueError(
                     "Email not verified. Please verify your email before logging in."

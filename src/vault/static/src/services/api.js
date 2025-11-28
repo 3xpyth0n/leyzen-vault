@@ -8,6 +8,109 @@ import { clearUserMasterKey } from "./keyManager";
 
 const API_BASE_URL = "/api";
 
+const SETUP_STATUS_CACHE_TTL = 5000; // milliseconds
+const SETUP_STATUS_ERROR_TTL = 1000;
+
+let setupStatusCache = {
+  value: null,
+  expiresAt: 0,
+};
+
+function getCachedSetupStatus() {
+  if (Date.now() < setupStatusCache.expiresAt) {
+    return setupStatusCache.value;
+  }
+  return null;
+}
+
+function setSetupStatusCache(value, ttl = SETUP_STATUS_CACHE_TTL) {
+  setupStatusCache = {
+    value,
+    expiresAt: Date.now() + Math.max(0, ttl),
+  };
+}
+
+function invalidateSetupStatusCache() {
+  setupStatusCache = { value: null, expiresAt: 0 };
+}
+
+function purgeBrowserState() {
+  // CRITICAL: Remove token FIRST before clearing
+  // This ensures token is gone even if clear() fails
+  try {
+    removeToken();
+    // Force remove again
+    localStorage.removeItem("jwt_token");
+    // Verify it's gone
+    if (localStorage.getItem("jwt_token")) {
+      // Last resort: clear everything
+      localStorage.clear();
+    }
+  } catch (err) {
+    // If removal fails, clear everything
+    try {
+      localStorage.clear();
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  // Now clear everything else
+  try {
+    localStorage.clear();
+  } catch (err) {
+    // Ignore storage errors
+  }
+
+  try {
+    sessionStorage.clear();
+  } catch (err) {
+    // Ignore storage errors
+  }
+
+  try {
+    if (typeof document !== "undefined") {
+      const hostname =
+        typeof window !== "undefined" ? window.location.hostname : "";
+      const cookies = document.cookie ? document.cookie.split(";") : [];
+
+      // Explicitly delete "session" cookie first (Flask session cookie)
+      const sessionCookieName = "session";
+      const expires = "Thu, 01 Jan 1970 00:00:00 GMT";
+
+      // Delete session cookie with all possible combinations
+      document.cookie = `${sessionCookieName}=;expires=${expires};path=/`;
+      document.cookie = `${sessionCookieName}=;expires=${expires};path=/;SameSite=Lax`;
+      document.cookie = `${sessionCookieName}=;expires=${expires};path=/;SameSite=Strict`;
+      if (hostname) {
+        document.cookie = `${sessionCookieName}=;expires=${expires};path=/;domain=${hostname}`;
+        if (hostname.indexOf(".") > 0) {
+          document.cookie = `${sessionCookieName}=;expires=${expires};path=/;domain=.${hostname}`;
+        }
+      }
+
+      // Delete all other cookies
+      for (const cookie of cookies) {
+        const eqPos = cookie.indexOf("=");
+        const name =
+          eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+        if (!name || name === sessionCookieName) {
+          continue; // Skip if already handled or empty
+        }
+        document.cookie = `${name}=;expires=${expires};path=/`;
+        if (hostname) {
+          document.cookie = `${name}=;expires=${expires};path=/;domain=${hostname}`;
+          if (hostname.indexOf(".") > 0) {
+            document.cookie = `${name}=;expires=${expires};path=/;domain=.${hostname}`;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore cookie clearing errors
+  }
+}
+
 /**
  * Get JWT token from localStorage.
  *
@@ -28,10 +131,42 @@ function setToken(token) {
 
 /**
  * Remove JWT token from localStorage.
+ * Uses multiple methods to ensure deletion.
  */
 function removeToken() {
-  localStorage.removeItem("jwt_token");
+  try {
+    localStorage.removeItem("jwt_token");
+    // Double-check: if still exists, try direct removal
+    if (localStorage.getItem("jwt_token")) {
+      delete localStorage.jwt_token;
+      // If still exists, clear all and restore other items
+      const backup = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key !== "jwt_token") {
+          backup[key] = localStorage.getItem(key);
+        }
+      }
+      localStorage.clear();
+      // Restore other items
+      for (const [key, value] of Object.entries(backup)) {
+        localStorage.setItem(key, value);
+      }
+    }
+  } catch (err) {
+    // If all else fails, clear everything
+    try {
+      localStorage.clear();
+    } catch (e) {
+      // Ignore
+    }
+  }
 }
+
+/**
+ * Export removeToken for external use (e.g., setup flow).
+ */
+export { removeToken };
 
 /**
  * Parse error response from API.
@@ -219,6 +354,11 @@ export const auth = {
    * @returns {Promise<boolean>} True if setup is complete
    */
   async isSetupComplete() {
+    const cached = getCachedSetupStatus();
+    if (cached !== null) {
+      return cached;
+    }
+
     try {
       // Add timeout to prevent hanging on network errors
       const controller = new AbortController();
@@ -234,13 +374,17 @@ export const auth = {
 
       if (!response.ok) {
         // If response is not OK, assume setup is incomplete
+        setSetupStatusCache(false, SETUP_STATUS_ERROR_TTL);
         return false;
       }
       const data = await response.json();
-      return data.is_setup_complete === true;
+      const result = data.is_setup_complete === true;
+      setSetupStatusCache(result);
+      return result;
     } catch (err) {
       // Network errors are expected on fresh install or when database is unavailable
       // Return false to allow access to setup page
+      setSetupStatusCache(false, SETUP_STATUS_ERROR_TTL);
       return false; // Default to incomplete if check fails
     }
   },
@@ -254,6 +398,9 @@ export const auth = {
    * @returns {Promise<object>} User and token
    */
   async setup(email, password, confirmPassword) {
+    // Forcefully remove any existing token before hitting setup endpoint
+    removeToken();
+
     const response = await apiRequest("/auth/setup", {
       method: "POST",
       body: JSON.stringify({
@@ -261,6 +408,7 @@ export const auth = {
         password,
         confirm_password: confirmPassword,
       }),
+      skipAutoRefresh: true,
     });
 
     if (!response.ok) {
@@ -269,8 +417,49 @@ export const auth = {
     }
 
     const data = await response.json();
-    // Don't store token - user must login via /login to initialize master key
-    return data;
+
+    // CRITICAL: Ensure no token is in the response data
+    // Even if backend accidentally sends one, delete it
+    if (data.token) {
+      console.warn(
+        "Setup endpoint returned a token! This should not happen. Removing it.",
+      );
+      delete data.token;
+    }
+
+    // Completely purge all browser state IMMEDIATELY
+    // Do this before any other operation
+    purgeBrowserState();
+
+    // IMMEDIATE verification: check for token right after purge
+    const tokenAfterPurge = localStorage.getItem("jwt_token");
+    if (tokenAfterPurge) {
+      console.error(
+        "Token still exists after purgeBrowserState()! This indicates a bug.",
+      );
+      // Force clear everything if token still exists
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+
+    // Additional check: verify token is really gone
+    const finalTokenCheck = localStorage.getItem("jwt_token");
+    if (finalTokenCheck) {
+      console.error("CRITICAL: Token persists after multiple clear attempts!");
+      // Last resort: clear and throw error
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+
+    invalidateSetupStatusCache();
+
+    return {
+      user: data.user ?? null,
+      email_verification_required: data.email_verification_required ?? false,
+      message:
+        data.message ??
+        "Superadmin account created successfully. Please log in to continue.",
+    };
   },
 
   /**

@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from flask import Flask
+import ipaddress
+
+from flask import Flask, current_app
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Bootstrap common modules
 _COMMON_DIR = Path("/common")
@@ -24,6 +27,79 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 # Internal API tokens are generated randomly and stored in the database
 
 bootstrap_entry_point()
+
+
+def _is_secure_request(req) -> bool:
+    """Best-effort detection of HTTPS requests behind multiple proxies."""
+
+    if getattr(req, "is_secure", False):
+        return True
+
+    forwarded_proto = req.headers.get("X-Forwarded-Proto", "")
+    if forwarded_proto:
+        for token in forwarded_proto.split(","):
+            if token.strip().lower() == "https":
+                return True
+
+    forwarded = req.headers.get("Forwarded", "")
+    if forwarded:
+        for entry in forwarded.split(","):
+            for token in entry.split(";"):
+                token = token.strip().lower()
+                if token.startswith("proto=") and token.split("=", 1)[1] == "https":
+                    return True
+
+    forwarded_scheme = req.headers.get("X-Forwarded-Scheme", "")
+    if forwarded_scheme:
+        for token in forwarded_scheme.split(","):
+            if token.strip().lower() == "https":
+                return True
+
+    try:
+        vault_settings = current_app.config.get("VAULT_SETTINGS")
+    except Exception:
+        vault_settings = None
+
+    vault_url = None
+    if vault_settings:
+        vault_url = getattr(vault_settings, "vault_url", None)
+
+    if vault_url:
+        try:
+            parsed = urlsplit(vault_url)
+        except Exception:
+            parsed = None
+        if parsed and parsed.scheme.lower() == "https":
+            request_host = _normalize_host(req.headers.get("Host") or req.host)
+            target_host = _normalize_host(parsed.netloc)
+            if request_host and target_host and request_host == target_host:
+                return True
+
+    return False
+
+
+def _normalize_host(value: str | None) -> str:
+    if not value:
+        return ""
+    host = value.strip().lower()
+    if host.endswith(":443"):
+        return host[:-4]
+    if host.endswith(":80"):
+        return host[:-3]
+    return host
+
+
+def _is_ip_host(value: str | None) -> bool:
+    if not value:
+        return False
+    host = _normalize_host(value).split("%")[0]  # strip zone id for IPv6
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 def _normalize_origin(origin: str | None) -> str | None:
@@ -998,6 +1074,16 @@ def create_app(
     # SECURITY: Configure allowed origins (CORS + Origin validation)
     # In production, ALLOWED_ORIGINS must be set and non-empty
     vault_settings = app.config.get("VAULT_SETTINGS")
+    trust_count = getattr(vault_settings, "proxy_trust_count", 1)
+    if trust_count < 0:
+        trust_count = 0
+    app.wsgi_app = ProxyFix(  # type: ignore[assignment]
+        app.wsgi_app,
+        x_for=trust_count,
+        x_proto=trust_count,
+        x_host=trust_count,
+        x_port=trust_count,
+    )
     allowed_origins_value = (
         env_values.get("VAULT_ALLOWED_ORIGINS")
         or env_values.get("ALLOWED_ORIGINS")
@@ -1732,8 +1818,11 @@ def create_app(
     @app.route("/")
     def serve_vue_app_root():
         """Serve Vue.js SPA root - return index.html."""
-        from flask import send_file, request, make_response
+        from flask import make_response, redirect, request, send_file
         import re
+
+        if not is_setup_complete(app):
+            return redirect("/setup", code=302)
 
         dist_index = static_dir / "index.html"
         if dist_index.exists():
@@ -1741,10 +1830,11 @@ def create_app(
             with open(dist_index, "r", encoding="utf-8") as f:
                 html_content = f.read()
 
-            # If we're using HTTP (not HTTPS), force all URLs to be relative or use HTTP
-            # Chrome and other browsers force HTTPS for IP addresses in HTTP, so we must
-            # ensure all URLs are relative or explicitly use HTTP protocol
-            if not request.is_secure:
+            # Only force HTTP rewrites for direct IP access (browsers may auto-upgrade)
+            should_force_http = not _is_secure_request(request) and _is_ip_host(
+                request.headers.get("Host") or request.host
+            )
+            if should_force_http:
                 # Replace any absolute HTTPS URLs with HTTP URLs
                 html_content = re.sub(
                     r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
@@ -1763,7 +1853,8 @@ def create_app(
                 # Inject <base> tag with HTTP protocol to force all relative URLs to use HTTP
                 # This is critical for IP addresses - browsers force HTTPS otherwise
                 if "<base" not in html_content.lower():
-                    base_url = f"{request.scheme}://{request.host}"
+                    scheme = "https" if _is_secure_request(request) else request.scheme
+                    base_url = f"{scheme}://{request.host}"
                     # Insert <base> tag right after <head> to force HTTP protocol
                     html_content = re.sub(
                         r"(<head[^>]*>)",
@@ -1891,9 +1982,10 @@ def create_app(
             with open(dist_index, "r", encoding="utf-8") as f:
                 html_content = f.read()
 
-            # If we're using HTTP (not HTTPS), force all URLs to be relative or use HTTP
-            # This prevents browsers from converting relative URLs to HTTPS for IP addresses
-            if not request.is_secure:
+            should_force_http = not _is_secure_request(request) and _is_ip_host(
+                request.headers.get("Host") or request.host
+            )
+            if should_force_http:
                 # Replace any absolute HTTPS URLs with HTTP URLs or relative URLs
                 html_content = re.sub(
                     r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
@@ -1912,7 +2004,8 @@ def create_app(
                 )
                 # Inject <base> tag with HTTP protocol to force all relative URLs to use HTTP
                 if "<base" not in html_content.lower():
-                    base_url = f"{request.scheme}://{request.host}"
+                    scheme = "https" if _is_secure_request(request) else request.scheme
+                    base_url = f"{scheme}://{request.host}"
                     html_content = re.sub(
                         r"(<head[^>]*>)",
                         rf'\1\n    <base href="{base_url}/">',

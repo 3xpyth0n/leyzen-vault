@@ -46,6 +46,18 @@ func init() {
 				return nil
 			}
 
+			// Calculate the maximum width for the AGE column
+			ageWidth := len(ageHeader)
+			lines := strings.Split(strings.TrimSpace(output), "\n")
+			for _, line := range lines {
+				parts := strings.Split(line, "\t")
+				if len(parts) == 3 {
+					if len(parts[2]) > ageWidth {
+						ageWidth = len(parts[2])
+					}
+				}
+			}
+
 			// headers
 			fmt.Printf("%s  %s  %s\n",
 				padRightColored(color.HiBlueString("NAME"), nameWidth),
@@ -56,11 +68,11 @@ func init() {
 			fmt.Printf("%s  %s  %s\n",
 				strings.Repeat("─", nameWidth),
 				strings.Repeat("─", statusWidth),
-				strings.Repeat("─", len(ageHeader)),
+				strings.Repeat("─", ageWidth),
 			)
 
 			// rows
-			for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+			for _, line := range lines {
 				parts := strings.Split(line, "\t")
 				if len(parts) != 3 {
 					continue

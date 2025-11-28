@@ -81,7 +81,7 @@ jobs:
           EOF
 
       - name: Check Prettier formatting
-        run: npx prettier --check .
+        run: npx prettier@3.7.1 --check .
 
       - name: Check Black formatting
         run: black --check .

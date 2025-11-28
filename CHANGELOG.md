@@ -10,11 +10,15 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
+- Email verification is now mandatory for all users except the superadmin.
 
 ### Fixed
 
 - Increased `api_keys.key_prefix` column capacity and added automatic migration to prevent API key creation failures caused by truncation.
 - Invited accounts now default to the `user` role to avoid missing-role errors during signup completion.
+- HAProxy now accepts either combined PEM files or separate certificate/key inputs by validating and generating a single bundle automatically.
+- HTTPS detection now honors custom HTTP/HTTPS ports and tunnel frontends, preventing CSP errors and redirect loops when overriding `HTTP_PORT`/`HTTPS_PORT`.
+- Fixed setup endpoint redirecting to dashboard without master key initialization. The `/setup` endpoint now follows the same flow as `/signup`, requiring email verification and redirecting to login page instead of automatically authenticating users.
 
 ## [2.2.1] - 2025-11-23
 

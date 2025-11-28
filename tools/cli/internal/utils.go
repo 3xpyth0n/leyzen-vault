@@ -60,12 +60,12 @@ func RunBuildScriptWithWriter(stdout, stderr io.Writer, envFile string) error {
 	cmd.Stderr = stderr
 	cmd.Env = append(os.Environ(), fmt.Sprintf("LEYZEN_ENV_FILE=%s", resolvedEnv))
 
-	fmt.Fprintln(stdout, "🔄 Rebuilding Docker Compose and HAProxy configuration...")
+	fmt.Fprintln(stdout, "🔄 Building Docker Compose and HAProxy configuration...")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build.py failed: %w", err)
 	}
 
-	fmt.Fprintln(stdout, "✅ Configuration rebuild completed.")
+	fmt.Fprintln(stdout, "✅ Configuration build completed.")
 	return nil
 }
 

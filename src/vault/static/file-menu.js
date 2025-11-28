@@ -335,9 +335,8 @@ class FileMenuManager {
         } catch (e1) {
           try {
             // Alternative path
-            const folderPickerModule2 = await import(
-              "../src/utils/FolderPicker.js"
-            );
+            const folderPickerModule2 =
+              await import("../src/utils/FolderPicker.js");
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
@@ -443,9 +442,8 @@ class FileMenuManager {
           window.folderPicker = folderPicker;
         } catch (e1) {
           try {
-            const folderPickerModule2 = await import(
-              "../src/utils/FolderPicker.js"
-            );
+            const folderPickerModule2 =
+              await import("../src/utils/FolderPicker.js");
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {

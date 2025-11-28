@@ -2,6 +2,9 @@
   <div class="login-wrapper">
     <div class="login-content">
       <h1>Leyzen Vault Login</h1>
+      <div v-if="setupSuccessMessage" class="success-banner">
+        {{ setupSuccessMessage }}
+      </div>
       <div v-if="error" class="error">
         {{ error }}
         <div v-if="showVerificationLink" class="verification-link">
@@ -168,6 +171,7 @@ const passwordAuthEnabled = ref(true);
 const magicLinkEmail = ref("");
 const magicLinkLoading = ref(false);
 const magicLinkSuccess = ref(false);
+const setupSuccessMessage = ref("");
 
 const captchaImageUrl = ref("");
 const showOverlay = ref(false);
@@ -247,11 +251,25 @@ const refreshCaptcha = async () => {
 };
 
 onMounted(async () => {
-  // Check for error in query parameters (e.g., from SSO callback failure)
+  // Clean up query parameters (error/setup) while surfacing user feedback
+  const nextQuery = { ...route.query };
+  let shouldReplaceQuery = false;
+
   if (route.query.error) {
     error.value = decodeURIComponent(route.query.error);
-    // Clean up the URL by removing the error parameter
-    router.replace({ query: {} });
+    delete nextQuery.error;
+    shouldReplaceQuery = true;
+  }
+
+  if (route.query.setup === "done") {
+    setupSuccessMessage.value =
+      "Superadmin account created. Please log in to initialize your master key.";
+    delete nextQuery.setup;
+    shouldReplaceQuery = true;
+  }
+
+  if (shouldReplaceQuery) {
+    router.replace({ query: nextQuery });
   }
 
   // Check if password authentication is enabled
@@ -631,6 +649,17 @@ p a:hover {
 
 .verification-link a:hover {
   text-decoration: underline;
+}
+
+.success-banner {
+  color: #4ade80;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  width: 100%;
+  text-align: center;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 8px;
 }
 
 .sso-section {

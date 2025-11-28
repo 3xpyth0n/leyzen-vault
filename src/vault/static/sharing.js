@@ -1020,9 +1020,8 @@ class SharingManager {
       modalManager = window.modalManager;
       if (!modalManager) {
         try {
-          const modalManagerModule = await import(
-            "../src/utils/ModalManager.js"
-          );
+          const modalManagerModule =
+            await import("../src/utils/ModalManager.js");
           modalManager = modalManagerModule.modalManager;
           window.modalManager = modalManager;
         } catch (e) {

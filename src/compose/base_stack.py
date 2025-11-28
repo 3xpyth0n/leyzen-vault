@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -10,15 +11,48 @@ from common.constants import REPO_ROOT
 from common.env import resolve_env_file_name
 
 BASE_VOLUMES: OrderedDict[str, dict[str, object]] = OrderedDict(
-    (("orchestrator-logs", {"name": "leyzen-vault-orchestrator-logs"}),)
+    (("orchestrator-logs", {"name": "leyzen-orchestrator-logs"}),)
 )
 
 BASE_NETWORKS: OrderedDict[str, dict[str, object]] = OrderedDict(
     (
-        ("vault-net", {"driver": "bridge"}),
-        ("control-net", {"driver": "bridge"}),
+        ("vault-net", {"driver": "bridge", "name": "leyzen-vault-net"}),
+        ("control-net", {"driver": "bridge", "name": "leyzen-control-net"}),
     )
 )
+
+_PEM_CERT_HEADERS = ("-----BEGIN CERTIFICATE-----",)
+_PEM_KEY_HEADERS = (
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "-----BEGIN EC PRIVATE KEY-----",
+)
+_DEFAULT_PEM_BUNDLE_PATH = REPO_ROOT / "infra" / "haproxy" / "haproxy.pem"
+
+
+def _resolve_path(path_str: str, root_dir: Path) -> Path:
+    path = Path(path_str)
+    if not path.is_absolute():
+        return (root_dir / path).resolve()
+    return path.resolve()
+
+
+def _read_pem_text(path: Path, description: str, warnings: list[str]) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            return path.read_text(encoding="latin-1")
+        except OSError as exc:
+            warnings.append(f"{description} is not readable ({exc})")
+    except OSError as exc:
+        warnings.append(f"{description} is not readable ({exc})")
+    return None
+
+
+def _contains_block(text: str, headers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in headers)
 
 
 def _parse_port(
@@ -79,12 +113,7 @@ def validate_ssl_certificates(
         warnings.append("ENABLE_HTTPS=true but SSL_CERT_PATH is not set")
         return False, warnings
 
-    cert_path_str = cert_path.strip()
-    cert_file = Path(cert_path_str)
-    if not cert_file.is_absolute():
-        cert_file = (root_dir / cert_path_str).resolve()
-    else:
-        cert_file = cert_file.resolve()
+    cert_file = _resolve_path(cert_path.strip(), root_dir)
 
     if not cert_file.exists():
         warnings.append(f"SSL certificate file not found: {cert_file}")
@@ -94,14 +123,20 @@ def validate_ssl_certificates(
         warnings.append(f"SSL certificate path is not a file: {cert_file}")
         return False, warnings
 
+    cert_text = _read_pem_text(cert_file, "SSL certificate file", warnings)
+    if cert_text is None:
+        return False, warnings
+
+    is_valid = True
+    if not _contains_block(cert_text, _PEM_CERT_HEADERS):
+        warnings.append(
+            f"SSL certificate file does not contain a PEM certificate block: {cert_file}"
+        )
+        is_valid = False
+
     # If key_path is provided, validate it too
     if key_path and key_path.strip():
-        key_path_str = key_path.strip()
-        key_file = Path(key_path_str)
-        if not key_file.is_absolute():
-            key_file = (root_dir / key_path_str).resolve()
-        else:
-            key_file = key_file.resolve()
+        key_file = _resolve_path(key_path.strip(), root_dir)
 
         if not key_file.exists():
             warnings.append(f"SSL key file not found: {key_file}")
@@ -111,13 +146,90 @@ def validate_ssl_certificates(
             warnings.append(f"SSL key path is not a file: {key_file}")
             return False, warnings
 
-    return True, warnings
+        key_text = _read_pem_text(key_file, "SSL key file", warnings)
+        if key_text is None:
+            return False, warnings
+
+        if not _contains_block(key_text, _PEM_KEY_HEADERS):
+            warnings.append(
+                f"SSL key file does not contain a PEM private key block: {key_file}"
+            )
+            is_valid = False
+    else:
+        if not _contains_block(cert_text, _PEM_KEY_HEADERS):
+            warnings.append(
+                "SSL certificate file must contain the private key when SSL_KEY_PATH is not provided"
+            )
+            is_valid = False
+
+    return is_valid, warnings
+
+
+def prepare_ssl_certificate_bundle(
+    enable_https: bool,
+    cert_path: str | None,
+    key_path: str | None,
+    *,
+    root_dir: Path = REPO_ROOT,
+    output_path: Path | None = None,
+) -> tuple[Path | None, list[str]]:
+    """Ensure HAProxy has access to a PEM file that includes the cert and key."""
+
+    if not enable_https or not cert_path:
+        return None, []
+
+    warnings: list[str] = []
+    cert_file = _resolve_path(cert_path.strip(), root_dir)
+    pem_target = output_path or _DEFAULT_PEM_BUNDLE_PATH
+
+    def _write_pem(target: Path, content: str) -> bool:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.write_text(content if content.endswith("\n") else f"{content}\n")
+        except OSError as exc:
+            warnings.append(f"Could not write PEM bundle to {target} ({exc})")
+            return False
+        try:
+            os.chmod(target, 0o644)
+        except OSError as exc:
+            warnings.append(f"Could not update permissions for {target} ({exc})")
+        return True
+
+    if key_path and key_path.strip():
+        key_file = _resolve_path(key_path.strip(), root_dir)
+        cert_text = _read_pem_text(cert_file, "SSL certificate file", warnings)
+        key_text = _read_pem_text(key_file, "SSL key file", warnings)
+        if cert_text is None or key_text is None:
+            return None, warnings
+        combined = cert_text.rstrip() + "\n" + key_text.strip() + "\n"
+        if not _write_pem(pem_target, combined):
+            return None, warnings
+        return pem_target, warnings
+
+    cert_text = _read_pem_text(cert_file, "SSL certificate file", warnings)
+    if cert_text is None:
+        return None, warnings
+
+    if not _contains_block(cert_text, _PEM_KEY_HEADERS):
+        warnings.append(
+            "SSL certificate file must contain the private key when SSL_KEY_PATH is not provided"
+        )
+        return None, warnings
+
+    if cert_file != pem_target:
+        if not _write_pem(pem_target, cert_text):
+            return None, warnings
+        return pem_target, warnings
+
+    return cert_file, warnings
 
 
 def build_base_services(
     env: Mapping[str, str],
     web_containers: Sequence[str],
     web_container_string: str,
+    *,
+    ssl_cert_bundle_path: Path | None = None,
 ) -> OrderedDict[str, dict]:
     """Return the base services for the Leyzen stack.
 
@@ -171,13 +283,13 @@ def build_base_services(
 
     # Add SSL certificate volumes and HTTPS port if HTTPS is enabled
     if enable_https and ssl_cert_path:
-        # Resolve certificate paths for validation and Docker Compose
-        cert_path_input = ssl_cert_path.strip()
-        cert_path_host = Path(cert_path_input)
-        if not cert_path_host.is_absolute():
-            cert_path_host = (REPO_ROOT / cert_path_host).resolve()
-        else:
-            cert_path_host = cert_path_host.resolve()
+        bundle_host_path = ssl_cert_bundle_path
+        if bundle_host_path is None:
+            bundle_host_path, _ = prepare_ssl_certificate_bundle(
+                enable_https, ssl_cert_path, ssl_key_path, root_dir=REPO_ROOT
+            )
+
+        cert_path_host = bundle_host_path or _resolve_path(ssl_cert_path, REPO_ROOT)
 
         # Convert to relative path from repo root for Docker Compose consistency
         # If path is outside repo root, use absolute path
@@ -191,26 +303,6 @@ def build_base_services(
         # Mount certificate in container (use a standard location)
         cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
         haproxy_volumes.append(f"{cert_path_docker}:{cert_path_container}:ro")
-
-        # If key is provided separately, mount it too
-        if ssl_key_path:
-            key_path_input = ssl_key_path.strip()
-            key_path_host = Path(key_path_input)
-            if not key_path_host.is_absolute():
-                key_path_host = (REPO_ROOT / key_path_host).resolve()
-            else:
-                key_path_host = key_path_host.resolve()
-
-            # Convert to relative path from repo root for Docker Compose consistency
-            try:
-                key_path_rel = key_path_host.relative_to(REPO_ROOT)
-                key_path_docker = f"./{key_path_rel}"
-            except ValueError:
-                # Path is outside repo root, use absolute path
-                key_path_docker = str(key_path_host)
-
-            key_path_container = "/usr/local/etc/haproxy/ssl/key.pem"
-            haproxy_volumes.append(f"{key_path_docker}:{key_path_container}:ro")
 
         # Add HTTPS port (use configured port or default 8443:443)
         haproxy_ports.append(f"{https_port}:443")
@@ -322,4 +414,5 @@ __all__ = [
     "BASE_NETWORKS",
     "build_base_services",
     "validate_ssl_certificates",
+    "prepare_ssl_certificate_bundle",
 ]

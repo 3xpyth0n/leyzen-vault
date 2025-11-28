@@ -717,29 +717,46 @@ def setup_status():
 @auth_api_bp.route("/setup", methods=["POST"])
 @csrf.exempt  # Public endpoint (first-run setup), CSRF not needed
 def setup():
-    """Create the initial superadmin account (first-run setup).
+    """Create a user account with automatic superadmin role assignment if none exists.
 
-    This endpoint is only available when no users exist in the database.
-    After the first user is created, this endpoint returns 403.
+    SECURITY REQUIREMENT: SMTP configuration is mandatory before creating the superadmin account.
+    This ensures that email verification can be sent to the superadmin.
 
     Request body:
         {
             "email": "admin@example.com",
             "password": "securepassword",
-            "confirm_password": "securepassword",
-            "display_name": "Admin" (optional)
+            "encrypted_vaultspace_key": "encrypted-key" (optional, if provided will be stored)
         }
 
     Returns:
-        JSON with user info and JWT token
+        JSON with user info and email verification requirement.
+        Returns 400 error if SMTP is not configured or if email sending fails.
+
+    Raises:
+        400: If SMTP is not configured or email sending fails
+        500: If account creation fails
     """
-    # Check if setup is already complete
-    try:
-        if is_setup_complete(current_app):
-            return jsonify({"error": "Setup already complete"}), 403
-    except Exception as e:
-        current_app.logger.error(f"Error checking setup status: {e}")
-        return jsonify({"error": "Failed to check setup status"}), 500
+    from vault.blueprints.utils import get_client_ip
+
+    # Rate limiting: 5 attempts per minute per IP
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    if rate_limiter:
+        client_ip = get_client_ip() or "unknown"
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="auth_setup",
+            user_id=None,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
 
     data = request.get_json()
     if not data:
@@ -747,46 +764,105 @@ def setup():
 
     email = data.get("email", "").strip()
     password = data.get("password", "").strip()
-    confirm_password = data.get("confirm_password", "").strip()
+    encrypted_vaultspace_key = data.get("encrypted_vaultspace_key", "").strip()
 
-    if not email or not password or not confirm_password:
-        return (
-            jsonify({"error": "Email, password, and confirm_password are required"}),
-            400,
-        )
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
 
     if not validate_email(email):
         return jsonify({"error": "Invalid email format"}), 400
 
-    # Validate password match
-    if password != confirm_password:
-        return jsonify({"error": "Passwords do not match"}), 400
+    # Validate email domain against domain rules
+    from vault.services.domain_service import DomainService
 
-    # Validate password strength using centralized validator
-    from vault.utils.password_validator import validate_password_strength
+    domain_service = DomainService()
+    is_allowed, error_message = domain_service.validate_email_domain(email)
+    if not is_allowed:
+        return jsonify({"error": error_message or "Domain not allowed"}), 403
 
-    is_valid, error_message = validate_password_strength(password)
-    if not is_valid:
-        return jsonify({"error": error_message or "Invalid password"}), 400
-
-    auth_service = _get_auth_service()
-
-    try:
-        # Create superadmin user
-        user = auth_service.create_user(email, password, GlobalRole.SUPERADMIN)
-        # Don't generate token - user must login via /login to initialize master key
-        # token = auth_service._generate_token(user)
-
-        current_app.logger.info(
-            f"Setup completed: superadmin user created with email {email}"
-        )
-
+    # SECURITY: SMTP configuration is mandatory before creating the superadmin account
+    # This ensures email verification can be sent to the superadmin.
+    # Without SMTP, the superadmin account cannot be created.
+    settings = current_app.config.get("VAULT_SETTINGS")
+    if (
+        not settings
+        or not hasattr(settings, "smtp_config")
+        or settings.smtp_config is None
+    ):
         return (
             jsonify(
                 {
-                    "user": user.to_dict(),
-                    # Don't return token - user must login via /login to initialize master key
-                    "message": "Superadmin account created successfully. Please log in to continue.",
+                    "error": "SMTP configuration is required before creating the superadmin account. Please configure SMTP settings in your .env file and restart the application."
+                }
+            ),
+            400,
+        )
+
+    auth_service = _get_auth_service()
+    vaultspace_service = VaultSpaceService()
+
+    # Determine role: superadmin if none exists, otherwise user
+    superadmin_count = auth_service.count_superadmins()
+    user_role = GlobalRole.SUPERADMIN if superadmin_count == 0 else GlobalRole.USER
+
+    try:
+        # Create user
+        user = auth_service.create_user(email, password, user_role)
+
+        # Send verification email (always required)
+        from vault.services.email_verification_service import EmailVerificationService
+
+        email_verification_service = EmailVerificationService()
+        email_sent = email_verification_service.send_verification_email(
+            user_id=user.id,
+            base_url=None,
+        )
+
+        # Verify that email was sent successfully
+        if not email_sent:
+            # Rollback user creation if email sending failed
+            from vault.database.schema import db
+
+            db.session.delete(user)
+            db.session.commit()
+            return (
+                jsonify(
+                    {
+                        "error": "Failed to send verification email. Please check your SMTP configuration and try again."
+                    }
+                ),
+                500,
+            )
+
+        # Create Personal VaultSpace automatically
+        personal_vaultspace = vaultspace_service.create_vaultspace(
+            name="My Drive",
+            owner_user_id=user.id,
+            encrypted_metadata=None,
+        )
+
+        # If encrypted VaultSpace key is provided, store it
+        if encrypted_vaultspace_key:
+            from vault.services.encryption_service import EncryptionService
+
+            encryption_service = EncryptionService()
+            try:
+                encryption_service.create_vaultspace_key_entry(
+                    vaultspace_id=personal_vaultspace.id,
+                    user_id=user.id,
+                    encrypted_key=encrypted_vaultspace_key,
+                )
+            except ValueError as e:
+                current_app.logger.warning(f"Failed to store VaultSpace key: {e}")
+
+        # Note: Superadmin can login without email verification, but other users cannot
+        # Return email_verification_required to show verification modal in frontend
+        return (
+            jsonify(
+                {
+                    "user": user.to_dict(include_salt=False),
+                    "email_verification_required": True,
+                    "message": "Account created successfully. A verification email has been sent to your email address.",
                 }
             ),
             201,
@@ -795,7 +871,7 @@ def setup():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Setup error: {e}")
-        return jsonify({"error": "Failed to create superadmin account"}), 500
+        return jsonify({"error": "Failed to create account"}), 500
 
 
 @auth_api_bp.route("/account/email", methods=["PUT"])

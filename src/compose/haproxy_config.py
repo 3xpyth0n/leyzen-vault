@@ -36,7 +36,6 @@ def render_haproxy_config(
     *,
     enable_https: bool = False,
     ssl_cert_path: str | None = None,
-    ssl_key_path: str | None = None,
 ) -> str:
     """Return the HAProxy configuration for Leyzen Vault.
 
@@ -46,10 +45,7 @@ def render_haproxy_config(
         containers: List of container names for the backend servers.
         port: Backend port number.
         enable_https: If True, enable HTTPS frontend on port 443.
-        ssl_cert_path: Path to SSL certificate file (PEM format, can be combined cert+key).
-                      Used only if enable_https is True.
-        ssl_key_path: Path to SSL private key file (if separate from cert).
-                      Used only if enable_https is True and cert is not combined.
+        ssl_cert_path: Path to SSL PEM file that contains both certificate and key.
 
     Returns:
         HAProxy configuration string.
@@ -59,7 +55,6 @@ def render_haproxy_config(
         port,
         enable_https=enable_https,
         ssl_cert_path=ssl_cert_path,
-        ssl_key_path=ssl_key_path,
     )
 
 
@@ -69,7 +64,6 @@ def render_haproxy_config_vault(
     *,
     enable_https: bool = False,
     ssl_cert_path: str | None = None,
-    ssl_key_path: str | None = None,
 ) -> str:
     """Return the HAProxy configuration for Leyzen Vault.
 
@@ -77,10 +71,7 @@ def render_haproxy_config_vault(
         containers: List of container names for the backend servers.
         port: Backend port number.
         enable_https: If True, enable HTTPS frontend on port 443.
-        ssl_cert_path: Path to SSL certificate file (PEM format, can be combined cert+key).
-                      Used only if enable_https is True.
-        ssl_key_path: Path to SSL private key file (if separate from cert).
-                      Used only if enable_https is True and cert is not combined.
+        ssl_cert_path: Path to SSL PEM file that contains both certificate and key.
 
     Returns:
         HAProxy configuration string.
@@ -148,10 +139,7 @@ def render_haproxy_config_vault(
 
     # Add HTTPS frontend if enabled
     if enable_https and ssl_cert_path:
-        if ssl_key_path:
-            ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path} key {ssl_key_path}"
-        else:
-            ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path}"
+        ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path}"
 
         lines.extend(
             [

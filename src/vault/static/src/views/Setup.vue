@@ -1,83 +1,125 @@
 <template>
   <div class="setup-wrapper">
     <div class="setup-container glass glass-card">
-      <div class="setup-header">
-        <h1>Leyzen Vault Setup</h1>
-        <p class="setup-subtitle">
-          Welcome! Let's create your administrator account to get started.
-        </p>
+      <div class="slides-container">
+        <!-- Slide 1: Setup Form -->
+        <transition name="slide" mode="out-in">
+          <div v-if="currentSlide === 0" key="form" class="slide slide-form">
+            <div class="setup-header">
+              <h1>Leyzen Vault Setup</h1>
+              <p class="setup-subtitle">
+                Welcome! Let's create your administrator account to get started.
+              </p>
+            </div>
+
+            <form @submit.prevent="handleSetup" class="setup-form">
+              <div v-if="error" class="error-message glass">
+                {{ error }}
+              </div>
+
+              <div class="form-group">
+                <label for="email">Email Address</label>
+                <input
+                  id="email"
+                  v-model="email"
+                  type="email"
+                  placeholder="admin@example.com"
+                  required
+                  autocomplete="email"
+                  :disabled="loading"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <PasswordInput
+                  id="password"
+                  v-model="password"
+                  placeholder="Enter your password"
+                  required
+                  autocomplete="new-password"
+                  :disabled="loading"
+                  :minlength="12"
+                />
+                <p class="password-hint">
+                  Must be at least 12 characters with uppercase, lowercase, and
+                  digits
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <PasswordInput
+                  id="confirmPassword"
+                  v-model="confirmPassword"
+                  placeholder="Confirm your password"
+                  required
+                  autocomplete="new-password"
+                  :disabled="loading"
+                  :minlength="12"
+                />
+              </div>
+
+              <button
+                type="submit"
+                class="btn btn-primary btn-setup"
+                :disabled="loading || !email || !password || !confirmPassword"
+              >
+                {{
+                  loading
+                    ? "Creating Account..."
+                    : "Create Administrator Account"
+                }}
+              </button>
+            </form>
+          </div>
+
+          <!-- Slide 2: Verification Message -->
+          <div
+            v-else-if="currentSlide === 1"
+            key="verification"
+            class="slide slide-verification"
+          >
+            <div class="setup-header">
+              <h1>Account Created Successfully</h1>
+              <p class="setup-subtitle">
+                Your superadmin account has been created.
+              </p>
+            </div>
+
+            <div class="verification-content">
+              <div class="verification-icon">✓</div>
+              <div class="verification-info">
+                <p>
+                  A verification email has been sent to
+                  <strong>{{ email }}</strong
+                  >. Please check your inbox and click on the verification link
+                  in the email.
+                </p>
+                <p class="verification-warning">
+                  <strong>Important:</strong> While you can continue without
+                  verifying your email, all other users must verify their email
+                  address before they can access Leyzen Vault.
+                </p>
+              </div>
+              <div class="verification-actions">
+                <button
+                  class="btn btn-primary btn-continue"
+                  @click="continueToLogin"
+                >
+                  Continue Anyway
+                </button>
+                <button
+                  class="btn btn-secondary btn-verify"
+                  @click="goToVerificationPage"
+                >
+                  Go to Verification Page
+                </button>
+              </div>
+            </div>
+          </div>
+        </transition>
       </div>
-
-      <div v-if="success" class="success-section">
-        <div class="success-icon">✓</div>
-        <h2>Account Created Successfully!</h2>
-        <p class="success-message">
-          Your superadmin account has been created. Please log in to continue.
-        </p>
-        <button
-          type="button"
-          class="btn btn-primary btn-setup"
-          @click="goToLogin"
-        >
-          Go to Login
-        </button>
-      </div>
-
-      <form v-else @submit.prevent="handleSetup" class="setup-form">
-        <div v-if="error" class="error-message glass">
-          {{ error }}
-        </div>
-
-        <div class="form-group">
-          <label for="email">Email Address</label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            placeholder="admin@example.com"
-            required
-            autocomplete="email"
-            :disabled="loading"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="password">Password</label>
-          <PasswordInput
-            id="password"
-            v-model="password"
-            placeholder="Enter your password"
-            required
-            autocomplete="new-password"
-            :disabled="loading"
-            :minlength="12"
-          />
-          <p class="password-hint">
-            Must be at least 12 characters with uppercase, lowercase, and digits
-          </p>
-        </div>
-
-        <div class="form-group">
-          <label for="confirmPassword">Confirm Password</label>
-          <PasswordInput
-            id="confirmPassword"
-            v-model="confirmPassword"
-            placeholder="Confirm your password"
-            required
-            autocomplete="new-password"
-            :disabled="loading"
-            :minlength="12"
-          />
-        </div>
-
-        <button
-          type="submit"
-          class="btn btn-primary btn-setup"
-          :disabled="loading || !email || !password || !confirmPassword"
-        >
-          {{ loading ? "Creating Account..." : "Create Administrator Account" }}
-        </button>
-      </form>
     </div>
   </div>
 </template>
@@ -85,7 +127,7 @@
 <script>
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { auth } from "../services/api";
+import { auth, removeToken } from "../services/api";
 import PasswordInput from "../components/PasswordInput.vue";
 import { logger } from "../utils/logger";
 
@@ -101,7 +143,8 @@ export default {
     const confirmPassword = ref("");
     const error = ref("");
     const loading = ref(false);
-    const success = ref(false);
+    const currentSlide = ref(0); // 0 = form, 1 = verification
+    const createdUserId = ref(null);
 
     const clearAllStorage = () => {
       // Clear all localStorage items
@@ -174,35 +217,180 @@ export default {
           confirmPassword.value,
         );
 
-        // Force clear all storage again after setup to ensure no token remains
-        clearAllStorage();
+        // Check if email verification is required
+        if (response.email_verification_required) {
+          // Store user ID for verification page
+          createdUserId.value = response.user?.id;
 
-        // Verify that token is NOT stored (should be null)
-        const tokenAfterSetup = localStorage.getItem("jwt_token");
-        if (tokenAfterSetup) {
-          // Token was stored somehow - remove it
-          localStorage.removeItem("jwt_token");
-        }
-
-        // Verify no token in response
-        if (response.token) {
-          // Don't use the token even if it's in the response
-          delete response.token;
-        }
-
-        // Setup successful, show confirmation
-        if (response.user || response.message) {
-          success.value = true;
           // Clear password from memory
           password.value = "";
           confirmPassword.value = "";
           loading.value = false;
-        } else {
-          // Unexpected response format
-          error.value =
-            "Setup completed but received unexpected response format";
-          loading.value = false;
+
+          // Slide to verification message
+          currentSlide.value = 1;
+          return;
         }
+
+        // IMMEDIATELY check for and remove any token that might have been created
+        // This must happen BEFORE any other operations
+        let tokenCheck = localStorage.getItem("jwt_token");
+        if (tokenCheck) {
+          logger.warn("Token detected after setup! Removing immediately...");
+          // Try multiple removal methods
+          localStorage.removeItem("jwt_token");
+          delete localStorage.jwt_token;
+          // Verify removal
+          tokenCheck = localStorage.getItem("jwt_token");
+          if (tokenCheck) {
+            logger.error(
+              "Token persists after removal! Forcing complete clear...",
+            );
+            localStorage.clear();
+          }
+        }
+
+        // Clear password fields before redirecting
+        password.value = "";
+        confirmPassword.value = "";
+        loading.value = false;
+
+        // AGGRESSIVE token removal: remove explicitly BEFORE clearing
+        // This ensures token is gone even if clear() doesn't work
+        try {
+          localStorage.removeItem("jwt_token");
+          delete localStorage.jwt_token;
+        } catch (err) {
+          // Ignore
+        }
+
+        // Completely clear all browser storage - this is a fresh setup
+        // There's nothing to preserve, so clear everything
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch (err) {
+          logger.error("Failed to clear browser storage:", err);
+        }
+
+        // AGGRESSIVE verification: check multiple times and force removal
+        for (let i = 0; i < 5; i++) {
+          const finalTokenCheck = localStorage.getItem("jwt_token");
+          if (finalTokenCheck) {
+            logger.error(
+              `Token still exists after clear (attempt ${i + 1})! Forcing removal...`,
+            );
+            // Try every possible removal method
+            try {
+              localStorage.removeItem("jwt_token");
+              delete localStorage.jwt_token;
+              // If still exists, clear everything again
+              if (localStorage.getItem("jwt_token")) {
+                localStorage.clear();
+                sessionStorage.clear();
+              }
+            } catch (e) {
+              localStorage.clear();
+            }
+          } else {
+            break; // Token is gone, exit loop
+          }
+        }
+
+        // Final check: if token still exists, it's a critical error
+        const ultimateCheck = localStorage.getItem("jwt_token");
+        if (ultimateCheck) {
+          logger.error(
+            "CRITICAL: Token persists after all removal attempts! This is a bug.",
+          );
+          // Last resort: clear and log
+          localStorage.clear();
+          sessionStorage.clear();
+        }
+
+        // Explicitly delete session cookie (Flask session)
+        // This must be done separately to ensure it's removed
+        try {
+          const expires = "Thu, 01 Jan 1970 00:00:00 GMT";
+          const hostname = window.location.hostname;
+
+          // Delete session cookie with all possible combinations
+          document.cookie = `session=;expires=${expires};path=/`;
+          document.cookie = `session=;expires=${expires};path=/;SameSite=Lax`;
+          document.cookie = `session=;expires=${expires};path=/;SameSite=Strict`;
+          if (hostname) {
+            document.cookie = `session=;expires=${expires};path=/;domain=${hostname}`;
+            if (hostname.indexOf(".") > 0) {
+              document.cookie = `session=;expires=${expires};path=/;domain=.${hostname}`;
+            }
+          }
+        } catch (err) {
+          logger.error("Failed to clear session cookie:", err);
+        }
+
+        // FINAL check before setting flag: if token still exists, try one more aggressive removal
+        const preRedirectCheck = localStorage.getItem("jwt_token");
+        if (preRedirectCheck) {
+          logger.error(
+            "CRITICAL: Token exists right before redirect! Attempting final removal...",
+          );
+          // Try one last aggressive removal: save all keys except jwt_token, clear, restore
+          try {
+            const keysToKeep = {};
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key !== "jwt_token") {
+                keysToKeep[key] = localStorage.getItem(key);
+              }
+            }
+            // Clear everything
+            localStorage.clear();
+            // Restore other keys (but NOT jwt_token)
+            for (const [key, value] of Object.entries(keysToKeep)) {
+              localStorage.setItem(key, value);
+            }
+            // Verify jwt_token is gone
+            if (localStorage.getItem("jwt_token")) {
+              // Still exists - clear everything as last resort
+              logger.error(
+                "Token still exists after selective clear! Clearing everything.",
+              );
+              localStorage.clear();
+            }
+          } catch (e) {
+            localStorage.clear();
+          }
+        }
+
+        // Set a flag in sessionStorage to indicate we're coming from setup
+        // This must be set AFTER clearing, so it survives the redirect
+        // This is more reliable than query params which can be lost
+        try {
+          sessionStorage.setItem("_setup_complete", "1");
+        } catch (err) {
+          logger.error("Failed to set setup flag:", err);
+        }
+
+        // Use window.location.replace instead of href to prevent back navigation
+        // This ensures the login guard checks the actual state, not a stale one
+        // Add a small delay to ensure storage operations complete
+        setTimeout(() => {
+          // One final check before redirect
+          const finalPreRedirectCheck = localStorage.getItem("jwt_token");
+          if (finalPreRedirectCheck) {
+            logger.error(
+              "Token exists at redirect time - guards must handle this",
+            );
+            // Try one more time
+            localStorage.removeItem("jwt_token");
+            delete localStorage.jwt_token;
+            if (localStorage.getItem("jwt_token")) {
+              localStorage.clear();
+            }
+          }
+          window.location.replace("/login?setup=done");
+        }, 100);
+        return;
       } catch (err) {
         error.value = err.message || "Setup failed. Please try again.";
         logger.error("Setup error:", err);
@@ -210,8 +398,19 @@ export default {
       }
     };
 
-    const goToLogin = () => {
-      router.push("/login");
+    const continueToLogin = () => {
+      // Redirect to login
+      setTimeout(() => {
+        window.location.replace("/login?setup=done");
+      }, 100);
+    };
+
+    const goToVerificationPage = () => {
+      // Redirect to email verification page
+      router.push({
+        name: "EmailVerification",
+        query: { email: email.value, user_id: createdUserId.value },
+      });
     };
 
     return {
@@ -220,9 +419,10 @@ export default {
       confirmPassword,
       error,
       loading,
-      success,
+      currentSlide,
       handleSetup,
-      goToLogin,
+      continueToLogin,
+      goToVerificationPage,
     };
   },
 };
@@ -243,6 +443,57 @@ export default {
   max-width: 480px;
   padding: 3rem;
   border-radius: 1.5rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.slides-container {
+  position: relative;
+  width: 100%;
+  min-height: 400px;
+}
+
+.slide {
+  width: 100%;
+  animation-duration: 0.4s;
+  animation-timing-function: ease-in-out;
+}
+
+.slide-form,
+.slide-verification {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Slide transitions */
+.slide-enter-active {
+  animation: slideInRight 0.4s ease-in-out;
+}
+
+.slide-leave-active {
+  animation: slideOutLeft 0.4s ease-in-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
 }
 
 .setup-header {
@@ -366,28 +617,95 @@ export default {
   margin-top: -12px !important;
 }
 
-.success-section {
+/* Verification Slide Styles */
+.verification-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
   text-align: center;
-  padding: 2rem 0;
 }
 
-.success-icon {
-  font-size: 4rem;
-  color: #86efac;
-  margin-bottom: 1rem;
+.verification-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: white;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
 }
 
-.success-section h2 {
-  margin: 0 0 1rem 0;
-  color: #e6eef6;
-  font-size: 1.5rem;
-  font-weight: 600;
+.verification-info {
+  width: 100%;
 }
 
-.success-message {
-  color: #94a3b8;
-  margin-bottom: 2rem;
+.verification-info p {
+  color: #cbd5e1;
   line-height: 1.6;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.verification-info strong {
+  color: #e6eef6;
+}
+
+.verification-warning {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.verification-warning strong {
+  color: #fbbf24;
+}
+
+.verification-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-continue,
+.btn-verify {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
   font-size: 1rem;
+}
+
+.btn-continue {
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  color: white;
+}
+
+.btn-continue:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+}
+
+.btn-verify {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+}
+
+.btn-verify:hover {
+  background: rgba(148, 163, 184, 0.3);
+  color: #e6eef6;
 }
 </style>

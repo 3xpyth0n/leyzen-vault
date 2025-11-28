@@ -10,6 +10,7 @@ node_modules/
 docker-compose.yml
 docker-generated.yml
 infra/haproxy/haproxy.cfg
+infra/haproxy/haproxy.pem
 src/orchestrator/logs/
 
 *.pyc

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -629,18 +630,61 @@ func (m *Model) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle)
 }
 
+const (
+	nameWidth   = 28
+	statusWidth = 36
+	ageHeader   = "AGE"
+)
+
+// regex to remove ANSI escape sequences
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func visibleLen(s string) int {
+	return len(ansiRegex.ReplaceAllString(s, ""))
+}
+
+func padRightColored(s string, width int) string {
+	visible := visibleLen(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
+}
+
 func (m *Model) renderStatusPanel() string {
 	if len(m.statuses) == 0 {
 		return m.theme.Pane.Render("No containers running. Press 'a' to start the stack or 'w' to configure.")
 	}
 
+	// Calculate the maximum width for the AGE column
+	ageWidth := len(ageHeader)
+	for _, st := range m.statuses {
+		if len(st.Age) > ageWidth {
+			ageWidth = len(st.Age)
+		}
+	}
+
 	var rows []string
-	header := fmt.Sprintf("%-28s  %-36s  %s", "NAME", "STATUS", "AGE")
-	rows = append(rows, m.theme.Accent.Render(header))
-	rows = append(rows, strings.Repeat("─", len(header)))
+	header := fmt.Sprintf("%s  %s  %s",
+		padRightColored(m.theme.Accent.Render("NAME"), nameWidth),
+		padRightColored(m.theme.Accent.Render("STATUS"), statusWidth),
+		m.theme.Accent.Render(ageHeader),
+	)
+	rows = append(rows, header)
+	rows = append(rows, fmt.Sprintf("%s  %s  %s",
+		strings.Repeat("─", nameWidth),
+		strings.Repeat("─", statusWidth),
+		strings.Repeat("─", ageWidth),
+	))
 
 	for _, st := range m.statuses {
-		rows = append(rows, fmt.Sprintf("%-28s  %-36s  %s", st.Name, m.formatStatus(st), st.Age))
+		statusFormatted := m.formatStatus(st)
+		row := fmt.Sprintf("%s  %s  %s",
+			padRightColored(st.Name, nameWidth),
+			padRightColored(statusFormatted, statusWidth),
+			st.Age,
+		)
+		rows = append(rows, row)
 	}
 
 	return m.theme.Pane.Render(strings.Join(rows, "\n"))

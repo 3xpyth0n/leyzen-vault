@@ -210,6 +210,54 @@ const routes = [
     name: "Login",
     component: () => import("../views/Login.vue"),
     beforeEnter: async (to, from, next) => {
+      // If coming from setup, completely clear all localStorage
+      // This is critical: setup should never leave any state, so clear everything
+      // Check both query param and sessionStorage flag
+      const comingFromSetup =
+        to.query.setup === "done" ||
+        sessionStorage.getItem("_setup_complete") === "1";
+      if (comingFromSetup) {
+        // AGGRESSIVE token removal: remove explicitly first
+        try {
+          localStorage.removeItem("jwt_token");
+          delete localStorage.jwt_token;
+        } catch (err) {
+          // Ignore
+        }
+
+        // Completely clear all localStorage - this is a fresh setup
+        // There's nothing to preserve, so clear everything
+        try {
+          localStorage.clear();
+          // Clear the flag after using it
+          sessionStorage.removeItem("_setup_complete");
+        } catch (err) {
+          // Ignore errors but try to clear flag anyway
+          try {
+            sessionStorage.removeItem("_setup_complete");
+          } catch (e) {
+            // Ignore
+          }
+        }
+
+        // Final verification: if token still exists, it was recréé - remove it again
+        const tokenAfterClear = localStorage.getItem("jwt_token");
+        if (tokenAfterClear) {
+          console.warn(
+            "Token detected in login guard after clear! Removing again...",
+          );
+          localStorage.removeItem("jwt_token");
+          delete localStorage.jwt_token;
+          if (localStorage.getItem("jwt_token")) {
+            localStorage.clear();
+          }
+        }
+
+        // Always allow access when coming from setup, regardless of any state
+        next();
+        return;
+      }
+
       // Check if user is authenticated
       if (isAuthenticated()) {
         next("/dashboard");
@@ -377,6 +425,29 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Skip setup check for other public routes
+  // Special handling for Login with setup=done query param or sessionStorage flag
+  const comingFromSetup =
+    to.query.setup === "done" ||
+    sessionStorage.getItem("_setup_complete") === "1";
+  if (to.name === "Login" && comingFromSetup) {
+    // Coming from setup - completely clear all localStorage
+    // This is a fresh setup, there's nothing to preserve
+    try {
+      localStorage.clear();
+      // Clear the flag after using it
+      sessionStorage.removeItem("_setup_complete");
+    } catch (err) {
+      // Ignore errors but try to clear flag anyway
+      try {
+        sessionStorage.removeItem("_setup_complete");
+      } catch (e) {
+        // Ignore
+      }
+    }
+    next();
+    return;
+  }
+
   if (
     to.name === "Setup" ||
     to.name === "Login" ||

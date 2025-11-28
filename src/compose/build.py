@@ -30,6 +30,7 @@ from compose.base_stack import (
     BASE_NETWORKS,
     BASE_VOLUMES,
     build_base_services,
+    prepare_ssl_certificate_bundle,
     validate_ssl_certificates,
 )
 from compose.haproxy_config import render_haproxy_config_vault
@@ -242,13 +243,19 @@ def build_compose_manifest(
     *,
     web_containers: list[str] | None = None,
     web_container_string: str | None = None,
+    ssl_cert_bundle_path: Path | None = None,
 ) -> OrderedDict[str, object]:
     """Construct the docker-compose manifest for Leyzen Vault."""
 
     if web_containers is None or web_container_string is None:
         web_containers, web_container_string = resolve_web_containers(env)
 
-    base_services = build_base_services(env, web_containers, web_container_string)
+    base_services = build_base_services(
+        env,
+        web_containers,
+        web_container_string,
+        ssl_cert_bundle_path=ssl_cert_bundle_path,
+    )
     vault_services = build_vault_services(env, web_containers)
     vault_volumes = build_vault_volumes(web_containers)
     postgres_service = build_postgres_service(env)
@@ -412,18 +419,23 @@ def main() -> None:
             print("[haproxy] HTTPS: enabled")
             if ssl_cert_path:
                 print(f"[haproxy] SSL certificate: {ssl_cert_path}")
-            if ssl_key_path:
-                print(f"[haproxy] SSL key: {ssl_key_path}")
     else:
         print("[haproxy] HTTPS: disabled")
 
+    ssl_cert_bundle_path: Path | None = None
+    if enable_https and ssl_cert_path:
+        ssl_cert_bundle_path, bundle_warnings = prepare_ssl_certificate_bundle(
+            enable_https, ssl_cert_path, ssl_key_path, root_dir=REPO_ROOT
+        )
+        for warning in bundle_warnings:
+            print(f"[warning] {warning}")
+        if ssl_cert_bundle_path:
+            print(f"[haproxy] SSL bundle: {ssl_cert_bundle_path}")
+
     # Prepare container paths for SSL certificates
     ssl_cert_path_container: str | None = None
-    ssl_key_path_container: str | None = None
     if enable_https and ssl_cert_path:
         ssl_cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
-        if ssl_key_path:
-            ssl_key_path_container = "/usr/local/etc/haproxy/ssl/key.pem"
 
     # Generate HAProxy configuration
     haproxy_config = render_haproxy_config_vault(
@@ -431,7 +443,6 @@ def main() -> None:
         backend_port,
         enable_https=enable_https,
         ssl_cert_path=ssl_cert_path_container,
-        ssl_key_path=ssl_key_path_container,
     )
     HAPROXY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     HAPROXY_CONFIG_PATH.write_text(haproxy_config)
@@ -446,6 +457,7 @@ def main() -> None:
         env,
         web_containers=web_containers,
         web_container_string=web_container_string,
+        ssl_cert_bundle_path=ssl_cert_bundle_path,
     )
 
     write_manifest(manifest, OUTPUT_FILE)
