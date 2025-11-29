@@ -43,6 +43,46 @@
           <Icon name="trash" :size="20" class="sidebar-icon" />
           <span class="sidebar-label">Trash</span>
         </button>
+
+        <!-- Pinned VaultSpaces Section -->
+        <div v-if="pinnedVaultSpaces.length > 0" class="pinned-section">
+          <div class="pinned-section-header">
+            <span v-if="!sidebarCollapsed" class="pinned-section-title"
+              >Pinned</span
+            >
+            <span
+              v-else
+              class="pinned-section-icon"
+              v-html="getIcon('pin', 20)"
+            ></span>
+          </div>
+          <transition-group
+            name="pinned-item"
+            tag="div"
+            class="pinned-items-container"
+          >
+            <button
+              v-for="vaultspace in pinnedVaultSpaces"
+              :key="vaultspace.id"
+              @click="openVaultSpace(vaultspace.id)"
+              class="sidebar-item pinned-item"
+              :class="{
+                'router-link-active':
+                  $route.path === `/vaultspace/${vaultspace.id}`,
+                'pinned-item-disintegrating': disintegratingPinnedItems.has(
+                  vaultspace.id,
+                ),
+                'pinned-item-updating': updatingPinnedItems.has(vaultspace.id),
+              }"
+            >
+              <span
+                class="sidebar-icon pinned-icon"
+                v-html="getIcon(vaultspace.icon_name || 'folder', 20)"
+              ></span>
+              <span class="sidebar-label">{{ vaultspace.name }}</span>
+            </button>
+          </transition-group>
+        </div>
       </nav>
       <button
         @click="toggleSidebar"
@@ -111,7 +151,7 @@
 <script>
 import Icon from "./Icon.vue";
 import ConfirmationModal from "./ConfirmationModal.vue";
-import { auth, account } from "../services/api";
+import { auth, account, vaultspaces } from "../services/api";
 
 export default {
   name: "AppLayout",
@@ -126,6 +166,13 @@ export default {
       showLogoutModal: false,
       isAdmin: false,
       loading: true,
+      pinnedVaultSpaces: [],
+      loadingPinned: false,
+      pinnedVaultSpacesChangedHandler: null,
+      vaultspaceUpdatedHandler: null,
+      vaultspaceDeletedHandler: null,
+      disintegratingPinnedItems: new Set(),
+      updatingPinnedItems: new Set(),
     };
   },
   computed: {
@@ -141,6 +188,34 @@ export default {
     },
   },
   methods: {
+    getIcon(iconName, size = 24) {
+      if (!window.Icons || !window.Icons[iconName]) {
+        return "";
+      }
+      const iconFn = window.Icons[iconName];
+      if (typeof iconFn === "function") {
+        return iconFn.call(window.Icons, size, "currentColor");
+      }
+      return "";
+    },
+    async loadPinnedVaultSpaces() {
+      this.loadingPinned = true;
+      try {
+        this.pinnedVaultSpaces = await vaultspaces.listPinned();
+      } catch (err) {
+        console.error("Failed to load pinned VaultSpaces:", err);
+        this.pinnedVaultSpaces = [];
+      } finally {
+        this.loadingPinned = false;
+      }
+    },
+    refreshPinnedVaultSpaces() {
+      // Force refresh pinned VaultSpaces
+      this.loadPinnedVaultSpaces();
+    },
+    openVaultSpace(vaultspaceId) {
+      this.$router.push(`/vaultspace/${vaultspaceId}`);
+    },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
       // Save preference to localStorage
@@ -195,6 +270,93 @@ export default {
       console.error("Failed to load account info:", err);
     } finally {
       this.loading = false;
+    }
+
+    // Load pinned VaultSpaces
+    await this.loadPinnedVaultSpaces();
+
+    // Listen for changes to pinned VaultSpaces via document event
+    this.pinnedVaultSpacesChangedHandler = () => {
+      this.refreshPinnedVaultSpaces();
+    };
+    document.addEventListener(
+      "pinned-vaultspaces-changed",
+      this.pinnedVaultSpacesChangedHandler,
+    );
+
+    // Listen for VaultSpace updates (rename, icon change)
+    this.vaultspaceUpdatedHandler = (event) => {
+      const { vaultspaceId, vaultspace } = event.detail;
+      // Update the vaultspace in pinned list if it exists
+      const index = this.pinnedVaultSpaces.findIndex(
+        (vs) => vs.id === vaultspaceId,
+      );
+      if (index >= 0) {
+        // Trigger update animation
+        this.updatingPinnedItems.add(vaultspaceId);
+        setTimeout(() => {
+          this.updatingPinnedItems.delete(vaultspaceId);
+        }, 300);
+
+        // Replace the vaultspace object completely to trigger reactivity
+        this.pinnedVaultSpaces.splice(index, 1, vaultspace);
+      } else {
+        // Refresh full list if vaultspace not found (may have been pinned in the meantime)
+        this.refreshPinnedVaultSpaces();
+      }
+    };
+    document.addEventListener(
+      "vaultspace-updated",
+      this.vaultspaceUpdatedHandler,
+    );
+
+    // Listen for VaultSpace deletion
+    this.vaultspaceDeletedHandler = async (event) => {
+      const { vaultspaceId } = event.detail;
+      // Check if item is in pinned list
+      const exists = this.pinnedVaultSpaces.some(
+        (vs) => vs.id === vaultspaceId,
+      );
+      if (exists) {
+        // Start disintegration animation
+        this.disintegratingPinnedItems.add(vaultspaceId);
+
+        // Wait for animation to complete (600ms)
+        await new Promise((resolve) => setTimeout(resolve, 600));
+
+        // Remove from pinned list after animation
+        this.pinnedVaultSpaces = this.pinnedVaultSpaces.filter(
+          (vs) => vs.id !== vaultspaceId,
+        );
+
+        // Clean up animation state
+        this.disintegratingPinnedItems.delete(vaultspaceId);
+      }
+    };
+    document.addEventListener(
+      "vaultspace-deleted",
+      this.vaultspaceDeletedHandler,
+    );
+  },
+  beforeUnmount() {
+    // Remove document event listeners
+    if (this.pinnedVaultSpacesChangedHandler) {
+      document.removeEventListener(
+        "pinned-vaultspaces-changed",
+        this.pinnedVaultSpacesChangedHandler,
+      );
+    }
+    if (this.vaultspaceUpdatedHandler) {
+      document.removeEventListener(
+        "vaultspace-updated",
+        this.vaultspaceUpdatedHandler,
+      );
+    }
+    if (this.vaultspaceDeletedHandler) {
+      document.removeEventListener(
+        "vaultspace-deleted",
+        this.vaultspaceDeletedHandler,
+      );
     }
   },
 };
@@ -408,6 +570,150 @@ export default {
   min-width: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Pinned Section */
+.pinned-section {
+  margin-top: 0.25rem;
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.pinned-section-header {
+  padding: 0.25rem 0.75rem 0.75rem 0.25rem;
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar.collapsed .pinned-section-header {
+  padding: 0rem;
+}
+
+.pinned-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pinned-section-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: #94a3b8;
+}
+
+.pinned-section-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pinned-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.pinned-item {
+  padding-left: 0.75rem;
+}
+
+.pinned-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.pinned-icon :deep(svg) {
+  width: 20px;
+  height: 20px;
+  color: currentColor;
+}
+
+/* Pinned item animations */
+@keyframes pinnedItemDisintegrate {
+  0% {
+    opacity: 1;
+    filter: blur(0px);
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    filter: blur(2px);
+    transform: translateX(-5px) scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateX(-15px) scale(0.8);
+  }
+}
+
+@keyframes pinnedItemFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+@keyframes pinnedItemUpdate {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pinned-item-disintegrating {
+  animation: pinnedItemDisintegrate 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+  will-change: opacity, transform, filter;
+}
+
+.pinned-item-updating {
+  animation: pinnedItemUpdate 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+/* Transition group animations for pinned items */
+.pinned-item-enter-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pinned-item-leave-active {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+  width: 100%;
+  z-index: 1;
+}
+
+.pinned-item-enter-from {
+  opacity: 0;
+  transform: scale(0.9) translateX(-10px);
+}
+
+.pinned-item-leave-to {
+  opacity: 0;
+  filter: blur(8px);
+  transform: translateX(-15px) scale(0.8);
+}
+
+.pinned-item-move {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Main Content */

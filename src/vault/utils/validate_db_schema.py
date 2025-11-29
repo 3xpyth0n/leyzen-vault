@@ -46,6 +46,7 @@ from vault.database.schema import (
     User,
     VaultSpace,
     VaultSpaceKey,
+    UserPinnedVaultSpace,
     File,
     FileKey,
     Webhook,
@@ -69,6 +70,7 @@ from vault.database.schema import (
     SystemSettings,
     SystemSecrets,
     ApiKey,
+    SchemaMigration,
 )
 
 # Expected tables (from __tablename__ attributes)
@@ -77,6 +79,7 @@ EXPECTED_TABLES = {
     "users",
     "vaultspaces",
     "vaultspace_keys",
+    "user_pinned_vaultspaces",
     "files",
     "file_keys",
     "webhooks",
@@ -100,6 +103,7 @@ EXPECTED_TABLES = {
     "system_settings",
     "system_secrets",
     "api_keys",
+    "schema_migrations",
 }
 
 

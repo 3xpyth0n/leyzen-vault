@@ -98,7 +98,7 @@ window.Icons = {
   // Settings icon
   settings: function (size, color) {
     return this.createSVG(
-      '<circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6m9-9h-6m-6 0H1m15.364 6.364l-4.243-4.243m-4.242 0L6.636 17.364m10.728 0l-4.243-4.243m-4.242 0L6.636 6.636"></path>',
+      '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle>',
       size,
       color,
     );
@@ -369,7 +369,7 @@ window.Icons = {
   // School/education icon
   school: function (size, color) {
     return this.createSVG(
-      '<path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2v-5M6 12l4-2M6 12l-4-2m8 4l4-2m0 4v5c0 1.1-.9 2-2 2h-2a2 2 0 0 1-2-2v-5m0 0l-4-2m4 2l4-2"></path>',
+      '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"></path><path d="M22 10v6"></path><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"></path>',
       size,
       color,
     );
@@ -514,6 +514,33 @@ window.Icons = {
   plane: function (size, color) {
     return this.createSVG(
       '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Pin icon (for pinning VaultSpaces)
+  pin: function (size, color) {
+    return this.createSVG(
+      '<path d="M9 4v6l-2 4v2h10v-2l-2 -4v-6"></path><path d="M12 16l0 5"></path><path d="M8 4l8 0"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Unpin icon (for unpinning VaultSpaces)
+  unpin: function (size, color) {
+    return this.createSVG(
+      '<path d="M3 3l18 18"></path><path d="M15 4.5l-3.249 3.249m-2.57 1.433l-2.181 .818l-1.5 1.5l7 7l1.5 -1.5l.82 -2.186m1.43 -2.563l3.25 -3.251"></path><path d="M9 15l-4.5 4.5"></path><path d="M14.5 4l5.5 5.5"></path>',
+      size,
+      color,
+    );
+  },
+
+  // Pin filled icon (deprecated - kept for backward compatibility)
+  "pin-filled": function (size, color) {
+    return this.createSVG(
+      '<path d="M9 4v6l-2 4v2h10v-2l-2 -4v-6"></path><path d="M12 16l0 5"></path><path d="M8 4l8 0"></path>',
       size,
       color,
     );
@@ -680,7 +707,7 @@ window.Icons = {
     const ext = fileName ? fileName.split(".").pop()?.toLowerCase() || "" : "";
 
     // Check mime type first
-    if (mimeType) {
+    if (mimeType && typeof mimeType === "string") {
       // Images
       if (mimeType.startsWith("image/")) {
         return "image";

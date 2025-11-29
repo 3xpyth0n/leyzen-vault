@@ -950,6 +950,58 @@ export const vaultspaces = {
   },
 
   /**
+   * Pin a VaultSpace for quick access.
+   *
+   * @param {string} vaultspaceId - VaultSpace ID to pin
+   * @returns {Promise<object>} Pin information
+   */
+  async pin(vaultspaceId) {
+    const response = await apiRequest(`/vaultspaces/${vaultspaceId}/pin`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to pin VaultSpace");
+    }
+
+    const data = await response.json();
+    return data.pinned;
+  },
+
+  /**
+   * Unpin a VaultSpace.
+   *
+   * @param {string} vaultspaceId - VaultSpace ID to unpin
+   * @returns {Promise<void>}
+   */
+  async unpin(vaultspaceId) {
+    const response = await apiRequest(`/vaultspaces/${vaultspaceId}/pin`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to unpin VaultSpace");
+    }
+  },
+
+  /**
+   * List all pinned VaultSpaces for current user.
+   *
+   * @returns {Promise<Array>} List of pinned VaultSpaces
+   */
+  async listPinned() {
+    const response = await apiRequest("/vaultspaces/pinned");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to list pinned VaultSpaces");
+    }
+    const data = await response.json();
+    return data.vaultspaces || [];
+  },
+
+  /**
    * Share VaultSpace with a user.
    *
    * @param {string} vaultspaceId - VaultSpace ID

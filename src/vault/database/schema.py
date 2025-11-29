@@ -369,6 +369,54 @@ class VaultSpaceKey(db.Model):
         return f"<VaultSpaceKey vaultspace={self.vaultspace_id} user={self.user_id}>"
 
 
+class UserPinnedVaultSpace(db.Model):
+    """User pinned VaultSpace for quick access."""
+
+    __tablename__ = "user_pinned_vaultspaces"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    vaultspace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("vaultspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    pinned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    vaultspace: Mapped["VaultSpace"] = relationship("VaultSpace")
+
+    # Unique constraint: one pin per user per vaultspace
+    __table_args__ = (
+        Index(
+            "ix_user_pinned_vaultspaces_user_vaultspace",
+            "user_id",
+            "vaultspace_id",
+            unique=True,
+        ),
+        Index("ix_user_pinned_vaultspaces_user", "user_id"),
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "vaultspace_id": self.vaultspace_id,
+            "pinned_at": self.pinned_at.isoformat(),
+        }
+
+    def __repr__(self) -> str:
+        return f"<UserPinnedVaultSpace user={self.user_id} vaultspace={self.vaultspace_id}>"
+
+
 class File(db.Model):
     """File model."""
 
@@ -1478,6 +1526,37 @@ class SystemSecrets(db.Model):
         return f"<SystemSecrets key={self.key}>"
 
 
+class SchemaMigration(db.Model):
+    """Schema migration tracking for database migrations."""
+
+    __tablename__ = "schema_migrations"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    migration_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True
+    )
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_schema_migrations_name", "migration_name"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "migration_name": self.migration_name,
+            "version": self.version,
+            "applied_at": self.applied_at.isoformat(),
+        }
+
+    def __repr__(self) -> str:
+        return f"<SchemaMigration {self.migration_name} v{self.version}>"
+
+
 class ApiKey(db.Model):
     """API key model for automation and external integrations."""
 
@@ -2029,485 +2108,24 @@ def init_db(app) -> None:
 
             time.sleep(0.5)
 
-            # Validate api_keys.key_prefix column can store full prefixes (e.g., "leyz_<base64>")
-            from sqlalchemy import inspect as sql_inspect
-            from sqlalchemy.sql import text as sql_text
+            # Run database migrations using the uniform migration system
+            from vault.database.migrations.registry import run_migrations
 
             try:
-                desired_prefix_length = 64
-                inspector = sql_inspect(db.engine)
-
-                # Ensure the api_keys table exists before validating column length
-                # Handles both fresh installs and upgrades
-                if "api_keys" not in inspector.get_table_names():
-                    try:
-                        ApiKey.__table__.create(bind=db.engine, checkfirst=True)
-                    except Exception:
-                        # Continue to column verification below
-                        pass
-
-                    # Refresh inspector to pick up the newly created table if creation succeeded
-                    inspector = sql_inspect(db.engine)
-
-                if "api_keys" in inspector.get_table_names():
-                    columns = inspector.get_columns("api_keys")
-                    key_prefix_column = next(
-                        (col for col in columns if col.get("name") == "key_prefix"),
-                        None,
-                    )
-
-                    if key_prefix_column:
-                        column_type = key_prefix_column.get("type")
-                        current_length = (
-                            column_type.length
-                            if hasattr(column_type, "length")
-                            else None
-                        )
-
-                        if (
-                            current_length is not None
-                            and current_length < desired_prefix_length
-                        ):
-                            db.session.execute(
-                                sql_text(
-                                    f"ALTER TABLE api_keys ALTER COLUMN key_prefix TYPE VARCHAR({desired_prefix_length})"
-                                )
-                            )
-                            db.session.commit()
-
-                            log_msg = (
-                                "[INIT] api_keys.key_prefix length increased "
-                                f"from {current_length} to {desired_prefix_length}"
-                            )
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.info(log_msg)
-                            print(log_msg, file=sys.stderr, flush=True)
-                else:
-                    log_msg = "[WARNING] api_keys table missing; could not verify key_prefix length"
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.warning(log_msg)
-                    print(log_msg, file=sys.stderr, flush=True)
-            except Exception as api_key_prefix_error:
-                log_msg = (
-                    "[WARNING] Failed to ensure api_keys.key_prefix length: "
-                    f"{api_key_prefix_error}"
-                )
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.warning(log_msg)
-                print(log_msg, file=sys.stderr, flush=True)
-
-            # CRITICAL: Always ensure jti column exists after db.create_all()
-            # SQLAlchemy may not create nullable columns correctly in some cases
-            # We must explicitly create it if missing
-            try:
-                from sqlalchemy import inspect as sql_inspect
-                from sqlalchemy.sql import text as sql_text
-
-                inspector = sql_inspect(db.engine)
-                if "jwt_blacklist" in inspector.get_table_names():
-                    # Check if jti column exists
-                    columns = [
-                        col["name"] for col in inspector.get_columns("jwt_blacklist")
-                    ]
-
-                    if "jti" not in columns:
-                        # Creating jti column
-                        db.session.execute(
-                            sql_text(
-                                "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
-                            )
-                        )
-                        db.session.execute(
-                            sql_text(
-                                "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
-                            )
-                        )
-                        db.session.commit()
-                        # jti column created
-                        # Clear cache
-                        try:
-                            from vault.services.auth_service import (
-                                reset_jti_column_cache,
-                            )
-
-                            reset_jti_column_cache()
-                        except Exception:
-                            pass
-            except Exception as pre_check_error:
-                log_msg = (
-                    f"[WARNING] Pre-check for jti column failed: {pre_check_error}"
-                )
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.warning(log_msg)
-                # Continue - the migration logic below will handle it
-
-            # Migrate jwt_blacklist table to add jti column if missing
-            # SECURITY: In production, jti column is mandatory for JWT replay protection
-            try:
-                from sqlalchemy import inspect as sql_inspect
-                from sqlalchemy.sql import text as sql_text
-                from sqlalchemy.exc import ProgrammingError, InternalError
-
-                # Check if jwt_blacklist table exists first
-                # Retry logic handles transient database visibility issues
-                inspector = sql_inspect(db.engine)
-                table_exists = False
-                max_table_retries = 5
-                table_retry_delay = 0.3
-
-                for table_attempt in range(max_table_retries):
-                    table_names = inspector.get_table_names()
-                    if "jwt_blacklist" in table_names:
-                        table_exists = True
-                        break
-                    if table_attempt < max_table_retries - 1:
-                        logger.debug(
-                            f"jwt_blacklist table not found yet, retrying ({table_attempt + 1}/{max_table_retries})..."
-                        )
-                        time.sleep(table_retry_delay)
-                        # Refresh inspector
-                        inspector = sql_inspect(db.engine)
-
-                if not table_exists:
-                    error_msg = (
-                        "[ERROR] jwt_blacklist table does not exist after db.create_all(). "
-                        "This may indicate a schema issue."
-                    )
-                    if app_logger:
-                        app_logger.log(error_msg)
-                    else:
-                        logger.warning(error_msg)
-                else:
-                    # Retry logic for checking columns (handles transient database issues)
-                    columns = None
-                    max_retries = 5
-                    retry_delay = 0.3
-
-                    for attempt in range(max_retries):
-                        try:
-                            columns = [
-                                col["name"]
-                                for col in inspector.get_columns("jwt_blacklist")
-                            ]
-                            break
-                        except Exception as e:
-                            if attempt < max_retries - 1:
-                                logger.debug(
-                                    f"Retry {attempt + 1}/{max_retries} for checking jti column: {e}"
-                                )
-                                time.sleep(retry_delay)
-                                # Refresh inspector
-                                inspector = sql_inspect(db.engine)
-                            else:
-                                logger.warning(
-                                    f"Failed to check jti column after {max_retries} attempts: {e}"
-                                )
-                                raise
-
-                    if columns is not None:
-                        log_msg = (
-                            f"[INIT] jwt_blacklist columns found: {', '.join(columns)}"
-                        )
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
-
-                        # CRITICAL: Always verify and ensure jti column exists
-                        # Even if db.create_all() should have created it, we must verify
-                        # and create it explicitly if missing
-                        # This is necessary because SQLAlchemy may not create nullable columns with constraints correctly
-                        if "jti" not in columns:
-                            log_msg = (
-                                "[INIT] CRITICAL: jti column missing after db.create_all()! "
-                                "This should not happen. Creating it now..."
-                            )
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.error(log_msg)
-                            log_msg = "[INIT] jti column missing, adding to jwt_blacklist table..."
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.info(log_msg)
-                            try:
-                                db.session.execute(
-                                    sql_text(
-                                        "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
-                                    )
-                                )
-                                # Add unique constraint separately if needed
-                                db.session.execute(
-                                    sql_text(
-                                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
-                                    )
-                                )
-                                db.session.commit()
-                                log_msg = "[INIT] jti column added successfully to jwt_blacklist table"
-                                if app_logger:
-                                    app_logger.log(log_msg)
-                                else:
-                                    logger.info(log_msg)
-
-                                # Verify the column was actually created
-                                time.sleep(0.2)  # Brief wait for commit to propagate
-                                inspector = sql_inspect(db.engine)
-                                verify_columns = [
-                                    col["name"]
-                                    for col in inspector.get_columns("jwt_blacklist")
-                                ]
-                                if "jti" in verify_columns:
-                                    log_msg = "[INIT] jti column verified successfully after creation"
-                                    if app_logger:
-                                        app_logger.log(log_msg)
-                                    else:
-                                        logger.info(log_msg)
-                                else:
-                                    error_msg = "[ERROR] CRITICAL: jti column was not found after creation attempt!"
-                                    if app_logger:
-                                        app_logger.log(error_msg)
-                                    else:
-                                        logger.error(error_msg)
-                                    raise RuntimeError(
-                                        "Failed to verify jti column creation. "
-                                        "The column may not have been added correctly."
-                                    )
-
-                                # Clear the cache in auth_service if it exists
-                                try:
-                                    from vault.services.auth_service import (
-                                        reset_jti_column_cache,
-                                    )
-
-                                    reset_jti_column_cache()
-                                except Exception:
-                                    pass  # Cache reset is optional
-                            except (ProgrammingError, InternalError) as db_error:
-                                error_msg = str(db_error).lower()
-                                if (
-                                    "already exists" in error_msg
-                                    or "duplicate" in error_msg
-                                ):
-                                    logger.debug(
-                                        "jti column already exists in jwt_blacklist table"
-                                    )
-                                    # Verify it actually exists
-                                    time.sleep(0.2)
-                                    inspector = sql_inspect(db.engine)
-                                    verify_columns = [
-                                        col["name"]
-                                        for col in inspector.get_columns(
-                                            "jwt_blacklist"
-                                        )
-                                    ]
-                                    if "jti" not in verify_columns:
-                                        logger.error(
-                                            "CRITICAL: Database reported jti column exists, but verification failed!"
-                                        )
-                                        raise RuntimeError(
-                                            "jti column verification failed after database reported it exists."
-                                        )
-                                else:
-                                    logger.error(
-                                        f"Failed to add jti column to jwt_blacklist table: {db_error}"
-                                    )
-                                    db.session.rollback()
-                                    # In production, this is critical - raise exception
-                                    try:
-                                        from flask import current_app
-
-                                        is_production = current_app.config.get(
-                                            "IS_PRODUCTION", True
-                                        )
-                                        if is_production:
-                                            raise RuntimeError(
-                                                "CRITICAL: Failed to add jti column to jwt_blacklist table. "
-                                                "JWT replay protection is required in production. "
-                                                "Please check database permissions and retry."
-                                            )
-                                    except RuntimeError:
-                                        raise
-                                    except Exception:
-                                        # If we can't check production mode, log error but continue
-                                        pass
-                        else:
-                            # jti column exists in columns list - verify it's actually usable
-                            if "jti" in columns:
-                                log_msg = "[INIT] jti column already exists in jwt_blacklist table"
-                                if app_logger:
-                                    app_logger.log(log_msg)
-                                else:
-                                    logger.info(log_msg)
-                                # Clear cache to ensure it's recognized
-                                try:
-                                    from vault.services.auth_service import (
-                                        reset_jti_column_cache,
-                                    )
-
-                                    reset_jti_column_cache()
-                                    log_msg = "[INIT] jti column cache cleared"
-                                    if app_logger:
-                                        app_logger.log(log_msg)
-                                    else:
-                                        logger.info(log_msg)
-                                except Exception as cache_err:
-                                    log_msg = f"[WARNING] Failed to clear jti cache: {cache_err}"
-                                    if app_logger:
-                                        app_logger.log(log_msg)
-                                    else:
-                                        logger.warning(log_msg)
-                            else:
-                                logger.error(
-                                    f"CRITICAL: jti column not found in jwt_blacklist table. "
-                                    f"Found columns: {', '.join(columns)}"
-                                )
-                                # Even though columns were retrieved, jti is missing - try to add it
-                                logger.info(
-                                    "Attempting to add jti column to jwt_blacklist table..."
-                                )
-                                try:
-                                    db.session.execute(
-                                        sql_text(
-                                            "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
-                                        )
-                                    )
-                                    db.session.execute(
-                                        sql_text(
-                                            "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
-                                        )
-                                    )
-                                    db.session.commit()
-                                    logger.info("jti column added successfully")
-
-                                    # Verify
-                                    time.sleep(0.2)
-                                    inspector = sql_inspect(db.engine)
-                                    verify_columns = [
-                                        col["name"]
-                                        for col in inspector.get_columns(
-                                            "jwt_blacklist"
-                                        )
-                                    ]
-                                    if "jti" not in verify_columns:
-                                        raise RuntimeError(
-                                            "jti column verification failed after creation"
-                                        )
-
-                                    # Clear cache
-                                    try:
-                                        from vault.services.auth_service import (
-                                            reset_jti_column_cache,
-                                        )
-
-                                        reset_jti_column_cache()
-                                    except Exception:
-                                        pass
-                                except Exception as add_error:
-                                    logger.error(
-                                        f"CRITICAL: Failed to add jti column: {add_error}"
-                                    )
-                                    db.session.rollback()
-                                    raise
+                run_migrations(app_logger)
             except Exception as migration_error:
-                # Check if we're in production - if so, this is critical
-                try:
-                    from flask import current_app
-
-                    is_production = current_app.config.get("IS_PRODUCTION", True)
-                    if is_production:
-                        logger.error(
-                            f"CRITICAL: Error during jti column migration check in production: {migration_error}"
-                        )
-                        raise RuntimeError(
-                            "CRITICAL: JWT replay protection (jti column) migration failed in production. "
-                            "This is a security requirement. Please check database connectivity and permissions."
-                        ) from migration_error
-                    else:
-                        logger.warning(
-                            f"Error during jti column migration check: {migration_error}"
-                        )
-                except RuntimeError:
-                    raise
-                except Exception:
-                    # If we can't check production mode, log warning but continue
-                    logger.warning(
-                        f"Error during jti column migration check: {migration_error}"
-                    )
-
-            # Final verification: ensure jti column exists and is usable
-            # This is critical for production security
-            try:
-                from sqlalchemy import inspect as sql_inspect
-                from sqlalchemy.sql import text as sql_text
-
-                inspector = sql_inspect(db.engine)
-                if "jwt_blacklist" in inspector.get_table_names():
-                    columns = [
-                        col["name"] for col in inspector.get_columns("jwt_blacklist")
-                    ]
-                    if "jti" not in columns:
-                        # Column still missing - create it now
-                        log_msg = "[INIT] CRITICAL: jti column still missing after migration! Creating now..."
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.error(log_msg)
-                        try:
-                            db.session.execute(
-                                sql_text(
-                                    "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
-                                )
-                            )
-                            db.session.execute(
-                                sql_text(
-                                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
-                                )
-                            )
-                            db.session.commit()
-                            log_msg = "[INIT] jti column created successfully in final verification"
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.info(log_msg)
-                            # Clear cache
-                            try:
-                                from vault.services.auth_service import (
-                                    reset_jti_column_cache,
-                                )
-
-                                reset_jti_column_cache()
-                            except Exception:
-                                pass
-                        except Exception as final_error:
-                            log_msg = f"[ERROR] Failed to create jti column in final verification: {final_error}"
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.error(log_msg)
-                            raise
-                    else:
-                        log_msg = "[INIT] jti column verified in final check"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
-            except Exception as final_check_error:
                 log_msg = (
-                    f"[WARNING] Final jti column check failed: {final_check_error}"
+                    f"[MIGRATIONS] ERROR: Migration system failed: {migration_error}"
                 )
                 if app_logger:
                     app_logger.log(log_msg)
                 else:
-                    logger.warning(log_msg)
+                    logger.error(log_msg)
+                # Re-raise to prevent startup with incomplete migrations
+                raise
+
+            # Old migration code removed - now handled by migration system above
+            # (Removed: api_keys prefix validation and jwt_blacklist jti column migration)
 
             log_msg = "Database initialization completed successfully"
             if app_logger:

@@ -330,3 +330,103 @@ def delete_vaultspace(vaultspace_id: str):
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 403
+
+
+@vaultspace_api_bp.route("/<vaultspace_id>/pin", methods=["POST"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def pin_vaultspace(vaultspace_id: str):
+    """Pin a VaultSpace for quick access.
+
+    Args:
+        vaultspace_id: VaultSpace ID to pin
+
+    Returns:
+        JSON with success message
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    vaultspace_service = _get_vaultspace_service()
+
+    try:
+        pinned = vaultspace_service.pin_vaultspace(user.id, vaultspace_id)
+        return (
+            jsonify(
+                {
+                    "message": "VaultSpace pinned successfully",
+                    "pinned": pinned.to_dict(),
+                }
+            ),
+            201,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@vaultspace_api_bp.route("/<vaultspace_id>/pin", methods=["DELETE"])
+@csrf.exempt  # JWT-authenticated API endpoint
+@jwt_required
+def unpin_vaultspace(vaultspace_id: str):
+    """Unpin a VaultSpace.
+
+    Args:
+        vaultspace_id: VaultSpace ID to unpin
+
+    Returns:
+        JSON with success message
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    vaultspace_service = _get_vaultspace_service()
+
+    try:
+        success = vaultspace_service.unpin_vaultspace(user.id, vaultspace_id)
+
+        if not success:
+            return jsonify({"error": "VaultSpace is not pinned"}), 404
+
+        return (
+            jsonify(
+                {
+                    "message": "VaultSpace unpinned successfully",
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@vaultspace_api_bp.route("/pinned", methods=["GET"])
+@jwt_required
+def get_pinned_vaultspaces():
+    """Get all pinned VaultSpaces for current user.
+
+    Returns:
+        JSON with list of pinned VaultSpaces
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    vaultspace_service = _get_vaultspace_service()
+    pinned_vaultspaces = vaultspace_service.get_pinned_vaultspaces(user.id)
+
+    return (
+        jsonify(
+            {
+                "vaultspaces": [vs.to_dict() for vs in pinned_vaultspaces],
+            }
+        ),
+        200,
+    )

@@ -61,6 +61,9 @@ VALID_ICON_NAMES = {
     "graduationCap",
     "wallet",
     "plane",
+    "pin",
+    "unpin",
+    "pin-filled",
 }
 
 

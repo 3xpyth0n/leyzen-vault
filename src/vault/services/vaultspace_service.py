@@ -10,6 +10,7 @@ from vault.database.schema import (
     File,
     FileKey,
     User,
+    UserPinnedVaultSpace,
     VaultSpace,
     VaultSpaceKey,
     VaultSpaceType,
@@ -206,9 +207,9 @@ class VaultSpaceService:
                 f"User {user_id} is not the owner of VaultSpace {vaultspace_id}"
             )
 
-            user = db.session.query(User).filter_by(id=user_id).first()
-            if not user:
-                raise ValueError(f"User {user_id} not found")
+        user = db.session.query(User).filter_by(id=user_id).first()
+        if not user:
+            raise ValueError(f"User {user_id} not found")
 
         # Check if key already exists
         existing = (
@@ -375,3 +376,123 @@ class VaultSpaceService:
             List of VaultSpaceKey objects
         """
         return self.encryption_service.get_all_vaultspace_keys(vaultspace_id)
+
+    def pin_vaultspace(self, user_id: str, vaultspace_id: str) -> UserPinnedVaultSpace:
+        """Pin a VaultSpace for a user.
+
+        Args:
+            user_id: User ID
+            vaultspace_id: VaultSpace ID to pin
+
+        Returns:
+            UserPinnedVaultSpace object
+
+        Raises:
+            ValueError: If VaultSpace not found or user doesn't have access
+        """
+        vaultspace = self.get_vaultspace(vaultspace_id)
+        if not vaultspace:
+            raise ValueError(f"VaultSpace {vaultspace_id} not found")
+
+        # Check if user is the owner
+        if vaultspace.owner_user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have access to VaultSpace {vaultspace_id}"
+            )
+
+        # Check if already pinned
+        existing = (
+            db.session.query(UserPinnedVaultSpace)
+            .filter_by(user_id=user_id, vaultspace_id=vaultspace_id)
+            .first()
+        )
+
+        if existing:
+            return existing
+
+        # Create new pin
+        pinned = UserPinnedVaultSpace(
+            user_id=user_id,
+            vaultspace_id=vaultspace_id,
+        )
+        db.session.add(pinned)
+        db.session.commit()
+
+        return pinned
+
+    def unpin_vaultspace(self, user_id: str, vaultspace_id: str) -> bool:
+        """Unpin a VaultSpace for a user.
+
+        Args:
+            user_id: User ID
+            vaultspace_id: VaultSpace ID to unpin
+
+        Returns:
+            True if unpinned, False if not found
+
+        Raises:
+            ValueError: If user doesn't have permission
+        """
+        pinned = (
+            db.session.query(UserPinnedVaultSpace)
+            .filter_by(user_id=user_id, vaultspace_id=vaultspace_id)
+            .first()
+        )
+
+        if not pinned:
+            return False
+
+        # Verify user owns this pin
+        if pinned.user_id != user_id:
+            raise ValueError(
+                f"User {user_id} does not have permission to unpin this VaultSpace"
+            )
+
+        db.session.delete(pinned)
+        db.session.commit()
+
+        return True
+
+    def get_pinned_vaultspaces(self, user_id: str) -> list[VaultSpace]:
+        """Get all pinned VaultSpaces for a user with their details.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of VaultSpace objects that are pinned by the user
+        """
+        pinned_relations = (
+            db.session.query(UserPinnedVaultSpace)
+            .filter_by(user_id=user_id)
+            .order_by(UserPinnedVaultSpace.pinned_at.desc())
+            .all()
+        )
+
+        # Get the VaultSpaces
+        vaultspaces = []
+        for pinned in pinned_relations:
+            vaultspace = self.get_vaultspace(pinned.vaultspace_id)
+            if vaultspace:
+                # Only return if user still has access (is owner)
+                if vaultspace.owner_user_id == user_id:
+                    vaultspaces.append(vaultspace)
+
+        return vaultspaces
+
+    def is_vaultspace_pinned(self, user_id: str, vaultspace_id: str) -> bool:
+        """Check if a VaultSpace is pinned by a user.
+
+        Args:
+            user_id: User ID
+            vaultspace_id: VaultSpace ID
+
+        Returns:
+            True if pinned, False otherwise
+        """
+        pinned = (
+            db.session.query(UserPinnedVaultSpace)
+            .filter_by(user_id=user_id, vaultspace_id=vaultspace_id)
+            .first()
+        )
+        return pinned is not None

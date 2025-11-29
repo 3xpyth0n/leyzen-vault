@@ -14,7 +14,6 @@
 
         <div v-if="loading" class="loading">Loading...</div>
         <div v-else-if="error" class="error">{{ error }}</div>
-
         <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
           <div class="empty-vaultspaces-content">
             <Icon name="folder" :size="64" />
@@ -29,72 +28,82 @@
             </button>
           </div>
         </div>
-        <div v-else class="vaultspaces-grid">
-          <div
-            v-for="vaultspace in vaultspaces"
-            :key="vaultspace.id"
-            class="vaultspace-card"
-            :class="{
-              'vaultspace-card-new': vaultspace.id === newlyCreatedVaultspaceId,
-            }"
-            :data-vaultspace-id="vaultspace.id"
+        <div v-else class="vaultspaces-grid-wrapper">
+          <transition-group
+            name="vaultspace"
+            tag="div"
+            class="vaultspaces-grid"
           >
             <div
-              @click="openVaultSpace(vaultspace.id)"
-              class="vaultspace-card-content"
+              v-for="vaultspace in vaultspaces"
+              :key="vaultspace.id"
+              class="vaultspace-card"
+              :class="{
+                'vaultspace-card-new':
+                  vaultspace.id === newlyCreatedVaultspaceId,
+                'vaultspace-disintegrating': disintegratingVaultSpaces.has(
+                  vaultspace.id,
+                ),
+                'vaultspace-icon-changing': animatingIconChanges.has(
+                  vaultspace.id,
+                ),
+                'vaultspace-renaming': renamingVaultSpaces.has(vaultspace.id),
+              }"
+              :data-vaultspace-id="vaultspace.id"
             >
               <div
-                class="vaultspace-icon"
-                v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
-              ></div>
-              <div class="vaultspace-info">
-                <h3 v-if="editingVaultspaceId !== vaultspace.id">
-                  {{ vaultspace.name }}
-                </h3>
-                <input
-                  v-else
-                  v-model="editingVaultspaceName"
-                  @keyup.enter="saveVaultspaceRename(vaultspace.id)"
-                  @keyup.esc="cancelVaultspaceRename"
-                  @blur="saveVaultspaceRename(vaultspace.id)"
-                  class="vaultspace-rename-input"
-                  ref="renameInput"
-                  autofocus
-                />
-                <p class="vaultspace-type">Personal</p>
-                <p class="vaultspace-date">
-                  Created: {{ formatDate(vaultspace.created_at) }}
-                </p>
+                @click="openVaultSpace(vaultspace.id)"
+                class="vaultspace-card-content"
+              >
+                <div
+                  class="vaultspace-icon"
+                  v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
+                ></div>
+                <div class="vaultspace-info">
+                  <h3 v-if="editingVaultspaceId !== vaultspace.id">
+                    {{ vaultspace.name }}
+                  </h3>
+                  <input
+                    v-else
+                    v-model="editingVaultspaceName"
+                    @keyup.enter="saveVaultspaceRename(vaultspace.id)"
+                    @keyup.esc="cancelVaultspaceRename"
+                    @blur="saveVaultspaceRename(vaultspace.id)"
+                    class="vaultspace-rename-input"
+                    ref="renameInput"
+                    autofocus
+                  />
+                  <p class="vaultspace-type">
+                    Personal
+                    <span
+                      v-if="isPinned(vaultspace.id)"
+                      class="vaultspace-pinned-indicator"
+                    >
+                      • Pinned
+                    </span>
+                  </p>
+                  <p class="vaultspace-date">
+                    Created: {{ formatDate(vaultspace.created_at) }}
+                  </p>
+                </div>
+              </div>
+              <div class="vaultspace-actions">
+                <button
+                  @click.stop="openVaultSpaceMenu(vaultspace, $event)"
+                  class="vaultspace-action-btn vaultspace-menu-btn"
+                  title="More options"
+                >
+                  <span v-html="getIcon('moreVertical', 18)"></span>
+                </button>
               </div>
             </div>
-            <div class="vaultspace-actions">
-              <button
-                @click.stop="openIconPicker(vaultspace)"
-                class="vaultspace-action-btn"
-                title="Change Icon"
-              >
-                <span v-html="getIcon('sparkles', 18)"></span>
-              </button>
-              <button
-                @click.stop="startVaultspaceRename(vaultspace)"
-                class="vaultspace-action-btn"
-                title="Rename"
-              >
-                <Icon name="edit" :size="18" />
-              </button>
-              <button
-                @click.stop="confirmDeleteVaultspace(vaultspace)"
-                class="vaultspace-action-btn vaultspace-action-btn-danger"
-                title="Delete"
-              >
-                <Icon name="trash" :size="18" />
-              </button>
-            </div>
-          </div>
+          </transition-group>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Delete Confirmation Modal -->
 
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
@@ -124,6 +133,18 @@
     @close="showIconPicker = false"
     @select="handleIconSelect"
   />
+
+  <!-- VaultSpace Menu Dropdown -->
+  <VaultSpaceMenuDropdown
+    :show="showVaultSpaceMenu"
+    :vaultspace="selectedVaultSpaceForMenu"
+    :is-pinned="
+      selectedVaultSpaceForMenu ? isPinned(selectedVaultSpaceForMenu.id) : false
+    "
+    :position="menuPosition"
+    @close="showVaultSpaceMenu = false"
+    @action="handleMenuAction"
+  />
 </template>
 
 <script>
@@ -133,6 +154,7 @@ import Icon from "../components/Icon.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import IconPicker from "../components/IconPicker.vue";
+import VaultSpaceMenuDropdown from "../components/VaultSpaceMenuDropdown.vue";
 
 export default {
   name: "Dashboard",
@@ -142,6 +164,7 @@ export default {
     ConfirmationModal,
     AlertModal,
     IconPicker,
+    VaultSpaceMenuDropdown,
   },
   data() {
     return {
@@ -163,10 +186,18 @@ export default {
       showIconPicker: false,
       selectedVaultspaceId: null,
       selectedVaultspaceIcon: "folder",
+      pinnedVaultSpaceIds: new Set(),
+      showVaultSpaceMenu: false,
+      selectedVaultSpaceForMenu: null,
+      menuPosition: { x: 0, y: 0 },
+      disintegratingVaultSpaces: new Set(),
+      animatingIconChanges: new Set(),
+      renamingVaultSpaces: new Set(),
     };
   },
   async mounted() {
     await this.loadVaultSpaces();
+    await this.loadPinnedStatus();
   },
   methods: {
     getIcon(iconName, size = 24) {
@@ -283,7 +314,20 @@ export default {
         if (index >= 0) {
           this.vaultspaces[index] = updated;
         }
+
+        // Trigger rename animation
+        this.renamingVaultSpaces.add(vaultspaceId);
+        setTimeout(() => {
+          this.renamingVaultSpaces.delete(vaultspaceId);
+        }, 300);
+
         this.cancelVaultspaceRename();
+
+        // Notify sidebar to refresh pinned VaultSpaces
+        const event = new CustomEvent("vaultspace-updated", {
+          detail: { vaultspaceId, action: "rename", vaultspace: updated },
+        });
+        document.dispatchEvent(event);
       } catch (err) {
         this.showAlert({
           type: "error",
@@ -305,12 +349,34 @@ export default {
       this.showDeleteConfirm = false;
 
       try {
+        // Start disintegration animation
+        this.disintegratingVaultSpaces.add(vaultspaceId);
+
+        // Wait for animation to complete (600ms)
+        await new Promise((resolve) => setTimeout(resolve, 600));
+
+        // Delete from backend
         await vaultspaces.delete(vaultspaceId);
-        // Remove from list
+
+        // Remove from list after animation
         this.vaultspaces = this.vaultspaces.filter(
           (v) => v.id !== vaultspaceId,
         );
+
+        // Remove from pinned list
+        this.pinnedVaultSpaceIds.delete(vaultspaceId);
+
+        // Clean up animation state
+        this.disintegratingVaultSpaces.delete(vaultspaceId);
+
+        // Notify sidebar to refresh pinned VaultSpaces
+        const event = new CustomEvent("vaultspace-deleted", {
+          detail: { vaultspaceId },
+        });
+        document.dispatchEvent(event);
       } catch (err) {
+        // Clean up animation state on error
+        this.disintegratingVaultSpaces.delete(vaultspaceId);
         this.showAlert({
           type: "error",
           title: "Error",
@@ -349,15 +415,108 @@ export default {
         if (index >= 0) {
           this.vaultspaces[index] = updated;
         }
+        const vaultspaceId = this.selectedVaultspaceId;
         this.showIconPicker = false;
         this.selectedVaultspaceId = null;
         this.selectedVaultspaceIcon = "folder";
+
+        // Trigger icon change animation
+        this.animatingIconChanges.add(vaultspaceId);
+        setTimeout(() => {
+          this.animatingIconChanges.delete(vaultspaceId);
+        }, 300);
+
+        // Notify sidebar to refresh pinned VaultSpaces
+        const event = new CustomEvent("vaultspace-updated", {
+          detail: { vaultspaceId, action: "icon", vaultspace: updated },
+        });
+        document.dispatchEvent(event);
       } catch (err) {
         this.showAlert({
           type: "error",
           title: "Error",
           message: "Failed to update icon: " + err.message,
         });
+      }
+    },
+    async loadPinnedStatus() {
+      try {
+        const pinned = await vaultspaces.listPinned();
+        this.pinnedVaultSpaceIds = new Set(pinned.map((vs) => vs.id));
+      } catch (err) {
+        console.error("Failed to load pinned status:", err);
+        this.pinnedVaultSpaceIds = new Set();
+      }
+    },
+    isPinned(vaultspaceId) {
+      return this.pinnedVaultSpaceIds.has(vaultspaceId);
+    },
+    async togglePinVaultspace(vaultspace) {
+      try {
+        if (this.isPinned(vaultspace.id)) {
+          await vaultspaces.unpin(vaultspace.id);
+          this.pinnedVaultSpaceIds.delete(vaultspace.id);
+        } else {
+          await vaultspaces.pin(vaultspace.id);
+          this.pinnedVaultSpaceIds.add(vaultspace.id);
+        }
+        // Update local state immediately
+        await this.loadPinnedStatus();
+
+        // Emit event on document immediately for instant sidebar refresh
+        const event = new CustomEvent("pinned-vaultspaces-changed", {
+          detail: { vaultspaceId: vaultspace.id },
+        });
+        document.dispatchEvent(event);
+      } catch (err) {
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to toggle pin: " + err.message,
+        });
+      }
+    },
+    openVaultSpaceMenu(vaultspace, event) {
+      event.stopPropagation();
+      event.preventDefault();
+
+      // Close menu if already open for the same vaultspace
+      if (
+        this.showVaultSpaceMenu &&
+        this.selectedVaultSpaceForMenu?.id === vaultspace.id
+      ) {
+        this.showVaultSpaceMenu = false;
+        return;
+      }
+
+      // Capture exact click coordinates
+      this.menuPosition = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+
+      this.selectedVaultSpaceForMenu = vaultspace;
+      this.$nextTick(() => {
+        this.showVaultSpaceMenu = true;
+      });
+    },
+    async handleMenuAction(action, vaultspace) {
+      switch (action) {
+        case "pin":
+          await this.togglePinVaultspace(vaultspace);
+          break;
+        case "unpin":
+          await this.togglePinVaultspace(vaultspace);
+          break;
+        case "change-icon":
+          this.openIconPicker(vaultspace);
+          break;
+        case "rename":
+          this.startVaultspaceRename(vaultspace);
+          break;
+        case "delete":
+          this.confirmDeleteVaultspace(vaultspace);
+          break;
       }
     },
   },
@@ -488,6 +647,10 @@ export default {
   color: currentColor;
 }
 
+.vaultspaces-grid-wrapper {
+  position: relative;
+}
+
 .vaultspaces-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -530,6 +693,106 @@ export default {
   }
 }
 
+@keyframes vaultspaceDisintegrate {
+  0% {
+    opacity: 1;
+    filter: blur(0px);
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    filter: blur(2px);
+    transform: translateY(-10px) scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(-30px) scale(0.8);
+  }
+}
+
+@keyframes vaultspaceFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes vaultspaceIconChange {
+  0% {
+    opacity: 0.5;
+    transform: rotate(-10deg) scale(0.9);
+  }
+  50% {
+    transform: rotate(5deg) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes vaultspaceRename {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.vaultspace-disintegrating {
+  animation: vaultspaceDisintegrate 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+  will-change: opacity, transform, filter;
+}
+
+.vaultspace-icon-changing {
+  animation: vaultspaceIconChange 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: opacity, transform;
+}
+
+.vaultspace-renaming {
+  animation: vaultspaceRename 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+.vaultspace-fade-in {
+  animation: vaultspaceFadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+/* Transition group animations */
+.vaultspace-enter-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vaultspace-leave-active {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vaultspace-enter-from {
+  opacity: 0;
+  transform: scale(0.9) translateY(10px);
+}
+
+.vaultspace-leave-to {
+  opacity: 0;
+  filter: blur(8px);
+  transform: translateY(-30px) scale(0.8);
+}
+
+.vaultspace-move {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .vaultspace-card-content {
   flex: 1;
   cursor: pointer;
@@ -550,9 +813,7 @@ export default {
 }
 
 .vaultspace-action-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0);
   padding: 0.5rem;
   cursor: pointer;
   font-size: 1rem;
@@ -615,6 +876,11 @@ export default {
   font-size: 0.9rem;
   margin: 0.25rem 0;
   text-transform: capitalize;
+}
+
+.vaultspace-pinned-indicator {
+  color: #38bdf8;
+  font-weight: 500;
 }
 
 .vaultspace-date {
