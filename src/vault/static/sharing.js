@@ -18,7 +18,13 @@ function setInnerHTML(element, html) {
       console.warn("Failed to use defaultPolicy:", e);
     }
   }
-  element.innerHTML = html;
+
+  // Fallback: use DOM API instead of innerHTML for better security on browsers without Trusted Types
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  while (temp.firstChild) {
+    element.appendChild(temp.firstChild);
+  }
 }
 
 class SharingManager {
@@ -49,11 +55,25 @@ class SharingManager {
       return;
     }
 
+    // Check if Trusted Types is supported by the browser
+    const trustedTypesSupported = !!(
+      window.trustedTypes && window.trustedTypes.createPolicy
+    );
+
     // Check if Trusted Types policies are available
     const hasPolicies =
       window.vaultHTMLPolicy ||
       (window.trustedTypes && window.trustedTypes.defaultPolicy);
 
+    // If Trusted Types is not supported by the browser, proceed without waiting
+    // (we'll use DOM API methods instead of innerHTML)
+    if (!trustedTypesSupported) {
+      await this.createShareModal();
+      this.modalCreated = true;
+      return;
+    }
+
+    // If Trusted Types is supported but policies aren't ready yet, wait and retry
     if (!hasPolicies) {
       // Policies not available yet, wait and retry
       return new Promise((resolve) => {
@@ -84,14 +104,29 @@ class SharingManager {
       return;
     }
 
+    // Check if Trusted Types is supported by the browser
+    const trustedTypesSupported = !!(
+      window.trustedTypes && window.trustedTypes.createPolicy
+    );
+
     // Check if Trusted Types policies are available
     const hasPolicies =
       window.vaultHTMLPolicy ||
       (window.trustedTypes && window.trustedTypes.defaultPolicy);
 
+    // If Trusted Types is not supported, use DOM API to create modal
+    if (!trustedTypesSupported) {
+      this.createShareModalWithDOM();
+      return;
+    }
+
+    // If Trusted Types is supported but policies aren't available, use fallback
+    // (This shouldn't happen if ensureModalCreated() worked correctly, but it's a safety net)
     if (!hasPolicies) {
-      // Wait for policies to be available
-      setTimeout(() => this.createShareModal(), 100);
+      console.warn(
+        "[SharingManager] Trusted Types supported but policies not available, using DOM API fallback",
+      );
+      this.createShareModalWithDOM();
       return;
     }
 
@@ -234,15 +269,9 @@ class SharingManager {
           console.error("Failed to use defaultPolicy:", e);
         }
       } else {
-        console.warn(
-          "No Trusted Types policies available - this may fail with CSP",
-        );
-        try {
-          document.body.insertAdjacentHTML("beforeend", modalHTML);
-          inserted = true;
-        } catch (e) {
-          console.error("Direct insertion failed (expected with CSP):", e);
-        }
+        // Fallback: use DOM API to create modal
+        this.createShareModalWithDOM();
+        inserted = true;
       }
 
       if (!inserted) {
@@ -294,6 +323,174 @@ class SharingManager {
       }
       return;
     }
+  }
+
+  /**
+   * Create share modal using DOM API (for browsers without Trusted Types support)
+   */
+  createShareModalWithDOM() {
+    // Remove existing modal if any
+    const existing = document.getElementById("share-modal-advanced");
+    if (existing) {
+      existing.remove();
+    }
+
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.id = "share-modal-advanced";
+    overlay.className = "modal-overlay hidden";
+    overlay.setAttribute("aria-hidden", "true");
+
+    // Create modal container
+    const container = document.createElement("div");
+    container.className = "modal-container modal-large";
+
+    // Create modal content
+    const content = document.createElement("div");
+    content.className = "modal-content-share";
+
+    // Create modal header
+    const header = document.createElement("div");
+    header.className = "modal-header";
+    const title = document.createElement("h2");
+    title.className = "modal-title";
+    title.textContent = "Share File";
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "modal-close";
+    closeBtn.id = "share-modal-close";
+    closeBtn.textContent = "×";
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Create modal body
+    const body = document.createElement("div");
+    body.className = "share-modal-body";
+
+    // Create "Create New Link" section
+    const createSection = document.createElement("div");
+    createSection.className = "share-section";
+    const createTitle = document.createElement("h3");
+    createTitle.textContent = "Create Share Link";
+    createSection.appendChild(createTitle);
+
+    const linkOptions = document.createElement("div");
+    linkOptions.className = "share-link-options";
+
+    // Expiration date option
+    const expiresGroup = document.createElement("div");
+    expiresGroup.className = "form-group";
+    const expiresLabel = document.createElement("label");
+    const expiresCheckbox = document.createElement("input");
+    expiresCheckbox.type = "checkbox";
+    expiresCheckbox.id = "share-link-expires";
+    const expiresSpan = document.createElement("span");
+    expiresSpan.textContent = "Set expiration date";
+    expiresLabel.appendChild(expiresCheckbox);
+    expiresLabel.appendChild(expiresSpan);
+    const expiresDateInput = document.createElement("input");
+    expiresDateInput.type = "datetime-local";
+    expiresDateInput.id = "share-link-expires-date";
+    expiresDateInput.className = "share-date-input hidden";
+    expiresGroup.appendChild(expiresLabel);
+    expiresGroup.appendChild(expiresDateInput);
+    linkOptions.appendChild(expiresGroup);
+
+    // Max downloads option
+    const maxDownloadsGroup = document.createElement("div");
+    maxDownloadsGroup.className = "form-group";
+    const maxDownloadsLabel = document.createElement("label");
+    const maxDownloadsCheckbox = document.createElement("input");
+    maxDownloadsCheckbox.type = "checkbox";
+    maxDownloadsCheckbox.id = "share-link-max-downloads";
+    const maxDownloadsSpan = document.createElement("span");
+    maxDownloadsSpan.textContent = "Limit number of downloads";
+    maxDownloadsLabel.appendChild(maxDownloadsCheckbox);
+    maxDownloadsLabel.appendChild(maxDownloadsSpan);
+    const maxDownloadsInput = document.createElement("input");
+    maxDownloadsInput.type = "number";
+    maxDownloadsInput.id = "share-link-max-downloads-input";
+    maxDownloadsInput.className = "share-number-input hidden";
+    maxDownloadsInput.placeholder = "Number of downloads";
+    maxDownloadsInput.min = "1";
+    maxDownloadsGroup.appendChild(maxDownloadsLabel);
+    maxDownloadsGroup.appendChild(maxDownloadsInput);
+    linkOptions.appendChild(maxDownloadsGroup);
+
+    // Password option
+    const passwordGroup = document.createElement("div");
+    passwordGroup.className = "form-group";
+    const passwordLabel = document.createElement("label");
+    const passwordCheckbox = document.createElement("input");
+    passwordCheckbox.type = "checkbox";
+    passwordCheckbox.id = "share-link-password";
+    const passwordSpan = document.createElement("span");
+    passwordSpan.textContent = "Protect with password";
+    passwordLabel.appendChild(passwordCheckbox);
+    passwordLabel.appendChild(passwordSpan);
+    const passwordWrapper = document.createElement("div");
+    passwordWrapper.className = "share-password-input-wrapper hidden";
+    passwordWrapper.id = "share-link-password-wrapper";
+    const passwordInput = document.createElement("input");
+    passwordInput.type = "password";
+    passwordInput.id = "share-link-password-input";
+    passwordInput.className = "share-password-input";
+    passwordInput.placeholder = "Enter password";
+    const passwordToggle = document.createElement("button");
+    passwordToggle.type = "button";
+    passwordToggle.className = "password-toggle";
+    passwordToggle.id = "share-link-password-toggle";
+    passwordToggle.setAttribute("aria-label", "Show password");
+    passwordToggle.setAttribute("data-password-toggle", "");
+    // Add SVG icons for password toggle (simplified - just text for now)
+    passwordToggle.textContent = "👁";
+    passwordWrapper.appendChild(passwordInput);
+    passwordWrapper.appendChild(passwordToggle);
+    passwordGroup.appendChild(passwordLabel);
+    passwordGroup.appendChild(passwordWrapper);
+    linkOptions.appendChild(passwordGroup);
+
+    createSection.appendChild(linkOptions);
+
+    // Create button
+    const actions = document.createElement("div");
+    actions.className = "share-actions";
+    const createBtn = document.createElement("button");
+    createBtn.id = "create-share-link-btn";
+    createBtn.className = "btn btn-primary";
+    createBtn.textContent = "Create Share Link";
+    actions.appendChild(createBtn);
+    createSection.appendChild(actions);
+
+    // Create "Active Links" section
+    const activeSection = document.createElement("div");
+    activeSection.className = "share-section";
+    const activeTitle = document.createElement("h3");
+    activeTitle.textContent = "Active Share Links";
+    const activeList = document.createElement("div");
+    activeList.id = "active-links-list";
+    activeList.className = "active-links-list";
+    const emptyMsg = document.createElement("p");
+    emptyMsg.className = "share-empty";
+    emptyMsg.textContent = "No active share links";
+    activeList.appendChild(emptyMsg);
+    activeSection.appendChild(activeTitle);
+    activeSection.appendChild(activeList);
+
+    // Assemble modal
+    body.appendChild(createSection);
+    body.appendChild(activeSection);
+    content.appendChild(header);
+    content.appendChild(body);
+    container.appendChild(content);
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    this.modalCreated = true;
+
+    // Setup event listeners
+    setTimeout(() => {
+      this.setupShareModalListeners();
+    }, 50);
   }
 
   /**
@@ -1879,10 +2076,38 @@ if (typeof window !== "undefined") {
       return;
     }
 
-    // Check if Trusted Types policies are available
-    const hasPolicies =
-      window.vaultHTMLPolicy ||
-      (window.trustedTypes && window.trustedTypes.defaultPolicy);
+    const retryCount = (initSharingManager.retryCount || 0) + 1;
+    initSharingManager.retryCount = retryCount;
+
+    // Check if Trusted Types is supported by the browser
+    const trustedTypesSupported = !!(
+      window.trustedTypes && window.trustedTypes.createPolicy
+    );
+
+    // Check if Trusted Types policies are available (only if Trusted Types is supported)
+    let hasPolicies = false;
+    if (trustedTypesSupported) {
+      // First check if they're assigned to window
+      hasPolicies =
+        window.vaultHTMLPolicy ||
+        (window.trustedTypes && window.trustedTypes.defaultPolicy);
+
+      // If not found on window, try to get them directly from Trusted Types
+      if (!hasPolicies && window.trustedTypes) {
+        try {
+          const vaultPolicy = window.trustedTypes.getPolicy("vault-html");
+          if (vaultPolicy) {
+            window.vaultHTMLPolicy = vaultPolicy;
+            hasPolicies = true;
+          }
+        } catch (error) {
+          // Ignore errors when checking policies
+        }
+      }
+    } else {
+      // Trusted Types is not supported - we'll use DOM API methods, so policies are not required
+      hasPolicies = true;
+    }
 
     // Check if DOM is ready
     const domReady = document.body && document.readyState !== "loading";

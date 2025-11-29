@@ -372,7 +372,7 @@ body::before {
   position: absolute;
   right: 0.5rem;
   top: 50%;
-  margin-top: -12px;
+  transform: translateY(-50%);
   height: 24px;
   width: 24px;
   background: transparent;
@@ -402,19 +402,19 @@ body::before {
   opacity: 1;
   color: var(--text-primary);
   /* Maintain exact same position on hover */
-  margin-top: -12px;
+  transform: translateY(-50%);
 }
 
 .password-toggle:active:not(:disabled) {
   opacity: 0.8;
   /* Maintain exact same position on active */
-  margin-top: -12px;
+  transform: translateY(-50%);
 }
 
 .password-toggle:focus {
   outline: none;
   /* Maintain exact same position on focus */
-  margin-top: -12px;
+  transform: translateY(-50%);
 }
 
 .password-toggle:disabled {

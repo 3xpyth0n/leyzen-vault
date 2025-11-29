@@ -23,6 +23,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - HAProxy now accepts either combined PEM files or separate certificate/key inputs by validating and generating a single bundle automatically.
 - HTTPS detection now honors custom HTTP/HTTPS ports and tunnel frontends, preventing CSP errors and redirect loops when overriding `HTTP_PORT`/`HTTPS_PORT`.
 - Fixed setup endpoint redirecting to dashboard without master key initialization. The `/setup` endpoint now follows the same flow as `/signup`, requiring email verification and redirecting to login page instead of automatically authenticating users.
+- Fixed SharingManager initialization failure on browsers without Trusted Types support (e.g., Firefox) by implementing DOM API fallback for modal creation.
 
 ## [2.2.1] - 2025-11-23
 
