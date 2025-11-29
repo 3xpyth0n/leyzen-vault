@@ -13,6 +13,7 @@ func init() {
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Rebuild and start the Leyzen Vault Docker stack",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Stop containers before building
 			color.HiYellow("Stopping Docker stack...")

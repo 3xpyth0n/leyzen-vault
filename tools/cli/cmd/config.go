@@ -16,6 +16,7 @@ var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage Leyzen Vault environment configuration",
 	Long:  "Commands for managing and validating Leyzen Vault configuration files.",
+	SilenceUsage: true,
 }
 
 func init() {
@@ -24,6 +25,7 @@ func init() {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List configured environment variables",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			envFilePath := EnvFilePath()
 			envFile, err := internal.LoadEnvFile(envFilePath)
@@ -93,6 +95,7 @@ func init() {
 		Use:   "set <KEY> <VALUE>",
 		Short: "Set an environment variable",
 		Args:  cobra.ExactArgs(2),
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			rawValue := args[1]

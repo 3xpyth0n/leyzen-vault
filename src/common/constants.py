@@ -145,11 +145,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # regardless of the current working directory when the module is imported.
 SRC_DIR = REPO_ROOT / "src"
 
-# Detect if we're running in a Docker container where /app is mounted
-# (the orchestrator code is mounted at /app in the container)
+# Detect if we're running in a Docker container where orchestrator is mounted at /app
+# More robust detection: check for multiple orchestrator-specific files/directories
+# to avoid false positives (vault container also has /app but different structure)
 _docker_app_path = Path("/app")
-if _docker_app_path.exists() and (_docker_app_path / "templates").exists():
-    # Running in Docker container: use /app as ORCHESTRATOR_DIR
+_orchestrator_indicators = [
+    _docker_app_path / "__init__.py",  # Orchestrator has __init__.py at root
+    _docker_app_path / "blueprints",  # Orchestrator-specific directory
+    _docker_app_path / "templates" / "login.html",  # Orchestrator template
+]
+
+_is_orchestrator_container = _docker_app_path.exists() and all(
+    indicator.exists() for indicator in _orchestrator_indicators
+)
+
+if _is_orchestrator_container:
+    # Running in Docker container: orchestrator is mounted at /app
     ORCHESTRATOR_DIR = _docker_app_path
 else:
     # Local development: use calculated path relative to repository root

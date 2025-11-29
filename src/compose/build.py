@@ -198,6 +198,7 @@ def build_vault_services(
             ],
             "volumes": [
                 "vault-data-source:/data-source:rw",
+                "./src/common:/common:ro",
             ],
             # Dependencies: Vault containers must wait for HAProxy and PostgreSQL
             # to be healthy before starting to ensure proper routing and database access

@@ -19,6 +19,7 @@ var validateCmd = &cobra.Command{
 - Comparing with env.template for missing or extra variables
 - Checking that required variables are present and non-empty
 - Verifying cryptographic secrets meet minimum length requirements (≥32 characters)`,
+	SilenceUsage: true,
 	RunE: runValidate,
 }
 

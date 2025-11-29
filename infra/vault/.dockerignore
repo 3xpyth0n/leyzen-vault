@@ -4,6 +4,13 @@ src/vault/static/dist/
 # Ignore node_modules - they're installed inside the container
 src/vault/static/node_modules/
 
+# Ignore Python cache files - they're regenerated in containers
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
 # Ignore build artifacts
 *.log
 *.swp

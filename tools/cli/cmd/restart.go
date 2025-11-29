@@ -13,6 +13,7 @@ func init() {
 	restartCmd := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the Leyzen Vault Docker stack",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			color.HiCyan("Restarting Docker stack...")
 			

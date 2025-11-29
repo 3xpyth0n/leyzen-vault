@@ -1,9 +1,3 @@
-# Ignore dist directory - it's built inside the container
-dist/
-
-# Ignore node_modules - they're installed inside the container
-node_modules/
-
 # Ignore Python cache files - they're regenerated in containers
 __pycache__/
 *.py[cod]

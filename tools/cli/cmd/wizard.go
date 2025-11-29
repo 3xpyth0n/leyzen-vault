@@ -14,6 +14,7 @@ func init() {
 	wizardCmd := &cobra.Command{
 		Use:   "wizard",
 		Short: "Interactive environment configuration",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			envFile, err := internal.LoadEnvFile(EnvFilePath())
 			if err != nil {

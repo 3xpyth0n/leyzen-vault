@@ -13,6 +13,7 @@ func init() {
 	stopCmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the Leyzen Vault Docker stack",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Ensure docker-generated.yml exists before stopping
 			if err := internal.EnsureDockerGeneratedFile(EnvFilePath()); err != nil {

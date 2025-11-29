@@ -13,6 +13,7 @@ func init() {
 	startCmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the Leyzen Vault Docker stack",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
 				return fmt.Errorf("failed to build configuration: %w", err)

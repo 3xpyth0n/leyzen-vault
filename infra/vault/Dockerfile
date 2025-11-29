@@ -36,9 +36,13 @@ RUN test -d /app/src/vault/static/dist && echo "Build successful: dist directory
 WORKDIR /app
 
 # Copy application code (Python and other files)
-# Note: .dockerignore excludes src/vault/static/dist/ to prevent overwriting the build
-# Copy the entire src directory, but dist/ is excluded by .dockerignore
-COPY src/ /app/src/
+# Note: Only copy src/vault/ - common/ will be mounted as read-only volume
+# This ensures isolation: vault container only has vault code, not orchestrator or compose
+COPY src/vault/ /app/src/vault/
+# Remove any Python cache files that might have been copied (shouldn't happen due to .dockerignore, but be safe)
+RUN find /app/src -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/src -type f -name "*.pyc" -delete 2>/dev/null || true && \
+    find /app/src -type f -name "*.pyo" -delete 2>/dev/null || true
 # Docker automatically invalidates cache when source files change (content-based hashing)
 # The RUN command below ensures cache invalidation by creating a marker based on file content
 RUN find /app/src -type f \( -name "*.py" -o -name "*.js" -o -name "*.html" \) -exec sha256sum {} \; | sha256sum > /tmp/.src_hash 2>/dev/null || echo "0" > /tmp/.src_hash
@@ -52,10 +56,12 @@ RUN chmod +x /usr/local/bin/vault-entrypoint.sh
 
 # Create data directories and set ownership
 RUN mkdir -p /data /data-source && \
-    chown -R vault:vault /data /data-source /app
+    chown -R vault:vault /data /data-source
 
 # Set environment variables
-ENV PYTHONPATH=/app/src
+# PYTHONPATH includes /app/src for vault code and /common for shared modules
+# /common will be mounted as read-only volume at runtime
+ENV PYTHONPATH=/app/src:/common
 ENV FLASK_APP=vault.app:create_app
 
 # Expose port

@@ -36,6 +36,7 @@ func init() {
 	statusCmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the status of Leyzen Vault containers",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output, err := internal.DockerPS("--format", "{{.Names}}\t{{.Status}}\t{{.RunningFor}}")
 			if err != nil {

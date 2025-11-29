@@ -15,6 +15,11 @@ RUN addgroup -S dockerproxy \
 
 COPY . .
 
+# Remove any Python cache files that might have been copied (shouldn't happen due to .dockerignore, but be safe)
+RUN find /srv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /srv -type f -name "*.pyc" -delete 2>/dev/null || true && \
+    find /srv -type f -name "*.pyo" -delete 2>/dev/null || true
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

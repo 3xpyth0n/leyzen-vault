@@ -12,6 +12,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
 - Email verification is now mandatory for all users except the superadmin.
 
+### Changed
+
+- Improved Docker container isolation, excluded Python caches from builds, and minimized write permissions for each container.
+
 ### Fixed
 
 - Increased `api_keys.key_prefix` column capacity and added automatic migration to prevent API key creation failures caused by truncation.
