@@ -201,6 +201,7 @@ def create_folder():
     vaultspace_id = data.get("vaultspace_id")
     name = data.get("name", "").strip()
     parent_id = data.get("parent_id")
+    overwrite = data.get("overwrite", False)
 
     # Validate vaultspace_id format
     if vaultspace_id and not validate_vaultspace_id(vaultspace_id):
@@ -224,6 +225,7 @@ def create_folder():
             user_id=user.id,
             name=name,
             parent_id=parent_id,
+            overwrite=overwrite,
         )
 
         return (
@@ -265,6 +267,7 @@ def upload_file_v2():
     data = request.form
     vaultspace_id = data.get("vaultspace_id")
     encrypted_file_key = data.get("encrypted_file_key")
+    overwrite = data.get("overwrite", "false").lower() == "true"
 
     if not vaultspace_id:
         return jsonify({"error": "vaultspace_id is required"}), 400
@@ -427,6 +430,7 @@ def upload_file_v2():
             mime_type=detected_mime_type,
             parent_id=data.get("parent_id"),
             encrypted_metadata=data.get("encrypted_metadata"),
+            overwrite=overwrite,
         )
 
         # Promote file to persistent storage with validation
@@ -481,7 +485,11 @@ def upload_file_v2():
             201,
         )
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        error_message = str(e)
+        # Check if error is about duplicate name
+        if "already exists" in error_message.lower():
+            return jsonify({"error": error_message}), 409
+        return jsonify({"error": error_message}), 400
 
 
 @files_api_bp.route("", methods=["GET"])

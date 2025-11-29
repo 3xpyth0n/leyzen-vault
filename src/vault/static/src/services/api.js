@@ -1060,6 +1060,9 @@ export const files = {
     if (fileData.encryptedMetadata) {
       formData.append("encrypted_metadata", fileData.encryptedMetadata);
     }
+    if (fileData.overwrite) {
+      formData.append("overwrite", "true");
+    }
 
     const token = getToken();
     const url = `${API_BASE_URL}/v2/files`;
@@ -1114,13 +1117,23 @@ export const files = {
           try {
             const errorData = JSON.parse(xhr.responseText);
             const error = new Error(errorData.error || "Failed to upload file");
+            // Attach status code and mark conflicts as handled
+            error.status = xhr.status;
+            if (xhr.status === 409) {
+              error.isConflict = true;
+            }
             // Attach quota_info if available
             if (errorData.quota_info) {
               error.quota_info = errorData.quota_info;
             }
             reject(error);
           } catch (e) {
-            reject(new Error(`Upload failed: ${xhr.status}`));
+            const error = new Error(`Upload failed: ${xhr.status}`);
+            error.status = xhr.status;
+            if (xhr.status === 409) {
+              error.isConflict = true;
+            }
+            reject(error);
           }
         }
       });
@@ -1177,15 +1190,17 @@ export const files = {
    * @param {string} vaultspaceId - VaultSpace ID
    * @param {string} name - Folder name
    * @param {string} parentId - Optional parent folder ID
+   * @param {boolean} overwrite - Optional, if true overwrite existing folder
    * @returns {Promise<object>} Created folder
    */
-  async createFolder(vaultspaceId, name, parentId = null) {
+  async createFolder(vaultspaceId, name, parentId = null, overwrite = false) {
     const response = await apiRequest("/v2/files/folders", {
       method: "POST",
       body: JSON.stringify({
         vaultspace_id: vaultspaceId,
         name: name,
         parent_id: parentId,
+        overwrite: overwrite,
       }),
     });
 

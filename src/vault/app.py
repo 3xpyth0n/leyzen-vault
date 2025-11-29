@@ -1667,7 +1667,7 @@ def create_app(
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",
-            "trusted-types vault-html notifications-html vault-script-url vue goog#html",
+            "trusted-types default vault-html notifications-html vault-script-url vue goog#html",
             "require-trusted-types-for 'script'",
             "report-uri /orchestrator/csp-violation-report-endpoint",
             "report-to vault-csp",

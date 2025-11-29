@@ -11,6 +11,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
 - Email verification is now mandatory for all users except the superadmin.
+- Conflict resolution modal for file and folder name conflicts with options to replace, keep both (auto-rename), or skip ([#13](https://github.com/3xpyth0n/leyzen-vault/issues/13)).
 
 ### Changed
 

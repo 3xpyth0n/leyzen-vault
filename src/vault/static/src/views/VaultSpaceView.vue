@@ -265,6 +265,19 @@
     @ok="handleAlertModalClose"
   />
 
+  <!-- Conflict Resolution Modal -->
+  <ConflictResolutionModal
+    :show="showConflictModal"
+    :title="conflictData?.title || 'File Already Exists'"
+    :message="conflictData?.message || 'A file with this name already exists.'"
+    :show-apply-to-all="conflictData?.showApplyToAll || false"
+    :remaining-count="conflictData?.remainingCount"
+    @replace="handleConflictReplace"
+    @keep-both="handleConflictKeepBoth"
+    @skip="handleConflictSkip"
+    @close="handleConflictClose"
+  />
+
   <!-- File Properties Modal -->
   <FileProperties
     :show="showProperties"
@@ -398,6 +411,7 @@ import { debounce } from "../utils/debounce";
 import { folderPicker } from "../utils/FolderPicker";
 import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
+import ConflictResolutionModal from "../components/ConflictResolutionModal.vue";
 import { zipFolder, extractZip } from "../services/zipService.js";
 import PasswordInput from "../components/PasswordInput.vue";
 
@@ -413,6 +427,7 @@ export default {
     SearchBar,
     ProgressBar,
     AlertModal,
+    ConflictResolutionModal,
     PasswordInput,
   },
   data() {
@@ -479,6 +494,16 @@ export default {
       showEncryptionOverlay: false,
       isMasterKeyRequired: false,
       overlayStyle: {},
+      showConflictModal: false,
+      conflictData: null,
+      conflictApplyToAll: false,
+      conflictResolution: null,
+      pendingUploadFile: null,
+      pendingUploadIndex: -1,
+      pendingUploadFiles: [],
+      pendingFolderName: null,
+      pendingRenameItem: null,
+      pendingRenameNewName: null,
     };
   },
   created() {
@@ -1491,60 +1516,135 @@ export default {
         });
       };
 
-      // Try to create folder with retry logic for conflicts
-      let retryCount = 0;
-      const maxRetries = 10;
+      // Try to create folder
+      try {
+        const folder = await files.createFolder(
+          this.$route.params.id,
+          "New Folder",
+          normalizedParentId,
+        );
 
-      while (retryCount <= maxRetries) {
-        // Generate unique name from known folder names
-        const uniqueName = generateUniqueName(knownFolderNames);
+        // Add to UI (optimistic update)
+        addFolderToUI(folder);
 
-        try {
-          // Try to create folder
-          const folder = await files.createFolder(
-            this.$route.params.id,
-            uniqueName,
-            normalizedParentId,
-          );
+        // Refresh from server with cache-busting to ensure consistency
+        await this.loadFilesInternal(normalizedParentId, true);
 
-          // Add to UI (optimistic update)
-          addFolderToUI(folder);
+        // Success - exit
+        return;
+      } catch (err) {
+        // Check if it's a 409 conflict error
+        const isConflict =
+          err.message &&
+          (err.message.toLowerCase().includes("already exists") ||
+            err.message.includes("409") ||
+            err.message.includes("CONFLICT"));
 
-          // Refresh from server with cache-busting to ensure consistency
-          await this.loadFilesInternal(normalizedParentId, true);
+        if (isConflict) {
+          // Store pending folder info
+          this.pendingFolderName = "New Folder";
+          this.conflictApplyToAll = false;
+          this.conflictResolution = null;
 
-          // Success - exit
-          return;
-        } catch (err) {
-          // Check if it's a 409 conflict error
-          const isConflict =
-            err.message &&
-            (err.message.toLowerCase().includes("already exists") ||
-              err.message.includes("409") ||
-              err.message.includes("CONFLICT"));
+          // Show conflict modal
+          this.conflictData = {
+            title: "Folder Already Exists",
+            message: `A folder named "New Folder" already exists in this location.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
 
-          if (isConflict && retryCount < maxRetries) {
-            // Conflict detected - add this name to our known names and retry
-            // Add the conflicting name to our known names
-            knownFolderNames.add(uniqueName.trim());
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
+              } else {
+                setTimeout(checkResolution, 100);
+              }
+            };
+            checkResolution();
+          });
 
-            // Increment retry counter and try again
-            retryCount++;
-            // Small delay before retry
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            continue;
-          } else {
-            // Not a conflict, or too many retries
-            this.showAlert({
-              type: "error",
-              title: "Error",
-              message:
-                retryCount >= maxRetries
-                  ? "Failed to create folder after multiple attempts. Please refresh the page and try again."
-                  : "Failed to create folder: " + err.message,
-            });
+          // Store resolution
+          const resolution = this.conflictResolution;
+          this.pendingFolderName = null;
+          this.conflictResolution = null;
+
+          // Handle resolution
+          if (resolution === "skip") {
+            // Skip folder creation
             return;
+          } else if (resolution === "replace") {
+            // Retry with overwrite
+            try {
+              const folder = await files.createFolder(
+                this.$route.params.id,
+                "New Folder",
+                normalizedParentId,
+                true,
+              );
+
+              addFolderToUI(folder);
+              await this.loadFilesInternal(normalizedParentId, true);
+              return;
+            } catch (replaceErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to replace folder: ${replaceErr.message}`,
+              });
+              return;
+            }
+          } else if (resolution === "keep-both") {
+            // Generate unique name and retry
+            const existingNames = new Set(
+              this.folders
+                .filter(
+                  (f) =>
+                    f &&
+                    f.mime_type === "application/x-directory" &&
+                    f.name &&
+                    (f.parent_id === normalizedParentId ||
+                      (!f.parent_id && !normalizedParentId)),
+                )
+                .map((f) => (f.name || "").trim())
+                .filter((name) => name.length > 0),
+            );
+            const uniqueName = this.generateUniqueName(
+              "New Folder",
+              existingNames,
+              false,
+            );
+
+            try {
+              const folder = await files.createFolder(
+                this.$route.params.id,
+                uniqueName,
+                normalizedParentId,
+              );
+
+              addFolderToUI(folder);
+              await this.loadFilesInternal(normalizedParentId, true);
+              return;
+            } catch (keepBothErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to create folder: ${keepBothErr.message}`,
+              });
+              return;
+            }
           }
+        } else {
+          // Not a conflict
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Failed to create folder: " + err.message,
+          });
+          return;
         }
       }
     },
@@ -1614,21 +1714,35 @@ export default {
         ) {
           const file = this.selectedFiles[fileIndex];
 
+          // Prepare file data (needed for conflict resolution)
+          let fileKey = null;
+          let fileData = null;
+          let encrypted = null;
+          let iv = null;
+          let encryptedFileKey = null;
+          let encryptedDataBlob = null;
+
+          // Calculate progress values (needed for conflict resolution)
+          const baseProgress = (uploadedCount / totalFiles) * 100;
+          const fileProgressWeight = (1 / totalFiles) * 100;
+
           try {
             // Set current file name for progress display
             this.uploadFileName = file.name;
 
             // Generate file key
-            const fileKey = await generateFileKey();
+            fileKey = await generateFileKey();
 
             // Read file data
-            const fileData = await file.arrayBuffer();
+            fileData = await file.arrayBuffer();
 
             // Encrypt file
-            const { encrypted, iv } = await encryptFile(fileKey, fileData);
+            const encryptedResult = await encryptFile(fileKey, fileData);
+            encrypted = encryptedResult.encrypted;
+            iv = encryptedResult.iv;
 
             // Encrypt file key with VaultSpace key
-            const encryptedFileKey = await encryptFileKey(
+            encryptedFileKey = await encryptFileKey(
               this.vaultspaceKey,
               fileKey,
             );
@@ -1637,24 +1751,24 @@ export default {
             const combined = new Uint8Array(iv.length + encrypted.byteLength);
             combined.set(iv, 0);
             combined.set(new Uint8Array(encrypted), iv.length);
-            const encryptedDataBlob = new Blob([combined]);
+            encryptedDataBlob = new Blob([combined]);
 
             // Check if file is large enough for chunked upload (5MB threshold)
             const CHUNK_SIZE_THRESHOLD = 5 * 1024 * 1024; // 5MB
             const encryptedSize = encryptedDataBlob.size;
 
-            // Calculate base progress for files already uploaded
-            const baseProgress = (uploadedCount / totalFiles) * 100;
-            const fileProgressWeight = (1 / totalFiles) * 100;
-
             let result;
+
+            // Check for conflict first if we have a resolution from previous conflict
+            let fileNameToUse = file.name;
+            let shouldOverwrite = false;
 
             // Use chunked upload for large files
             if (encryptedSize > CHUNK_SIZE_THRESHOLD) {
               // Create upload session
               const sessionInfo = await files.createUploadSession({
                 vaultspaceId: this.$route.params.id,
-                originalName: file.name,
+                originalName: fileNameToUse,
                 totalSize: encryptedSize,
                 chunkSize: CHUNK_SIZE_THRESHOLD,
                 encryptedFileKey: encryptedFileKey,
@@ -1824,16 +1938,30 @@ export default {
             if (!this.uploadedFileIds) {
               this.uploadedFileIds = [];
             }
-            this.uploadedFileIds.push(result.file.id);
-
-            uploadedCount++;
+            if (result && result.file) {
+              this.uploadedFileIds.push(result.file.id);
+              uploadedCount++;
+            }
           } catch (err) {
             // Check if error is due to cancellation
             if (err.message === "Upload cancelled" || this.uploadCancelled) {
               this.uploadCancelled = true;
               break;
             }
-            console.error(`Failed to upload ${file.name}:`, err);
+
+            // Check if it's a 409 conflict error (don't log it, we'll handle it)
+            const isConflict =
+              err.isConflict ||
+              err.status === 409 ||
+              (err.message &&
+                (err.message.toLowerCase().includes("already exists") ||
+                  err.message.includes("409") ||
+                  err.message.includes("CONFLICT")));
+
+            // Only log non-conflict errors
+            if (!isConflict) {
+              console.error(`Failed to upload ${file.name}:`, err);
+            }
 
             // Check if error is quota-related and show modal
             if (
@@ -1878,6 +2006,202 @@ export default {
 
               // Stop uploading remaining files
               break;
+            } else if (isConflict) {
+              // Handle conflict
+              // Check if we have a resolution from "apply to all"
+              let resolution = this.conflictResolution;
+              let applyToAll = this.conflictApplyToAll;
+
+              // If no resolution yet, show modal
+              if (!resolution) {
+                // Store pending upload info
+                this.pendingUploadFile = file;
+                this.pendingUploadIndex = fileIndex;
+                this.pendingUploadFiles = this.selectedFiles.slice(fileIndex);
+                this.conflictApplyToAll = false;
+                this.conflictResolution = null;
+
+                // Calculate remaining files count
+                const remainingCount = this.selectedFiles.length - fileIndex;
+
+                // Show conflict modal
+                this.conflictData = {
+                  title: "File Already Exists",
+                  message: `A file named "${file.name}" already exists in this folder.`,
+                  showApplyToAll: remainingCount > 1,
+                  remainingCount: remainingCount > 1 ? remainingCount : null,
+                };
+                this.showConflictModal = true;
+
+                // Wait for user decision
+                await new Promise((resolve) => {
+                  const checkResolution = () => {
+                    if (this.conflictResolution) {
+                      resolve();
+                    } else {
+                      setTimeout(checkResolution, 100);
+                    }
+                  };
+                  checkResolution();
+                });
+
+                // Store resolution for apply to all
+                resolution = this.conflictResolution;
+                applyToAll = this.conflictApplyToAll;
+
+                // Reset conflict state (but keep resolution if apply to all)
+                this.pendingUploadFile = null;
+                this.pendingUploadIndex = -1;
+                this.pendingUploadFiles = [];
+                if (!applyToAll) {
+                  this.conflictResolution = null;
+                }
+              }
+
+              // Handle resolution
+              let uploadSucceeded = false;
+              if (resolution === "skip") {
+                // Skip this file and continue
+                uploadSucceeded = true; // Mark as handled
+                continue;
+              } else if (resolution === "replace") {
+                // Retry with overwrite - need to re-encrypt if data not available
+                if (!encryptedDataBlob || !encryptedFileKey) {
+                  // Re-encrypt file
+                  fileKey = await generateFileKey();
+                  fileData = await file.arrayBuffer();
+                  const encryptedResult = await encryptFile(fileKey, fileData);
+                  encrypted = encryptedResult.encrypted;
+                  iv = encryptedResult.iv;
+                  encryptedFileKey = await encryptFileKey(
+                    this.vaultspaceKey,
+                    fileKey,
+                  );
+                  const combined = new Uint8Array(
+                    iv.length + encrypted.byteLength,
+                  );
+                  combined.set(iv, 0);
+                  combined.set(new Uint8Array(encrypted), iv.length);
+                  encryptedDataBlob = new Blob([combined]);
+                }
+
+                // Retry with overwrite
+                try {
+                  const uploadResult = files.upload(
+                    {
+                      file: encryptedDataBlob,
+                      originalName: file.name,
+                      vaultspaceId: this.$route.params.id,
+                      encryptedFileKey: encryptedFileKey,
+                      parentId: this.currentParentId,
+                      overwrite: true,
+                    },
+                    (loaded, total, speed, timeRemaining) => {
+                      if (!this.uploadCancelled) {
+                        const fileProgress =
+                          (loaded / total) * fileProgressWeight;
+                        this.uploadProgress = Math.round(
+                          baseProgress + fileProgress,
+                        );
+                        this.uploadSpeed = speed || 0;
+                        this.uploadTimeRemaining = timeRemaining;
+                      }
+                    },
+                  );
+
+                  this.uploadCancelFunctions.push(uploadResult.cancel);
+                  const replaceResult = await uploadResult.promise;
+                  this.uploadedFileIds.push(replaceResult.file.id);
+                  uploadedCount++;
+                  uploadSucceeded = true;
+                } catch (replaceErr) {
+                  console.error(`Failed to replace ${file.name}:`, replaceErr);
+                  this.uploadError = `Failed to replace ${file.name}: ${replaceErr.message}`;
+                  if (!applyToAll) {
+                    this.conflictResolution = null;
+                    this.conflictApplyToAll = false;
+                  }
+                  continue;
+                }
+              } else if (resolution === "keep-both") {
+                // Generate unique name and retry - need to re-encrypt if data not available
+                if (!encryptedDataBlob || !encryptedFileKey) {
+                  // Re-encrypt file
+                  fileKey = await generateFileKey();
+                  fileData = await file.arrayBuffer();
+                  const encryptedResult = await encryptFile(fileKey, fileData);
+                  encrypted = encryptedResult.encrypted;
+                  iv = encryptedResult.iv;
+                  encryptedFileKey = await encryptFileKey(
+                    this.vaultspaceKey,
+                    fileKey,
+                  );
+                  const combined = new Uint8Array(
+                    iv.length + encrypted.byteLength,
+                  );
+                  combined.set(iv, 0);
+                  combined.set(new Uint8Array(encrypted), iv.length);
+                  encryptedDataBlob = new Blob([combined]);
+                }
+
+                // Generate unique name and retry
+                const existingNames = new Set(
+                  this.filesList.map((f) => f.original_name || f.name || ""),
+                );
+                const uniqueName = this.generateUniqueName(
+                  file.name,
+                  existingNames,
+                  true,
+                );
+
+                try {
+                  const uploadResult = files.upload(
+                    {
+                      file: encryptedDataBlob,
+                      originalName: uniqueName,
+                      vaultspaceId: this.$route.params.id,
+                      encryptedFileKey: encryptedFileKey,
+                      parentId: this.currentParentId,
+                    },
+                    (loaded, total, speed, timeRemaining) => {
+                      if (!this.uploadCancelled) {
+                        const fileProgress =
+                          (loaded / total) * fileProgressWeight;
+                        this.uploadProgress = Math.round(
+                          baseProgress + fileProgress,
+                        );
+                        this.uploadSpeed = speed || 0;
+                        this.uploadTimeRemaining = timeRemaining;
+                      }
+                    },
+                  );
+
+                  this.uploadCancelFunctions.push(uploadResult.cancel);
+                  const keepBothResult = await uploadResult.promise;
+                  this.uploadedFileIds.push(keepBothResult.file.id);
+                  uploadedCount++;
+                  uploadSucceeded = true;
+                } catch (keepBothErr) {
+                  console.error(`Failed to upload ${uniqueName}:`, keepBothErr);
+                  this.uploadError = `Failed to upload ${uniqueName}: ${keepBothErr.message}`;
+                  if (!applyToAll) {
+                    this.conflictResolution = null;
+                    this.conflictApplyToAll = false;
+                  }
+                  continue;
+                }
+              }
+
+              // Reset apply to all after processing all files
+              if (fileIndex === this.selectedFiles.length - 1) {
+                this.conflictResolution = null;
+                this.conflictApplyToAll = false;
+              }
+
+              // If upload succeeded, continue to next file
+              if (uploadSucceeded) {
+                continue;
+              }
             } else {
               this.uploadError = `Failed to upload ${file.name}: ${err.message}`;
             }
@@ -2249,6 +2573,70 @@ export default {
     },
     handleAlertModalClose() {
       this.showAlertModal = false;
+    },
+    generateUniqueName(baseName, existingNames, isFile = false) {
+      // For files, preserve extension
+      let nameWithoutExt = baseName;
+      let extension = "";
+      if (isFile) {
+        const lastDot = baseName.lastIndexOf(".");
+        if (lastDot > 0) {
+          nameWithoutExt = baseName.substring(0, lastDot);
+          extension = baseName.substring(lastDot);
+        }
+      }
+
+      // Check if base name is available
+      if (!existingNames.has(baseName)) {
+        return baseName;
+      }
+
+      // Find the next available number
+      let counter = 1;
+      let newName = isFile
+        ? `${nameWithoutExt}(${counter})${extension}`
+        : `${baseName}(${counter})`;
+
+      while (existingNames.has(newName)) {
+        counter++;
+        newName = isFile
+          ? `${nameWithoutExt}(${counter})${extension}`
+          : `${baseName}(${counter})`;
+
+        // Safety limit to prevent infinite loop
+        if (counter > 1000) {
+          // Use UUID as fallback to guarantee uniqueness
+          const uuid = crypto.randomUUID().slice(0, 8);
+          newName = isFile
+            ? `${nameWithoutExt}(${uuid})${extension}`
+            : `${baseName}(${uuid})`;
+          break;
+        }
+      }
+
+      return newName;
+    },
+    handleConflictReplace(applyToAll) {
+      this.conflictApplyToAll = applyToAll;
+      this.conflictResolution = "replace";
+      this.showConflictModal = false;
+    },
+    handleConflictKeepBoth(applyToAll) {
+      this.conflictApplyToAll = applyToAll;
+      this.conflictResolution = "keep-both";
+      this.showConflictModal = false;
+    },
+    handleConflictSkip(applyToAll) {
+      this.conflictApplyToAll = applyToAll;
+      this.conflictResolution = "skip";
+      this.showConflictModal = false;
+    },
+    handleConflictClose() {
+      // If closed without action, treat as skip
+      if (!this.conflictResolution) {
+        this.conflictResolution = "skip";
+      }
+      this.showConflictModal = false;
     },
     async initSharingManager(fileId) {
       try {
@@ -2790,12 +3178,162 @@ export default {
 
         this.editingItemId = null;
       } catch (err) {
-        this.showAlert({
-          type: "error",
-          title: "Error",
-          message: err.message || "Error renaming",
-        });
-        this.editingItemId = null;
+        // Check if it's a 409 conflict error
+        const isConflict =
+          err.message &&
+          (err.message.toLowerCase().includes("already exists") ||
+            err.message.includes("409") ||
+            err.message.includes("CONFLICT"));
+
+        if (isConflict) {
+          // Store pending rename info
+          this.pendingRenameItem = item;
+          this.pendingRenameNewName = newName;
+          this.conflictApplyToAll = false;
+          this.conflictResolution = null;
+
+          // Show conflict modal
+          this.conflictData = {
+            title: "Name Already Exists",
+            message: `A file or folder named "${newName}" already exists in this folder.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
+
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
+              } else {
+                setTimeout(checkResolution, 100);
+              }
+            };
+            checkResolution();
+          });
+
+          // Store resolution
+          const resolution = this.conflictResolution;
+          const renameItem = this.pendingRenameItem;
+          const renameNewName = this.pendingRenameNewName;
+          this.pendingRenameItem = null;
+          this.pendingRenameNewName = null;
+          this.conflictResolution = null;
+
+          // Handle resolution
+          if (resolution === "skip") {
+            // Cancel rename
+            this.editingItemId = null;
+            return;
+          } else if (resolution === "replace") {
+            // Delete existing item then rename (backend doesn't support overwrite for rename)
+            try {
+              // Find existing item with the same name
+              const existingItem = this.filesList.find(
+                (f) =>
+                  f.original_name === renameNewName &&
+                  f.id !== renameItem.id &&
+                  f.parent_id === renameItem.parent_id,
+              );
+
+              if (existingItem) {
+                // Delete existing item
+                await files.delete(existingItem.id);
+              }
+
+              // Now rename
+              await files.rename(renameItem.id, renameNewName);
+
+              // Optimistic update
+              const index = this.filesList.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (index >= 0) {
+                this.filesList[index].original_name = renameNewName;
+              }
+              const folderIndex = this.folders.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (folderIndex >= 0) {
+                this.folders[folderIndex].original_name = renameNewName;
+              }
+              const fileIndex = this.files.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (fileIndex >= 0) {
+                this.files[fileIndex].original_name = renameNewName;
+              }
+
+              await this.loadFilesInternal(this.currentParentId, true);
+              this.editingItemId = null;
+            } catch (replaceErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to replace: ${replaceErr.message}`,
+              });
+              this.editingItemId = null;
+            }
+          } else if (resolution === "keep-both") {
+            // Generate unique name and retry
+            const existingNames = new Set(
+              this.filesList
+                .filter(
+                  (f) =>
+                    f.id !== renameItem.id &&
+                    f.parent_id === renameItem.parent_id,
+                )
+                .map((f) => f.original_name || f.name || ""),
+            );
+            const uniqueName = this.generateUniqueName(
+              renameNewName,
+              existingNames,
+              renameItem.mime_type !== "application/x-directory",
+            );
+
+            try {
+              await files.rename(renameItem.id, uniqueName);
+
+              // Optimistic update
+              const index = this.filesList.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (index >= 0) {
+                this.filesList[index].original_name = uniqueName;
+              }
+              const folderIndex = this.folders.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (folderIndex >= 0) {
+                this.folders[folderIndex].original_name = uniqueName;
+              }
+              const fileIndex = this.files.findIndex(
+                (f) => f.id === renameItem.id,
+              );
+              if (fileIndex >= 0) {
+                this.files[fileIndex].original_name = uniqueName;
+              }
+
+              await this.loadFilesInternal(this.currentParentId, true);
+              this.editingItemId = null;
+            } catch (keepBothErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to rename: ${keepBothErr.message}`,
+              });
+              this.editingItemId = null;
+            }
+          }
+        } else {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: err.message || "Error renaming",
+          });
+          this.editingItemId = null;
+        }
       }
     },
 

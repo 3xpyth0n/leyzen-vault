@@ -86,6 +86,7 @@ class AdvancedFileService:
         mime_type: str | None = None,
         parent_id: str | None = None,
         encrypted_metadata: str | None = None,
+        overwrite: bool = False,
     ) -> tuple[File, FileKey]:
         """Upload a file with encryption key management.
 
@@ -100,6 +101,7 @@ class AdvancedFileService:
             mime_type: MIME type
             parent_id: Parent folder ID
             encrypted_metadata: Encrypted metadata JSON
+            overwrite: If True, overwrite existing file with same name
 
         Returns:
             Tuple of (File, FileKey) objects
@@ -138,12 +140,36 @@ class AdvancedFileService:
                 )
 
         # Check for duplicate names in the same folder
+        existing_file = None
         if self._check_duplicate_name_in_folder(
             vaultspace_id, parent_id, original_name
         ):
-            raise ValueError(
-                f"A file with the name '{original_name}' already exists in this folder"
-            )
+            if overwrite:
+                # Find and delete existing file
+                existing_file = (
+                    self._get_active_file_query()
+                    .filter_by(
+                        vaultspace_id=vaultspace_id,
+                        parent_id=parent_id,
+                        original_name=original_name,
+                    )
+                    .first()
+                )
+                if existing_file:
+                    # Check if user has permission to overwrite (must be owner)
+                    if existing_file.owner_user_id != user_id:
+                        raise ValueError(
+                            f"User {user_id} does not have permission to overwrite file {existing_file.id}"
+                        )
+                    # Soft delete the existing file
+                    from datetime import datetime, timezone
+
+                    existing_file.deleted_at = datetime.now(timezone.utc)
+                    db.session.commit()
+            else:
+                raise ValueError(
+                    f"A file with the name '{original_name}' already exists in this folder"
+                )
 
         # Create file record
         file_obj = File(
@@ -503,6 +529,7 @@ class AdvancedFileService:
         user_id: str,
         name: str,
         parent_id: str | None = None,
+        overwrite: bool = False,
     ) -> File:
         """Create a folder (directory).
 
@@ -511,6 +538,7 @@ class AdvancedFileService:
             user_id: User ID creating the folder
             name: Folder name
             parent_id: Optional parent folder ID
+            overwrite: If True, overwrite existing folder with same name
 
         Returns:
             Created File object representing the folder
@@ -559,10 +587,35 @@ class AdvancedFileService:
 
         # Check for duplicate folder names in the same parent
         # Use the normalized name for comparison
+        existing_folder = None
         if self._check_duplicate_name_in_folder(vaultspace_id, parent_id, name):
-            raise ValueError(
-                f"A folder with the name '{name}' already exists in this location"
-            )
+            if overwrite:
+                # Find and delete existing folder
+                existing_folder = (
+                    self._get_active_file_query()
+                    .filter_by(
+                        vaultspace_id=vaultspace_id,
+                        parent_id=parent_id,
+                        original_name=name,
+                        mime_type="application/x-directory",
+                    )
+                    .first()
+                )
+                if existing_folder:
+                    # Check if user has permission to overwrite (must be owner)
+                    if existing_folder.owner_user_id != user_id:
+                        raise ValueError(
+                            f"User {user_id} does not have permission to overwrite folder {existing_folder.id}"
+                        )
+                    # Soft delete the existing folder
+                    from datetime import datetime, timezone
+
+                    existing_folder.deleted_at = datetime.now(timezone.utc)
+                    db.session.commit()
+            else:
+                raise ValueError(
+                    f"A folder with the name '{name}' already exists in this location"
+                )
 
         # Create folder record (folders have mime_type="application/x-directory" and empty storage_ref)
         folder = File(

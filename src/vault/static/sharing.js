@@ -2087,23 +2087,10 @@ if (typeof window !== "undefined") {
     // Check if Trusted Types policies are available (only if Trusted Types is supported)
     let hasPolicies = false;
     if (trustedTypesSupported) {
-      // First check if they're assigned to window
+      // Check if they're assigned to window
       hasPolicies =
         window.vaultHTMLPolicy ||
         (window.trustedTypes && window.trustedTypes.defaultPolicy);
-
-      // If not found on window, try to get them directly from Trusted Types
-      if (!hasPolicies && window.trustedTypes) {
-        try {
-          const vaultPolicy = window.trustedTypes.getPolicy("vault-html");
-          if (vaultPolicy) {
-            window.vaultHTMLPolicy = vaultPolicy;
-            hasPolicies = true;
-          }
-        } catch (error) {
-          // Ignore errors when checking policies
-        }
-      }
     } else {
       // Trusted Types is not supported - we'll use DOM API methods, so policies are not required
       hasPolicies = true;
