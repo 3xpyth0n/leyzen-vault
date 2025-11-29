@@ -98,12 +98,12 @@ function getFileIcon(fileName) {
     // Get the icon function and call it with proper context
     const iconFunction = window.Icons[iconName];
     if (iconFunction && typeof iconFunction === "function") {
-      return iconFunction.call(window.Icons, 24, "currentColor");
+      return iconFunction.call(window.Icons, 48, "currentColor");
     }
 
     // Fallback to generic file icon
     if (window.Icons.file) {
-      return window.Icons.file(24, "currentColor");
+      return window.Icons.file(48, "currentColor");
     }
   }
   // Fallback to text if icons not available

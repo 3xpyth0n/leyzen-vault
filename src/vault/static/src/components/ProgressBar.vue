@@ -6,12 +6,13 @@
     <div class="progress-content">
       <div class="progress-header">
         <div v-if="fileName" class="progress-file-name">
-          <Icon
+          <span
             v-if="status"
-            :name="status === 'Uploading...' ? 'upload' : 'download'"
-            :size="16"
+            v-html="
+              getIcon(status === 'Uploading...' ? 'upload' : 'download', 16)
+            "
             class="progress-status-icon"
-          />
+          ></span>
           <span class="progress-file-name-text">{{ fileName }}</span>
         </div>
         <button
@@ -21,7 +22,7 @@
           type="button"
           title="Cancel"
         >
-          <Icon name="x" :size="16" />
+          <span v-html="getIcon('x', 16)"></span>
         </button>
       </div>
       <div class="progress-bar-wrapper">
@@ -48,13 +49,9 @@
 </template>
 
 <script>
-import Icon from "./Icon.vue";
-
 export default {
   name: "ProgressBar",
-  components: {
-    Icon,
-  },
+  components: {},
   props: {
     progress: {
       type: Number,
@@ -91,6 +88,19 @@ export default {
     },
   },
   methods: {
+    getIcon(iconName, size = 24) {
+      if (!window.Icons) {
+        return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      const iconFn = window.Icons[iconName];
+      if (typeof iconFn === "function") {
+        return iconFn.call(window.Icons, size, "currentColor");
+      }
+      return "";
+    },
     formatSpeed(bytesPerSecond) {
       if (bytesPerSecond < 1024) {
         return `${Math.round(bytesPerSecond)} B/s`;

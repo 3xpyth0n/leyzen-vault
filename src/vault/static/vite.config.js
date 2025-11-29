@@ -60,9 +60,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // Disable CSS code splitting - inline CSS in JS to avoid preload issues
-    // This prevents Vue from trying to preload separate CSS files that cause 503 errors
-    cssCodeSplit: false,
+    chunkSizeWarningLimit: 100000,
+    cssCodeSplit: true,
     rollupOptions: {
       input: resolve(__dirname, "index.html"),
       output: {
@@ -72,13 +71,17 @@ export default defineConfig({
         manualChunks(id) {
           // Vendor dependencies
           if (id.includes("node_modules")) {
-            // Core Vue framework
+            // Vue framework (Vue, Vue Router, Pinia together - they're interdependent)
             if (
               id.includes("vue") ||
               id.includes("vue-router") ||
               id.includes("pinia")
             ) {
-              return "vendor-core";
+              return "vendor-vue";
+            }
+            // Lucide icons (can be large, separate it)
+            if (id.includes("lucide")) {
+              return "vendor-lucide";
             }
             // HTTP client
             if (id.includes("axios")) {
@@ -91,9 +94,37 @@ export default defineConfig({
             // Other node_modules dependencies
             return "vendor-common";
           }
-          // Shared components (excluding admin-specific components)
+          // Shared components - split into two chunks to avoid circular dependencies
+          // while still reducing size
           if (id.includes("/components/") && !id.includes("/admin/")) {
-            return "shared-components";
+            // Split based on component type to balance chunk sizes
+            // Group frequently used small components together
+            if (
+              id.includes("AlertModal") ||
+              id.includes("ConfirmationModal") ||
+              id.includes("CustomSelect") ||
+              id.includes("PasswordInput") ||
+              id.includes("ProgressBar") ||
+              id.includes("SearchBar") ||
+              id.includes("TwoFactorSetup") ||
+              id.includes("TwoFactorVerify")
+            ) {
+              return "components-core";
+            }
+            // Group larger file-related components
+            if (
+              id.includes("FileListView") ||
+              id.includes("FileMenuDropdown") ||
+              id.includes("FilePreview") ||
+              id.includes("FileProperties") ||
+              id.includes("VirtualList") ||
+              id.includes("BatchActions") ||
+              id.includes("DragDropUpload")
+            ) {
+              return "components-file";
+            }
+            // Other components (layout, etc.)
+            return "components-other";
           }
         },
       },
@@ -123,7 +154,6 @@ export default defineConfig({
         typeof msg === "string" &&
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
-          msg.includes("icons.js") ||
           msg.includes("cleanup-modal.js") ||
           msg.includes("sharing.js"))
       ) {
@@ -145,7 +175,6 @@ export default defineConfig({
         typeof msg === "string" &&
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
-          msg.includes("icons.js") ||
           msg.includes("cleanup-modal.js") ||
           msg.includes("sharing.js"))
       ) {

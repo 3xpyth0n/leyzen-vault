@@ -1,74 +1,16 @@
-"""Valid SVG icon names for VaultSpace icons.
+"""Icon name validation for VaultSpace icons.
 
-This module contains the list of valid icon names that can be used for VaultSpace icons.
-Icons are SVG-based and defined in src/vault/static/icons.js.
+This module provides minimal validation for icon names.
+Icons are provided by Lucide Icons library. The frontend handles icon availability
+checking, so the backend only performs basic format validation for security.
 """
-
-# Valid SVG icon names (excluding helper functions and aliases)
-VALID_ICON_NAMES = {
-    "folder",
-    "file",
-    "delete",
-    "star",
-    "users",
-    "clock",
-    "lock",
-    "key",
-    "user",
-    "settings",
-    "logout",
-    "upload",
-    "download",
-    "link",
-    "eye",
-    "edit",
-    "clipboard",
-    "copy",
-    "move",
-    "search",
-    "plus",
-    "chart",
-    "moon",
-    "sun",
-    "warning",
-    "moreVertical",
-    "grid",
-    "list",
-    "home",
-    "image",
-    "chevronDown",
-    "check",
-    "trash",
-    "restore",
-    "success",
-    "error",
-    "info",
-    "sparkles",
-    "school",
-    "briefcase",
-    "heart",
-    "dollarSign",
-    "book",
-    "calendar",
-    "shoppingBag",
-    "car",
-    "music",
-    "video",
-    "camera",
-    "gamepad",
-    "coffee",
-    "building",
-    "graduationCap",
-    "wallet",
-    "plane",
-    "pin",
-    "unpin",
-    "pin-filled",
-}
 
 
 def is_valid_icon_name(icon_name: str) -> bool:
     """Check if an icon name is valid.
+
+    Performs minimal validation: checks that the icon name is a non-empty string
+    with reasonable length. The actual icon availability is validated by the frontend.
 
     Args:
         icon_name: Icon name to validate
@@ -78,13 +20,22 @@ def is_valid_icon_name(icon_name: str) -> bool:
     """
     if not icon_name or not isinstance(icon_name, str):
         return False
-    return icon_name in VALID_ICON_NAMES
+
+    # Basic length check to prevent extremely long strings
+    if len(icon_name) > 100:
+        return False
+
+    # Check that it's not just whitespace
+    if not icon_name.strip():
+        return False
+
+    return True
 
 
 def get_valid_icon_names() -> set[str]:
-    """Get the set of all valid icon names.
+    """Get a set of common valid icon names.
 
     Returns:
-        Set of valid icon names
+        Empty set (for backward compatibility)
     """
-    return VALID_ICON_NAMES.copy()
+    return set()

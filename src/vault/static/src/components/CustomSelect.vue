@@ -68,13 +68,9 @@
 
 <script>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
-import Icon from "./Icon.vue";
-
 export default {
   name: "CustomSelect",
-  components: {
-    Icon,
-  },
+  components: {},
   props: {
     modelValue: {
       type: [String, Number],

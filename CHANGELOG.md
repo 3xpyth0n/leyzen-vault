@@ -13,10 +13,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Email verification is now mandatory for all users except the superadmin.
 - Conflict resolution modal for file and folder name conflicts with options to replace, keep both (auto-rename), or skip ([#13](https://github.com/3xpyth0n/leyzen-vault/issues/13)).
 - VaultSpace pinning feature allowing users to pin frequently used VaultSpaces to the sidebar for quick access ([#14](https://github.com/3xpyth0n/leyzen-vault/issues/14)).
+- Dynamic icon system using Lucide Icons library with searchable IconPicker for VaultSpace customization.
 
 ### Changed
 
 - Improved Docker container isolation, excluded Python caches from builds, and minimized write permissions for each container.
+- Migrated from hardcoded SVG icons to Lucide Icons library, providing access to 1000+ modern icons. The IconPicker now includes search functionality allowing users to find icons by name.
+- Optimized build code splitting to reduce chunk sizes below 100 kB by separating vendor dependencies and component chunks.
 
 ### Fixed
 
@@ -26,6 +29,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - HTTPS detection now honors custom HTTP/HTTPS ports and tunnel frontends, preventing CSP errors and redirect loops when overriding `HTTP_PORT`/`HTTPS_PORT`.
 - Fixed setup endpoint redirecting to dashboard without master key initialization. The `/setup` endpoint now follows the same flow as `/signup`, requiring email verification and redirecting to login page instead of automatically authenticating users.
 - Fixed SharingManager initialization failure on browsers without Trusted Types support (e.g., Firefox) by implementing DOM API fallback for modal creation.
+- Fixed MIME type detection priority: extension-based detection now takes precedence over file-magic, preventing `application/octet-stream` for files with known extensions. Added migration script and frontend normalization for WEBP and other formats.
 
 ## [2.2.1] - 2025-11-23
 

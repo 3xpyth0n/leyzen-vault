@@ -93,7 +93,7 @@
       <div v-else class="shared-files-list glass">
         <div v-for="file in files" :key="file.id" class="shared-file-item">
           <div class="file-info">
-            <div class="file-icon" v-html="getIcon('file', 32)"></div>
+            <div class="file-icon" v-html="getFileIcon(file)"></div>
             <div class="file-details">
               <h3 class="file-name">{{ file.original_name }}</h3>
               <p class="file-meta">
@@ -219,10 +219,31 @@ export default {
   },
   methods: {
     getIcon(iconName, size = 24) {
-      if (!window.Icons || !window.Icons[iconName]) {
+      if (!window.Icons) {
         return "";
       }
-      return window.Icons[iconName](size, "currentColor");
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      if (
+        window.Icons[iconName] &&
+        typeof window.Icons[iconName] === "function"
+      ) {
+        return window.Icons[iconName](size, "currentColor");
+      }
+      return "";
+    },
+    getFileIcon(file) {
+      if (!window.Icons) {
+        return "";
+      }
+      if (file.mime_type === "application/x-directory") {
+        return this.getIcon("folder", 48);
+      }
+      const iconName = window.Icons.getFileIconName
+        ? window.Icons.getFileIconName(file.mime_type, file.original_name)
+        : "file";
+      return this.getIcon(iconName, 48);
     },
     async loadSharedFiles() {
       this.loading = true;

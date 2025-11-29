@@ -108,10 +108,10 @@ def detect_mime_type(
     """Detect MIME type using multiple methods.
 
     Priority:
-    1. Provided MIME type (if valid and not generic)
-    2. Content-based detection (magic bytes, PIL, python-magic)
-    3. Extension-based detection (mimetypes module)
-    4. Fallback to application/octet-stream
+    1. Extension-based detection (mimetypes module)
+    2. Content-based detection (magic bytes, PIL, python-magic) if file_data available
+    3. Provided MIME type (only if not generic)
+    4. Fallback to application/octet-stream (last resort)
 
     Args:
         filename: File name with extension
@@ -129,23 +129,25 @@ def detect_mime_type(
         None,
     }
 
-    # If provided MIME type is valid and not generic, use it
-    if provided_mime_type and provided_mime_type not in generic_types:
-        return provided_mime_type
-
-    # Try content-based detection if file data is available
-    if file_data:
-        content_mime = detect_mime_type_from_content(file_data)
-        if content_mime and content_mime not in generic_types:
-            return content_mime
-
-    # Try extension-based detection
+    # Priority 1: Extension-based detection (most reliable for files with extensions)
     if filename:
         extension_mime = detect_mime_type_from_extension(filename)
         if extension_mime and extension_mime not in generic_types:
             return extension_mime
 
-    # Last resort: return generic type
+    # Priority 2: Content-based detection (file-magic) if file data is available
+    # This is useful when there's no extension or extension detection failed
+    if file_data:
+        content_mime = detect_mime_type_from_content(file_data)
+        if content_mime and content_mime not in generic_types:
+            return content_mime
+
+    # Priority 3: Provided MIME type (only if not generic)
+    # Client-provided types are less reliable, so we check them last
+    if provided_mime_type and provided_mime_type not in generic_types:
+        return provided_mime_type
+
+    # Priority 4: Last resort - return generic type
     return "application/octet-stream"
 
 

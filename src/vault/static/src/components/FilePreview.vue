@@ -281,6 +281,7 @@ import {
   decryptVaultSpaceKeyForUser,
 } from "../services/keyManager";
 import { decryptFile, decryptFileKey } from "../services/encryption";
+import { normalizeMimeType } from "../utils/mimeType";
 
 export default {
   name: "FilePreview",
@@ -392,16 +393,30 @@ export default {
     const isFullscreen = ref(false);
     let videoControlsTimeout = null;
 
+    // Normalize mime type from extension if needed
+    const normalizedMimeType = computed(() => {
+      return normalizeMimeType(props.fileName, props.mimeType);
+    });
+
     const isImage = computed(() => {
-      return props.mimeType && props.mimeType.startsWith("image/");
+      return (
+        normalizedMimeType.value &&
+        normalizedMimeType.value.startsWith("image/")
+      );
     });
 
     const isVideo = computed(() => {
-      return props.mimeType && props.mimeType.startsWith("video/");
+      return (
+        normalizedMimeType.value &&
+        normalizedMimeType.value.startsWith("video/")
+      );
     });
 
     const isAudio = computed(() => {
-      return props.mimeType && props.mimeType.startsWith("audio/");
+      return (
+        normalizedMimeType.value &&
+        normalizedMimeType.value.startsWith("audio/")
+      );
     });
 
     const isMarkdown = computed(() => {
@@ -678,8 +693,10 @@ export default {
 
         // Create preview based on file type
         if (isImage.value || isVideo.value || isAudio.value) {
-          // Create blob URL for media files
-          const blob = new Blob([decryptedData], { type: props.mimeType });
+          // Create blob URL for media files using normalized mime type
+          const blob = new Blob([decryptedData], {
+            type: normalizedMimeType.value,
+          });
           previewUrl.value = URL.createObjectURL(blob);
         } else if (isMarkdown.value) {
           // For Markdown files, convert to HTML

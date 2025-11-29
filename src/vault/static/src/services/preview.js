@@ -5,6 +5,7 @@
  */
 
 import { apiRequest, parseErrorResponse } from "./api";
+import { normalizeMimeType } from "../utils/mimeType";
 
 /**
  * Preview API methods
@@ -50,31 +51,37 @@ export const preview = {
    * Check if preview is available for a MIME type.
    *
    * @param {string} mimeType - MIME type
+   * @param {string} filename - Optional filename for mime type normalization
    * @returns {boolean} True if preview is available
    */
-  isPreviewAvailable(mimeType) {
-    if (!mimeType) return false;
+  isPreviewAvailable(mimeType, filename = null) {
+    // Normalize mime type from extension if filename is provided
+    const normalizedMimeType = filename
+      ? normalizeMimeType(filename, mimeType)
+      : mimeType;
+
+    if (!normalizedMimeType) return false;
 
     // Images
-    if (mimeType.startsWith("image/")) return true;
+    if (normalizedMimeType.startsWith("image/")) return true;
 
     // PDFs
-    if (mimeType === "application/pdf") return true;
+    if (normalizedMimeType === "application/pdf") return true;
 
     // Videos
-    if (mimeType.startsWith("video/")) return true;
+    if (normalizedMimeType.startsWith("video/")) return true;
 
     // Audio
-    if (mimeType.startsWith("audio/")) return true;
+    if (normalizedMimeType.startsWith("audio/")) return true;
 
     // Text files
     if (
-      mimeType.startsWith("text/") ||
-      mimeType === "application/json" ||
-      mimeType === "application/xml" ||
-      mimeType.includes("javascript") ||
-      mimeType.includes("css") ||
-      mimeType.includes("html")
+      normalizedMimeType.startsWith("text/") ||
+      normalizedMimeType === "application/json" ||
+      normalizedMimeType === "application/xml" ||
+      normalizedMimeType.includes("javascript") ||
+      normalizedMimeType.includes("css") ||
+      normalizedMimeType.includes("html")
     ) {
       return true;
     }
@@ -86,22 +93,28 @@ export const preview = {
    * Get preview type for a MIME type.
    *
    * @param {string} mimeType - MIME type
+   * @param {string} filename - Optional filename for mime type normalization
    * @returns {string} Preview type (image, pdf, video, audio, text, unsupported)
    */
-  getPreviewType(mimeType) {
-    if (!mimeType) return "unsupported";
+  getPreviewType(mimeType, filename = null) {
+    // Normalize mime type from extension if filename is provided
+    const normalizedMimeType = filename
+      ? normalizeMimeType(filename, mimeType)
+      : mimeType;
 
-    if (mimeType.startsWith("image/")) return "image";
-    if (mimeType === "application/pdf") return "pdf";
-    if (mimeType.startsWith("video/")) return "video";
-    if (mimeType.startsWith("audio/")) return "audio";
+    if (!normalizedMimeType) return "unsupported";
+
+    if (normalizedMimeType.startsWith("image/")) return "image";
+    if (normalizedMimeType === "application/pdf") return "pdf";
+    if (normalizedMimeType.startsWith("video/")) return "video";
+    if (normalizedMimeType.startsWith("audio/")) return "audio";
     if (
-      mimeType.startsWith("text/") ||
-      mimeType === "application/json" ||
-      mimeType === "application/xml" ||
-      mimeType.includes("javascript") ||
-      mimeType.includes("css") ||
-      mimeType.includes("html")
+      normalizedMimeType.startsWith("text/") ||
+      normalizedMimeType === "application/json" ||
+      normalizedMimeType === "application/xml" ||
+      normalizedMimeType.includes("javascript") ||
+      normalizedMimeType.includes("css") ||
+      normalizedMimeType.includes("html")
     ) {
       return "text";
     }

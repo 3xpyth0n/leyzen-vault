@@ -170,7 +170,10 @@
               />
             </div>
             <div class="grid-cell grid-cell-name file-name">
-              <span class="file-icon-small" v-html="getFileIcon(item)"></span>
+              <span
+                class="file-icon-small"
+                v-html="getFileIcon(item, 'large')"
+              ></span>
               <span
                 v-if="editingItemId === item.id"
                 class="inline-edit-container"
@@ -740,11 +743,11 @@ export default {
       return sortOrder.value === "asc" ? "↑" : "↓";
     };
 
-    const getFileIcon = (item, size = "small") => {
+    const getFileIcon = (item, size = "large") => {
       if (!window.Icons) {
         return item.mime_type === "application/x-directory" ? "📁" : "📄";
       }
-      const iconSize = size === "large" ? 48 : 20;
+      const iconSize = size === "large" ? 48 : 48;
       if (item.mime_type === "application/x-directory") {
         return window.Icons.folder(iconSize, "currentColor");
       }

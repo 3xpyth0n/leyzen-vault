@@ -16,7 +16,7 @@
         <div v-else-if="error" class="error">{{ error }}</div>
         <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
           <div class="empty-vaultspaces-content">
-            <Icon name="folder" :size="64" />
+            <span v-html="getIcon('folder', 64)"></span>
             <h3>No VaultSpaces yet</h3>
             <p>Create your first VaultSpace to start organizing your files</p>
             <button
@@ -150,7 +150,6 @@
 <script>
 import { vaultspaces, auth } from "../services/api";
 import QuotaDisplay from "../components/QuotaDisplay.vue";
-import Icon from "../components/Icon.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import IconPicker from "../components/IconPicker.vue";
@@ -160,7 +159,6 @@ export default {
   name: "Dashboard",
   components: {
     QuotaDisplay,
-    Icon,
     ConfirmationModal,
     AlertModal,
     IconPicker,
@@ -201,10 +199,12 @@ export default {
   },
   methods: {
     getIcon(iconName, size = 24) {
-      if (!window.Icons || !window.Icons[iconName]) {
+      if (!window.Icons) {
         return "";
       }
-      // Use .call() to preserve the correct 'this' context for window.Icons
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
       const iconFn = window.Icons[iconName];
       if (typeof iconFn === "function") {
         return iconFn.call(window.Icons, size, "currentColor");

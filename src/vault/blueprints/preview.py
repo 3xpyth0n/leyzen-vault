@@ -8,6 +8,7 @@ from pathlib import Path
 from ..storage import FileStorage
 from ..services.preview import PreviewService
 from ..middleware.jwt_auth import jwt_required
+from ..utils.mime_type_detection import detect_mime_type_from_extension
 from .utils import get_client_ip
 
 preview_bp = Blueprint("preview", __name__)
@@ -68,6 +69,17 @@ def get_preview(file_id: str):
         return jsonify({"error": "File not found"}), 404
 
     mime_type = file_obj.mime_type or ""
+
+    # If mime type is generic, try to detect from extension
+    generic_mime_types = [
+        "application/octet-stream",
+        "application/x-unknown",
+        "binary/octet-stream",
+    ]
+    if mime_type in generic_mime_types and file_obj.original_name:
+        detected_mime = detect_mime_type_from_extension(file_obj.original_name)
+        if detected_mime and detected_mime not in generic_mime_types:
+            mime_type = detected_mime
 
     # Check if thumbnail exists
     has_thumbnail = preview_service.thumbnail_exists(file_id)

@@ -42,7 +42,7 @@
                   Last updated: {{ formatTime(lastUpdateTime) }}
                 </span>
                 <button @click="loadStats" class="btn-refresh" title="Refresh">
-                  <Icon name="clock" :size="18" />
+                  <span v-html="getIcon('clock', 18)"></span>
                 </button>
               </div>
             </div>
@@ -128,15 +128,6 @@
                       >{{ stats.disk.free_gb }} GB</span
                     >
                   </div>
-                </div>
-              </div>
-              <div class="stat-card glass glass-card">
-                <h3>Recent Activity</h3>
-                <div class="stat-value">
-                  {{ stats.users.recent_activity }}
-                </div>
-                <div class="stat-details">
-                  <span class="stat-detail">Users (last 7 days)</span>
                 </div>
               </div>
             </div>
@@ -247,7 +238,6 @@ import AdminSSOProviders from "./AdminSSOProviders.vue";
 import RecentActivityList from "../components/admin/RecentActivityList.vue";
 import TopUsersCard from "../components/admin/TopUsersCard.vue";
 import QuotaAlertsCard from "../components/admin/QuotaAlertsCard.vue";
-import Icon from "../components/Icon.vue";
 
 export default {
   name: "AdminPanel",
@@ -261,7 +251,6 @@ export default {
     RecentActivityList,
     TopUsersCard,
     QuotaAlertsCard,
-    Icon,
   },
   setup() {
     const router = useRouter();
@@ -362,7 +351,22 @@ export default {
       }
     });
 
+    const getIcon = (iconName, size = 24) => {
+      if (!window.Icons) {
+        return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      const iconFn = window.Icons[iconName];
+      if (typeof iconFn === "function") {
+        return iconFn.call(window.Icons, size, "currentColor");
+      }
+      return "";
+    };
+
     return {
+      getIcon,
       activeTab,
       tabs,
       stats,
@@ -525,7 +529,7 @@ export default {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .last-update {
@@ -534,10 +538,9 @@ export default {
 }
 
 .btn-refresh {
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0);
+  padding: 0rem;
+  margin-top: 0.1rem;
   cursor: pointer;
   color: #cbd5e1;
   display: flex;
@@ -547,10 +550,9 @@ export default {
 }
 
 .btn-refresh:hover {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(0, 0, 0, 0);
   color: #e6eef6;
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 
 .stats-grid {

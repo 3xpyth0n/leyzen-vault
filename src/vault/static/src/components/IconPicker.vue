@@ -11,9 +11,19 @@
       <div class="modal-container" @click.stop>
         <div class="modal-content-icon-picker">
           <h2 id="icon-picker-title" class="modal-title">Select Icon</h2>
+          <div class="icon-search-container">
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="icon-search-input"
+              placeholder="Search icons by name..."
+              autofocus
+              @input="handleSearch"
+            />
+          </div>
           <div class="icon-grid">
             <button
-              v-for="iconName in availableIcons"
+              v-for="iconName in filteredIcons"
               :key="iconName"
               class="icon-button"
               :class="{ 'icon-button-selected': iconName === currentIcon }"
@@ -23,6 +33,21 @@
             >
               <div class="icon-preview" v-html="getIcon(iconName, 32)"></div>
             </button>
+          </div>
+          <div
+            v-if="filteredIcons.length === 0 && searchQuery.trim().length >= 2"
+            class="no-icons-message"
+          >
+            No icons found matching "{{ searchQuery }}"
+          </div>
+          <div
+            v-else-if="
+              filteredIcons.length === 0 &&
+              (!searchQuery.trim() || searchQuery.trim().length < 2)
+            "
+            class="no-icons-message"
+          >
+            Type at least 2 characters to search for icons
           </div>
           <div class="modal-buttons">
             <button class="modal-btn modal-btn-cancel" @click="handleClose">
@@ -49,24 +74,69 @@ export default {
     },
   },
   emits: ["select", "close"],
+  data() {
+    return {
+      searchQuery: "",
+      allIcons: [],
+    };
+  },
   computed: {
     availableIcons() {
       if (!window.Icons) {
         return [];
       }
-      // Get all icon names from window.Icons, excluding helper functions
+      // Use getAllIconNames if available (new system), otherwise fallback to old method
+      if (
+        window.Icons.getAllIconNames &&
+        typeof window.Icons.getAllIconNames === "function"
+      ) {
+        const icons = window.Icons.getAllIconNames();
+        return Array.isArray(icons) ? icons : [];
+      }
+      // Fallback: Get all icon names from window.Icons, excluding helper functions
       const icons = [];
       for (const key in window.Icons) {
         if (
           typeof window.Icons[key] === "function" &&
           key !== "createSVG" &&
-          key !== "chevron-down"
+          key !== "chevron-down" &&
+          key !== "getIcon" &&
+          key !== "getFileIconName" &&
+          key !== "getAllIconNames" &&
+          key !== "searchIcons"
         ) {
           icons.push(key);
         }
       }
       return icons.sort();
     },
+    filteredIcons() {
+      const query = this.searchQuery ? this.searchQuery.trim() : "";
+
+      // Don't show any icons if search is empty or has less than 2 characters
+      if (!query || query.length < 2) {
+        return [];
+      }
+
+      // Use searchIcons if available (new system), otherwise filter manually
+      if (
+        window.Icons &&
+        window.Icons.searchIcons &&
+        typeof window.Icons.searchIcons === "function"
+      ) {
+        const results = window.Icons.searchIcons(query);
+        return results || [];
+      }
+      // Fallback: manual filtering
+      const lowerQuery = query.toLowerCase();
+      return this.availableIcons.filter((iconName) =>
+        iconName.toLowerCase().includes(lowerQuery),
+      );
+    },
+  },
+  mounted() {
+    // Load all icons on mount
+    this.allIcons = this.availableIcons;
   },
   watch: {
     show(newVal) {
@@ -79,15 +149,23 @@ export default {
   },
   methods: {
     getIcon(iconName, size = 24) {
-      if (!window.Icons || !window.Icons[iconName]) {
+      if (!window.Icons) {
         return "";
       }
-      // Use .call() to preserve the correct 'this' context for window.Icons
+      // Use getIcon if available (new system)
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      // Fallback: use direct function call
       const iconFn = window.Icons[iconName];
       if (typeof iconFn === "function") {
         return iconFn.call(window.Icons, size, "currentColor");
       }
       return "";
+    },
+    handleSearch() {
+      // Search is handled by computed property filteredIcons
+      // This method can be used for additional search logic if needed
     },
     selectIcon(iconName) {
       this.$emit("select", iconName);
@@ -191,6 +269,39 @@ export default {
   font-size: 1.5rem;
   font-weight: 600;
   text-align: center;
+}
+
+.icon-search-container {
+  margin-bottom: 1.5rem;
+}
+
+.icon-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.icon-search-input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+.icon-search-input::placeholder {
+  color: rgba(230, 238, 246, 0.5);
+}
+
+.no-icons-message {
+  text-align: center;
+  color: rgba(230, 238, 246, 0.6);
+  padding: 2rem;
+  font-size: 0.95rem;
 }
 
 .icon-grid {

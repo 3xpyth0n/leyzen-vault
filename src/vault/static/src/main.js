@@ -10,6 +10,8 @@ import { folderPicker } from "./utils/FolderPicker.js";
 // Import encryption.js to initialize VaultCrypto wrapper for compatibility
 import "./services/encryption.js";
 import { decryptFileKey } from "./services/encryption.js";
+// Import new icon system (replaces static icons.js)
+import "./utils/icons.js";
 
 // Make available globally for non-module scripts
 if (typeof window !== "undefined") {
@@ -18,12 +20,12 @@ if (typeof window !== "undefined") {
   window.decryptFileKey = decryptFileKey;
 }
 
-// Note: icons.js and trusted-types-init.js are loaded BEFORE main.js in index.html
-// sharing.js is loaded after Vue app mounts
-// Icons should be available immediately, but add a small check
+// Note: The new icon system is imported above and automatically sets window.Icons
+// The old static icons.js is still loaded in index.html for backward compatibility
+// but will be replaced by the new system
 if (!window.Icons) {
   console.warn(
-    "window.Icons not available - icons.js may not be loaded. Some icons may not display.",
+    "window.Icons not available - icon system may not be loaded. Some icons may not display.",
   );
 }
 

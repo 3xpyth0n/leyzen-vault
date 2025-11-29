@@ -9,11 +9,9 @@
   <body>
     <div id="app"></div>
 
-    <!-- Static scripts must be loaded BEFORE Vue app to ensure window.Icons is available -->
-    <script src="/static/icons.js"></script>
     <!-- Cleanup: Remove any stuck confirmation modal if it exists (respects CSP) -->
     <script src="/static/cleanup-modal.js"></script>
-    <!-- Load Vue app (must be after icons.js) -->
+    <!-- Load Vue app (icon system is now loaded via main.js) -->
     <script type="module" src="/src/main.js"></script>
     <!-- sharing.js can be loaded after Vue app -->
     <script src="/static/sharing.js"></script>

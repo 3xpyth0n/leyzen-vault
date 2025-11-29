@@ -8,7 +8,7 @@
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/dashboard' }"
         >
-          <Icon name="home" :size="20" class="sidebar-icon" />
+          <span v-html="getIcon('home', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Home</span>
         </button>
         <button
@@ -16,7 +16,7 @@
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/starred' }"
         >
-          <Icon name="star" :size="20" class="sidebar-icon" />
+          <span v-html="getIcon('star', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Starred</span>
         </button>
         <button
@@ -24,7 +24,7 @@
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/shared' }"
         >
-          <Icon name="link" :size="20" class="sidebar-icon" />
+          <span v-html="getIcon('link', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Shared</span>
         </button>
         <button
@@ -32,7 +32,7 @@
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/recent' }"
         >
-          <Icon name="clock" :size="20" class="sidebar-icon" />
+          <span v-html="getIcon('clock', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Recent</span>
         </button>
         <button
@@ -40,7 +40,7 @@
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/trash' }"
         >
-          <Icon name="trash" :size="20" class="sidebar-icon" />
+          <span v-html="getIcon('trash', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Trash</span>
         </button>
 
@@ -89,7 +89,7 @@
         class="sidebar-toggle"
         :title="sidebarCollapsed ? 'Expand' : 'Collapse'"
       >
-        <Icon name="chevron-left" :size="16" />
+        <span v-html="getIcon('chevron-left', 16)"></span>
       </button>
     </aside>
 
@@ -149,14 +149,12 @@
 </template>
 
 <script>
-import Icon from "./Icon.vue";
 import ConfirmationModal from "./ConfirmationModal.vue";
 import { auth, account, vaultspaces } from "../services/api";
 
 export default {
   name: "AppLayout",
   components: {
-    Icon,
     ConfirmationModal,
   },
   emits: ["logout"],
@@ -189,8 +187,11 @@ export default {
   },
   methods: {
     getIcon(iconName, size = 24) {
-      if (!window.Icons || !window.Icons[iconName]) {
+      if (!window.Icons) {
         return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
       }
       const iconFn = window.Icons[iconName];
       if (typeof iconFn === "function") {

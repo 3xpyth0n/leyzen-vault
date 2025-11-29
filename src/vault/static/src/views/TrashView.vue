@@ -465,7 +465,7 @@ export default {
       return "";
     };
 
-    const getFileIcon = (file) => {
+    const getFileIcon = (file, size = 48) => {
       if (file.mime_type === "application/x-directory") {
         return getIcon("folder", 48);
       }
