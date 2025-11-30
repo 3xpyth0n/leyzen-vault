@@ -256,7 +256,7 @@
             <img
               v-if="
                 hasThumbnail(item) &&
-                isImageFile(item) &&
+                (isImageFile(item) || isAudioFile(item)) &&
                 getThumbnailUrl(item.id)
               "
               :key="`thumb-${item.id}-${thumbnailUpdateTrigger}`"
@@ -317,6 +317,7 @@ import { thumbnails, files } from "../services/api";
 import { debounce } from "../utils/debounce";
 import { decryptFile, decryptFileKey } from "../services/encryption";
 import { getCachedVaultSpaceKey } from "../services/keyManager";
+import * as mm from "music-metadata";
 import FileMenuDropdown from "./FileMenuDropdown.vue";
 import CustomSelect from "./CustomSelect.vue";
 
@@ -348,7 +349,7 @@ export default {
       default: null,
     },
     newlyCreatedItemId: {
-      type: [String, Number],
+      type: [String, Number, Array],
       default: null,
     },
     defaultSortBy: {
@@ -392,7 +393,12 @@ export default {
     const newlyCreatedItemId = computed(() => props.newlyCreatedItemId);
 
     // Helper function to check if item is newly created
+    // Supports both single ID and array of IDs
     const isNewlyCreated = (itemId) => {
+      if (!newlyCreatedItemId.value) return false;
+      if (Array.isArray(newlyCreatedItemId.value)) {
+        return newlyCreatedItemId.value.includes(itemId);
+      }
       return newlyCreatedItemId.value === itemId;
     };
 
@@ -1276,20 +1282,35 @@ export default {
         file = allItems.value.find((f) => f.id === fileId);
       }
 
-      // If file is not an image, don't try to load thumbnail
-      if (!file || !isImageFile(file)) {
+      if (!file) {
         return;
       }
 
-      // For images, load the image directly without checking for thumbnail first
-      // This avoids 404 errors in the network tab
-      try {
-        await loadImageAsThumbnail(file);
-      } catch (imageError) {
-        console.error(
-          `Failed to load image as thumbnail for ${fileId}:`,
-          imageError,
-        );
+      // Load image thumbnail
+      if (isImageFile(file)) {
+        try {
+          await loadImageAsThumbnail(file);
+        } catch (imageError) {
+          console.error(
+            `Failed to load image as thumbnail for ${fileId}:`,
+            imageError,
+          );
+        }
+        return;
+      }
+
+      // Load audio cover as thumbnail
+      if (isAudioFile(file)) {
+        try {
+          await loadAudioCoverAsThumbnail(file);
+        } catch (audioError) {
+          // Silently fail - no cover art available
+          console.debug(
+            `No cover art available for audio file ${fileId}:`,
+            audioError,
+          );
+        }
+        return;
       }
     };
 
@@ -1350,10 +1371,133 @@ export default {
       }
     };
 
+    // Load audio cover art as thumbnail
+    const loadAudioCoverAsThumbnail = async (file) => {
+      const vaultspaceId = props.vaultspaceId || file.vaultspace_id;
+      if (!vaultspaceId) {
+        return;
+      }
+
+      try {
+        // Get VaultSpace key
+        const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
+        if (!vaultspaceKey) {
+          return;
+        }
+
+        // Download encrypted file
+        const encryptedData = await files.download(file.id, vaultspaceId);
+
+        // Get file key
+        const fileData = await files.get(file.id, vaultspaceId);
+        if (!fileData.file_key) {
+          return;
+        }
+
+        // Decrypt file key
+        const fileKey = await decryptFileKey(
+          vaultspaceKey,
+          fileData.file_key.encrypted_key,
+        );
+
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const encryptedDataArray = new Uint8Array(encryptedData);
+        const iv = encryptedDataArray.slice(0, 12);
+        const encrypted = encryptedDataArray.slice(12);
+
+        // Decrypt file
+        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Create a Blob from the decrypted data
+        const arrayBuffer =
+          decryptedData instanceof ArrayBuffer
+            ? decryptedData
+            : decryptedData.buffer || new Uint8Array(decryptedData).buffer;
+
+        const blob = new Blob([arrayBuffer], {
+          type: file.mime_type || "audio/mpeg",
+        });
+
+        // Parse metadata using music-metadata
+        // Convert blob to ArrayBuffer for parsing
+        const audioArrayBuffer = await blob.arrayBuffer();
+        const metadata = await mm.parseBuffer(
+          new Uint8Array(audioArrayBuffer),
+          blob.type,
+        );
+
+        // Check if there's a picture/cover art in the metadata
+        if (metadata.common?.picture && metadata.common.picture.length > 0) {
+          // Get the first picture (usually the album cover)
+          const picture = metadata.common.picture[0];
+
+          if (picture?.data) {
+            // Convert picture.data to Uint8Array
+            let pictureData;
+            if (picture.data instanceof Uint8Array) {
+              pictureData = picture.data;
+            } else if (picture.data instanceof ArrayBuffer) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Buffer && Buffer.isBuffer(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Array.isArray(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else {
+              pictureData = new Uint8Array(Object.values(picture.data));
+            }
+
+            // Determine MIME type from format
+            let pictureFormat = "image/jpeg"; // Default
+            if (picture.format) {
+              const format = picture.format.toLowerCase();
+              if (format.startsWith("image/")) {
+                pictureFormat = picture.format;
+              } else {
+                const formatMap = {
+                  jpeg: "image/jpeg",
+                  jpg: "image/jpeg",
+                  png: "image/png",
+                  gif: "image/gif",
+                  bmp: "image/bmp",
+                  webp: "image/webp",
+                };
+                pictureFormat = formatMap[format] || "image/jpeg";
+              }
+            }
+
+            const pictureBlob = new Blob([pictureData], {
+              type: pictureFormat,
+            });
+            const blobUrl = URL.createObjectURL(pictureBlob);
+
+            // Store in cache
+            const newUrls = { ...thumbnailUrls.value };
+            newUrls[file.id] = blobUrl;
+            thumbnailUrls.value = newUrls;
+
+            // Force Vue to update
+            thumbnailUpdateTrigger.value++;
+            await nextTick();
+          }
+        }
+      } catch (error) {
+        // Silently fail - no cover art available
+        console.debug(
+          `Failed to load audio cover as thumbnail for ${file.id}:`,
+          error,
+        );
+      }
+    };
+
     const hasThumbnail = (file) => {
       // For images, always try to show thumbnail (either from storage or load image directly)
+      // For audio files, check if thumbnail URL is already cached (meaning cover was found)
       // The actual check is done when loading the thumbnail
-      return isImageFile(file) || generatedThumbnails.value.has(file.id);
+      return (
+        isImageFile(file) ||
+        (isAudioFile(file) && thumbnailUrls.value[file.id]) ||
+        generatedThumbnails.value.has(file.id)
+      );
     };
 
     // Check if file is an image based on mime_type or file extension
@@ -1379,6 +1523,23 @@ export default {
           "tif",
         ];
         return imageExtensions.includes(extension);
+      }
+
+      return false;
+    };
+
+    // Check if file is an audio file based on mime_type or file extension
+    const isAudioFile = (file) => {
+      // Check mime_type first
+      if (file.mime_type?.startsWith("audio/")) {
+        return true;
+      }
+
+      // Fallback: check file extension for common audio formats
+      if (file.original_name) {
+        const extension = file.original_name.split(".").pop()?.toLowerCase();
+        const audioExtensions = ["mp3", "wav", "flac", "ogg", "m4a", "aac"];
+        return audioExtensions.includes(extension);
       }
 
       return false;
@@ -1418,7 +1579,7 @@ export default {
       },
     );
 
-    // Keyboard navigation
+    // Keyboard navigation - local handler for when focus is on the component
     const handleKeyDown = (event) => {
       // Ignore if editing a name
       if (props.editingItemId) {
@@ -1436,6 +1597,16 @@ export default {
 
       const items = sortedAndFilteredItems.value;
       if (items.length === 0) return;
+
+      // Handle Ctrl+A / Cmd+A to select all files
+      if ((event.ctrlKey || event.metaKey) && event.key === "a") {
+        event.preventDefault();
+        emit("selection-change", {
+          action: "select-all",
+          items: items,
+        });
+        return;
+      }
 
       switch (event.key) {
         case "ArrowDown":
@@ -1494,6 +1665,64 @@ export default {
       }
     };
 
+    // Global keyboard handler that works even without focus on the component
+    const handleGlobalKeyDown = (event) => {
+      // Only handle if the component is active (has items to display)
+      const items = sortedAndFilteredItems.value;
+      if (items.length === 0) return;
+
+      // Ignore if editing a name
+      if (props.editingItemId) {
+        return;
+      }
+
+      // Check if we're in an editable element
+      const isInEditableElement =
+        event.target.tagName === "INPUT" ||
+        event.target.tagName === "TEXTAREA" ||
+        event.target.isContentEditable;
+
+      // Check if we're within the file-list-view
+      const isWithinFileListView = event.target.closest(".file-list-view");
+
+      // Handle Ctrl+A / Cmd+A globally to select all files
+      // This should work even when clicking on sidebar or other areas
+      if ((event.ctrlKey || event.metaKey) && event.key === "a") {
+        // If we're in a search input or textarea outside file-list-view, let it handle CTRL+A normally
+        const isInSearchOrInput = isInEditableElement && !isWithinFileListView;
+        if (isInSearchOrInput) {
+          return;
+        }
+
+        // Otherwise, handle file selection
+        event.preventDefault();
+        event.stopPropagation();
+        emit("selection-change", {
+          action: "select-all",
+          items: items,
+        });
+        return;
+      }
+
+      // For navigation keys (arrows, enter, space, home, end), only handle if within file-list-view
+      // and not in an editable element
+      if (!isWithinFileListView || isInEditableElement) {
+        return;
+      }
+
+      // Handle navigation keys when appropriate
+      switch (event.key) {
+        case "ArrowDown":
+        case "ArrowUp":
+        case "Enter":
+        case " ":
+        case "Home":
+        case "End":
+          handleKeyDown(event);
+          break;
+      }
+    };
+
     const scrollToFocusedItem = () => {
       if (focusedItemIndex.value < 0) return;
       const items = sortedAndFilteredItems.value;
@@ -1513,15 +1742,120 @@ export default {
     };
 
     const handleViewClick = (event) => {
+      // Check if clicking on a file item
+      const clickedFileItem =
+        event.target.closest(".file-card") ||
+        event.target.closest(".file-row") ||
+        event.target.closest(".grid-body-row");
+
+      // Check if clicking on interactive elements
+      const clickedInteractive =
+        event.target.closest(".btn-menu") ||
+        event.target.closest(".btn-menu-grid") ||
+        event.target.closest(".file-menu-container") ||
+        event.target.type === "checkbox" ||
+        event.target.closest(".inline-edit-input") ||
+        event.target.closest(".view-controls") ||
+        event.target.closest(".grid-header-row") ||
+        event.target.closest(".batch-actions-bar") ||
+        event.target.closest(".batch-info") ||
+        event.target.closest(".batch-buttons") ||
+        event.target.closest(".modal-overlay") ||
+        event.target.closest(".modal") ||
+        event.target.closest(".confirmation-modal") ||
+        event.target.closest(".alert-modal");
+
       // Close menu if clicking on view (but not on a specific element)
+      if (showMenu.value && !clickedFileItem && !clickedInteractive) {
+        showMenu.value = false;
+      }
+
+      // Deselect all items if clicking in empty space within file-list-view
+      // (like clicking on the background, not on a file item)
       if (
-        showMenu.value &&
-        !event.target.closest(".file-card") &&
-        !event.target.closest(".file-row") &&
-        !event.target.closest(".file-menu-container") &&
-        !event.target.closest(".btn-menu") &&
-        !event.target.closest(".btn-menu-grid")
+        props.selectedItems.length > 0 &&
+        !clickedFileItem &&
+        !clickedInteractive &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey
       ) {
+        emit("selection-change", {
+          action: "clear",
+        });
+      }
+    };
+
+    // Global click handler to close menu and deselect items when clicking outside
+    const handleGlobalClick = (event) => {
+      // Check if click is inside the menu
+      const menuContainer = document.querySelector(".file-menu-container");
+      const isInsideMenu =
+        menuContainer && menuContainer.contains(event.target);
+
+      // Check if click is inside file-list-view (handled by handleViewClick)
+      const isInsideFileListView = event.target.closest(".file-list-view");
+
+      // Check if click is on batch actions bar (Download, Delete buttons)
+      const isInsideBatchActions = event.target.closest(
+        ".batch-actions-bar, .batch-info, .batch-buttons",
+      );
+
+      // Check if click is on a modal (confirmation, alert, etc.)
+      const isInsideModal = event.target.closest(
+        ".modal-overlay, .modal, .confirmation-modal, .alert-modal",
+      );
+
+      // Check if it's a click on a menu button (3 dots) - don't close/deselect in this case
+      const clickedButton = event.target.closest(".btn-menu, .btn-menu-grid");
+
+      // Check if click is on a file/folder item (row or card)
+      const clickedFileItem = event.target.closest(
+        ".grid-body-row, .file-card",
+      );
+
+      // Check if click is on a checkbox
+      const clickedCheckbox = event.target.type === "checkbox";
+
+      // Check if click is inside an input or textarea (editing)
+      const isInEditableElement =
+        event.target.tagName === "INPUT" ||
+        event.target.tagName === "TEXTAREA" ||
+        event.target.isContentEditable;
+
+      // Close menu if open and clicking outside
+      if (showMenu.value && !isInsideMenu && !clickedButton) {
+        showMenu.value = false;
+      }
+
+      // Deselect all items if clicking outside file-list-view (sidebar, header, etc.)
+      // Only if there are selected items and we're not clicking on interactive elements
+      // Note: Clicks inside file-list-view are handled by handleViewClick
+      if (
+        !isInsideFileListView &&
+        props.selectedItems.length > 0 &&
+        !clickedFileItem &&
+        !clickedCheckbox &&
+        !isInEditableElement &&
+        !clickedButton &&
+        !isInsideMenu &&
+        !isInsideBatchActions &&
+        !isInsideModal
+      ) {
+        // Don't deselect if Ctrl/Cmd or Shift is held (for multi-selection)
+        if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+          emit("selection-change", {
+            action: "clear",
+          });
+        }
+      }
+    };
+
+    // Global scroll handler to close menu when scrolling
+    // This uses event delegation - we listen on document/window/body which will
+    // catch scroll events from all child elements due to event bubbling
+    const handleGlobalScroll = (event) => {
+      if (showMenu.value) {
         showMenu.value = false;
       }
     };
@@ -1706,23 +2040,25 @@ export default {
               if (file) {
                 if (
                   file &&
-                  isImageFile(file) &&
+                  (isImageFile(file) || isAudioFile(file)) &&
                   !thumbnailUrls.value[file.id] && // Thumbnail not loaded yet
                   !generatingThumbnails.value.has(file.id) &&
                   !failedThumbnails.value.has(file.id)
                 ) {
-                  // Try to load thumbnail first (will fallback to image if 404)
+                  // Try to load thumbnail first (will fallback to image/audio cover if needed)
                   loadThumbnailUrl(file.id, file);
 
-                  // Also observe for thumbnail generation if needed
-                  thumbnailObserver.observe(card);
+                  // Also observe for thumbnail generation if needed (images only)
+                  if (isImageFile(file)) {
+                    thumbnailObserver.observe(card);
 
-                  // Check if card is already visible and trigger generation immediately
-                  const rect = card.getBoundingClientRect();
-                  const isVisible =
-                    rect.top < window.innerHeight + 50 && rect.bottom > -50;
-                  if (isVisible) {
-                    generateThumbnailForFile(file);
+                    // Check if card is already visible and trigger generation immediately
+                    const rect = card.getBoundingClientRect();
+                    const isVisible =
+                      rect.top < window.innerHeight + 50 && rect.bottom > -50;
+                    if (isVisible) {
+                      generateThumbnailForFile(file);
+                    }
                   }
                 }
               }
@@ -1746,7 +2082,9 @@ export default {
     // Load existing thumbnails on mount
     const loadExistingThumbnails = async () => {
       // Load thumbnails for all image files (will fallback to image if thumbnail doesn't exist)
-      const filesToLoad = allItems.value.filter((file) => isImageFile(file));
+      const filesToLoad = allItems.value.filter(
+        (file) => isImageFile(file) || isAudioFile(file),
+      );
 
       // Wait for DOM to be ready
       await nextTick();
@@ -1771,6 +2109,32 @@ export default {
           setupThumbnailObserver();
         }, 200);
       }
+
+      // Add global keyboard event listener
+      document.addEventListener("keydown", handleGlobalKeyDown, true);
+
+      // Add global click listener to close menu when clicking outside
+      // Use capture phase and a small delay to ensure it runs after menu setup
+      setTimeout(() => {
+        document.addEventListener("mousedown", handleGlobalClick, true);
+        document.addEventListener("click", handleGlobalClick, true);
+        window.addEventListener("mousedown", handleGlobalClick, true);
+        window.addEventListener("click", handleGlobalClick, true);
+      }, 100);
+
+      // Add global scroll listeners to close menu when scrolling
+      // Using capture phase to catch events from all scrollable elements
+      document.addEventListener("scroll", handleGlobalScroll, true);
+      window.addEventListener("scroll", handleGlobalScroll, true);
+      document.addEventListener("wheel", handleGlobalScroll, true);
+      window.addEventListener("wheel", handleGlobalScroll, true);
+      document.addEventListener("touchmove", handleGlobalScroll, true);
+      window.addEventListener("touchmove", handleGlobalScroll, true);
+      if (document.body) {
+        document.body.addEventListener("scroll", handleGlobalScroll, true);
+        document.body.addEventListener("wheel", handleGlobalScroll, true);
+        document.body.addEventListener("touchmove", handleGlobalScroll, true);
+      }
     });
 
     // Watch for new files with thumbnails
@@ -1787,6 +2151,32 @@ export default {
       if (thumbnailObserver) {
         thumbnailObserver.disconnect();
         thumbnailObserver = null;
+      }
+
+      // Remove global keyboard event listener
+      document.removeEventListener("keydown", handleGlobalKeyDown, true);
+
+      // Remove global click listeners
+      document.removeEventListener("mousedown", handleGlobalClick, true);
+      document.removeEventListener("click", handleGlobalClick, true);
+      window.removeEventListener("mousedown", handleGlobalClick, true);
+      window.removeEventListener("click", handleGlobalClick, true);
+
+      // Remove global scroll listeners
+      document.removeEventListener("scroll", handleGlobalScroll, true);
+      window.removeEventListener("scroll", handleGlobalScroll, true);
+      document.removeEventListener("wheel", handleGlobalScroll, true);
+      window.removeEventListener("wheel", handleGlobalScroll, true);
+      document.removeEventListener("touchmove", handleGlobalScroll, true);
+      window.removeEventListener("touchmove", handleGlobalScroll, true);
+      if (document.body) {
+        document.body.removeEventListener("scroll", handleGlobalScroll, true);
+        document.body.removeEventListener("wheel", handleGlobalScroll, true);
+        document.body.removeEventListener(
+          "touchmove",
+          handleGlobalScroll,
+          true,
+        );
       }
     });
 
@@ -1836,13 +2226,17 @@ export default {
       loadThumbnailUrl,
       hasThumbnail,
       isImageFile,
+      isAudioFile,
       handleThumbnailError,
       getIcon,
       getSortIcon,
       getFileIcon,
       handleKeyDown,
+      handleGlobalKeyDown,
       scrollToFocusedItem,
       handleViewClick,
+      handleGlobalClick,
+      handleGlobalScroll,
       // Column resizing
       tableContainer,
       columnWidths,

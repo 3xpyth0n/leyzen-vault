@@ -12,6 +12,8 @@
   "dependencies": {
     "argon2-browser": "^1.18.0",
     "axios": "^1.6.0",
+    "buffer": "^6.0.3",
+    "music-metadata": "^7.14.0",
     "jszip": "^3.10.1",
     "lucide": "^0.344.0",
     "lucide-vue-next": "^0.344.0",

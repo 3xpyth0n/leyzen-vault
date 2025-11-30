@@ -780,6 +780,7 @@ const passwordAuthEnabled = ref(true);
 const loadingPasswordAuth = ref(false);
 const allowSignupEnabled = ref(false);
 const loadingAllowSignup = ref(false);
+const vaultUrl = ref(null); // VAULT_URL from settings
 const showDeleteModal = ref(false);
 const providerToDelete = ref(null);
 const deletingProvider = ref(false);
@@ -894,8 +895,9 @@ const getProviderDefaults = (providerType) => {
 };
 
 // Get redirect URI for display
+// Uses VAULT_URL from settings if available, otherwise falls back to window.location.origin
 const getRedirectUri = () => {
-  const baseUrl = window.location.origin;
+  const baseUrl = vaultUrl.value || window.location.origin;
   return `${baseUrl}/api/sso/callback/{provider_id}`;
 };
 
@@ -959,6 +961,19 @@ const loadAllowSignupStatus = async () => {
     logger.error("Failed to load allow signup status:", err);
     // On error, default to false to be safe
     allowSignupEnabled.value = false;
+  }
+};
+
+const loadVaultUrl = async () => {
+  try {
+    const settings = await admin.getSettings();
+    if (settings.vault_url) {
+      vaultUrl.value = settings.vault_url;
+    }
+  } catch (err) {
+    logger.error("Failed to load vault_url from settings:", err);
+    // Fall back to window.location.origin if vault_url is not available
+    vaultUrl.value = null;
   }
 };
 
@@ -1541,6 +1556,7 @@ const closeDomainRuleModal = () => {
 onMounted(() => {
   loadProviders();
   loadDomainRules();
+  loadVaultUrl();
 });
 </script>
 

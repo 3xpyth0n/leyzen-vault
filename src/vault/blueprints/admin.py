@@ -658,6 +658,20 @@ def manage_settings():
         if "allow_signup" not in settings_dict:
             settings_dict["allow_signup"] = "true"
 
+        # Add vault_url from VAULT_SETTINGS for SSO callback URLs
+        try:
+            vault_settings = current_app.config.get("VAULT_SETTINGS")
+            if (
+                vault_settings
+                and hasattr(vault_settings, "vault_url")
+                and vault_settings.vault_url
+            ):
+                settings_dict["vault_url"] = vault_settings.vault_url.rstrip("/")
+        except Exception:
+            # If VAULT_URL is not configured, don't include it
+            # Frontend will fall back to window.location.origin
+            pass
+
         return jsonify({"settings": settings_dict}), 200
     else:
         data = request.get_json()

@@ -276,19 +276,29 @@ export default {
           return;
         }
 
-        // Close menu for all other clicks
+        // Close menu for all other clicks (including sidebar, header, etc.)
+        // This will catch clicks anywhere outside the menu, including:
+        // - Sidebar
+        // - Header
+        // - Other parts of the page
         this.$emit("close");
       };
 
       // Attach listener with small delay to avoid immediate closure on open
+      // Use capture phase to catch events before they bubble
       setTimeout(() => {
         if (this.show) {
+          // Use both mousedown and click to catch all click events
+          // Capture phase ensures we catch events even if they're stopped elsewhere
           document.addEventListener(
             "mousedown",
             this.clickOutsideHandler,
             true,
           );
           document.addEventListener("click", this.clickOutsideHandler, true);
+          // Also listen on window to catch events that might not bubble to document
+          window.addEventListener("mousedown", this.clickOutsideHandler, true);
+          window.addEventListener("click", this.clickOutsideHandler, true);
         }
       }, 50);
     },
@@ -313,6 +323,8 @@ export default {
           true,
         );
         document.removeEventListener("click", this.clickOutsideHandler, true);
+        window.removeEventListener("mousedown", this.clickOutsideHandler, true);
+        window.removeEventListener("click", this.clickOutsideHandler, true);
         this.clickOutsideHandler = null;
       }
     },
@@ -381,9 +393,9 @@ export default {
           }
         });
 
-        // Also listen on known container classes
+        // Also listen on known container classes (including sidebar)
         const knownContainers = document.querySelectorAll(
-          ".view-main, .files-list, .file-list-view, .grid-view, .list-view, .grid-container, .files-grid, main",
+          ".view-main, .files-list, .file-list-view, .grid-view, .list-view, .grid-container, .files-grid, main, aside, .sidebar, [class*='sidebar'], [class*='side-bar']",
         );
         knownContainers.forEach((container) => {
           if (!this.scrollableElements.includes(container)) {
@@ -395,6 +407,34 @@ export default {
               true,
             );
             this.scrollableElements.push(container);
+          }
+        });
+
+        // Also check for elements that might be scrollable but don't have explicit overflow styles
+        // This includes elements with fixed heights and content that overflows
+        const potentialScrollableElements = document.querySelectorAll(
+          "div, section, article, aside, main",
+        );
+        potentialScrollableElements.forEach((el) => {
+          // Skip if already added
+          if (this.scrollableElements.includes(el)) {
+            return;
+          }
+
+          // Check if element is actually scrollable
+          const hasScrollableContent =
+            el.scrollHeight > el.clientHeight ||
+            el.scrollWidth > el.clientWidth;
+
+          if (
+            hasScrollableContent &&
+            el !== document.body &&
+            el !== document.documentElement
+          ) {
+            el.addEventListener("scroll", this.scrollHandler, true);
+            el.addEventListener("wheel", this.wheelHandler, true);
+            el.addEventListener("touchmove", this.touchMoveHandler, true);
+            this.scrollableElements.push(el);
           }
         });
       });

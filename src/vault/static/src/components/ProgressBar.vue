@@ -152,14 +152,10 @@ export default {
   margin: 0;
   padding: 1.25rem 1.5rem;
   z-index: 10002;
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.98),
-    rgba(15, 23, 42, 0.95)
-  );
+  background: linear-gradient(140deg, #1e293b8c, #0f172a66);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: none;
   border-radius: 2rem;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),

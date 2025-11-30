@@ -4,6 +4,17 @@ import router from "./router";
 import App from "./App.vue";
 import "./assets/styles.css";
 
+// Polyfill Buffer for music-metadata library
+import { Buffer } from "buffer";
+if (typeof window !== "undefined") {
+  window.Buffer = Buffer;
+  // Also set global for libraries that check for global.Buffer
+  if (typeof global === "undefined") {
+    window.global = window;
+  }
+  global.Buffer = Buffer;
+}
+
 // Initialize global utilities
 import { modalManager } from "./utils/ModalManager.js";
 import { folderPicker } from "./utils/FolderPicker.js";

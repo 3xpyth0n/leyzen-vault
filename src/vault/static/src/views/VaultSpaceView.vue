@@ -83,12 +83,13 @@
         <!-- File List View Component -->
         <FileListView
           v-else
+          :key="fileListKey"
           :folders="folders"
           :files="filesList"
           :selectedItems="selectedItems"
           :viewMode="viewMode"
           :editingItemId="editingItemId"
-          :newlyCreatedItemId="newlyCreatedFolderId"
+          :newlyCreatedItemId="newlyCreatedItemIdForAnimation"
           :vaultspaceId="$route.params.id"
           @view-change="handleViewChange"
           @item-click="handleItemClick"
@@ -486,6 +487,7 @@ export default {
       showRevokeConfirm: false,
       revokeConfirmMessage: "",
       newlyCreatedFolderId: null,
+      newlyCreatedFileIds: [], // Array of file IDs that were just uploaded (for animation)
       pendingRevokeCallback: null,
       showPasswordModal: false,
       passwordModalPassword: "",
@@ -662,6 +664,29 @@ export default {
     allFolders() {
       // Return all folders for move destination selection
       return this.folders;
+    },
+    fileListKey() {
+      // Generate a stable key that only changes on important transitions:
+      // - When changing folders (currentParentId changes)
+      // - When transitioning from empty to non-empty (or vice versa)
+      // This prevents the component from being recreated on every file upload
+      const hasItems = this.folders.length > 0 || this.filesList.length > 0;
+      return `file-list-${hasItems ? "has-items" : "empty"}-${this.currentParentId || "root"}`;
+    },
+    newlyCreatedItemIdForAnimation() {
+      // Return the newly created folder ID if available, otherwise the array of uploaded file IDs
+      // This is used to trigger the animation for newly created items
+      // FileListView now supports both single ID and array of IDs
+      if (this.newlyCreatedFolderId) {
+        return this.newlyCreatedFolderId;
+      }
+      if (this.newlyCreatedFileIds && this.newlyCreatedFileIds.length > 0) {
+        // Return array if multiple files, single ID if only one
+        return this.newlyCreatedFileIds.length === 1
+          ? this.newlyCreatedFileIds[0]
+          : this.newlyCreatedFileIds;
+      }
+      return null;
     },
   },
   watch: {
@@ -865,8 +890,10 @@ export default {
       this.debouncedLoadFiles(parentId);
     },
 
-    loadFilesInternal(parentId = null, cacheBust = false) {
-      this.loading = true;
+    loadFilesInternal(parentId = null, cacheBust = false, showLoading = true) {
+      if (showLoading) {
+        this.loading = true;
+      }
       this.error = null;
 
       // Ensure parentId is set correctly before loading
@@ -878,6 +905,12 @@ export default {
       this.clearSelection();
       if (window.selectionManager) {
         window.selectionManager.deselectAll();
+      }
+
+      // Clear animation IDs when changing folders
+      if (this.currentParentId !== targetParentId) {
+        this.newlyCreatedFileIds = [];
+        this.newlyCreatedFolderId = null;
       }
 
       return files
@@ -894,13 +927,17 @@ export default {
           this.totalPages = result.pagination?.pages || 1;
 
           // Separate folders and files
-          this.folders = allItems.filter(
+          // In Vue 3, direct assignment is reactive - no need for $set
+          const newFolders = allItems.filter(
             (item) => item.mime_type === "application/x-directory",
           );
-          this.filesList = allItems.filter(
+          const newFilesList = allItems.filter(
             (item) => item.mime_type !== "application/x-directory",
           );
 
+          // Direct assignment - Vue 3 reactivity handles this automatically
+          this.folders = newFolders;
+          this.filesList = newFilesList;
           this.files = allItems;
           // Always set currentParentId to match what was requested
           // This ensures state consistency
@@ -941,7 +978,9 @@ export default {
           throw err;
         })
         .finally(() => {
-          this.loading = false;
+          if (showLoading) {
+            this.loading = false;
+          }
         });
     },
 
@@ -958,12 +997,13 @@ export default {
       parentId = null,
       uploadedFileIds = [],
       maxRetries = 3,
-      initialDelay = 100,
+      initialDelay = 300,
     ) {
       if (!uploadedFileIds || uploadedFileIds.length === 0) {
         // No files to verify, just reload once
+        // Don't show loading indicator to avoid flash
         await new Promise((resolve) => setTimeout(resolve, initialDelay));
-        await this.loadFilesInternal(parentId, true);
+        await this.loadFilesInternal(parentId, true, false);
         return;
       }
 
@@ -972,12 +1012,13 @@ export default {
 
       while (retryCount <= maxRetries && !allFilesFound) {
         // Wait before reloading (longer delay on first attempt)
-        const delay = retryCount === 0 ? initialDelay : 50;
+        const delay = retryCount === 0 ? initialDelay : 100;
         await new Promise((resolve) => setTimeout(resolve, delay));
 
         try {
           // Reload files with cache-busting
-          const result = await this.loadFilesInternal(parentId, true);
+          // Don't show loading indicator to avoid flash
+          const result = await this.loadFilesInternal(parentId, true, false);
           const allItems = result.files || [];
 
           // Check if all uploaded files are present in the response
@@ -989,6 +1030,9 @@ export default {
           if (missingFileIds.length === 0) {
             // All files found, success!
             allFilesFound = true;
+            // Force Vue to update after successful reload
+            await this.$nextTick();
+            this.$forceUpdate();
           } else if (retryCount < maxRetries) {
             // Some files still missing, retry
             retryCount++;
@@ -999,10 +1043,14 @@ export default {
             // Max retries reached, but files still not found
             // This might happen if files are on a different page due to pagination
             // Log warning but don't fail - files might still be there
+            // Still update the UI with what we have
             logger.warn(
               `Some uploaded files not found after ${maxRetries} retries. They may be on a different page.`,
             );
             allFilesFound = true; // Stop retrying
+            // Force Vue to update even if files not found
+            await this.$nextTick();
+            this.$forceUpdate();
           }
         } catch (err) {
           // If reload fails, retry if we haven't exceeded max retries
@@ -2262,8 +2310,25 @@ export default {
             this.uploadedFileIds,
           );
 
+          // Store uploaded file IDs for animation
+          // This will trigger the fade-in animation for newly uploaded files
+          this.newlyCreatedFileIds = [...this.uploadedFileIds];
+
+          // Force multiple DOM update cycles to ensure FileListView is properly rendered
+          // This is especially important when transitioning from empty to non-empty state
+          await this.$nextTick();
+          await this.$nextTick();
+
+          // Force Vue to re-render by triggering a reactive update
+          this.$forceUpdate();
+
           // Clear uploaded file IDs after successful reload
           this.uploadedFileIds = [];
+
+          // Clear animation IDs after animation completes (0.6s animation + small buffer)
+          setTimeout(() => {
+            this.newlyCreatedFileIds = [];
+          }, 700);
         }
       } catch (err) {
         // Check if error is due to cancellation

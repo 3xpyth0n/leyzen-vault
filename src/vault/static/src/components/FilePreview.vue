@@ -164,7 +164,14 @@
         <div v-else-if="isAudio" class="audio-preview">
           <div class="audio-player">
             <div class="audio-player__artwork">
+              <img
+                v-if="hasAudioCover && audioCoverUrl"
+                :src="audioCoverUrl"
+                alt="Album cover"
+                class="audio-player__artwork-image"
+              />
               <svg
+                v-else
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 xmlns="http://www.w3.org/2000/svg"
@@ -282,6 +289,7 @@ import {
 } from "../services/keyManager";
 import { decryptFile, decryptFileKey } from "../services/encryption";
 import { normalizeMimeType } from "../utils/mimeType";
+import * as mm from "music-metadata";
 
 export default {
   name: "FilePreview",
@@ -381,6 +389,8 @@ export default {
     const duration = ref(0);
     const progress = ref(0);
     const volume = ref(100);
+    const audioCoverUrl = ref(null);
+    const hasAudioCover = ref(false);
 
     // Video player state
     const videoElement = ref(null);
@@ -657,6 +667,13 @@ export default {
       textContent.value = "";
       markdownContent.value = "";
 
+      // Clean up previous audio cover
+      if (audioCoverUrl.value) {
+        URL.revokeObjectURL(audioCoverUrl.value);
+        audioCoverUrl.value = null;
+      }
+      hasAudioCover.value = false;
+
       try {
         // Get VaultSpace key
         const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
@@ -698,6 +715,18 @@ export default {
             type: normalizedMimeType.value,
           });
           previewUrl.value = URL.createObjectURL(blob);
+
+          // Extract cover art for audio files
+          if (isAudio.value) {
+            extractAudioCover(decryptedData).then((coverUrl) => {
+              if (coverUrl) {
+                audioCoverUrl.value = coverUrl;
+                hasAudioCover.value = true;
+              } else {
+                hasAudioCover.value = false;
+              }
+            });
+          }
         } else if (isMarkdown.value) {
           // For Markdown files, convert to HTML
           const decoder = new TextDecoder("utf-8");
@@ -774,6 +803,12 @@ export default {
         URL.revokeObjectURL(previewUrl.value);
         previewUrl.value = null;
       }
+      // Clean up audio cover
+      if (audioCoverUrl.value) {
+        URL.revokeObjectURL(audioCoverUrl.value);
+        audioCoverUrl.value = null;
+      }
+      hasAudioCover.value = false;
       // Clean up content
       textContent.value = "";
       markdownContent.value = "";
@@ -916,6 +951,84 @@ export default {
 
     const hideProgressHover = () => {
       // Can be used for hover effects if needed
+    };
+
+    // Extract audio cover art from MP3 metadata
+    const extractAudioCover = async (decryptedData) => {
+      try {
+        // Create a Blob from the decrypted data
+        // Use ArrayBuffer to ensure compatibility
+        const arrayBuffer =
+          decryptedData instanceof ArrayBuffer
+            ? decryptedData
+            : decryptedData.buffer || new Uint8Array(decryptedData).buffer;
+
+        const mimeType =
+          normalizedMimeType.value || props.mimeType || "audio/mpeg";
+        const blob = new Blob([arrayBuffer], {
+          type: mimeType,
+        });
+
+        // Parse metadata using music-metadata
+        // Convert blob to ArrayBuffer for parsing
+        const audioArrayBuffer = await blob.arrayBuffer();
+        const metadata = await mm.parseBuffer(
+          new Uint8Array(audioArrayBuffer),
+          blob.type,
+        );
+
+        // Check if there's a picture/cover art in the metadata
+        if (metadata.common?.picture && metadata.common.picture.length > 0) {
+          // Get the first picture (usually the album cover)
+          const picture = metadata.common.picture[0];
+
+          if (picture?.data) {
+            // Convert picture.data to Uint8Array
+            let pictureData;
+            if (picture.data instanceof Uint8Array) {
+              pictureData = picture.data;
+            } else if (picture.data instanceof ArrayBuffer) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Buffer && Buffer.isBuffer(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Array.isArray(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else {
+              pictureData = new Uint8Array(Object.values(picture.data));
+            }
+
+            // Determine MIME type from format
+            let pictureFormat = "image/jpeg"; // Default
+            if (picture.format) {
+              const format = picture.format.toLowerCase();
+              if (format.startsWith("image/")) {
+                pictureFormat = picture.format;
+              } else {
+                const formatMap = {
+                  jpeg: "image/jpeg",
+                  jpg: "image/jpeg",
+                  png: "image/png",
+                  gif: "image/gif",
+                  bmp: "image/bmp",
+                  webp: "image/webp",
+                };
+                pictureFormat = formatMap[format] || "image/jpeg";
+              }
+            }
+
+            const pictureBlob = new Blob([pictureData], {
+              type: pictureFormat,
+            });
+            const blobUrl = URL.createObjectURL(pictureBlob);
+            return blobUrl;
+          }
+        }
+        return null;
+      } catch (err) {
+        // Log error for debugging but don't show to user
+        console.warn("Failed to extract audio cover:", err);
+        return null;
+      }
     };
 
     // Video player functions
@@ -1241,6 +1354,12 @@ export default {
             URL.revokeObjectURL(previewUrl.value);
             previewUrl.value = null;
           }
+          // Clean up audio cover
+          if (audioCoverUrl.value) {
+            URL.revokeObjectURL(audioCoverUrl.value);
+            audioCoverUrl.value = null;
+          }
+          hasAudioCover.value = false;
           textContent.value = "";
           markdownContent.value = "";
         }
@@ -1299,6 +1418,8 @@ export default {
       duration,
       progress,
       volume,
+      audioCoverUrl,
+      hasAudioCover,
       formattedCurrentTime,
       formattedDuration,
       loadPreview,
@@ -1687,6 +1808,13 @@ export default {
 .audio-player__artwork svg {
   width: 32px;
   height: 32px;
+}
+
+.audio-player__artwork-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0.5rem;
 }
 
 .audio-player__container {

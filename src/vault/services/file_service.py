@@ -389,17 +389,16 @@ class AdvancedFileService:
             try:
                 # Delete from both primary and source storage
                 deleted = storage.delete_file(storage_ref)
+
+                # Only log if a file was actually deleted
                 if deleted:
                     logger.info(
                         f"Deleted physical file {storage_ref} during permanent delete"
                     )
-                else:
-                    logger.warning(
-                        f"Physical file {storage_ref} not found during permanent delete"
-                    )
+
+                # If not deleted (already missing), silently ignore
             except Exception as e:
-                # Log warning - file was deleted from DB but physical deletion failed
-                # This creates an orphan, but reconciliation service will clean it up
+                # Log warning - physical deletion failed for a reason other than "not found"
                 logger.warning(
                     f"Failed to delete physical file {storage_ref} during permanent delete: {e}"
                 )
@@ -409,7 +408,6 @@ class AdvancedFileService:
             try:
                 self.search_service.index_service.remove_file(file_id)
             except Exception as e:
-                # Log warning but don't fail the operation if search index removal fails
                 logger.warning(
                     f"Failed to remove file {file_id} from search index: {e}"
                 )

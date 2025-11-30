@@ -10,6 +10,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
+- Audio file cover art display in MP3 players and as thumbnails in file lists. Album artwork is automatically extracted from ID3 metadata and displayed when available.
 - Email verification is now mandatory for all users except the superadmin.
 - Conflict resolution modal for file and folder name conflicts with options to replace, keep both (auto-rename), or skip ([#13](https://github.com/3xpyth0n/leyzen-vault/issues/13)).
 - VaultSpace pinning feature allowing users to pin frequently used VaultSpaces to the sidebar for quick access ([#14](https://github.com/3xpyth0n/leyzen-vault/issues/14)).
@@ -23,6 +24,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Fixed context menu and file selection event handling in VaultSpace: context menu now closes when clicking outside (including sidebar and header) or when scrolling anywhere on the page. CTRL+A keyboard shortcut now works globally regardless of focus location, and file selection no longer requires clicking in the file-list-view area first.
 - Increased `api_keys.key_prefix` column capacity and added automatic migration to prevent API key creation failures caused by truncation.
 - Invited accounts now default to the `user` role to avoid missing-role errors during signup completion.
 - HAProxy now accepts either combined PEM files or separate certificate/key inputs by validating and generating a single bundle automatically.
@@ -30,6 +32,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fixed setup endpoint redirecting to dashboard without master key initialization. The `/setup` endpoint now follows the same flow as `/signup`, requiring email verification and redirecting to login page instead of automatically authenticating users.
 - Fixed SharingManager initialization failure on browsers without Trusted Types support (e.g., Firefox) by implementing DOM API fallback for modal creation.
 - Fixed MIME type detection priority: extension-based detection now takes precedence over file-magic, preventing `application/octet-stream` for files with known extensions. Added migration script and frontend normalization for WEBP and other formats.
+- Fixed file list not appearing immediately after upload in empty VaultSpaces. Files now appear instantly with smooth fade-in animation without requiring page refresh or causing UI flash.
 
 ## [2.2.1] - 2025-11-23
 
