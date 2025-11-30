@@ -119,49 +119,105 @@ def _get_auth_service() -> AuthService:
     return AuthService(secret_key)
 
 
-@auth_api_bp.route("/signup/status", methods=["GET"])
+@auth_api_bp.route("/config", methods=["GET"])
 @csrf.exempt  # Public endpoint
-def signup_status():
-    """Check if public signup is enabled.
+def get_auth_config():
+    """Get authentication configuration (public endpoint).
+
+    Returns all authentication-related configuration including:
+    - allow_signup: Whether public signup is enabled
+    - password_authentication_enabled: Whether password authentication is enabled
 
     Returns:
-        JSON with allow_signup status
+        JSON with authentication configuration
     """
     from vault.database.schema import SystemSettings, db
 
-    setting = db.session.query(SystemSettings).filter_by(key="allow_signup").first()
-    if setting:
-        allow_signup = setting.value.lower() == "true"
-    else:
-        allow_signup = True
-
-    return jsonify({"allow_signup": allow_signup}), 200
-
-
-@auth_api_bp.route("/password-auth-status", methods=["GET"])
-@csrf.exempt  # Public endpoint
-def password_auth_status():
-    """Check if password authentication is enabled.
-
-    Returns:
-        JSON with password_authentication_enabled status
-    """
-    from vault.database.schema import SystemSettings, db
-
-    # First, try to get from database (takes precedence over config)
-    setting = (
+    # Get all auth-related settings
+    settings = (
         db.session.query(SystemSettings)
-        .filter_by(key="password_authentication_enabled")
-        .first()
+        .filter(
+            SystemSettings.key.in_(["allow_signup", "password_authentication_enabled"])
+        )
+        .all()
     )
-    if setting:
-        # Convert string to boolean
-        password_auth_enabled = setting.value.lower() == "true"
-    else:
-        # Default to True if not configured
-        password_auth_enabled = True
+    settings_dict = {s.key: s.value for s in settings}
 
-    return jsonify({"password_authentication_enabled": password_auth_enabled}), 200
+    # Get allow_signup (default: True)
+    allow_signup = True
+    if "allow_signup" in settings_dict:
+        allow_signup = settings_dict["allow_signup"].lower() == "true"
+
+    # Get password_authentication_enabled (default: True)
+    password_auth_enabled = True
+    if "password_authentication_enabled" in settings_dict:
+        password_auth_enabled = (
+            settings_dict["password_authentication_enabled"].lower() == "true"
+        )
+
+    return (
+        jsonify(
+            {
+                "allow_signup": allow_signup,
+                "password_authentication_enabled": password_auth_enabled,
+            }
+        ),
+        200,
+    )
+
+
+@auth_api_bp.route("/sso/providers", methods=["GET"])
+@csrf.exempt  # Public endpoint
+def list_sso_providers():
+    """List all active SSO providers (public endpoint).
+
+    Returns:
+        JSON with list of active SSO providers
+    """
+    try:
+        from vault.services.sso_service import SSOService
+        from vault.database.schema import SSOProviderType
+
+        sso_service = SSOService()
+        providers = sso_service.list_providers()
+
+        # Return provider info without sensitive config data
+        providers_data = []
+        for provider in providers:
+            provider_dict = provider.to_dict()
+            # Remove sensitive information from config
+            config = provider_dict.get("config", {})
+            # Only expose non-sensitive config fields
+            safe_config = {}
+            if provider.provider_type == SSOProviderType.SAML:
+                safe_config = {
+                    "entity_id": config.get("entity_id"),
+                    "sso_url": config.get("sso_url"),
+                }
+            elif provider.provider_type in (
+                SSOProviderType.OAUTH2,
+                SSOProviderType.OIDC,
+            ):
+                safe_config = {
+                    "authorization_url": config.get("authorization_url"),
+                }
+                if provider.provider_type == SSOProviderType.OIDC:
+                    safe_config["issuer_url"] = config.get("issuer_url")
+
+            providers_data.append(
+                {
+                    "id": provider_dict["id"],
+                    "name": provider_dict["name"],
+                    "provider_type": provider_dict["provider_type"],
+                    "is_active": provider_dict["is_active"],
+                    "config": safe_config,
+                }
+            )
+
+        return jsonify({"providers": providers_data}), 200
+    except Exception as e:
+        current_app.logger.error(f"Error listing SSO providers: {e}")
+        return jsonify({"error": "Failed to list SSO providers"}), 500
 
 
 @auth_api_bp.route("/signup", methods=["POST"])
@@ -1096,35 +1152,64 @@ def delete_account():
 def verify_email(token: str):
     """Verify email address using verification token.
 
+    Supports both authenticated and unauthenticated users.
+    If user is authenticated, verifies that token belongs to them.
+
     Args:
         token: Verification token
 
     Returns:
-        JSON with verification status
+        JSON with verification status and user_was_logged_in flag
     """
     from vault.services.email_verification_service import EmailVerificationService
     from vault.database.schema import EmailVerificationToken, db
+    from vault.services.auth_service import AuthService
 
     email_verification_service = EmailVerificationService()
 
+    # Check if user is authenticated (optional JWT)
+    current_user = None
+    user_was_logged_in = False
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        try:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                jwt_token = parts[1]
+                secret_key = current_app.config.get("SECRET_KEY")
+                if secret_key:
+                    auth_service = AuthService(secret_key)
+                    current_user = auth_service.verify_token(jwt_token)
+                    if current_user:
+                        user_was_logged_in = True
+        except Exception:
+            # If JWT verification fails, treat as unauthenticated
+            pass
+
     if request.method == "POST":
-        # Verify using token
-        success, user, error_message = email_verification_service.verify_token(token)
+        # Verify using token, with optional user validation
+        expected_user_id = current_user.id if current_user else None
+        success, user, error_message = email_verification_service.verify_token(
+            token, expected_user_id=expected_user_id
+        )
         if success:
-            # Generate token for immediate login
-            auth_service = _get_auth_service()
-            login_token = auth_service._generate_token(user)
+            # Do NOT return a token - user must log in after email verification
+            # This ensures master key initialization happens during login
+            # Exception: If user is already logged in, they stay logged in
             return (
                 jsonify(
                     {
                         "message": "Email verified successfully",
                         "user": user.to_dict(),
-                        "token": login_token,
+                        "user_was_logged_in": user_was_logged_in,
                     }
                 ),
                 200,
             )
         else:
+            # If user was logged in but token doesn't belong to them, return 403
+            if user_was_logged_in and expected_user_id:
+                return jsonify({"error": error_message or "Invalid token"}), 403
             return jsonify({"error": error_message or "Invalid token"}), 400
     else:
         # GET - return verification status
@@ -1140,11 +1225,24 @@ def verify_email(token: str):
         if verification_token.is_expired():
             return jsonify({"error": "Token expired"}), 400
 
+        # If user is logged in, verify token belongs to them
+        if current_user and verification_token.user_id != current_user.id:
+            return (
+                jsonify({"error": "Token does not belong to the authenticated user"}),
+                403,
+            )
+
         from vault.database.schema import User
 
         user = db.session.query(User).filter_by(id=verification_token.user_id).first()
         return (
-            jsonify({"message": "Valid token", "email": user.email if user else None}),
+            jsonify(
+                {
+                    "message": "Valid token",
+                    "email": user.email if user else None,
+                    "user_was_logged_in": user_was_logged_in,
+                }
+            ),
             200,
         )
 

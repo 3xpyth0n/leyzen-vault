@@ -1,0 +1,260 @@
+name: Health Check
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  health-check:
+    name: Container health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: leyzen-vault-github-action-${{ github.run_id || format('local-{0}', github.run_attempt) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Clean up action-specific Docker resources
+        run: |
+          echo "Cleaning up action-specific Docker resources (isolated from local machine)..."
+          # Clean up any resources from previous action runs with the project prefix pattern
+          # This ensures a completely clean state without touching local resources
+          PROJECT_PREFIX="leyzen-vault-github-action-"
+          echo "Cleaning up resources with prefix pattern: ${PROJECT_PREFIX}*"
+
+          # Remove containers with the project prefix (from any previous action run)
+          docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
+
+          # Remove volumes with the project prefix (from any previous action run)
+          docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
+
+          # Remove networks with the project prefix (from any previous action run)
+          docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
+
+          echo "✅ Cleanup complete - only action-specific resources were cleaned (local machine untouched)"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/orchestrator/requirements.txt
+          pip install -r infra/docker-proxy/requirements.txt
+
+      - name: Create .env file with minimal configuration
+        run: |
+          # Remove any existing .env file to ensure clean configuration
+          # NOTE: This runs in an isolated container (GitHub Actions VM or act container),
+          # so it does NOT affect your local .env file. The container has its own isolated filesystem.
+          # This simulates a truly clean machine (no pre-existing configuration)
+          rm -f .env
+          echo "✅ Removed any existing .env file in container (simulating clean machine - local .env is safe)"
+
+          # Generate secure secrets
+          SECRET_KEY=$(openssl rand -hex 32)
+          POSTGRES_PASSWORD=$(openssl rand -base64 32)
+
+          # Create .env file with minimal configuration
+          cat > .env << EOF
+          # Minimal configuration for health check
+          LEYZEN_ENVIRONMENT=dev
+          ORCH_USER=test_user
+          ORCH_PASS=test_pass
+          SECRET_KEY=$SECRET_KEY
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+          WEB_REPLICAS=2
+          TIMEZONE=UTC
+          PROXY_TRUST_COUNT=1
+          SESSION_COOKIE_SECURE=false
+          POSTGRES_DB=leyzen_vault
+          POSTGRES_USER=leyzen
+          EOF
+
+      - name: Generate docker-generated.yml
+        run: |
+          # Remove any existing docker-generated.yml to ensure clean generation
+          # NOTE: This runs in an isolated container (GitHub Actions VM or act container),
+          # so it does NOT affect your local docker-generated.yml file. The container has its own isolated filesystem.
+          # This simulates a truly clean machine (no pre-existing files)
+          rm -f docker-generated.yml
+          echo "✅ Removed any existing docker-generated.yml in container (simulating clean machine - local file is safe)"
+
+          # Generate fresh docker-generated.yml
+          python src/compose/build.py
+
+          # Verify the file was created
+          if [ ! -f docker-generated.yml ]; then
+            echo "❌ ERROR: docker-generated.yml was not created!"
+            exit 1
+          fi
+          echo "✅ Generated fresh docker-generated.yml"
+
+      - name: Prefix volumes, networks, and images with project name
+        run: |
+          # Prefix all volume, network, container, and image names with the project name to ensure complete isolation
+          python3 << PYEOF
+          import re
+          import os
+
+          yaml_file = "docker-generated.yml"
+          project_prefix = os.environ.get("COMPOSE_PROJECT_NAME", "leyzen-vault-github-action") + "-"
+
+          with open(yaml_file, 'r') as f:
+              content = f.read()
+
+          # Prefix volume names (pattern: name: "leyzen-...")
+          content = re.sub(
+              r'(\s+name:\s+)"(leyzen-[^"]+)"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
+              content
+          )
+
+          # Prefix container names (pattern: container_name: "...")
+          content = re.sub(
+              r'(\s+container_name:\s+)"([^"]+)"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
+              content
+          )
+
+          # Prefix image names (pattern: image: "leyzen/..." or image: "leyzen-vault-...")
+          content = re.sub(
+              r'(\s+image:\s+)"(leyzen[/-][^"]+)"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
+              content
+          )
+
+          with open(yaml_file, 'w') as f:
+              f.write(content)
+          PYEOF
+
+      - name: Build and start containers
+        run: |
+          docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" pull || true
+          docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" build --no-cache
+          for img in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^leyzen/" | grep -v "^${COMPOSE_PROJECT_NAME}-" || true); do
+            docker rmi "$img" 2>/dev/null || true
+          done
+          docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" up -d
+
+      - name: Wait for containers to become healthy
+        run: |
+          max_attempts=60
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt + 1))
+            
+            services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
+            all_critical_healthy=true
+            has_vault_web_healthy=false
+            
+            for service in $services; do
+              container_name=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q $service 2>/dev/null | head -n1)
+              if [ -z "$container_name" ]; then
+                if [[ ! "$service" =~ ^vault_web ]]; then
+                  all_critical_healthy=false
+                fi
+                continue
+              fi
+              
+              status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "unknown")
+              health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container_name 2>/dev/null || echo "none")
+              
+              if [[ "$service" =~ ^vault_web ]]; then
+                if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
+                  has_vault_web_healthy=true
+                fi
+              else
+                if [ "$status" != "running" ] || ([ "$health" != "none" ] && [ "$health" != "healthy" ]); then
+                  all_critical_healthy=false
+                fi
+              fi
+            done
+            
+            if [ "$all_critical_healthy" = "true" ] && [ "$has_vault_web_healthy" = "true" ]; then
+              break
+            fi
+            
+            if [ $attempt -lt $max_attempts ]; then
+              sleep 3
+            fi
+          done
+
+          if [ "$all_critical_healthy" != "true" ] || [ "$has_vault_web_healthy" != "true" ]; then
+            echo "❌ Some containers failed to become healthy within the timeout period"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=50
+            exit 1
+          fi
+
+      - name: Verify final container status
+        run: |
+          has_vault_web_healthy=false
+          errors=0
+
+          vault_web_containers=$(docker ps -a --format "{{.ID}}" --filter "name=vault_web" 2>/dev/null || true)
+          if [ -z "$vault_web_containers" ]; then
+            vault_web_containers=$(docker ps -a --format "{{.ID}}" --filter "name=${COMPOSE_PROJECT_NAME}-vault_web" 2>/dev/null || true)
+          fi
+
+          if [ -z "$vault_web_containers" ]; then
+            errors=$((errors + 1))
+          else
+            for container_id in $vault_web_containers; do
+              status=$(docker inspect --format='{{.State.Status}}' $container_id 2>/dev/null || echo "unknown")
+              health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container_id 2>/dev/null || echo "none")
+              
+              if [ "$status" = "running" ] && ([ "$health" = "healthy" ] || [ "$health" = "none" ]); then
+                has_vault_web_healthy=true
+              fi
+            done
+          fi
+
+          services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
+          for service in $services; do
+            if [[ "$service" =~ ^vault_web ]]; then
+              continue
+            fi
+            container_name=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q $service 2>/dev/null | head -n1)
+            if [ -z "$container_name" ]; then
+              errors=$((errors + 1))
+              continue
+            fi
+            status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "unknown")
+            if [ "$status" != "running" ]; then
+              errors=$((errors + 1))
+            fi
+          done
+
+          if [ "$has_vault_web_healthy" != "true" ]; then
+            errors=$((errors + 1))
+          fi
+
+          if [ $errors -gt 0 ]; then
+            echo "❌ Verification failed"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" down -v || true
+
+          PROJECT_PREFIX="${COMPOSE_PROJECT_NAME}-"
+          docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
+          docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
+          docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
+          docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rmi -f 2>/dev/null || true

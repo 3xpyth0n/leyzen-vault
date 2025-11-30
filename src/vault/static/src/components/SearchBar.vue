@@ -10,6 +10,7 @@
         :placeholder="placeholder"
         class="search-input input"
         ref="searchInput"
+        autocomplete="off"
       />
       <button
         v-if="query"

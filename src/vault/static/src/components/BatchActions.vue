@@ -197,6 +197,13 @@ export default {
   align-items: center;
   justify-content: center;
   z-index: 10001;
+  padding-left: calc(0px + 250px); /* Default: sidebar expanded (250px) */
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(0px + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal {

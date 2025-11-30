@@ -265,6 +265,10 @@ class QuotaService:
             Quota object
         """
         quota = self.get_user_quota(user_id)
+        # Round to integer to ensure we store a clean integer value
+        if storage_limit_bytes is not None:
+            storage_limit_bytes = int(round(storage_limit_bytes))
+
         if not quota:
             quota = Quota(
                 user_id=user_id,
@@ -281,23 +285,47 @@ class QuotaService:
     def get_quota_info(self, user_id: str) -> dict[str, Any]:
         """Get comprehensive quota information for a user.
 
-        Uses disk usage of the host system instead of unlimited quotas.
+        Uses user-specific quota if defined, otherwise falls back to disk usage
+        of the host system.
 
         Args:
             user_id: User ID
 
         Returns:
-            Dictionary with quota information based on host disk usage
+            Dictionary with quota information based on user-specific quota
+            or host disk usage as fallback
         """
-        # Get disk usage information
-        disk_usage = self.get_disk_usage()
-
         # Calculate total storage used by user
         used = self.calculate_user_storage_used(user_id)
         # Ensure used is always an integer, not None
         if used is None:
             used = 0
         used = int(used)
+
+        # Check if user has a specific quota defined
+        quota = self.get_user_quota(user_id)
+        user_limit = None
+        if quota and quota.max_storage_bytes and quota.max_storage_bytes > 0:
+            # User has a specific quota defined, use it
+            user_limit = quota.max_storage_bytes
+
+        if user_limit is not None:
+            # Use user-specific quota
+            available = max(0, user_limit - used)
+            percentage = (used / user_limit * 100) if user_limit > 0 else 0.0
+
+            return {
+                "has_quota": True,
+                "used": used,
+                "limit": user_limit,
+                "available": available,
+                "percentage": percentage,
+                "unlimited": False,
+                "disk_percentage": percentage,
+            }
+
+        # No user-specific quota, fall back to disk total
+        disk_usage = self.get_disk_usage()
 
         # Use disk total as limit, or None if unavailable
         total_bytes = disk_usage.get("total")

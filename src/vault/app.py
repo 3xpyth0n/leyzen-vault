@@ -125,6 +125,7 @@ def _normalize_origin(origin: str | None) -> str | None:
 from .blueprints.admin import admin_api_bp  # noqa: E402
 from .blueprints.auth import auth_bp  # noqa: E402
 from .blueprints.auth_api import auth_api_bp  # noqa: E402
+from .blueprints.config_api import config_api_bp  # noqa: E402
 from .blueprints.files_api_v2 import files_api_bp  # noqa: E402
 from .blueprints.internal_api import internal_api_bp  # noqa: E402
 from .blueprints.quota_api import quota_api_bp as quota_api_v2_bp  # noqa: E402
@@ -1485,6 +1486,7 @@ def create_app(
         auth_bp
     )  # Legacy auth (session-based, for CAPTCHA/logout until fully migrated)
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
+    app.register_blueprint(config_api_bp)  # Configuration API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
 
     # Debug: Log upload routes registration

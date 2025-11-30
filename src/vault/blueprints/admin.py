@@ -408,7 +408,10 @@ def create_or_update_quota():
 
     try:
         # Convert None to 0 for unlimited quota
-        storage_limit = max_storage_bytes if max_storage_bytes is not None else 0
+        # Round to nearest integer to avoid floating point precision issues
+        storage_limit = (
+            int(round(max_storage_bytes)) if max_storage_bytes is not None else 0
+        )
 
         quota = quota_service.create_or_update_user_quota(
             user_id=user_id,
@@ -638,16 +641,39 @@ def cancel_invitation(invitation_id: str):
         return jsonify({"error": "Failed to cancel invitation"}), 400
 
 
-@admin_api_bp.route("/settings", methods=["GET", "PUT"])
+# Authentication configuration routes
+@admin_api_bp.route("/auth/config", methods=["GET", "PUT"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def manage_settings():
-    """Get or update system settings (admin only)."""
+def manage_auth_config():
+    """Get or update authentication configuration (admin only).
+
+    GET: Returns authentication configuration including:
+        - allow_signup: Whether public signup is enabled
+        - password_authentication_enabled: Whether password authentication is enabled
+
+    PUT: Update authentication configuration.
+
+    Request body (PUT):
+        {
+            "allow_signup": true/false (optional),
+            "password_authentication_enabled": true/false (optional)
+        }
+    """
     from vault.database.schema import SystemSettings
 
     if request.method == "GET":
-        settings = db.session.query(SystemSettings).all()
+        # Get auth-related settings
+        settings = (
+            db.session.query(SystemSettings)
+            .filter(
+                SystemSettings.key.in_(
+                    ["allow_signup", "password_authentication_enabled"]
+                )
+            )
+            .all()
+        )
         settings_dict = {s.key: s.value for s in settings}
 
         # Password authentication enabled (default: true)
@@ -658,27 +684,25 @@ def manage_settings():
         if "allow_signup" not in settings_dict:
             settings_dict["allow_signup"] = "true"
 
-        # Add vault_url from VAULT_SETTINGS for SSO callback URLs
-        try:
-            vault_settings = current_app.config.get("VAULT_SETTINGS")
-            if (
-                vault_settings
-                and hasattr(vault_settings, "vault_url")
-                and vault_settings.vault_url
-            ):
-                settings_dict["vault_url"] = vault_settings.vault_url.rstrip("/")
-        except Exception:
-            # If VAULT_URL is not configured, don't include it
-            # Frontend will fall back to window.location.origin
-            pass
-
-        return jsonify({"settings": settings_dict}), 200
+        return (
+            jsonify(
+                {
+                    "allow_signup": settings_dict["allow_signup"].lower() == "true",
+                    "password_authentication_enabled": settings_dict[
+                        "password_authentication_enabled"
+                    ].lower()
+                    == "true",
+                }
+            ),
+            200,
+        )
     else:
+        # PUT - Update auth configuration
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid request"}), 400
 
-        # Update allow_signup in database
+        # Update allow_signup
         allow_signup = data.get("allow_signup")
         if allow_signup is not None:
             setting = (
@@ -752,6 +776,73 @@ def manage_settings():
                 )
                 db.session.add(setting)
             db.session.commit()
+
+        return (
+            jsonify({"message": "Authentication configuration updated successfully"}),
+            200,
+        )
+
+
+@admin_api_bp.route("/settings", methods=["GET", "PUT"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def manage_settings():
+    """Get or update general system settings (admin only).
+
+    Note: Authentication configuration is now managed via /api/admin/auth/config.
+    This endpoint handles general system settings only.
+
+    GET: Returns general system settings (excluding authentication settings).
+
+    PUT: Update general system settings.
+    """
+    from vault.database.schema import SystemSettings
+
+    # Define auth-related keys to exclude from general settings
+    auth_config_keys = ["allow_signup", "password_authentication_enabled"]
+
+    if request.method == "GET":
+        # Get all settings except auth configuration
+        all_settings = db.session.query(SystemSettings).all()
+        settings_dict = {
+            s.key: s.value for s in all_settings if s.key not in auth_config_keys
+        }
+
+        # Add vault_url from VAULT_SETTINGS for SSO callback URLs
+        try:
+            vault_settings = current_app.config.get("VAULT_SETTINGS")
+            if (
+                vault_settings
+                and hasattr(vault_settings, "vault_url")
+                and vault_settings.vault_url
+            ):
+                settings_dict["vault_url"] = vault_settings.vault_url.rstrip("/")
+        except Exception:
+            # If VAULT_URL is not configured, don't include it
+            # Frontend will fall back to window.location.origin
+            pass
+
+        return jsonify({"settings": settings_dict}), 200
+    else:
+        # PUT - Update general settings
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid request"}), 400
+
+        # Reject attempts to update auth config via this endpoint
+        if any(key in data for key in auth_config_keys):
+            return (
+                jsonify(
+                    {
+                        "error": "Authentication settings must be updated via /api/admin/auth/config endpoint"
+                    }
+                ),
+                400,
+            )
+
+        # Handle other general settings updates here if needed in the future
+        # For now, this endpoint is mainly for reading general settings
 
         return jsonify({"message": "Settings updated successfully"}), 200
 
@@ -835,15 +926,18 @@ def manage_domain_rule(rule_id: str):
             return jsonify({"error": "Rule not found"}), 404
 
 
-# SSO Provider management routes
+# SSO Provider management routes - consolidated under /api/admin/auth/sso/providers
 
 
-@admin_api_bp.route("/sso-providers", methods=["GET"])
+@admin_api_bp.route("/auth/sso/providers", methods=["GET"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def list_sso_providers():
-    """List all SSO providers (admin only)."""
+def list_auth_sso_providers():
+    """List all SSO providers (admin only).
+
+    Consolidated route for listing SSO providers.
+    """
     from vault.services.sso_service import SSOService
 
     sso_service = SSOService()
@@ -852,17 +946,19 @@ def list_sso_providers():
     return jsonify({"providers": [provider.to_dict() for provider in providers]}), 200
 
 
-@admin_api_bp.route("/sso-providers", methods=["POST"])
+@admin_api_bp.route("/auth/sso/providers", methods=["POST"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def create_sso_provider():
+def create_auth_sso_provider():
     """Create a new SSO provider (admin only).
+
+    Consolidated route for creating SSO providers.
 
     Request body:
         {
             "name": "Provider name",
-            "provider_type": "saml" | "oauth2" | "oidc",
+            "provider_type": "saml" | "oauth2" | "oidc" | "email-magic-link",
             "config": { ... },  # Provider-specific configuration
             "is_active": true
         }
@@ -890,7 +986,9 @@ def create_sso_provider():
     except ValueError:
         return (
             jsonify(
-                {"error": f"Invalid provider_type. Must be one of: saml, oauth2, oidc"}
+                {
+                    "error": f"Invalid provider_type. Must be one of: saml, oauth2, oidc, email-magic-link"
+                }
             ),
             400,
         )
@@ -955,12 +1053,15 @@ def create_sso_provider():
         return jsonify({"error": "Failed to create SSO provider"}), 500
 
 
-@admin_api_bp.route("/sso-providers/<provider_id>", methods=["GET"])
+@admin_api_bp.route("/auth/sso/providers/<provider_id>", methods=["GET"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def get_sso_provider(provider_id: str):
-    """Get a specific SSO provider (admin only)."""
+def get_auth_sso_provider(provider_id: str):
+    """Get a specific SSO provider (admin only).
+
+    Consolidated route for getting SSO provider details.
+    """
     from vault.services.sso_service import SSOService
 
     sso_service = SSOService()
@@ -973,12 +1074,14 @@ def get_sso_provider(provider_id: str):
     return jsonify({"provider": provider.to_dict()}), 200
 
 
-@admin_api_bp.route("/sso-providers/<provider_id>", methods=["PUT"])
+@admin_api_bp.route("/auth/sso/providers/<provider_id>", methods=["PUT"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def update_sso_provider(provider_id: str):
+def update_auth_sso_provider(provider_id: str):
     """Update an SSO provider (admin only).
+
+    Consolidated route for updating SSO providers.
 
     Request body:
         {
@@ -1058,12 +1161,15 @@ def update_sso_provider(provider_id: str):
         return jsonify({"error": "Failed to update SSO provider"}), 500
 
 
-@admin_api_bp.route("/sso-providers/<provider_id>", methods=["DELETE"])
+@admin_api_bp.route("/auth/sso/providers/<provider_id>", methods=["DELETE"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
 @require_role(GlobalRole.ADMIN)
-def delete_sso_provider(provider_id: str):
-    """Delete an SSO provider (admin only)."""
+def delete_auth_sso_provider(provider_id: str):
+    """Delete an SSO provider (admin only).
+
+    Consolidated route for deleting SSO providers.
+    """
     from vault.services.sso_service import SSOService
 
     sso_service = SSOService()

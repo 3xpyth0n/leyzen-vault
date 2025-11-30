@@ -640,7 +640,14 @@ export default {
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal {

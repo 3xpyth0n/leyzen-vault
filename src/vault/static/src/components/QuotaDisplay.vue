@@ -8,12 +8,11 @@
         <div
           class="quota-bar"
           :class="{
-            'quota-warning':
-              quotaInfo.disk_percentage >= 80 && quotaInfo.disk_percentage < 95,
-            'quota-danger': quotaInfo.disk_percentage >= 95,
+            'quota-warning': quotaPercentage >= 80 && quotaPercentage < 100,
+            'quota-danger': quotaPercentage >= 100,
           }"
           :style="{
-            width: Math.min(quotaInfo.disk_percentage || 0, 100) + '%',
+            width: Math.min(quotaPercentage || 0, 100) + '%',
           }"
         ></div>
       </div>
@@ -21,32 +20,36 @@
         <span class="quota-used">{{ formatSize(quotaInfo.used) }}</span>
         <span class="quota-separator">/</span>
         <span class="quota-limit">{{
-          quotaInfo.limit ? formatSize(quotaInfo.limit) : "N/A"
+          quotaInfo.limit ? formatQuotaLimit(quotaInfo.limit) : "N/A"
         }}</span>
         <span class="quota-percentage"
-          >({{ Math.round(quotaInfo.disk_percentage || 0) }}%)</span
+          >({{ Math.round(quotaPercentage || 0) }}%)</span
         >
       </div>
       <div class="quota-available">
         <span v-if="quotaInfo.available && quotaInfo.available > 0">
           {{ formatSize(quotaInfo.available) }} available
         </span>
-        <span v-else class="quota-full">Disk full</span>
+        <span v-else-if="quotaPercentage >= 100" class="quota-full"
+          >Quota limit reached</span
+        >
+        <span v-else class="quota-full">No space available</span>
       </div>
       <div
-        v-if="quotaInfo.disk_percentage >= 80"
+        v-if="quotaPercentage >= 80"
         class="quota-alert"
         :class="{
-          'quota-alert-warning':
-            quotaInfo.disk_percentage >= 80 && quotaInfo.disk_percentage < 95,
-          'quota-alert-danger': quotaInfo.disk_percentage >= 95,
+          'quota-alert-warning': quotaPercentage >= 80 && quotaPercentage < 100,
+          'quota-alert-danger': quotaPercentage >= 100,
         }"
       >
-        <span v-if="quotaInfo.disk_percentage >= 95">
-          ⚠️ Disk storage almost full! Please free up space.
+        <span v-if="quotaPercentage >= 100">
+          ⚠️ Maximum quota reached! You have used 100% of your storage quota.
+          Please free up space.
         </span>
         <span v-else>
-          ⚠️ Disk storage {{ Math.round(quotaInfo.disk_percentage) }}% full.
+          ⚠️ Warning: You have used {{ Math.round(quotaPercentage) }}% of your
+          storage quota.
         </span>
       </div>
     </div>
@@ -54,7 +57,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { quota } from "../services/api";
 
 export default {
@@ -75,6 +78,17 @@ export default {
     const error = ref(null);
     let refreshTimer = null;
 
+    // Computed property to get the correct percentage (priority: percentage > disk_percentage)
+    const quotaPercentage = computed(() => {
+      if (!quotaInfo.value) return 0;
+      // Use percentage field (works for both user-specific quota and disk total)
+      return (
+        Number(quotaInfo.value.percentage) ||
+        Number(quotaInfo.value.disk_percentage) ||
+        0
+      );
+    });
+
     const loadQuota = async () => {
       loading.value = true;
       error.value = null;
@@ -91,6 +105,7 @@ export default {
             used: data.used || 0,
             limit: data.limit || null,
             available: data.available || 0,
+            percentage: data.percentage || data.disk_percentage || 0,
             disk_percentage: data.disk_percentage || data.percentage || 0,
           };
         }
@@ -108,8 +123,14 @@ export default {
           ? Number(quotaInfo.value.limit)
           : null;
         quotaInfo.value.available = Number(quotaInfo.value.available) || 0;
+        quotaInfo.value.percentage =
+          Number(quotaInfo.value.percentage) ||
+          Number(quotaInfo.value.disk_percentage) ||
+          0;
         quotaInfo.value.disk_percentage =
-          Number(quotaInfo.value.disk_percentage) || 0;
+          Number(quotaInfo.value.disk_percentage) ||
+          Number(quotaInfo.value.percentage) ||
+          0;
       } catch (err) {
         error.value = err.message || "Failed to load quota";
       } finally {
@@ -131,6 +152,36 @@ export default {
       return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
     };
 
+    // Helper function to format quota limit using decimal conversion (base 1000)
+    // This ensures 0.1 GB displays as 100 MB (0.1 * 1000 = 100)
+    const formatQuotaLimit = (bytes) => {
+      if (!bytes || bytes <= 0) return "0 MB";
+
+      // Convert bytes to GB using binary (1024 base) as stored
+      const gb = bytes / (1024 * 1024 * 1024);
+
+      // Convert to MB using decimal base (1000) for display
+      // This way 0.1 GB = 100 MB, 0.12 GB = 120 MB, etc.
+      const mb = Math.round(gb * 1000);
+
+      // If less than 1 MB, show in KB
+      if (mb < 1) {
+        const kb = Math.round(((bytes / 1024) * 1000) / 1024);
+        return kb + " KB";
+      }
+
+      // If less than 1000 MB, show in MB
+      if (mb < 1000) {
+        return mb + " MB";
+      }
+
+      // If 1000 MB or more, show in GB with decimals
+      const gbDisplay = mb / 1000;
+      // Round to 2 decimal places max, removing trailing zeros
+      const gbRounded = Math.round(gbDisplay * 100) / 100;
+      return gbRounded + " GB";
+    };
+
     onMounted(() => {
       loadQuota();
       if (props.autoRefresh) {
@@ -147,10 +198,12 @@ export default {
 
     return {
       quotaInfo,
+      quotaPercentage,
       loading,
       error,
       loadQuota,
       formatSize,
+      formatQuotaLimit,
       stopRefresh,
     };
   },
@@ -214,7 +267,7 @@ export default {
 }
 
 .quota-bar.quota-warning {
-  background: var(--accent-yellow, #fbbf24);
+  background: var(--accent-orange, #f97316);
 }
 
 .quota-bar.quota-danger {
@@ -264,9 +317,9 @@ export default {
 }
 
 .quota-alert-warning {
-  background: rgba(251, 191, 36, 0.1);
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  color: var(--accent-yellow, #fbbf24);
+  background: rgba(249, 115, 22, 0.1);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  color: var(--accent-orange, #f97316);
 }
 
 .quota-alert-danger {

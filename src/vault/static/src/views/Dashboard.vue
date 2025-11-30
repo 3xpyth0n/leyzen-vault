@@ -722,20 +722,6 @@ export default {
   }
 }
 
-@keyframes vaultspaceIconChange {
-  0% {
-    opacity: 0.5;
-    transform: rotate(-10deg) scale(0.9);
-  }
-  50% {
-    transform: rotate(5deg) scale(1.1);
-  }
-  100% {
-    opacity: 1;
-    transform: rotate(0deg) scale(1);
-  }
-}
-
 @keyframes vaultspaceRename {
   0% {
     transform: scale(1);
@@ -755,8 +741,8 @@ export default {
 }
 
 .vaultspace-icon-changing {
-  animation: vaultspaceIconChange 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  will-change: opacity, transform;
+  animation: vaultspaceRename 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
 }
 
 .vaultspace-renaming {
@@ -943,7 +929,16 @@ export default {
   justify-content: center !important;
   z-index: 10000 !important;
   padding: 2rem !important;
+  padding-left: calc(
+    2rem + 250px
+  ) !important; /* Default: sidebar expanded (250px) */
   overflow-y: auto !important;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
 }
 
 .modal {
@@ -1039,7 +1034,16 @@ export default {
   visibility: visible !important;
   opacity: 1 !important;
   padding: 2rem !important;
+  padding-left: calc(
+    2rem + 250px
+  ) !important; /* Default: sidebar expanded (250px) */
   overflow-y: auto !important;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
 }
 
 .modal {
@@ -1114,7 +1118,7 @@ export default {
   justify-content: flex-end;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color) !important;
+  border-top: 0px !important;
   flex-shrink: 0;
 }
 </style>

@@ -272,25 +272,21 @@ onMounted(async () => {
     router.replace({ query: nextQuery });
   }
 
-  // Check if password authentication is enabled
+  // Get authentication configuration (consolidated endpoint)
   try {
-    const response = await fetch("/api/auth/password-auth-status");
-    if (response.ok) {
-      const data = await response.json();
-      passwordAuthEnabled.value = data.password_authentication_enabled === true;
-    }
+    const config = await auth.getAuthConfig();
+    passwordAuthEnabled.value = config.password_authentication_enabled === true;
+    signupEnabled.value = config.allow_signup === true;
   } catch (err) {
-    logger.error("Failed to check password auth status:", err);
+    logger.error("Failed to get auth config:", err);
     passwordAuthEnabled.value = true; // Default to enabled
+    signupEnabled.value = true; // Default to enabled
   }
 
   // Load captcha only if password auth is enabled
   if (passwordAuthEnabled.value) {
     refreshCaptcha();
   }
-
-  // Check if signup is enabled
-  signupEnabled.value = await auth.isSignupEnabled();
   // Load SSO providers
   try {
     ssoProviders.value = await sso.listProviders();

@@ -112,18 +112,8 @@
         </div>
         <div class="header-right">
           <div class="header-actions">
-            <router-link
-              v-if="isAdmin"
-              to="/admin"
-              class="btn btn-admin"
-              title="Admin Panel"
-            >
-              Admin
-            </router-link>
-            <router-link to="/account" class="btn btn-account"
-              >Account</router-link
-            >
-            <button @click="handleLogout" class="btn btn-logout">Logout</button>
+            <ServerStatusIndicator />
+            <UserMenuDropdown :is-admin="isAdmin" @logout="handleLogout" />
           </div>
         </div>
       </header>
@@ -150,12 +140,16 @@
 
 <script>
 import ConfirmationModal from "./ConfirmationModal.vue";
+import ServerStatusIndicator from "./ServerStatusIndicator.vue";
+import UserMenuDropdown from "./UserMenuDropdown.vue";
 import { auth, account, vaultspaces } from "../services/api";
 
 export default {
   name: "AppLayout",
   components: {
     ConfirmationModal,
+    ServerStatusIndicator,
+    UserMenuDropdown,
   },
   emits: ["logout"],
   data() {
@@ -221,6 +215,15 @@ export default {
       this.sidebarCollapsed = !this.sidebarCollapsed;
       // Save preference to localStorage
       localStorage.setItem("sidebarCollapsed", this.sidebarCollapsed);
+      // Update body class for modal positioning
+      this.updateBodyClass();
+    },
+    updateBodyClass() {
+      if (this.sidebarCollapsed) {
+        document.body.classList.add("sidebar-collapsed");
+      } else {
+        document.body.classList.remove("sidebar-collapsed");
+      }
     },
     handleLogout(e) {
       // Prevent any default behavior
@@ -260,6 +263,8 @@ export default {
     if (saved !== null) {
       this.sidebarCollapsed = saved === "true";
     }
+    // Update body class based on initial sidebar state
+    this.updateBodyClass();
 
     // Check if user is admin
     try {
@@ -359,6 +364,8 @@ export default {
         this.vaultspaceDeletedHandler,
       );
     }
+    // Clean up body class
+    document.body.classList.remove("sidebar-collapsed");
   },
 };
 </script>
@@ -797,52 +804,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.btn-admin,
-.btn-account,
-.btn-logout {
-  padding: 0.625rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  font-family: inherit;
-}
-
-.btn-admin {
-  color: #38bdf8;
-  border-color: rgba(56, 189, 248, 0.3);
-}
-
-.btn-admin:hover {
-  background: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.5);
-}
-
-.btn-account {
-  color: #e6eef6;
-}
-
-.btn-account:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(88, 166, 255, 0.3);
-}
-
-.btn-logout {
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.btn-logout:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .page-content {

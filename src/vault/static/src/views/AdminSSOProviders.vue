@@ -931,10 +931,8 @@ const loadDomainRules = async () => {
 
 const loadPasswordAuthStatus = async () => {
   try {
-    const settings = await admin.getSettings();
-    passwordAuthEnabled.value =
-      settings.password_authentication_enabled === "true" ||
-      settings.password_authentication_enabled === true;
+    const config = await admin.getAuthConfig();
+    passwordAuthEnabled.value = config.password_authentication_enabled === true;
   } catch (err) {
     logger.error("Failed to load password auth status:", err);
     // Default to true on error
@@ -944,19 +942,8 @@ const loadPasswordAuthStatus = async () => {
 
 const loadAllowSignupStatus = async () => {
   try {
-    const settings = await admin.getSettings();
-    // Convert allow_signup to boolean if it's a string
-    if (typeof settings.allow_signup === "string") {
-      allowSignupEnabled.value = settings.allow_signup.toLowerCase() === "true";
-    } else if (
-      settings.allow_signup === undefined ||
-      settings.allow_signup === null
-    ) {
-      // If not in database, default to false (more secure)
-      allowSignupEnabled.value = false;
-    } else {
-      allowSignupEnabled.value = settings.allow_signup === true;
-    }
+    const config = await admin.getAuthConfig();
+    allowSignupEnabled.value = config.allow_signup === true;
   } catch (err) {
     logger.error("Failed to load allow signup status:", err);
     // On error, default to false to be safe
@@ -1006,7 +993,9 @@ const togglePasswordAuth = async () => {
   passwordAuthEnabled.value = newValue;
 
   try {
-    await admin.updatePasswordAuthStatus(newValue);
+    await admin.updateAuthConfig({
+      password_authentication_enabled: newValue,
+    });
     // Success - state already updated
   } catch (err) {
     // Revert on error
@@ -1029,7 +1018,7 @@ const toggleAllowSignup = async () => {
   allowSignupEnabled.value = newValue;
 
   try {
-    await admin.updateSettings({ allow_signup: newValue });
+    await admin.updateAuthConfig({ allow_signup: newValue });
     // Success - state already updated
   } catch (err) {
     // Revert on error
@@ -1728,7 +1717,14 @@ h1 {
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal-content {

@@ -27,6 +27,15 @@
     <section class="account-section">
       <h2>Change Email</h2>
       <form @submit.prevent="handleUpdateEmail">
+        <!-- Hidden username field for accessibility (required by browsers for password forms) -->
+        <input
+          type="text"
+          name="username"
+          autocomplete="username"
+          style="position: absolute; left: -9999px; width: 1px; height: 1px"
+          tabindex="-1"
+          aria-hidden="true"
+        />
         <div class="form-group">
           <label for="new-email">New Email:</label>
           <input
@@ -36,6 +45,7 @@
             required
             :disabled="emailForm.loading"
             placeholder="newemail@example.com"
+            autocomplete="off"
           />
         </div>
         <div class="form-group">
@@ -1351,7 +1361,14 @@ export default {
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal {

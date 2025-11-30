@@ -33,7 +33,7 @@ async function uploadFile(file) {
   const fileId = result.file_id;
 
   // Create shareable URL with key in fragment
-  const shareUrl = VaultCrypto.createShareUrl(fileId, key);
+  const shareUrl = await VaultCrypto.createShareUrl(fileId, key);
 
   return {
     fileId,

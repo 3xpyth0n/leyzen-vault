@@ -21,6 +21,8 @@ import { folderPicker } from "./utils/FolderPicker.js";
 // Import encryption.js to initialize VaultCrypto wrapper for compatibility
 import "./services/encryption.js";
 import { decryptFileKey } from "./services/encryption.js";
+// Import vault config service
+import { getVaultBaseUrl } from "./services/vault-config.js";
 // Import new icon system (replaces static icons.js)
 import "./utils/icons.js";
 
@@ -29,6 +31,7 @@ if (typeof window !== "undefined") {
   window.modalManager = modalManager;
   window.folderPicker = folderPicker;
   window.decryptFileKey = decryptFileKey;
+  window.getVaultBaseUrl = getVaultBaseUrl;
 }
 
 // Note: The new icon system is imported above and automatically sets window.Icons

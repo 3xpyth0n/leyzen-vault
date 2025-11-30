@@ -328,20 +328,40 @@ export async function apiRequest(endpoint, options = {}) {
  */
 export const auth = {
   /**
+   * Get authentication configuration.
+   *
+   * @returns {Promise<object>} Authentication configuration object with allow_signup and password_authentication_enabled
+   */
+  async getAuthConfig() {
+    try {
+      const response = await fetch("/api/auth/config", {
+        method: "GET",
+      });
+      if (!response.ok) {
+        return {
+          allow_signup: true,
+          password_authentication_enabled: true,
+        }; // Default to enabled if check fails
+      }
+      return await response.json();
+    } catch (err) {
+      console.error("Failed to get auth config:", err);
+      return {
+        allow_signup: true,
+        password_authentication_enabled: true,
+      }; // Default to enabled if check fails
+    }
+  },
+
+  /**
    * Check if public signup is enabled.
    *
    * @returns {Promise<boolean>} True if signup is allowed
    */
   async isSignupEnabled() {
     try {
-      const response = await fetch("/api/auth/signup/status", {
-        method: "GET",
-      });
-      if (!response.ok) {
-        return true; // Default to enabled if check fails
-      }
-      const data = await response.json();
-      return data.allow_signup === true;
+      const config = await this.getAuthConfig();
+      return config.allow_signup === true;
     } catch (err) {
       console.error("Failed to check signup status:", err);
       return true; // Default to enabled if check fails
@@ -615,7 +635,7 @@ export const auth = {
    * Verify email using verification token.
    *
    * @param {string} token - Verification token
-   * @returns {Promise<object>} User and JWT token
+   * @returns {Promise<object>} User (no token - user must log in after verification)
    */
   async verifyEmailToken(token) {
     const response = await apiRequest(`/auth/account/verify/${token}`, {
@@ -628,8 +648,14 @@ export const auth = {
     }
 
     const data = await response.json();
+    // CRITICAL: Do NOT store token - user must log in after email verification
+    // This ensures master key initialization happens during login
+    // Even if backend accidentally returns a token, ignore it
     if (data.token) {
-      setToken(data.token);
+      console.warn(
+        "Email verification returned a token! This should not happen. Ignoring it.",
+      );
+      delete data.token;
     }
     return data;
   },
@@ -2187,26 +2213,58 @@ export const admin = {
   },
 
   /**
+   * Get authentication configuration.
+   *
+   * @returns {Promise<object>} Authentication configuration with allow_signup and password_authentication_enabled
+   */
+  async getAuthConfig() {
+    const response = await apiRequest("/admin/auth/config");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to get auth config");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Update authentication configuration.
+   *
+   * @param {object} config - Authentication configuration
+   * @param {boolean} config.allow_signup - Whether public signup is enabled (optional)
+   * @param {boolean} config.password_authentication_enabled - Whether password authentication is enabled (optional)
+   * @returns {Promise<void>}
+   */
+  async updateAuthConfig(config) {
+    const response = await apiRequest("/admin/auth/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to update auth config");
+    }
+  },
+
+  /**
    * Get password authentication status.
    *
+   * @deprecated Use getAuthConfig() instead
    * @returns {Promise<boolean>} Password authentication enabled status
    */
   async getPasswordAuthStatus() {
-    const settings = await this.getSettings();
-    return (
-      settings.password_authentication_enabled === "true" ||
-      settings.password_authentication_enabled === true
-    );
+    const config = await this.getAuthConfig();
+    return config.password_authentication_enabled === true;
   },
 
   /**
    * Update password authentication status.
    *
+   * @deprecated Use updateAuthConfig() instead
    * @param {boolean} enabled - Whether password authentication is enabled
    * @returns {Promise<void>}
    */
   async updatePasswordAuthStatus(enabled) {
-    await this.updateSettings({
+    await this.updateAuthConfig({
       password_authentication_enabled: enabled,
     });
   },
@@ -2357,7 +2415,7 @@ export const admin = {
    * @returns {Promise<Array>} List of SSO providers
    */
   async listSSOProviders() {
-    const response = await apiRequest("/admin/sso-providers");
+    const response = await apiRequest("/admin/auth/sso/providers");
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to list SSO providers");
@@ -2373,7 +2431,9 @@ export const admin = {
    * @returns {Promise<object>} SSO provider
    */
   async getSSOProvider(providerId) {
-    const response = await apiRequest(`/admin/sso-providers/${providerId}`);
+    const response = await apiRequest(
+      `/admin/auth/sso/providers/${providerId}`,
+    );
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to get SSO provider");
@@ -2389,7 +2449,7 @@ export const admin = {
    * @returns {Promise<object>} Created provider
    */
   async createSSOProvider(provider) {
-    const response = await apiRequest("/admin/sso-providers", {
+    const response = await apiRequest("/admin/auth/sso/providers", {
       method: "POST",
       body: JSON.stringify(provider),
     });
@@ -2409,10 +2469,13 @@ export const admin = {
    * @returns {Promise<object>} Updated provider
    */
   async updateSSOProvider(providerId, provider) {
-    const response = await apiRequest(`/admin/sso-providers/${providerId}`, {
-      method: "PUT",
-      body: JSON.stringify(provider),
-    });
+    const response = await apiRequest(
+      `/admin/auth/sso/providers/${providerId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(provider),
+      },
+    );
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to update SSO provider");
@@ -2428,9 +2491,12 @@ export const admin = {
    * @returns {Promise<void>}
    */
   async deleteSSOProvider(providerId) {
-    const response = await apiRequest(`/admin/sso-providers/${providerId}`, {
-      method: "DELETE",
-    });
+    const response = await apiRequest(
+      `/admin/auth/sso/providers/${providerId}`,
+      {
+        method: "DELETE",
+      },
+    );
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to delete SSO provider");
@@ -2464,7 +2530,7 @@ export const sso = {
    * @returns {Promise<Array>} List of active SSO providers
    */
   async listProviders() {
-    const response = await apiRequest("/sso/providers");
+    const response = await apiRequest("/auth/sso/providers");
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to list SSO providers");

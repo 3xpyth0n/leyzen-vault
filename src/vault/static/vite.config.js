@@ -44,24 +44,15 @@ function relativeUrlsPlugin() {
 }
 
 export default defineConfig({
-  plugins: [
-    vue({
-      // Disable CSS preloading to prevent 503 errors when server is slow
-      template: {
-        compilerOptions: {
-          // This prevents Vue from automatically preloading CSS files
-          // CSS will still be loaded, but not preloaded, avoiding 503 errors
-        },
-      },
-    }),
-    staticScriptsPlugin(),
-    relativeUrlsPlugin(),
-  ],
+  plugins: [vue(), staticScriptsPlugin(), relativeUrlsPlugin()],
   build: {
     outDir: "dist",
     emptyOutDir: true,
     chunkSizeWarningLimit: 100000,
-    cssCodeSplit: true,
+    // Disable CSS code splitting to prevent 503 errors when lazy-loaded components try to preload CSS
+    // With cssCodeSplit: false, all CSS is bundled into a single file, avoiding preload issues
+    cssCodeSplit: false,
+    modulePreload: false,
     rollupOptions: {
       input: resolve(__dirname, "index.html"),
       output: {
@@ -139,7 +130,17 @@ export default defineConfig({
             warning.message.includes("trusted-types-init") ||
             warning.message.includes("icons.js") ||
             warning.message.includes("cleanup-modal.js") ||
-            warning.message.includes("sharing.js"))
+            warning.message.includes("sharing.js") ||
+            warning.message.includes("unregister-service-worker.js"))
+        ) {
+          return;
+        }
+        // Suppress warning about eval in file-type/core.js (dependency of music-metadata)
+        if (
+          warning.message &&
+          typeof warning.message === "string" &&
+          warning.message.includes("file-type/core.js") &&
+          warning.message.includes("eval")
         ) {
           return;
         }
@@ -155,7 +156,8 @@ export default defineConfig({
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
-          msg.includes("sharing.js"))
+          msg.includes("sharing.js") ||
+          msg.includes("unregister-service-worker.js"))
       ) {
         // Suppress this warning
         return;
@@ -176,7 +178,8 @@ export default defineConfig({
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
-          msg.includes("sharing.js"))
+          msg.includes("sharing.js") ||
+          msg.includes("unregister-service-worker.js"))
       ) {
         // Suppress this warning
         return;

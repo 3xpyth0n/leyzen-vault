@@ -90,10 +90,28 @@
           Share a file to generate a download link that others can use
         </p>
       </div>
-      <div v-else class="shared-files-list glass">
+      <div v-else class="shared-files-list">
         <div v-for="file in files" :key="file.id" class="shared-file-item">
           <div class="file-info">
-            <div class="file-icon" v-html="getFileIcon(file)"></div>
+            <div class="file-icon">
+              <img
+                v-if="
+                  hasThumbnail(file) &&
+                  (isImageFile(file) || isAudioFile(file)) &&
+                  getThumbnailUrl(file.id)
+                "
+                :key="`thumb-${file.id}-${thumbnailUpdateTrigger}`"
+                :src="getThumbnailUrl(file.id)"
+                :alt="file.original_name"
+                class="file-thumbnail"
+                @error="
+                  (event) => {
+                    event.target.style.display = 'none';
+                  }
+                "
+              />
+              <span v-else v-html="getFileIcon(file)"></span>
+            </div>
             <div class="file-details">
               <h3 class="file-name">{{ file.original_name }}</h3>
               <p class="file-meta">
@@ -123,8 +141,19 @@
               class="share-link-card"
             >
               <div class="link-info">
-                <div :data-link-id="link.link_id" class="link-url">
-                  {{ getShareUrl(link, file.id) }}
+                <div
+                  v-if="hasDecryptionKey(link, file.id)"
+                  :data-link-id="link.link_id"
+                  class="link-url"
+                >
+                  {{ getShareUrlDisplay(link, file.id) }}
+                </div>
+                <div v-else class="link-warning">
+                  <span class="warning-icon">⚠️</span>
+                  <span class="warning-text">
+                    Decryption key missing. Open the file from the VaultSpace to
+                    retrieve the key.
+                  </span>
                 </div>
                 <div class="link-meta">
                   <span v-if="link.expires_at">
@@ -160,7 +189,9 @@
                 <button
                   @click="copyLink(link, file.id)"
                   class="btn btn-small"
-                  :disabled="!isLinkAvailable(link)"
+                  :disabled="
+                    !isLinkAvailable(link) || !hasDecryptionKey(link, file.id)
+                  "
                 >
                   Copy Link
                 </button>
@@ -182,8 +213,22 @@
 <script>
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
-import { auth } from "../services/api";
+import { auth, files, vaultspaces } from "../services/api";
 import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
+import { decryptFile, decryptFileKey } from "../services/encryption";
+import {
+  getCachedVaultSpaceKey,
+  getUserMasterKey,
+  decryptVaultSpaceKeyForUser,
+  cacheVaultSpaceKey,
+  createVaultSpaceKey,
+} from "../services/keyManager";
+import { getVaultBaseUrl } from "../services/vault-config.js";
+import {
+  getFileKey as getFileKeyFromStorage,
+  storeFileKey,
+} from "../services/fileKeyStorage.js";
+import * as mm from "music-metadata";
 
 export default {
   name: "SharedView",
@@ -212,6 +257,10 @@ export default {
       pendingEmailLink: null,
       pendingEmailFileId: null,
       pendingEmailFileName: null,
+      shareUrlCache: new Map(), // Cache for share URLs
+      shareUrlKeyStatus: new Map(), // Cache for key availability status
+      thumbnailUrls: {}, // Cache blob URLs for thumbnails
+      thumbnailUpdateTrigger: 0, // Force reactivity trigger
     };
   },
   async mounted() {
@@ -308,12 +357,11 @@ export default {
             });
           }
 
+          // Note: share_url will be constructed in getShareUrl() using VAULT_URL
           const shareLinkData = {
             ...link,
             link_id: link.token || link.id,
-            share_url:
-              link.share_url ||
-              `${window.location.origin}/share/${link.token || link.id}`,
+            share_url: link.share_url || null, // Will be constructed in getShareUrl()
             has_password: link.has_password || false,
           };
 
@@ -321,6 +369,23 @@ export default {
         }
 
         this.files = Array.from(filesMap.values());
+
+        // Preload share URLs and recover missing keys for all links
+        this.$nextTick(async () => {
+          for (const file of this.files) {
+            if (file.share_links) {
+              for (const link of file.share_links) {
+                await this.loadShareUrl(link, file.id);
+                // Try to recover missing keys
+                await this.ensureFileKeyAvailable(file.id, file.vaultspace_id);
+              }
+            }
+            // Load thumbnails for images and audio files
+            if (this.isImageFile(file) || this.isAudioFile(file)) {
+              this.loadThumbnailUrl(file.id, file);
+            }
+          }
+        });
       } catch (err) {
         this.error = err.message || "Failed to load shared files";
       } finally {
@@ -328,7 +393,13 @@ export default {
       }
     },
     showCopyAnimation(linkUrlElement) {
-      if (!linkUrlElement) {
+      // Verify that linkUrlElement is a valid DOM element
+      if (
+        !linkUrlElement ||
+        linkUrlElement.nodeType !== Node.ELEMENT_NODE ||
+        typeof linkUrlElement.appendChild !== "function"
+      ) {
+        console.warn("showCopyAnimation: Invalid element", linkUrlElement);
         return;
       }
 
@@ -379,20 +450,112 @@ export default {
         }, 300); // Match fade out duration
       }, 1000); // Animation lasts 1 second
     },
+    showCopyNotification() {
+      try {
+        // Remove any existing notification
+        const existing = document.querySelector(".copy-notification-popup");
+        if (existing) {
+          existing.remove();
+        }
+
+        // Create notification element
+        const notification = document.createElement("div");
+        notification.className = "copy-notification-popup";
+        notification.textContent = "Link copied to clipboard";
+        notification.setAttribute("aria-live", "polite");
+        notification.setAttribute("role", "status");
+
+        // Apply inline styles as fallback to ensure visibility
+        notification.style.cssText = `
+          position: fixed !important;
+          top: 2rem !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+          z-index: 10000 !important;
+          background: rgba(16, 185, 129, 0.9) !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+          color: white !important;
+          padding: 0.75rem 1.5rem !important;
+          border-radius: 0.75rem !important;
+          font-size: 0.9rem !important;
+          font-weight: 500 !important;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3) !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+          transition: opacity 0.3s ease, transform 0.3s ease !important;
+          white-space: nowrap !important;
+        `;
+
+        // Insert into body
+        if (!document.body) {
+          return;
+        }
+        document.body.appendChild(notification);
+
+        // Force reflow to ensure initial state is applied
+        void notification.offsetHeight;
+
+        // Trigger fade in animation
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            notification.classList.add("copy-notification-show");
+            // Also set opacity directly as fallback
+            notification.style.opacity = "1";
+            notification.style.transform = "translateX(-50%) translateY(0)";
+          });
+        });
+
+        // Remove after animation completes
+        setTimeout(() => {
+          notification.classList.remove("copy-notification-show");
+          notification.classList.add("copy-notification-hide");
+          // Also fade out using inline styles
+          notification.style.opacity = "0";
+          notification.style.transform = "translateX(-50%) translateY(-20px)";
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.remove();
+            }
+          }, 300); // Match fade out duration
+        }, 2000); // Show for 2 seconds
+      } catch (error) {
+        // Silent fail for notification display
+      }
+    },
     async copyLink(link, fileId) {
       try {
         // Use the same logic as getShareUrl to ensure we get the complete URL with key
-        const url = this.getShareUrl(link, fileId);
+        const result = await this.getShareUrl(link, fileId);
 
-        await navigator.clipboard.writeText(url);
+        if (!result.hasKey) {
+          this.showAlert(
+            "error",
+            "Missing key",
+            "The decryption key is not available. Please open the file from the VaultSpace to retrieve the key.",
+          );
+          return;
+        }
+
+        await navigator.clipboard.writeText(result.url);
+
+        // Show popup notification
+        this.showCopyNotification();
 
         // Show animation on link URL element
-        // Find the element by data-link-id attribute within the component
+        // Find the element by data-link-id attribute
         this.$nextTick(() => {
-          const linkUrlElement =
-            this.$el?.querySelector(`[data-link-id="${link.link_id}"]`) ||
-            document.querySelector(`[data-link-id="${link.link_id}"]`);
-          if (linkUrlElement) {
+          // Use document.querySelector directly since Vue 3 $el can be a Fragment
+          const linkUrlElement = document.querySelector(
+            `[data-link-id="${link.link_id}"]`,
+          );
+
+          // Verify it's a valid DOM element (HTMLElement or Element)
+          if (
+            linkUrlElement &&
+            linkUrlElement.nodeType === Node.ELEMENT_NODE &&
+            typeof linkUrlElement.appendChild === "function"
+          ) {
             this.showCopyAnimation(linkUrlElement);
           }
         });
@@ -456,39 +619,106 @@ export default {
     getOrigin() {
       return window.location.origin;
     },
-    getShareUrl(link, fileId) {
+    getShareUrlDisplay(link, fileId) {
+      // Synchronous method for template display
+      // Returns cached URL or placeholder while loading
+      const cacheKey = `${link.link_id}-${fileId}`;
+      if (this.shareUrlCache.has(cacheKey)) {
+        return this.shareUrlCache.get(cacheKey);
+      }
+      // Trigger async loading
+      this.loadShareUrl(link, fileId);
+      // Return placeholder while loading
+      return "Loading...";
+    },
+    async loadShareUrl(link, fileId) {
+      // Async method to load and cache share URL
+      const cacheKey = `${link.link_id}-${fileId}`;
+      try {
+        const result = await this.getShareUrl(link, fileId);
+        this.shareUrlCache.set(cacheKey, result.url);
+        this.shareUrlKeyStatus.set(cacheKey, result.hasKey);
+        this.$forceUpdate(); // Force Vue to re-render
+      } catch (e) {
+        console.error("Failed to load share URL:", e);
+        this.shareUrlCache.set(cacheKey, "Error loading URL");
+        this.shareUrlKeyStatus.set(cacheKey, false);
+        this.$forceUpdate();
+      }
+    },
+    hasDecryptionKey(link, fileId) {
+      // Check if decryption key is available for this link
+      const cacheKey = `${link.link_id}-${fileId}`;
+      if (this.shareUrlKeyStatus.has(cacheKey)) {
+        return this.shareUrlKeyStatus.get(cacheKey);
+      }
+      // If not yet loaded, assume true to avoid showing warning prematurely
+      return true;
+    },
+    async getShareUrl(link, fileId) {
       // Get file key if available
       let fileKey = null;
+      let hasKey = false;
+
       try {
-        // Try to get key from localStorage
-        const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-        const keyStr = keys[fileId];
+        // First, try to get key from IndexedDB via fileKeyStorage
+        const keyStr = await getFileKeyFromStorage(fileId);
         if (keyStr) {
-          if (base64urlToArray) {
+          try {
             fileKey = base64urlToArray(keyStr);
-          } else if (
-            window.VaultCrypto &&
-            window.VaultCrypto.base64urlToArray
-          ) {
-            fileKey = window.VaultCrypto.base64urlToArray(keyStr);
+            hasKey = true;
+          } catch (e) {
+            console.warn("Failed to decode key from IndexedDB:", e);
           }
         }
       } catch (e) {
-        console.warn("Failed to get file key from localStorage:", e);
+        console.warn("Failed to get file key from IndexedDB:", e);
+      }
+
+      // Fallback to localStorage if not found in IndexedDB
+      if (!fileKey) {
+        try {
+          const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+          const keyStr = keys[fileId];
+          if (keyStr) {
+            if (base64urlToArray) {
+              fileKey = base64urlToArray(keyStr);
+              hasKey = true;
+              // Store in IndexedDB for future use
+              try {
+                await storeFileKey(fileId, keyStr);
+              } catch (e) {
+                console.warn("Failed to store key in IndexedDB:", e);
+              }
+            } else if (
+              window.VaultCrypto &&
+              window.VaultCrypto.base64urlToArray
+            ) {
+              fileKey = window.VaultCrypto.base64urlToArray(keyStr);
+              hasKey = true;
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to get file key from localStorage:", e);
+        }
       }
 
       // Try global functions as fallback
       if (!fileKey) {
         if (typeof getFileKey === "function") {
           fileKey = getFileKey(fileId);
+          if (fileKey) hasKey = true;
         } else if (window.getFileKey) {
           fileKey = window.getFileKey(fileId);
+          if (fileKey) hasKey = true;
         }
       }
 
-      // Use share_url from backend if available (includes VAULT_URL), otherwise construct from window.location
-      let url =
-        link.share_url || `${window.location.origin}/share/${link.link_id}`;
+      // Get base URL using VAULT_URL (with fallback to window.location.origin)
+      const baseUrl = await getVaultBaseUrl();
+
+      // Use share_url from backend if available (includes VAULT_URL), otherwise construct from baseUrl
+      let url = link.share_url || `${baseUrl}/share/${link.link_id}`;
 
       // Add key to fragment if available
       if (fileKey) {
@@ -497,10 +727,83 @@ export default {
           url += `#key=${keyBase64}&file=${fileId}`;
         } catch (e) {
           console.warn("Failed to encode key for share URL:", e);
+          hasKey = false;
         }
       }
 
-      return url;
+      return { url, hasKey };
+    },
+    async ensureFileKeyAvailable(fileId, vaultspaceId) {
+      // Check if key is available, if not try to recover it from the file
+      try {
+        const keyStr = await getFileKeyFromStorage(fileId);
+        if (keyStr) {
+          return; // Key already available
+        }
+      } catch (e) {
+        // Continue to try recovery
+      }
+
+      // Key not found, try to recover from file
+      if (!vaultspaceId) {
+        return; // Cannot recover without vaultspace
+      }
+
+      try {
+        // Get VaultSpace key (load from server if not cached)
+        const vaultspaceKey =
+          await this.loadVaultSpaceKeyIfNeeded(vaultspaceId);
+        if (!vaultspaceKey) {
+          return; // VaultSpace key not available
+        }
+
+        // Get file details with FileKey
+        const fileData = await files.get(fileId, vaultspaceId);
+        if (!fileData || !fileData.file_key) {
+          return; // File key not found in file data
+        }
+
+        // Decrypt file key
+        const fileKey = await decryptFileKey(
+          vaultspaceKey,
+          fileData.file_key.encrypted_key,
+          true, // extractable to store it
+        );
+
+        // Export key as raw bytes
+        const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+        const keyArray = new Uint8Array(exportedKey);
+
+        // Convert to base64url for storage
+        const keyBase64 = arrayToBase64url(keyArray);
+
+        // Store in IndexedDB
+        await storeFileKey(fileId, keyBase64);
+
+        // Also store in localStorage as fallback
+        try {
+          const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+          keys[fileId] = keyBase64;
+          localStorage.setItem("vault_keys", JSON.stringify(keys));
+        } catch (e) {
+          console.warn("Failed to store key in localStorage:", e);
+        }
+
+        // Reload share URLs for this file
+        const file = this.files.find((f) => f.id === fileId);
+        if (file && file.share_links) {
+          for (const link of file.share_links) {
+            await this.loadShareUrl(link, fileId);
+          }
+        }
+
+        // Reload thumbnail if applicable
+        if (file && (this.isImageFile(file) || this.isAudioFile(file))) {
+          this.loadThumbnailUrl(file.id, file);
+        }
+      } catch (error) {
+        console.warn(`Failed to recover file key for ${fileId}:`, error);
+      }
     },
     isLinkExpired(link) {
       if (typeof link.is_expired === "boolean") {
@@ -569,7 +872,7 @@ export default {
       }
       return shareLinks.find((link) => this.isLinkAvailable(link)) || null;
     },
-    openSendEmailModalForFile(file) {
+    async openSendEmailModalForFile(file) {
       // Find the first available link
       const link = this.getFirstAvailableLink(file.share_links);
       if (!link) {
@@ -581,16 +884,16 @@ export default {
         return;
       }
 
-      this.openSendEmailModal(link, file.id, file.original_name);
+      await this.openSendEmailModal(link, file.id, file.original_name);
     },
-    openSendEmailModal(link, fileId, fileName) {
+    async openSendEmailModal(link, fileId, fileName) {
       // Validate that the share URL contains the decryption key
-      const shareUrl = this.getShareUrl(link, fileId);
-      if (!shareUrl.includes("#key=")) {
+      const result = await this.getShareUrl(link, fileId);
+      if (!result.hasKey || !result.url.includes("#key=")) {
         this.showAlert(
           "error",
-          "Cannot Send Email",
-          "The share link is missing the decryption key. Please ensure you have access to the file key before sending the link.",
+          "Unable to send email",
+          "The share link does not have a decryption key. Please open the file from the VaultSpace to retrieve the key.",
         );
         return;
       }
@@ -639,17 +942,19 @@ export default {
 
       try {
         // Get the full share URL with key
-        const shareUrl = this.getShareUrl(
+        const result = await this.getShareUrl(
           this.pendingEmailLink,
           this.pendingEmailFileId,
         );
 
         // Double-check that the key is present
-        if (!shareUrl.includes("#key=")) {
+        if (!result.hasKey || !result.url.includes("#key=")) {
           throw new Error(
-            "The share link is missing the decryption key. Cannot send email.",
+            "The share link does not have a decryption key. Unable to send email.",
           );
         }
+
+        const shareUrl = result.url;
 
         const jwtToken = localStorage.getItem("jwt_token");
         if (!jwtToken) {
@@ -678,7 +983,7 @@ export default {
         }
 
         // Parse response to ensure it's successful
-        const result = await response.json().catch(() => ({}));
+        const responseData = await response.json().catch(() => ({}));
 
         // Success - close modal first, then show notification
         this.emailForm.loading = false;
@@ -715,6 +1020,395 @@ export default {
       this.alertMessage = message;
       this.showAlertModal = true;
     },
+    // Check if file is an image based on mime_type or file extension
+    isImageFile(file) {
+      // Check mime_type first
+      if (file.mime_type?.startsWith("image/")) {
+        return true;
+      }
+
+      // Fallback: check file extension for common image formats
+      if (file.original_name) {
+        const extension = file.original_name.split(".").pop()?.toLowerCase();
+        const imageExtensions = [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "bmp",
+          "svg",
+          "ico",
+          "tiff",
+          "tif",
+        ];
+        return imageExtensions.includes(extension);
+      }
+
+      return false;
+    },
+    // Check if file is an audio file based on mime_type or file extension
+    isAudioFile(file) {
+      // Check mime_type first
+      if (file.mime_type?.startsWith("audio/")) {
+        return true;
+      }
+
+      // Fallback: check file extension for common audio formats
+      if (file.original_name) {
+        const extension = file.original_name.split(".").pop()?.toLowerCase();
+        const audioExtensions = ["mp3", "wav", "flac", "ogg", "m4a", "aac"];
+        return audioExtensions.includes(extension);
+      }
+
+      return false;
+    },
+    // Get thumbnail URL for a file
+    getThumbnailUrl(fileId) {
+      // Access thumbnailUpdateTrigger to create dependency
+      void this.thumbnailUpdateTrigger;
+      // Return cached URL if available
+      return this.thumbnailUrls[fileId] || "";
+    },
+    // Check if file has a thumbnail available
+    hasThumbnail(file) {
+      // For images, always try to show thumbnail (either from storage or load image directly)
+      // For audio files, check if thumbnail URL is already cached (meaning cover was found)
+      return (
+        this.isImageFile(file) ||
+        (this.isAudioFile(file) && this.thumbnailUrls[file.id])
+      );
+    },
+    // Load VaultSpace key if not cached
+    async loadVaultSpaceKeyIfNeeded(vaultspaceId) {
+      // Check if already cached
+      let vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
+      if (vaultspaceKey) {
+        return vaultspaceKey;
+      }
+
+      // Try to load from server
+      try {
+        const userMasterKey = await getUserMasterKey();
+        if (!userMasterKey) {
+          return null;
+        }
+
+        // Get encrypted VaultSpace key from server
+        const vaultspaceKeyData = await vaultspaces.getKey(vaultspaceId);
+        if (!vaultspaceKeyData) {
+          return null;
+        }
+
+        // Decrypt VaultSpace key
+        vaultspaceKey = await decryptVaultSpaceKeyForUser(
+          userMasterKey,
+          vaultspaceKeyData.encrypted_key,
+        );
+
+        // Cache the decrypted key
+        cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+        return vaultspaceKey;
+      } catch (error) {
+        console.warn(
+          `Failed to load VaultSpace key for ${vaultspaceId}:`,
+          error,
+        );
+        return null;
+      }
+    },
+    // Load image directly as thumbnail
+    async loadImageAsThumbnail(file) {
+      const vaultspaceId = file.vaultspace_id;
+      if (!vaultspaceId) {
+        return;
+      }
+
+      try {
+        // Get VaultSpace key (load from server if not cached)
+        const vaultspaceKey =
+          await this.loadVaultSpaceKeyIfNeeded(vaultspaceId);
+        if (!vaultspaceKey) {
+          return;
+        }
+
+        // Try to get file key from storage first
+        let fileKey = null;
+        try {
+          const keyStr = await getFileKeyFromStorage(file.id);
+          if (keyStr) {
+            const keyArray = base64urlToArray(keyStr);
+            fileKey = await crypto.subtle.importKey(
+              "raw",
+              keyArray,
+              { name: "AES-GCM", length: 256 },
+              false,
+              ["encrypt", "decrypt"],
+            );
+          }
+        } catch (e) {
+          // Continue to get from file
+        }
+
+        // If key not in storage, get from file
+        if (!fileKey) {
+          // Get file key
+          const fileData = await files.get(file.id, vaultspaceId);
+          if (!fileData.file_key) {
+            return;
+          }
+
+          // Decrypt file key
+          fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+            true, // extractable to store it
+          );
+
+          // Store key for future use
+          try {
+            const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+            const keyArray = new Uint8Array(exportedKey);
+            const keyBase64 = arrayToBase64url(keyArray);
+            await storeFileKey(file.id, keyBase64);
+          } catch (e) {
+            console.warn("Failed to store file key:", e);
+          }
+        }
+
+        // Download encrypted file
+        const encryptedData = await files.download(file.id, vaultspaceId);
+
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const encryptedDataArray = new Uint8Array(encryptedData);
+        const iv = encryptedDataArray.slice(0, 12);
+        const encrypted = encryptedDataArray.slice(12);
+
+        // Decrypt file
+        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Create blob URL for the image
+        const blob = new Blob([decryptedData], { type: file.mime_type });
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Store in cache (create new object to ensure reactivity)
+        this.thumbnailUrls = {
+          ...this.thumbnailUrls,
+          [file.id]: blobUrl,
+        };
+
+        // Force Vue to update
+        this.thumbnailUpdateTrigger++;
+        await this.$nextTick();
+      } catch (error) {
+        console.debug(
+          `Failed to load image as thumbnail for ${file.id}:`,
+          error,
+        );
+      }
+    },
+    // Load audio cover art as thumbnail
+    async loadAudioCoverAsThumbnail(file) {
+      const vaultspaceId = file.vaultspace_id;
+      if (!vaultspaceId) {
+        return;
+      }
+
+      try {
+        // Get VaultSpace key (load from server if not cached)
+        const vaultspaceKey =
+          await this.loadVaultSpaceKeyIfNeeded(vaultspaceId);
+        if (!vaultspaceKey) {
+          return;
+        }
+
+        // Try to get file key from storage first
+        let fileKey = null;
+        try {
+          const keyStr = await getFileKeyFromStorage(file.id);
+          if (keyStr) {
+            const keyArray = base64urlToArray(keyStr);
+            fileKey = await crypto.subtle.importKey(
+              "raw",
+              keyArray,
+              { name: "AES-GCM", length: 256 },
+              false,
+              ["encrypt", "decrypt"],
+            );
+          }
+        } catch (e) {
+          // Continue to get from file
+        }
+
+        // If key not in storage, get from file
+        if (!fileKey) {
+          // Get file key
+          const fileData = await files.get(file.id, vaultspaceId);
+          if (!fileData.file_key) {
+            return;
+          }
+
+          // Decrypt file key
+          fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+            true, // extractable to store it
+          );
+
+          // Store key for future use
+          try {
+            const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+            const keyArray = new Uint8Array(exportedKey);
+            const keyBase64 = arrayToBase64url(keyArray);
+            await storeFileKey(file.id, keyBase64);
+          } catch (e) {
+            console.warn("Failed to store file key:", e);
+          }
+        }
+
+        // Download encrypted file
+        const encryptedData = await files.download(file.id, vaultspaceId);
+
+        // Extract IV and encrypted content (IV is first 12 bytes)
+        const encryptedDataArray = new Uint8Array(encryptedData);
+        const iv = encryptedDataArray.slice(0, 12);
+        const encrypted = encryptedDataArray.slice(12);
+
+        // Decrypt file
+        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
+
+        // Create a Blob from the decrypted data
+        const arrayBuffer =
+          decryptedData instanceof ArrayBuffer
+            ? decryptedData
+            : decryptedData.buffer || new Uint8Array(decryptedData).buffer;
+
+        const blob = new Blob([arrayBuffer], {
+          type: file.mime_type || "audio/mpeg",
+        });
+
+        // Parse metadata using music-metadata
+        // Convert blob to ArrayBuffer for parsing
+        const audioArrayBuffer = await blob.arrayBuffer();
+        const metadata = await mm.parseBuffer(
+          new Uint8Array(audioArrayBuffer),
+          blob.type,
+        );
+
+        // Check if there's a picture/cover art in the metadata
+        if (metadata.common?.picture && metadata.common.picture.length > 0) {
+          // Get the first picture (usually the album cover)
+          const picture = metadata.common.picture[0];
+
+          if (picture?.data) {
+            // Convert picture.data to Uint8Array
+            let pictureData;
+            if (picture.data instanceof Uint8Array) {
+              pictureData = picture.data;
+            } else if (picture.data instanceof ArrayBuffer) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Buffer && Buffer.isBuffer(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else if (Array.isArray(picture.data)) {
+              pictureData = new Uint8Array(picture.data);
+            } else {
+              pictureData = new Uint8Array(Object.values(picture.data));
+            }
+
+            // Determine MIME type from format
+            let pictureFormat = "image/jpeg"; // Default
+            if (picture.format) {
+              const format = picture.format.toLowerCase();
+              if (format.startsWith("image/")) {
+                pictureFormat = picture.format;
+              } else {
+                const formatMap = {
+                  jpeg: "image/jpeg",
+                  jpg: "image/jpeg",
+                  png: "image/png",
+                  gif: "image/gif",
+                  bmp: "image/bmp",
+                  webp: "image/webp",
+                };
+                pictureFormat = formatMap[format] || "image/jpeg";
+              }
+            }
+
+            const pictureBlob = new Blob([pictureData], {
+              type: pictureFormat,
+            });
+            const blobUrl = URL.createObjectURL(pictureBlob);
+
+            // Store in cache (create new object to ensure reactivity)
+            this.thumbnailUrls = {
+              ...this.thumbnailUrls,
+              [file.id]: blobUrl,
+            };
+
+            // Force Vue to update
+            this.thumbnailUpdateTrigger++;
+            await this.$nextTick();
+          }
+        }
+      } catch (error) {
+        // Silently fail - no cover art available
+        console.debug(
+          `Failed to load audio cover as thumbnail for ${file.id}:`,
+          error,
+        );
+      }
+    },
+    // Load thumbnail URL - for images, load the image directly without checking for thumbnail
+    // This avoids 404 errors in the network tab
+    async loadThumbnailUrl(fileId, file = null) {
+      if (this.thumbnailUrls[fileId]) {
+        return; // Already loaded
+      }
+
+      // Find file object if not provided
+      if (!file) {
+        file = this.files.find((f) => f.id === fileId);
+      }
+
+      if (!file) {
+        return;
+      }
+
+      // Load image thumbnail
+      if (this.isImageFile(file)) {
+        try {
+          await this.loadImageAsThumbnail(file);
+        } catch (imageError) {
+          console.debug(
+            `Failed to load image as thumbnail for ${fileId}:`,
+            imageError,
+          );
+        }
+        return;
+      }
+
+      // Load audio cover as thumbnail
+      if (this.isAudioFile(file)) {
+        try {
+          await this.loadAudioCoverAsThumbnail(file);
+        } catch (audioError) {
+          // Silently fail - no cover art available
+          console.debug(
+            `No cover art available for audio file ${fileId}:`,
+            audioError,
+          );
+        }
+        return;
+      }
+    },
+  },
+  beforeUnmount() {
+    // Clean up all blob URLs
+    for (const fileId in this.thumbnailUrls) {
+      if (this.thumbnailUrls[fileId]) {
+        URL.revokeObjectURL(this.thumbnailUrls[fileId]);
+      }
+    }
   },
 };
 </script>
@@ -823,6 +1517,19 @@ export default {
   align-items: center;
   justify-content: center;
   color: currentColor;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.file-thumbnail {
+  max-height: 48px;
+  max-width: 48px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+  border-radius: 0.25rem;
 }
 
 .file-details {
@@ -880,6 +1587,29 @@ export default {
   background: rgba(15, 23, 42, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 0.375rem;
+}
+
+.link-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0.5rem;
+  color: #fbbf24;
+  font-size: 0.875rem;
+}
+
+.warning-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.warning-text {
+  flex: 1;
+  line-height: 1.5;
 }
 
 .link-meta {
@@ -1006,10 +1736,17 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.2s ease;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .email-modal .modal-overlay {
+  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .email-modal .modal-container {

@@ -30,11 +30,16 @@
         </div>
 
         <div class="back-section">
-          <router-link to="/login" class="link">Back to login</router-link>
+          <router-link v-if="!isLoggedIn" to="/login" class="link"
+            >Back to login</router-link
+          >
+          <router-link v-else to="/dashboard" class="link"
+            >Back to dashboard</router-link
+          >
         </div>
       </div>
 
-      <div v-else-if="verified" class="verified-section">
+      <div v-else-if="verified && !isLoggedIn" class="verified-section">
         <div class="success-icon">✓</div>
         <h2>Email verified successfully!</h2>
         <p>Your account has been verified. You can now log in.</p>
@@ -50,11 +55,32 @@
         <p class="info-text">Verifying your email address...</p>
       </div>
     </div>
+
+    <!-- Modal for logged-in users -->
+    <div v-if="showModal" class="modal-overlay" @click="closeModal">
+      <div class="modal-content glass glass-card" @click.stop>
+        <div class="modal-header">
+          <h2>Email Verified</h2>
+          <button class="modal-close" @click="closeModal" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="success-icon">✓</div>
+          <p>Your email address has been successfully verified.</p>
+        </div>
+        <div class="modal-footer">
+          <button @click="goToDashboard" class="btn btn-primary">
+            Return to dashboard
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { auth } from "../services/api";
 
@@ -70,7 +96,13 @@ const success = ref("");
 const verified = ref(false);
 const resendCooldown = ref(0);
 const tokenInUrl = ref(false);
+const showModal = ref(false);
 let cooldownInterval = null;
+
+// Check if user is logged in
+const isLoggedIn = computed(() => {
+  return localStorage.getItem("jwt_token") !== null;
+});
 
 // Check if we came from a verification link (token in query)
 onMounted(() => {
@@ -105,13 +137,25 @@ const handleVerifyToken = async (token) => {
 
   try {
     const response = await auth.verifyEmailToken(token);
+    // CRITICAL: Do NOT store any token - user must log in after email verification
+    // This ensures master key initialization happens during login
+    // Even if response contains a token, ignore it
     if (response.token) {
-      // Store token
-      localStorage.setItem("jwt_token", response.token);
-      verified.value = true;
+      console.warn(
+        "Email verification returned a token! This should not happen. Ignoring it.",
+      );
+      // Explicitly remove any token that might exist
+      localStorage.removeItem("jwt_token");
+    }
+    verified.value = true;
+    tokenInUrl.value = false;
+
+    // If user was logged in, show modal instead of redirecting
+    if (response.user_was_logged_in) {
+      showModal.value = true;
+    } else {
+      // User not logged in - show success message and allow redirect to login
       success.value = "Email verified successfully!";
-      tokenInUrl.value = false;
-      // Don't auto-redirect, let user click "Go to login" button
     }
   } catch (err) {
     error.value =
@@ -120,6 +164,14 @@ const handleVerifyToken = async (token) => {
   } finally {
     loading.value = false;
   }
+};
+
+const closeModal = () => {
+  showModal.value = false;
+};
+
+const goToDashboard = () => {
+  router.push("/dashboard");
 };
 
 const handleResendEmail = async () => {
@@ -316,5 +368,101 @@ h2 {
   color: #94a3b8;
   margin-bottom: 2rem;
   line-height: 1.6;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.modal-content {
+  max-width: 500px;
+  width: 100%;
+  padding: 2.5rem;
+  position: relative;
+  margin: auto;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  color: #e6eef6;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-body {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.modal-body .success-icon {
+  font-size: 4rem;
+  color: #86efac;
+  margin-bottom: 1rem;
+}
+
+.modal-body p {
+  color: #94a3b8;
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.modal-footer {
+  margin-top: 2rem;
+  display: flex;
+  justify-content: center;
 }
 </style>

@@ -144,10 +144,17 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.3s ease;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 @keyframes fadeIn {

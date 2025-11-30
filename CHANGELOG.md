@@ -11,10 +11,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
 - Audio file cover art display in MP3 players and as thumbnails in file lists. Album artwork is automatically extracted from ID3 metadata and displayed when available.
+- Image thumbnails and audio cover art display in the `/shared` view, matching the behavior in VaultSpaces.
 - Email verification is now mandatory for all users except the superadmin.
 - Conflict resolution modal for file and folder name conflicts with options to replace, keep both (auto-rename), or skip ([#13](https://github.com/3xpyth0n/leyzen-vault/issues/13)).
 - VaultSpace pinning feature allowing users to pin frequently used VaultSpaces to the sidebar for quick access ([#14](https://github.com/3xpyth0n/leyzen-vault/issues/14)).
 - Dynamic icon system using Lucide Icons library with searchable IconPicker for VaultSpace customization.
+- Server status indicator in header showing online/offline status with automatic health checks.
+- User menu dropdown in header consolidating account, admin, and logout actions into a single accessible menu.
 
 ### Changed
 

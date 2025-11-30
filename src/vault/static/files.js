@@ -973,14 +973,34 @@ async function downloadFile(fileId) {
 }
 
 // Helper function to generate HTML for existing share links
-function generateExistingLinksHTML(activeLinks, fileId, key) {
+async function generateExistingLinksHTML(activeLinks, fileId, key) {
   if (activeLinks.length === 0) {
     return "";
   }
 
+  // Get base URL using VAULT_URL (with fallback to window.location.origin)
+  let baseUrl;
+  try {
+    // Try to use the vault-config service if available
+    if (window.getVaultBaseUrl) {
+      baseUrl = await window.getVaultBaseUrl();
+    } else {
+      // Fallback: try to import dynamically
+      const { getVaultBaseUrl } =
+        await import("/static/src/services/vault-config.js");
+      baseUrl = await getVaultBaseUrl();
+    }
+  } catch (e) {
+    console.warn(
+      "Failed to get vault base URL, using window.location.origin:",
+      e,
+    );
+    baseUrl = window.location.origin;
+  }
+
   const linksHTML = activeLinks
     .map((link) => {
-      const linkUrl = `${window.location.origin}/share/${link.link_id}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
+      const linkUrl = `${baseUrl}/share/${link.link_id}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
       const expiresText = link.expires_at
         ? `Expires: ${formatDate(link.expires_at)}`
         : "No expiration";
@@ -1076,7 +1096,11 @@ async function shareFile(fileId, key = null) {
         }));
 
       if (activeLinks.length > 0 && existingLinksContainer) {
-        const linksHTML = generateExistingLinksHTML(activeLinks, fileId, key);
+        const linksHTML = await generateExistingLinksHTML(
+          activeLinks,
+          fileId,
+          key,
+        );
         setInnerHTML(existingLinksContainer, linksHTML);
 
         // Attach event listeners for revoke buttons
@@ -1134,7 +1158,25 @@ async function shareFile(fileId, key = null) {
     const linkToken = shareLink.token || shareLink.link_id;
 
     // Create share URL with token and key in fragment
-    const baseUrl = window.location.origin;
+    // Get base URL using VAULT_URL (with fallback to window.location.origin)
+    let baseUrl;
+    try {
+      // Try to use the vault-config service if available
+      if (window.getVaultBaseUrl) {
+        baseUrl = await window.getVaultBaseUrl();
+      } else {
+        // Fallback: try to import dynamically
+        const { getVaultBaseUrl } =
+          await import("/static/src/services/vault-config.js");
+        baseUrl = await getVaultBaseUrl();
+      }
+    } catch (e) {
+      console.warn(
+        "Failed to get vault base URL, using window.location.origin:",
+        e,
+      );
+      baseUrl = window.location.origin;
+    }
     const shareUrl = `${baseUrl}/share/${linkToken}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
 
     if (shareUrlInput) shareUrlInput.value = shareUrl;
@@ -1173,7 +1215,11 @@ async function shareFile(fileId, key = null) {
           }));
 
         if (activeLinks.length > 0) {
-          const linksHTML = generateExistingLinksHTML(activeLinks, fileId, key);
+          const linksHTML = await generateExistingLinksHTML(
+            activeLinks,
+            fileId,
+            key,
+          );
           setInnerHTML(existingLinksContainer, linksHTML);
 
           // Re-attach event listeners
@@ -1195,8 +1241,15 @@ async function shareFile(fileId, key = null) {
   } catch (error) {
     console.error("Error creating share link:", error);
     // Fallback to alternative URL format
-    const shareUrl = VaultCrypto.createShareUrl(fileId, key);
-    if (shareUrlInput) shareUrlInput.value = shareUrl;
+    try {
+      const shareUrl = await VaultCrypto.createShareUrl(fileId, key);
+      if (shareUrlInput) shareUrlInput.value = shareUrl;
+    } catch (urlError) {
+      console.error("Failed to create share URL:", urlError);
+      if (shareUrlInput) {
+        shareUrlInput.value = "Error creating share URL";
+      }
+    }
 
     if (window.Notifications) {
       window.Notifications.warning("Using alternative share format");

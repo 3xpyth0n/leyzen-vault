@@ -140,6 +140,7 @@ class SharingManager {
             </div>
             <div class="share-modal-body">
               <!-- Create New Link Section -->
+              <form id="share-link-form" onsubmit="return false;">
               <div class="share-section">
                 <h3>Create Share Link</h3>
                 <div class="share-link-options">
@@ -178,6 +179,8 @@ class SharingManager {
                         id="share-link-password-input" 
                         class="share-password-input" 
                         placeholder="Enter password"
+                        autocomplete="off"
+                        form="share-link-form"
                       />
                       <button
                         type="button"
@@ -366,6 +369,14 @@ class SharingManager {
     const body = document.createElement("div");
     body.className = "share-modal-body";
 
+    // Create form for share link creation
+    const shareForm = document.createElement("form");
+    shareForm.id = "share-link-form";
+    shareForm.onsubmit = function (e) {
+      e.preventDefault();
+      return false;
+    };
+
     // Create "Create New Link" section
     const createSection = document.createElement("div");
     createSection.className = "share-section";
@@ -435,6 +446,8 @@ class SharingManager {
     passwordInput.id = "share-link-password-input";
     passwordInput.className = "share-password-input";
     passwordInput.placeholder = "Enter password";
+    passwordInput.autocomplete = "off";
+    passwordInput.setAttribute("form", "share-link-form");
     const passwordToggle = document.createElement("button");
     passwordToggle.type = "button";
     passwordToggle.className = "password-toggle";
@@ -457,9 +470,13 @@ class SharingManager {
     const createBtn = document.createElement("button");
     createBtn.id = "create-share-link-btn";
     createBtn.className = "btn btn-primary";
+    createBtn.type = "button";
     createBtn.textContent = "Create Share Link";
     actions.appendChild(createBtn);
     createSection.appendChild(actions);
+
+    // Add create section to form
+    shareForm.appendChild(createSection);
 
     // Create "Active Links" section
     const activeSection = document.createElement("div");
@@ -477,7 +494,7 @@ class SharingManager {
     activeSection.appendChild(activeList);
 
     // Assemble modal
-    body.appendChild(createSection);
+    body.appendChild(shareForm);
     body.appendChild(activeSection);
     content.appendChild(header);
     content.appendChild(body);
@@ -1398,7 +1415,7 @@ class SharingManager {
           share_url: link.share_url,
           has_password: link.has_password || false,
         }));
-        this.renderActiveLinks(mappedLinks, fileId);
+        await this.renderActiveLinks(mappedLinks, fileId);
       } else {
         console.error("API response not OK, status:", response.status);
       }
@@ -1545,10 +1562,30 @@ class SharingManager {
       const shareLink = data.share_link || data;
 
       // Use share_url from backend (includes VAULT_URL if configured)
-      // Fallback to window.location.origin if not provided
+      // Fallback to VAULT_URL or window.location.origin if not provided
       const linkToken = shareLink.token || shareLink.link_id;
-      let shareUrl =
-        shareLink.share_url || `${window.location.origin}/share/${linkToken}`;
+
+      // Get base URL using VAULT_URL (with fallback to window.location.origin)
+      let baseUrl;
+      try {
+        // Try to use the vault-config service if available
+        if (window.getVaultBaseUrl) {
+          baseUrl = await window.getVaultBaseUrl();
+        } else {
+          // Fallback: try to import dynamically
+          const { getVaultBaseUrl } =
+            await import("/static/src/services/vault-config.js");
+          baseUrl = await getVaultBaseUrl();
+        }
+      } catch (e) {
+        console.warn(
+          "Failed to get vault base URL, using window.location.origin:",
+          e,
+        );
+        baseUrl = window.location.origin;
+      }
+
+      let shareUrl = shareLink.share_url || `${baseUrl}/share/${linkToken}`;
 
       // Add key and file ID to fragment
       if (window.VaultCrypto && window.VaultCrypto.arrayToBase64url) {
@@ -1648,7 +1685,7 @@ class SharingManager {
   /**
    * Render active links
    */
-  renderActiveLinks(links, fileId) {
+  async renderActiveLinks(links, fileId) {
     const container = document.getElementById("active-links-list");
     if (!container) {
       console.error("active-links-list container not found!");
@@ -1675,6 +1712,26 @@ class SharingManager {
       return;
     }
 
+    // Get base URL using VAULT_URL (with fallback to window.location.origin)
+    let baseUrl;
+    try {
+      // Try to use the vault-config service if available
+      if (window.getVaultBaseUrl) {
+        baseUrl = await window.getVaultBaseUrl();
+      } else {
+        // Fallback: try to import dynamically
+        const { getVaultBaseUrl } =
+          await import("/static/src/services/vault-config.js");
+        baseUrl = await getVaultBaseUrl();
+      }
+    } catch (e) {
+      console.warn(
+        "Failed to get vault base URL, using window.location.origin:",
+        e,
+      );
+      baseUrl = window.location.origin;
+    }
+
     // Get file key to include in share URL
     let fileKey = this.currentFileKey;
     if (!fileKey) {
@@ -1695,11 +1752,10 @@ class SharingManager {
     const linksHTML = activeLinks
       .map((link) => {
         // Use share_url from backend (includes VAULT_URL if configured)
-        // Fallback to window.location.origin if not provided
+        // Fallback to VAULT_URL or window.location.origin if not provided
         // Use token if available, otherwise fallback to link_id
         const linkToken = link.token || link.link_id;
-        const linkUrl =
-          link.share_url || `${window.location.origin}/share/${linkToken}`;
+        const linkUrl = link.share_url || `${baseUrl}/share/${linkToken}`;
 
         // Always include key and file ID in the URL fragment for E2EE
         let fullUrl = linkUrl;

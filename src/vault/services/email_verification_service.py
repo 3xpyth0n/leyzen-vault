@@ -192,11 +192,14 @@ class EmailVerificationService:
             expiry_minutes=self._get_expiry_minutes(),
         )
 
-    def verify_token(self, token: str) -> tuple[bool, User | None, str]:
+    def verify_token(
+        self, token: str, expected_user_id: str | None = None
+    ) -> tuple[bool, User | None, str]:
         """Verify a verification token.
 
         Args:
             token: Verification token
+            expected_user_id: Optional user ID to validate token ownership
 
         Returns:
             Tuple of (success, user, error_message)
@@ -212,6 +215,10 @@ class EmailVerificationService:
 
         if verification_token.is_expired():
             return False, None, "Token expired"
+
+        # Security: If expected_user_id is provided, verify token belongs to that user
+        if expected_user_id and verification_token.user_id != expected_user_id:
+            return False, None, "Token does not belong to the authenticated user"
 
         user = db.session.query(User).filter_by(id=verification_token.user_id).first()
         if not user:

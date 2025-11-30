@@ -1235,7 +1235,14 @@ export default {
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal {
@@ -1460,9 +1467,9 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color);
+  margin-top: 0rem;
+  padding-top: 0rem;
+  border-top: 0px;
   width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;

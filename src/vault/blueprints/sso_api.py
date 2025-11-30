@@ -117,57 +117,6 @@ def check_domain():
         return jsonify({"error": "Failed to check domain"}), 500
 
 
-@sso_api_bp.route("/providers", methods=["GET"])
-@csrf.exempt  # Public endpoint
-def list_providers():
-    """List all active SSO providers (public endpoint).
-
-    Returns:
-        JSON with list of active SSO providers
-    """
-    try:
-        sso_service = _get_sso_service()
-        providers = sso_service.list_providers()
-
-        # Return provider info without sensitive config data
-        providers_data = []
-        for provider in providers:
-            provider_dict = provider.to_dict()
-            # Remove sensitive information from config
-            config = provider_dict.get("config", {})
-            # Only expose non-sensitive config fields
-            safe_config = {}
-            if provider.provider_type == SSOProviderType.SAML:
-                safe_config = {
-                    "entity_id": config.get("entity_id"),
-                    "sso_url": config.get("sso_url"),
-                }
-            elif provider.provider_type in (
-                SSOProviderType.OAUTH2,
-                SSOProviderType.OIDC,
-            ):
-                safe_config = {
-                    "authorization_url": config.get("authorization_url"),
-                }
-                if provider.provider_type == SSOProviderType.OIDC:
-                    safe_config["issuer_url"] = config.get("issuer_url")
-
-            providers_data.append(
-                {
-                    "id": provider_dict["id"],
-                    "name": provider_dict["name"],
-                    "provider_type": provider_dict["provider_type"],
-                    "is_active": provider_dict["is_active"],
-                    "config": safe_config,
-                }
-            )
-
-        return jsonify({"providers": providers_data}), 200
-    except Exception as e:
-        current_app.logger.error(f"Error listing SSO providers: {e}")
-        return jsonify({"error": "Failed to list SSO providers"}), 500
-
-
 @sso_api_bp.route("/login/<provider_id>", methods=["POST"])
 @csrf.exempt  # Public endpoint, CSRF handled by state parameter
 def initiate_login(provider_id: str):

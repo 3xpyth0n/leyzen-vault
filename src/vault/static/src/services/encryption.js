@@ -493,11 +493,24 @@ export function parseShareUrl() {
  *
  * @param {string} fileId - The file ID
  * @param {Uint8Array} key - The encryption key
- * @returns {string} Share URL
+ * @returns {Promise<string>} Share URL
  */
-export function createShareUrl(fileId, key) {
+export async function createShareUrl(fileId, key) {
   const keyBase64url = arrayToBase64url(key);
-  const baseUrl = window.location.origin;
+
+  // Get base URL using VAULT_URL (with fallback to window.location.origin)
+  let baseUrl;
+  try {
+    const { getVaultBaseUrl } = await import("./vault-config.js");
+    baseUrl = await getVaultBaseUrl();
+  } catch (e) {
+    console.warn(
+      "Failed to get vault base URL, using window.location.origin:",
+      e,
+    );
+    baseUrl = window.location.origin;
+  }
+
   return `${baseUrl}/share/${fileId}#key=${keyBase64url}&file=${fileId}`;
 }
 

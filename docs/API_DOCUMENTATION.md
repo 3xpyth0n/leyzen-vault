@@ -840,7 +840,7 @@ Delete thumbnails for a file.
 
 ### SSO
 
-#### GET `/api/sso/providers`
+#### GET `/api/auth/sso/providers`
 
 List all active SSO providers (public endpoint).
 
@@ -1207,7 +1207,64 @@ Export audit logs to JSON (admin only).
 
 **Response:** JSON file download
 
-#### GET `/api/admin/sso-providers`
+### Authentication Configuration
+
+#### GET `/api/auth/config`
+
+Get authentication configuration (public endpoint).
+
+Returns all authentication-related configuration including signup status and password authentication status.
+
+**Response:**
+
+```json
+{
+  "allow_signup": true,
+  "password_authentication_enabled": true
+}
+```
+
+#### GET `/api/admin/auth/config`
+
+Get authentication configuration (admin only).
+
+**Authentication**: Required (API Key with admin role)
+
+**Response:**
+
+```json
+{
+  "allow_signup": true,
+  "password_authentication_enabled": true
+}
+```
+
+#### PUT `/api/admin/auth/config`
+
+Update authentication configuration (admin only).
+
+**Authentication**: Required (API Key with admin role)
+
+**Request Body:**
+
+```json
+{
+  "allow_signup": false,
+  "password_authentication_enabled": true
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Authentication configuration updated successfully"
+}
+```
+
+### SSO Providers
+
+#### GET `/api/admin/auth/sso/providers`
 
 List all SSO providers (admin only).
 
@@ -1228,7 +1285,7 @@ List all SSO providers (admin only).
 }
 ```
 
-#### POST `/api/admin/sso-providers`
+#### POST `/api/admin/auth/sso/providers`
 
 Create a new SSO provider (admin only).
 
@@ -1262,13 +1319,13 @@ Create a new SSO provider (admin only).
 }
 ```
 
-#### GET `/api/admin/sso-providers/<provider_id>`
+#### GET `/api/admin/auth/sso/providers/<provider_id>`
 
 Get a specific SSO provider (admin only).
 
 **Authentication**: Required (API Key with admin role)
 
-#### PUT `/api/admin/sso-providers/<provider_id>`
+#### PUT `/api/admin/auth/sso/providers/<provider_id>`
 
 Update an SSO provider (admin only).
 
@@ -1284,7 +1341,7 @@ Update an SSO provider (admin only).
 }
 ```
 
-#### DELETE `/api/admin/sso-providers/<provider_id>`
+#### DELETE `/api/admin/auth/sso/providers/<provider_id>`
 
 Delete an SSO provider (admin only).
 

@@ -71,8 +71,11 @@ def create_public_link():
             permission_type=data.get("permission_type", "read"),
         )
 
-        # Build share URL
-        share_url = f"/share/{share_link.token}"
+        # Build share URL using VAULT_URL if configured, otherwise relative URL
+        from vault.services.share_link_service import ShareService
+
+        share_service = ShareService()
+        share_url = share_service.get_share_url(share_link.token, resource_id)
 
         return (
             jsonify(
@@ -107,9 +110,18 @@ def list_public_links():
     sharing_service = _get_sharing_service()
     share_links = sharing_service.list_user_public_links(user.id, resource_id)
 
+    # Get ShareService for building share URLs with VAULT_URL
+    from vault.services.share_link_service import ShareService
+
+    share_service = ShareService()
+
     enriched_links: list[dict[str, Any]] = []
     for link in share_links:
         link_data = link.to_dict()
+
+        # Add share_url using VAULT_URL if configured
+        share_url = share_service.get_share_url(link.token, link.resource_id)
+        link_data["share_url"] = share_url
 
         resource_info = None
         if link.resource_type == "file":

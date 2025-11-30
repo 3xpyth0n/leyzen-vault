@@ -240,7 +240,7 @@ const routes = [
           }
         }
 
-        // Final verification: if token still exists, it was recréé - remove it again
+        // Final verification: if token still exists, it was recreated - remove it again
         const tokenAfterClear = localStorage.getItem("jwt_token");
         if (tokenAfterClear) {
           console.warn(
@@ -309,7 +309,6 @@ const routes = [
     path: "/verify-email",
     name: "EmailVerification",
     component: () => import("../views/EmailVerification.vue"),
-    beforeEnter: requireGuest,
   },
   {
     path: "/accept-invitation",

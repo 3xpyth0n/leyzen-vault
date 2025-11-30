@@ -61,7 +61,7 @@
               <span
                 v-if="quota.max_storage_bytes && quota.max_storage_bytes > 0"
               >
-                {{ formatSize(quota.max_storage_bytes) }}
+                {{ formatQuotaSize(quota.max_storage_bytes) }}
               </span>
               <span v-else class="text-unlimited">Unlimited</span>
             </td>
@@ -137,11 +137,12 @@
             <div class="form-group">
               <label>Max Storage (GB):</label>
               <input
-                v-model.number="quotaForm.max_storage_gb"
-                type="number"
+                :value="quotaForm.max_storage_gb"
+                type="text"
                 min="0"
                 step="0.1"
                 placeholder="Leave empty for unlimited"
+                @input="normalizeQuotaInput"
                 class="form-input"
               />
               <small class="form-help">
@@ -296,13 +297,105 @@ export default {
       return quota ? formatSize(quota.used_storage_bytes || 0) : "0 B";
     };
 
+    // Helper function to convert GB to bytes with proper rounding
+    const gbToBytes = (gb) => {
+      if (!gb || gb <= 0) return null;
+      // Convert to bytes and round to nearest integer to avoid floating point errors
+      return Math.round(gb * 1024 * 1024 * 1024);
+    };
+
+    // Helper function to convert bytes to GB with proper precision
+    const bytesToGb = (bytes) => {
+      if (!bytes || bytes <= 0) return null;
+      // Round to 6 decimal places to preserve precision and avoid floating point display errors
+      // This ensures that values like 0.1 GB are displayed accurately when converted back
+      return Math.round((bytes / (1024 * 1024 * 1024)) * 1000000) / 1000000;
+    };
+
+    // Helper function to format quota size using decimal conversion (base 1000)
+    // This ensures 0.1 GB displays as 100 MB (0.1 * 1000 = 100)
+    const formatQuotaSize = (bytes) => {
+      if (!bytes || bytes <= 0) return "0 MB";
+
+      // Convert bytes to GB using binary (1024 base) as stored
+      const gb = bytes / (1024 * 1024 * 1024);
+
+      // Convert to MB using decimal base (1000) for display
+      // This way 0.1 GB = 100 MB, 0.12 GB = 120 MB, etc.
+      const mb = Math.round(gb * 1000);
+
+      // If less than 1 MB, show in KB
+      if (mb < 1) {
+        const kb = Math.round(((bytes / 1024) * 1000) / 1024);
+        return kb + " KB";
+      }
+
+      // If less than 1000 MB, show in MB
+      if (mb < 1000) {
+        return mb + " MB";
+      }
+
+      // If 1000 MB or more, show in GB with decimals
+      const gbDisplay = mb / 1000;
+      // Round to 2 decimal places max, removing trailing zeros
+      const gbRounded = Math.round(gbDisplay * 100) / 100;
+      return gbRounded + " GB";
+    };
+
+    // Normalize input: convert comma to dot and ensure valid number
+    const normalizeQuotaInput = (event) => {
+      let value = event.target.value.trim();
+
+      // If empty, set to null
+      if (value === "") {
+        quotaForm.value.max_storage_gb = null;
+        event.target.value = "";
+        return;
+      }
+
+      // Replace comma with dot for decimal separator (French/European format)
+      value = value.replace(/,/g, ".");
+
+      // Remove any non-numeric characters except dot and minus
+      value = value.replace(/[^\d.-]/g, "");
+
+      // Ensure only one dot
+      const parts = value.split(".");
+      if (parts.length > 2) {
+        value = parts[0] + "." + parts.slice(1).join("");
+      }
+
+      // Ensure only one minus at the start
+      if (value.indexOf("-") > 0) {
+        value = value.replace(/-/g, "");
+      }
+      if (value.startsWith("-")) {
+        value = "-" + value.replace(/-/g, "");
+      }
+
+      // Convert to number or null
+      const numValue =
+        value === "" || value === "." || value === "-"
+          ? null
+          : parseFloat(value);
+
+      // Update the form value
+      quotaForm.value.max_storage_gb =
+        isNaN(numValue) || numValue < 0 ? null : numValue;
+
+      // Update the input display value to show the normalized version
+      if (quotaForm.value.max_storage_gb !== null) {
+        event.target.value = quotaForm.value.max_storage_gb.toString();
+      } else {
+        event.target.value = "";
+      }
+    };
+
     const editQuota = (quota) => {
       editingQuota.value = quota;
       quotaForm.value = {
         user_id: quota.user_id,
-        max_storage_gb: quota.max_storage_bytes
-          ? quota.max_storage_bytes / (1024 * 1024 * 1024)
-          : null,
+        max_storage_gb: bytesToGb(quota.max_storage_bytes),
         max_files: quota.max_files || null,
       };
       showCreateModal.value = true;
@@ -310,9 +403,7 @@ export default {
 
     const saveQuota = async () => {
       try {
-        const max_storage_bytes = quotaForm.value.max_storage_gb
-          ? quotaForm.value.max_storage_gb * 1024 * 1024 * 1024
-          : null;
+        const max_storage_bytes = gbToBytes(quotaForm.value.max_storage_gb);
 
         // Normalize max_files: convert empty/NaN/undefined to null, preserve valid numbers
         let max_files = quotaForm.value.max_files;
@@ -382,12 +473,14 @@ export default {
       getIcon,
       loadQuotas,
       formatSize,
+      formatQuotaSize,
       getUsagePercent,
       getCurrentUsage,
       editQuota,
       saveQuota,
       removeQuota,
       closeModal,
+      normalizeQuotaInput,
     };
   },
 };
@@ -658,7 +751,14 @@ export default {
   justify-content: center;
   z-index: 1000;
   padding: 2rem;
+  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .modal {

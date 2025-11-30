@@ -7,10 +7,30 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4, 1rem);
+  padding-left: calc(
+    var(--space-4, 1rem) + 250px
+  ); /* Default: sidebar expanded (250px) */
   background: var(--bg-overlay, rgba(0, 0, 0, 0.7));
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   animation: logoutModalFadeIn var(--transition-base, 200ms) ease;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .logout-modal-overlay {
+  padding-left: calc(
+    var(--space-4, 1rem) + 70px
+  ); /* Sidebar collapsed (70px) */
+}
+
+/* Responsive: On mobile, sidebar is always 70px */
+@media (max-width: 768px) {
+  .logout-modal-overlay {
+    padding-left: calc(
+      var(--space-4, 1rem) + 70px
+    ) !important; /* Mobile: sidebar always 70px */
+  }
 }
 
 @keyframes logoutModalFadeIn {

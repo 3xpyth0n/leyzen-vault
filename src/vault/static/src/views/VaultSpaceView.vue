@@ -4236,7 +4236,16 @@ export default {
   visibility: visible !important;
   opacity: 1 !important;
   padding: 2rem !important;
+  padding-left: calc(
+    2rem + 250px
+  ) !important; /* Default: sidebar expanded (250px) */
   overflow-y: auto !important;
+  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Adjust modal overlay when sidebar is collapsed */
+body.sidebar-collapsed .modal-overlay {
+  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
 }
 
 .modal {
@@ -4357,7 +4366,7 @@ export default {
 .modal .form-actions {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color) !important;
+  border-top: 0px !important;
   margin-bottom: 0;
   padding-bottom: 0;
 }
