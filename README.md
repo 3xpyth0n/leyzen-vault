@@ -1,6 +1,6 @@
 # Leyzen Vault 🛰️
 
-**Version 2.0.0 (Major Release)**
+**Version 2.3.0**
 
 [![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
@@ -12,7 +12,7 @@
 
 Leyzen Vault automates ephemeral container rotation for a secure file storage system with enterprise-grade features. A hardened Flask orchestrator coordinates Docker lifecycle operations through an allowlisted proxy, while HAProxy front-ends every request with strict security headers. The system demonstrates how moving-target defense principles can be applied to real-world stacks without sacrificing observability or operator experience.
 
-**Version 2.0.0 Highlights**: Complete rewrite with PostgreSQL database, Vue.js SPA frontend, REST API v2, VaultSpaces, SSO, Collaboration, and 30+ new services. See [`CHANGELOG.md`](CHANGELOG.md) for full details.
+**Version 2.3.0 Highlights**: Preview support for video, audio, text, and markdown files, enhanced UI with VaultSpace pinning, dynamic icon system, conflict resolution, and multiple bug fixes. See [`CHANGELOG.md`](CHANGELOG.md) for full details.
 
 **End-to-End Encryption (E2EE)**: Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded to the server. The server stores only encrypted data and never has access to encryption keys or decrypted content. Decryption happens entirely in the user's browser when downloading files. This ensures that even if the server is compromised, file contents remain protected.
 
@@ -108,7 +108,7 @@ cp env.template .env
 
 ## Architecture at a Glance
 
-Leyzen Vault v2.0.0 comprises:
+Leyzen Vault v2.3.0 comprises:
 
 - **Go CLI** (`leyzenctl`) for container lifecycle management
 - **Python Backend** (Flask) with PostgreSQL database and REST API v2

@@ -7,6 +7,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-12-01
+
 ### Added
 
 - Preview support for video, audio, text, and markdown files ([#12](https://github.com/3xpyth0n/leyzen-vault/issues/12)).
