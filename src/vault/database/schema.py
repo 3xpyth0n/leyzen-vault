@@ -1847,29 +1847,20 @@ def init_db(app) -> None:
                     f"[WARNING] Failed to clean orphaned indexes: {cleanup_error}"
                 )
             else:
-                logger.warning(f"Failed to clean orphaned indexes: {cleanup_error}")
-            import sys
-            import traceback
-
-            print(
-                f"[WARNING] Failed to clean orphaned indexes: {cleanup_error}\n{traceback.format_exc()}",
-                file=sys.stderr,
-                flush=True,
-            )
+                logger.warning(
+                    f"Failed to clean orphaned indexes: {cleanup_error}",
+                    exc_info=True,
+                )
 
         # Create all tables and indexes using SQLAlchemy
         # If objects already exist, that's fine - database is already initialized
         try:
             # Log using app logger if available, otherwise use standard logger
-            # Also print to stderr for visibility in Docker logs
             log_msg = "[INIT] Creating database tables..."
             if app_logger:
                 app_logger.log(log_msg)
             else:
                 logger.info(log_msg)
-            import sys
-
-            print(log_msg, file=sys.stderr, flush=True)
 
             # Create specific tables manually with SQL before db.create_all()
             # Prevents db.create_all() from trying to create indexes for non-existent tables
@@ -2021,12 +2012,18 @@ def init_db(app) -> None:
                                             pass
                                         else:
                                             log_msg = f"[WARNING] Failed to create index {idx_name}: {idx_error}"
-                                            print(log_msg, file=sys.stderr, flush=True)
+                                            if app_logger:
+                                                app_logger.log(log_msg)
+                                            else:
+                                                logger.warning(log_msg)
                                 # Index exists or was created
                         except Exception as idx_error:
                             # Index creation failed - log but continue
                             log_msg = f"[WARNING] Failed to create indexes for {table_name}: {idx_error}"
-                            print(log_msg, file=sys.stderr, flush=True)
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.warning(log_msg)
 
                         # Table created successfully
                 except Exception as manual_create_error:
@@ -2038,7 +2035,6 @@ def init_db(app) -> None:
                             app_logger.log(log_msg)
                         else:
                             logger.warning(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
 
             # Drop indexes again right before db.create_all()
             # Ensures indexes are removed before SQLAlchemy attempts to create them
@@ -2100,7 +2096,6 @@ def init_db(app) -> None:
                         app_logger.log(log_msg)
                     else:
                         logger.error(log_msg)
-                    print(log_msg, file=sys.stderr, flush=True)
                     raise
 
             # Wait a moment to ensure all tables are fully created and visible
@@ -2145,7 +2140,6 @@ def init_db(app) -> None:
                     "This is normal and expected. Continuing with initialization."
                 )
                 logger.info(log_msg)
-                print(f"[INFO] {log_msg}", file=sys.stderr, flush=True)
                 # Database is already initialized, continue with verification
                 # Verify all required tables exist, not just jwt_blacklist
                 try:
@@ -2160,7 +2154,6 @@ def init_db(app) -> None:
                         app_logger.log(log_msg)
                     else:
                         logger.info(log_msg)
-                    print(log_msg, file=sys.stderr, flush=True)
 
                     inspector = sql_inspect(db.engine)
                     existing_tables = set(inspector.get_table_names())
@@ -2244,7 +2237,6 @@ def init_db(app) -> None:
                             app_logger.log(log_msg)
                         else:
                             logger.error(log_msg)
-                        print(log_msg, file=sys.stderr, flush=True)
 
                         # Create missing tables one by one, ignoring duplicate errors
                         for table_name in missing_tables:
@@ -2307,11 +2299,6 @@ def init_db(app) -> None:
                                                             app_logger.log(log_msg)
                                                         else:
                                                             logger.warning(log_msg)
-                                                        print(
-                                                            log_msg,
-                                                            file=sys.stderr,
-                                                            flush=True,
-                                                        )
                                     except Exception as cleanup_error:
                                         # Ignore cleanup errors - continue with table creation
                                         pass
@@ -2346,7 +2333,6 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.warning(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
 
                                             # Drop orphaned indexes
                                             for idx_name in orphaned_indexes:
@@ -2362,11 +2348,6 @@ def init_db(app) -> None:
                                                         app_logger.log(log_msg)
                                                     else:
                                                         logger.info(log_msg)
-                                                    print(
-                                                        log_msg,
-                                                        file=sys.stderr,
-                                                        flush=True,
-                                                    )
                                                 except Exception as drop_error:
                                                     # Ignore errors when dropping indexes
                                                     db.session.rollback()
@@ -2382,11 +2363,6 @@ def init_db(app) -> None:
                                                             app_logger.log(log_msg)
                                                         else:
                                                             logger.warning(log_msg)
-                                                        print(
-                                                            log_msg,
-                                                            file=sys.stderr,
-                                                            flush=True,
-                                                        )
                                     except Exception as cleanup_error:
                                         # Ignore cleanup errors - continue with table creation
                                         pass
@@ -2436,7 +2412,6 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.info(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                                         except Exception as sql_error:
                                             # SQL fallback failed - log but continue with normal flow
                                             log_msg = f"[DEBUG] Raw SQL creation failed for {table_name}: {sql_error}"
@@ -2444,7 +2419,6 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.debug(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                                     # Verify table was actually created
                                     time.sleep(
                                         0.5
@@ -2458,7 +2432,6 @@ def init_db(app) -> None:
                                             app_logger.log(log_msg)
                                         else:
                                             logger.info(log_msg)
-                                        print(log_msg, file=sys.stderr, flush=True)
                                         table_created = True
                                         break
                                     else:
@@ -2468,14 +2441,12 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.warning(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                                         else:
                                             log_msg = f"[ERROR] Table {table_name} was not created after {max_create_attempts} attempts"
                                             if app_logger:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.error(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                                 except Exception as table_error:
                                     if is_duplicate_error(table_error):
                                         # Table might have been created by another process
@@ -2494,7 +2465,6 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.warning(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                                             time.sleep(1.0)  # Wait before retry
                                         else:
                                             log_msg = f"[ERROR] Failed to create table {table_name} after {max_create_attempts} attempts: {table_error}"
@@ -2502,7 +2472,6 @@ def init_db(app) -> None:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.error(log_msg)
-                                            print(log_msg, file=sys.stderr, flush=True)
                             if not table_created:
                                 import traceback
 
@@ -2511,7 +2480,6 @@ def init_db(app) -> None:
                                     app_logger.log(error_msg)
                                 else:
                                     logger.error(error_msg)
-                                print(error_msg, file=sys.stderr, flush=True)
                         # Refresh inspector after creating tables
                         inspector = sql_inspect(db.engine)
                         existing_tables = set(inspector.get_table_names())
@@ -2529,7 +2497,6 @@ def init_db(app) -> None:
                                 app_logger.log(log_msg)
                             else:
                                 logger.warning(log_msg)
-                            print(log_msg, file=sys.stderr, flush=True)
                     # Now verify and create jti column if missing
 
                     # RADICAL SOLUTION: Use direct SQL to ensure table and column exist
@@ -2550,19 +2517,19 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        print(
-                            "[INIT] jwt_blacklist table ensured to exist",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        log_msg = "[INIT] jwt_blacklist table ensured to exist"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.info(log_msg)
                     except Exception as create_table_error:
                         # Table might already exist, that's OK
                         db.session.rollback()
-                        print(
-                            f"[INIT] Table creation attempt: {create_table_error}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        log_msg = f"[INIT] Table creation attempt: {create_table_error}"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.debug(log_msg)
 
                     # Now ensure jti column exists - use IF NOT EXISTS equivalent
                     try:
@@ -2573,29 +2540,29 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        print(
-                            "[INIT] jti column added successfully",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        log_msg = "[INIT] jti column added successfully"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.info(log_msg)
                     except Exception as add_col_error:
                         error_str = str(add_col_error).lower()
                         if "already exists" in error_str or "duplicate" in error_str:
                             # Column already exists - that's what we want!
                             db.session.rollback()
-                            print(
-                                "[INIT] jti column already exists (good!)",
-                                file=sys.stderr,
-                                flush=True,
-                            )
+                            log_msg = "[INIT] jti column already exists (good!)"
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.info(log_msg)
                         else:
                             # Different error - log but continue
                             db.session.rollback()
-                            print(
-                                f"[INIT] Error adding jti column: {add_col_error}",
-                                file=sys.stderr,
-                                flush=True,
-                            )
+                            log_msg = f"[INIT] Error adding jti column: {add_col_error}"
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.warning(log_msg)
 
                     # Ensure index exists
                     try:
@@ -2605,14 +2572,18 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        print("[INIT] jti index ensured", file=sys.stderr, flush=True)
+                        log_msg = "[INIT] jti index ensured"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.info(log_msg)
                     except Exception as index_error:
                         db.session.rollback()
-                        print(
-                            f"[INIT] Index creation: {index_error}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        log_msg = f"[INIT] Index creation: {index_error}"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.warning(log_msg)
 
                     # Clear cache
                     try:
@@ -2627,20 +2598,20 @@ def init_db(app) -> None:
                         result = db.session.execute(
                             sql_text("SELECT jti FROM jwt_blacklist LIMIT 0")
                         )
-                        print(
-                            "[INIT] jti column verified - can be queried",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        log_msg = "[INIT] jti column verified - can be queried"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.info(log_msg)
                     except Exception as verify_error:
                         # This is bad - column doesn't exist or can't be queried
                         error_str = str(verify_error).lower()
                         if "column" in error_str and "jti" in error_str:
-                            print(
-                                f"[ERROR] CRITICAL: jti column verification failed: {verify_error}",
-                                file=sys.stderr,
-                                flush=True,
-                            )
+                            log_msg = f"[ERROR] CRITICAL: jti column verification failed: {verify_error}"
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.error(log_msg)
                             # Try one more time to add it
                             try:
                                 db.session.execute(
@@ -2649,21 +2620,21 @@ def init_db(app) -> None:
                                     )
                                 )
                                 db.session.commit()
-                                print(
-                                    "[INIT] jti column added via IF NOT EXISTS",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
+                                log_msg = "[INIT] jti column added via IF NOT EXISTS"
+                                if app_logger:
+                                    app_logger.log(log_msg)
+                                else:
+                                    logger.info(log_msg)
                             except Exception:
                                 # PostgreSQL doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
                                 # So we'll just log the error
                                 pass
                         else:
-                            print(
-                                f"[WARNING] jti verification query failed: {verify_error}",
-                                file=sys.stderr,
-                                flush=True,
-                            )
+                            log_msg = f"[WARNING] jti verification query failed: {verify_error}"
+                            if app_logger:
+                                app_logger.log(log_msg)
+                            else:
+                                logger.warning(log_msg)
                 except Exception as jti_check_error:
                     import traceback
 
@@ -2674,8 +2645,6 @@ def init_db(app) -> None:
                         )
                     else:
                         logger.error(log_msg, exc_info=True)
-                    print(log_msg, file=sys.stderr, flush=True)
-                    print(traceback.format_exc(), file=sys.stderr, flush=True)
             else:
                 # Different error - check if it's a database connection/configuration issue
                 error_type = type(e).__name__

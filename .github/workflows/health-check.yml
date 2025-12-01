@@ -72,6 +72,7 @@ jobs:
           LEYZEN_ENVIRONMENT=dev
           ORCH_USER=test_user
           ORCH_PASS=test_pass
+          HTTP_PORT=12345
           SECRET_KEY=$SECRET_KEY
           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
           WEB_REPLICAS=2

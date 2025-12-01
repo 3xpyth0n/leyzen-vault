@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
 import tempfile
@@ -63,20 +64,36 @@ def _validate_internal_token() -> bool:
             )
             return False
 
-    # 2. Strict rate limiting (max 60 requests/minute)
+    # 2. Enhanced rate limiting (IP + token hash)
     rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
     if rate_limiter:
+        import hashlib
+
         client_ip = get_client_ip() or "unknown"
-        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+        # Create token hash for additional rate limiting identifier
+        token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
+
+        # Check rate limit by IP
+        is_allowed_ip, error_msg_ip = rate_limiter.check_rate_limit_custom(
             client_ip,
             max_attempts=60,
             window_seconds=60,
-            action_name="internal_api",
+            action_name="internal_api_ip",
             user_id=None,
         )
-        if not is_allowed:
+
+        # Check rate limit by token hash
+        is_allowed_token, error_msg_token = rate_limiter.check_rate_limit_custom(
+            f"token_{token_hash}",
+            max_attempts=60,
+            window_seconds=60,
+            action_name="internal_api_token",
+            user_id=None,
+        )
+
+        if not is_allowed_ip or not is_allowed_token:
             current_app.logger.warning(
-                f"Internal API rate limit exceeded from IP: {client_ip}"
+                f"Internal API rate limit exceeded: IP={client_ip}, token_hash={token_hash[:8]}..."
             )
             return False
 
@@ -787,67 +804,84 @@ def prepare_rotation():
                     f"in whitelist: {file_id in validation_service._legitimate_files}"
                 )
 
-                # Check if file is in whitelist (this is the filename as stored in database)
-                if file_id in validation_service._legitimate_files:
-                    current_app.logger.info(
-                        f"[PREPARE ROTATION] File {file_id} IS in whitelist, promoting..."
-                    )
-                    # File is legitimate - read and promote it
-                    try:
-                        file_metadata = validation_service._legitimate_files[file_id]
-                        file_data = file_path.read_bytes()
-
-                        # Verify we have required metadata
-                        if (
-                            not isinstance(file_metadata, dict)
-                            or "encrypted_hash" not in file_metadata
-                            or "size" not in file_metadata
-                        ):
-                            current_app.logger.error(
-                                f"[PREPARE ROTATION] File {file_id} in whitelist but metadata invalid: {type(file_metadata)}"
-                            )
-                            stats["validation"]["rejected"] += 1
-                            file_path.unlink()
-                            stats["validation"]["deleted"] += 1
-                            continue
-
-                        # Add to promotion queue
-                        validated_files.append(
-                            {
-                                "file_id": file_id,
-                                "file_data": file_data,
-                                "expected_hash": file_metadata["encrypted_hash"],
-                                "expected_size": file_metadata["size"],
-                            }
-                        )
-                        stats["validation"]["validated"] += 1
-                        current_app.logger.info(
-                            f"[PREPARE ROTATION] File {file_id} added to promotion queue "
-                            f"(size: {len(file_data)}, hash: {file_metadata['encrypted_hash'][:16]}...)"
-                        )
-                    except Exception as e:
-                        current_app.logger.error(
-                            f"[PREPARE ROTATION] Error processing legitimate file {file_id}: {e}",
-                            exc_info=True,
-                        )
-                        stats["validation"]["rejected"] += 1
+                # Lock file before validation to prevent race conditions
+                try:
+                    with open(file_path, "rb") as f:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                         try:
-                            file_path.unlink()
-                            stats["validation"]["deleted"] += 1
-                        except:
-                            pass
-                else:
-                    # File is NOT in whitelist - delete it
-                    current_app.logger.warning(
-                        f"[PREPARE ROTATION] File {file_id} not in whitelist - deleting"
+                            # Check if file is in whitelist (this is the filename as stored in database)
+                            if file_id in validation_service._legitimate_files:
+                                current_app.logger.info(
+                                    f"[PREPARE ROTATION] File {file_id} IS in whitelist, promoting..."
+                                )
+                                # File is legitimate - read and promote it
+                                try:
+                                    file_metadata = (
+                                        validation_service._legitimate_files[file_id]
+                                    )
+                                    file_data = f.read()
+
+                                    # Verify we have required metadata
+                                    if (
+                                        not isinstance(file_metadata, dict)
+                                        or "encrypted_hash" not in file_metadata
+                                        or "size" not in file_metadata
+                                    ):
+                                        current_app.logger.error(
+                                            f"[PREPARE ROTATION] File {file_id} in whitelist but metadata invalid: {type(file_metadata)}"
+                                        )
+                                        stats["validation"]["rejected"] += 1
+                                        file_path.unlink()
+                                        stats["validation"]["deleted"] += 1
+                                        continue
+
+                                    # Add to promotion queue
+                                    validated_files.append(
+                                        {
+                                            "file_id": file_id,
+                                            "file_data": file_data,
+                                            "expected_hash": file_metadata[
+                                                "encrypted_hash"
+                                            ],
+                                            "expected_size": file_metadata["size"],
+                                        }
+                                    )
+                                    stats["validation"]["validated"] += 1
+                                    current_app.logger.info(
+                                        f"[PREPARE ROTATION] File {file_id} added to promotion queue "
+                                        f"(size: {len(file_data)}, hash: {file_metadata['encrypted_hash'][:16]}...)"
+                                    )
+                                except Exception as e:
+                                    current_app.logger.error(
+                                        f"[PREPARE ROTATION] Error processing legitimate file {file_id}: {e}",
+                                        exc_info=True,
+                                    )
+                                    stats["validation"]["rejected"] += 1
+                                    try:
+                                        file_path.unlink()
+                                        stats["validation"]["deleted"] += 1
+                                    except:
+                                        pass
+                            else:
+                                # File is NOT in whitelist - delete it
+                                current_app.logger.warning(
+                                    f"[PREPARE ROTATION] File {file_id} not in whitelist - deleting"
+                                )
+                                try:
+                                    file_path.unlink()
+                                    stats["validation"]["deleted"] += 1
+                                except Exception as e:
+                                    current_app.logger.error(
+                                        f"[PREPARE ROTATION] Failed to delete invalid file {file_id}: {e}"
+                                    )
+                        finally:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except (IOError, OSError) as e:
+                    # Handle lock failures gracefully
+                    current_app.logger.error(
+                        f"[PREPARE ROTATION] Failed to lock file {file_id}: {e}"
                     )
-                    try:
-                        file_path.unlink()
-                        stats["validation"]["deleted"] += 1
-                    except Exception as e:
-                        current_app.logger.error(
-                            f"[PREPARE ROTATION] Failed to delete invalid file {file_id}: {e}"
-                        )
+                    continue
         else:
             current_app.logger.info(
                 "[PREPARE ROTATION] No files directory in tmpfs (empty cache is normal)"

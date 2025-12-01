@@ -7,6 +7,20 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Orchestrator Dashboard**: Minor cleanup of the orchestrator dashboard layout.
+
+### Security
+
+- **Entropy Validation Enhancement**: Increased entropy thresholds for encrypted keys to prevent weak encryption detection. Small keys (≤64 bytes) now require 5.5 bits/byte (was 4.0) and medium keys (≤128 bytes) require 6.5 bits/byte (was 6.0).
+- **MTD Race Condition Fix**: Added file locking using `fcntl` in `prepare_rotation()` to prevent race conditions during file validation and reading. Files are now locked before validation to ensure atomic operations.
+- **IV Validation Enhancement**: Enhanced IV (Initialization Vector) validation to detect predictable patterns including timestamp-based IVs, sequential counter IVs, and repeating pattern IVs. This prevents weak encryption schemes that could compromise security.
+- **Log Sanitization Improvement**: Added URL decoding before pattern matching to catch URL-encoded secrets in logs. Enhanced log sanitization now supports detection of URL-encoded and base64-encoded sensitive data patterns.
+- **Rate Limiting Enhancement**: Added token-based rate limiting in addition to IP-based rate limiting for internal API endpoints. This provides defense-in-depth against abuse and ensures better tracking of suspicious activity.
+- **HMAC Signature Verification**: Added optional HMAC-SHA256 signature verification for encrypted keys. Client-side encryption now includes signatures for integrity verification, with backward compatibility for existing keys without signatures.
+- **Debug Code Removal**: Replaced all `print()` statements with proper logger calls in production code (`app.py` and `database/schema.py`). This prevents potential information leakage through debug output.
+
 ## [2.3.0] - 2025-12-01
 
 ### Added

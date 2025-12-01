@@ -171,11 +171,63 @@ export async function generateVaultSpaceKey() {
 }
 
 /**
+ * Derive signing key from master key using HKDF.
+ *
+ * @param {CryptoKey} masterKey - Master key (must be extractable or already imported)
+ * @returns {Promise<CryptoKey>} Signing key for HMAC
+ */
+async function deriveSigningKey(masterKey) {
+  const cryptoAPI = getCryptoAPI();
+  // Import master key as key material for HKDF
+  // Try to export key first, if it fails, use the key directly
+  let keyMaterial;
+  try {
+    const rawKey = await cryptoAPI.subtle.exportKey("raw", masterKey);
+    keyMaterial = await cryptoAPI.subtle.importKey(
+      "raw",
+      rawKey,
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+      },
+      false,
+      ["deriveBits", "deriveKey"],
+    );
+  } catch (error) {
+    // If export fails, try to use the key directly if it's already HKDF-compatible
+    // Otherwise, we need to derive from a different approach
+    // For now, skip signature if key is not extractable
+    throw new Error("Master key is not extractable, cannot derive signing key");
+  }
+
+  // Derive signing key using HKDF with specific info
+  const encoder = new TextEncoder();
+  const info = encoder.encode("leyzen-key-signature-v1");
+  const salt = encoder.encode("leyzen-vault-hkdf-salt-2024-!!!!");
+
+  return await cryptoAPI.subtle.deriveKey(
+    {
+      name: "HKDF",
+      salt: salt,
+      info: info,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    {
+      name: "HMAC",
+      hash: "SHA-256",
+    },
+    false,
+    ["sign"],
+  );
+}
+
+/**
  * Encrypt VaultSpace key with user master key.
  *
  * @param {CryptoKey} userKey - User master key
  * @param {CryptoKey} vaultspaceKey - VaultSpace key to encrypt
- * @returns {Promise<string>} Encrypted VaultSpace key (base64)
+ * @returns {Promise<string>} Encrypted VaultSpace key (base64) with optional HMAC signature
  */
 export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
   const cryptoAPI = getCryptoAPI();
@@ -200,15 +252,30 @@ export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
   combined.set(iv, 0);
   combined.set(new Uint8Array(encrypted), iv.length);
 
-  // Return as base64
-  return btoa(String.fromCharCode(...combined));
+  // Generate HMAC signature for integrity verification
+  try {
+    const signingKey = await deriveSigningKey(userKey);
+    const signature = await cryptoAPI.subtle.sign("HMAC", signingKey, combined);
+
+    // Append signature (32 bytes for HMAC-SHA256)
+    const withSignature = new Uint8Array(combined.length + 32);
+    withSignature.set(combined, 0);
+    withSignature.set(new Uint8Array(signature), combined.length);
+
+    // Return as base64
+    return btoa(String.fromCharCode(...withSignature));
+  } catch (error) {
+    // If signature generation fails, return without signature for backward compatibility
+    logger.warn("Failed to generate signature for encrypted key:", error);
+    return btoa(String.fromCharCode(...combined));
+  }
 }
 
 /**
  * Decrypt VaultSpace key with user master key.
  *
  * @param {CryptoKey} userKey - User master key
- * @param {string} encryptedKey - Encrypted VaultSpace key (base64)
+ * @param {string} encryptedKey - Encrypted VaultSpace key (base64) with optional HMAC signature
  * @param {boolean} extractable - Whether the key should be extractable (default: false for security)
  * @returns {Promise<CryptoKey>} Decrypted VaultSpace key
  */
@@ -220,12 +287,41 @@ export async function decryptVaultSpaceKey(
   // Decode base64
   const combined = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
 
+  // Check if signature is present (last 32 bytes)
+  const cryptoAPI = getCryptoAPI();
+  let encryptedData = combined;
+  let hasSignature = false;
+  if (combined.length >= 92) {
+    // Minimum size with signature: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes
+    // Try to verify signature if present
+    const signature = combined.slice(-32);
+    const dataWithoutSignature = combined.slice(0, -32);
+    try {
+      const signingKey = await deriveSigningKey(userKey);
+      const isValid = await cryptoAPI.subtle.verify(
+        "HMAC",
+        signingKey,
+        signature,
+        dataWithoutSignature,
+      );
+      if (isValid) {
+        encryptedData = dataWithoutSignature;
+        hasSignature = true;
+      }
+    } catch (error) {
+      // If signature verification fails, continue without signature (backward compatibility)
+      logger.debug(
+        "Signature verification failed, using key without signature:",
+        error,
+      );
+    }
+  }
+
   // Extract IV and encrypted data
-  const iv = combined.slice(0, 12);
-  const encrypted = combined.slice(12);
+  const iv = encryptedData.slice(0, 12);
+  const encrypted = encryptedData.slice(12);
 
   // Decrypt
-  const cryptoAPI = getCryptoAPI();
   const decrypted = await cryptoAPI.subtle.decrypt(
     {
       name: "AES-GCM",
@@ -270,7 +366,7 @@ export async function generateFileKey() {
  *
  * @param {CryptoKey} vaultspaceKey - VaultSpace key
  * @param {CryptoKey} fileKey - File key to encrypt
- * @returns {Promise<string>} Encrypted file key (base64)
+ * @returns {Promise<string>} Encrypted file key (base64) with optional HMAC signature
  */
 export async function encryptFileKey(vaultspaceKey, fileKey) {
   const cryptoAPI = getCryptoAPI();
@@ -295,15 +391,30 @@ export async function encryptFileKey(vaultspaceKey, fileKey) {
   combined.set(iv, 0);
   combined.set(new Uint8Array(encrypted), iv.length);
 
-  // Return as base64
-  return btoa(String.fromCharCode(...combined));
+  // Generate HMAC signature for integrity verification
+  try {
+    const signingKey = await deriveSigningKey(vaultspaceKey);
+    const signature = await cryptoAPI.subtle.sign("HMAC", signingKey, combined);
+
+    // Append signature (32 bytes for HMAC-SHA256)
+    const withSignature = new Uint8Array(combined.length + 32);
+    withSignature.set(combined, 0);
+    withSignature.set(new Uint8Array(signature), combined.length);
+
+    // Return as base64
+    return btoa(String.fromCharCode(...withSignature));
+  } catch (error) {
+    // If signature generation fails, return without signature for backward compatibility
+    logger.warn("Failed to generate signature for encrypted key:", error);
+    return btoa(String.fromCharCode(...combined));
+  }
 }
 
 /**
  * Decrypt file key with VaultSpace key.
  *
  * @param {CryptoKey} vaultspaceKey - VaultSpace key
- * @param {string} encryptedKey - Encrypted file key (base64)
+ * @param {string} encryptedKey - Encrypted file key (base64) with optional HMAC signature
  * @param {boolean} extractable - Whether the key should be extractable (default: false)
  * @returns {Promise<CryptoKey>} Decrypted file key
  */
@@ -315,12 +426,41 @@ export async function decryptFileKey(
   // Decode base64
   const combined = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
 
+  // Check if signature is present (last 32 bytes)
+  const cryptoAPI = getCryptoAPI();
+  let encryptedData = combined;
+  let hasSignature = false;
+  if (combined.length >= 92) {
+    // Minimum size with signature: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes
+    // Try to verify signature if present
+    const signature = combined.slice(-32);
+    const dataWithoutSignature = combined.slice(0, -32);
+    try {
+      const signingKey = await deriveSigningKey(vaultspaceKey);
+      const isValid = await cryptoAPI.subtle.verify(
+        "HMAC",
+        signingKey,
+        signature,
+        dataWithoutSignature,
+      );
+      if (isValid) {
+        encryptedData = dataWithoutSignature;
+        hasSignature = true;
+      }
+    } catch (error) {
+      // If signature verification fails, continue without signature (backward compatibility)
+      logger.debug(
+        "Signature verification failed, using key without signature:",
+        error,
+      );
+    }
+  }
+
   // Extract IV and encrypted data
-  const iv = combined.slice(0, 12);
-  const encrypted = combined.slice(12);
+  const iv = encryptedData.slice(0, 12);
+  const encrypted = encryptedData.slice(12);
 
   // Decrypt
-  const cryptoAPI = getCryptoAPI();
   const decrypted = await cryptoAPI.subtle.decrypt(
     {
       name: "AES-GCM",

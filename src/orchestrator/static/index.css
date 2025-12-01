@@ -211,7 +211,10 @@ footer {
   margin: 0;
   font-size: clamp(1.5rem, 2.4vw, 2.25rem);
   font-weight: 700;
-  color: #facc15;
+  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .brand-subtitle {
@@ -326,13 +329,19 @@ footer {
 .content-grid {
   display: grid;
   gap: 1.5rem;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+}
+
+.content-grid-full-width {
+  grid-column: 1 / -1;
 }
 
 .panel {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .panel-header {
@@ -356,10 +365,31 @@ footer {
   letter-spacing: 0.08em;
 }
 
+.uptime-panel-content {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  width: 100%;
+  overflow: hidden;
+  height: 100%;
+}
+
 .chart-area {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 240px;
+  min-height: 200px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chart-area > * {
+  height: 100%;
 }
 
 #uptimeChart {
@@ -369,9 +399,15 @@ footer {
 
 .chart-footer {
   display: flex;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  justify-content: center;
+  position: relative;
+  padding-bottom: 2rem;
 }
 
 .chart-label {
@@ -382,16 +418,61 @@ footer {
 }
 
 .chart-value {
-  margin-top: 0.35rem;
+  margin-top: 0.25rem;
   font-size: 1.35rem;
   font-weight: 600;
   color: #f8fafc;
 }
 
-.chart-note {
-  margin-top: 1.25rem;
+.chart-footer > .chart-note {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  margin: 0;
   font-size: 0.75rem;
   color: #64748b;
+  padding-top: 0.5rem;
+}
+
+.performance-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-height: 300px;
+  justify-content: center;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-item-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a5b4fc;
+}
+
+.summary-item-value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.summary-item-muted {
+  font-size: 1.25rem;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+.summary-item-sub {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
 }
 
 .state-wave-panel {
@@ -799,6 +880,12 @@ body.modal-open {
 }
 
 @media (min-width: 1024px) {
+  .content-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 1023px) {
   .content-grid {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -9,6 +9,7 @@ __pycache__/
 node_modules/
 docker-compose.yml
 docker-generated.yml
+rules/
 infra/haproxy/haproxy.cfg
 infra/haproxy/haproxy.pem
 src/orchestrator/logs/

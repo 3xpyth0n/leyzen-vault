@@ -144,18 +144,16 @@ def _check_encryption_entropy(data: bytes) -> tuple[bool, float]:
             entropy -= probability * math.log2(probability)
 
     # Size-adjusted entropy threshold
-    # For small data (32 bytes), entropy can be ~4.5-5.5 bits/byte for encrypted data
-    # For larger data (>100 bytes), entropy should be >7.5 bits/byte
+    # Encrypted data must meet minimum entropy requirements based on size
     data_size = len(data)
     if data_size <= 64:
-        # For small ciphertexts (32-64 bytes), use a lower threshold
-        # Encrypted data should have entropy > 4.0 bits/byte
-        threshold = 4.0
+        # Small ciphertexts require higher entropy to prevent weak encryption
+        threshold = 5.5
     elif data_size <= 128:
-        # For medium ciphertexts, use a moderate threshold
-        threshold = 6.0
+        # Medium ciphertexts require moderate entropy threshold
+        threshold = 6.5
     else:
-        # For larger ciphertexts, use the strict threshold
+        # Larger ciphertexts require strict entropy threshold
         threshold = 7.5
 
     # Additional check: encrypted data should not be all zeros or repeating patterns

@@ -105,7 +105,7 @@
   --tw-contain-layout: ;
   --tw-contain-paint: ;
   --tw-contain-style: ;
-} /*! tailwindcss v3.4.13 | MIT License | https://tailwindcss.com*/
+} /*! tailwindcss v3.4.18 | MIT License | https://tailwindcss.com*/
 *,
 :after,
 :before {
@@ -326,7 +326,7 @@ video {
   max-width: 100%;
   height: auto;
 }
-[hidden] {
+[hidden]:where(:not([hidden="until-found"])) {
   display: none;
 }
 .container {
@@ -409,11 +409,17 @@ video {
     );
   }
 }
+.visible {
+  visibility: visible;
+}
 .invisible {
   visibility: hidden;
 }
 .collapse {
   visibility: collapse;
+}
+.static {
+  position: static;
 }
 .fixed {
   position: fixed;
@@ -461,6 +467,9 @@ video {
 .rounded {
   border-radius: 0.25rem;
 }
+.border {
+  border-width: 1px;
+}
 .border-t {
   border-top-width: 1px;
 }
@@ -477,6 +486,9 @@ video {
 .font-bold {
   font-weight: 700;
 }
+.italic {
+  font-style: italic;
+}
 .ordinal {
   --tw-ordinal: ordinal;
   font-variant-numeric: var(--tw-ordinal) var(--tw-slashed-zero)
@@ -485,11 +497,11 @@ video {
 }
 .text-slate-400 {
   --tw-text-opacity: 1;
-  color: rgb(148 163 184 / var(--tw-text-opacity));
+  color: rgb(148 163 184 / var(--tw-text-opacity, 1));
 }
 .text-slate-600 {
   --tw-text-opacity: 1;
-  color: rgb(71 85 105 / var(--tw-text-opacity));
+  color: rgb(71 85 105 / var(--tw-text-opacity, 1));
 }
 .underline {
   text-decoration-line: underline;
@@ -580,12 +592,4 @@ video {
   padding-block: 0.5rem;
   border-radius: 0.5rem;
   gap: 0.25rem;
-}
-.gpu-translate {
-  transform: translateZ(0);
-  will-change: transform;
-}
-.hover\:text-slate-200:hover {
-  --tw-text-opacity: 1;
-  color: rgb(226 232 240 / var(--tw-text-opacity));
 }

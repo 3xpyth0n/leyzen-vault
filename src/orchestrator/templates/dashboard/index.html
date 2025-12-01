@@ -153,63 +153,11 @@
         </div>
       </header>
 
-      <section class="summary-grid stack-panels">
-        <article
-          class="stat-card"
-          title="Current rotation status: Active means containers are rotating automatically"
-        >
-          <div class="stat-label">Rotation status</div>
-          <div class="stat-primary">
-            <span id="rotation-state-dot" class="state-dot"></span>
-            <span id="rotation-state">Active</span>
-          </div>
-          <div
-            class="stat-sub"
-            id="next-rotation"
-            title="Time until the next container rotation"
-          >
-            Next in: --
-          </div>
-        </article>
-
-        <article
-          class="stat-card"
-          title="Number of containers that are healthy and serving traffic"
-        >
-          <div class="stat-label">Healthy containers</div>
-          <div class="stat-primary">
-            <span id="healthy-count">0</span>
-            <span class="stat-muted"
-              >/ <span id="container-count">0</span></span
-            >
-          </div>
-          <div class="stat-sub">
-            <span id="degraded-count">0</span> degraded or paused
-          </div>
-        </article>
-
-        <article
-          class="stat-card"
-          title="Average time containers stay healthy before rotation"
-        >
-          <div class="stat-label">Average uptime</div>
-          <div class="stat-primary" id="avg-uptime">0s</div>
-          <div class="stat-sub">Tracked <span id="total-uptime">0s</span></div>
-        </article>
-
-        <article
-          class="stat-card"
-          title="When the last container rotation occurred"
-        >
-          <div class="stat-label">Last rotation</div>
-          <div class="stat-primary" id="last-rotation">—</div>
-          <div class="stat-sub" id="last-rotation-ago">Awaiting data</div>
-        </article>
-      </section>
-
       <main>
         <div class="content-grid">
-          <section class="panel glass glass-preserve state-wave-panel">
+          <section
+            class="panel glass glass-preserve state-wave-panel content-grid-full-width"
+          >
             <div class="panel-header">
               <h2 class="panel-title">Live container state transitions</h2>
               <div class="panel-meta">
@@ -249,24 +197,71 @@
 
           <aside class="panel glass glass-preserve">
             <h3 class="panel-title">Uptime distribution</h3>
-            <div class="chart-area">
-              <div id="uptimeChart" class="chart-surface"></div>
-            </div>
-
-            <div class="chart-footer">
-              <div>
-                <div class="chart-label">Running containers</div>
-                <div class="chart-value" id="running-count-chart">0</div>
+            <div class="uptime-panel-content">
+              <div class="chart-footer">
+                <div>
+                  <div class="chart-label">Running containers</div>
+                  <div class="chart-value" id="running-count-chart">0</div>
+                </div>
+                <div>
+                  <div class="chart-label">Rotations</div>
+                  <div class="chart-value" id="rot-count-small">0</div>
+                </div>
+                <p class="chart-note">
+                  Uptime is accumulated while a container actively serves
+                  traffic.
+                </p>
               </div>
-              <div>
-                <div class="chart-label">Rotations</div>
-                <div class="chart-value" id="rot-count-small">0</div>
+              <div class="chart-area">
+                <div id="uptimeChart" class="chart-surface"></div>
               </div>
             </div>
+          </aside>
 
-            <p class="chart-note">
-              Uptime is accumulated while a container actively serves traffic.
-            </p>
+          <aside class="panel glass glass-preserve">
+            <h3 class="panel-title">Performance summary</h3>
+            <div class="performance-summary">
+              <div class="summary-item">
+                <div class="summary-item-label">Rotation status</div>
+                <div class="summary-item-value">
+                  <span id="rotation-state-dot" class="state-dot"></span>
+                  <span id="rotation-state">Active</span>
+                </div>
+                <div
+                  class="summary-item-sub"
+                  id="next-rotation"
+                  title="Time until the next container rotation"
+                >
+                  Next in: --
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-item-label">Healthy containers</div>
+                <div class="summary-item-value">
+                  <span id="healthy-count">0</span>
+                  <span class="summary-item-muted"
+                    >/ <span id="container-count">0</span></span
+                  >
+                </div>
+                <div class="summary-item-sub">
+                  <span id="degraded-count">0</span> degraded or paused
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-item-label">Average uptime</div>
+                <div class="summary-item-value" id="avg-uptime">0s</div>
+                <div class="summary-item-sub">
+                  Tracked <span id="total-uptime">0s</span>
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-item-label">Last rotation</div>
+                <div class="summary-item-value" id="last-rotation">—</div>
+                <div class="summary-item-sub" id="last-rotation-ago">
+                  Awaiting data
+                </div>
+              </div>
+            </div>
           </aside>
         </div>
 

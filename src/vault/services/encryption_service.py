@@ -12,6 +12,8 @@ happens client-side. This service only manages encrypted key storage and metadat
 from __future__ import annotations
 
 import secrets
+import struct
+import time
 from typing import Any
 
 from vault.database.schema import (
@@ -297,6 +299,42 @@ class EncryptionService:
             if all(b == 0xFF for b in iv) or all(b == iv[0] for b in iv):
                 return False
 
+            # Detect timestamp-based IVs (first 4 bytes as Unix timestamp)
+            if len(iv) >= 4:
+                try:
+                    timestamp_from_iv = struct.unpack(">I", iv[:4])[0]
+                    current_time = int(time.time())
+                    # Reject if IV appears to be a recent timestamp (within 1 hour)
+                    if abs(timestamp_from_iv - current_time) < 3600:
+                        return False
+                except (struct.error, OverflowError):
+                    pass
+
+            # Detect sequential counter IVs
+            if len(iv) >= 2:
+                is_sequential = True
+                for i in range(1, len(iv)):
+                    expected = (iv[0] + i) % 256
+                    if iv[i] != expected:
+                        is_sequential = False
+                        break
+                if is_sequential:
+                    return False
+
+            # Detect repeating pattern IVs (e.g., ABCDABCDABCD)
+            if len(iv) >= 4:
+                pattern_length = 2
+                while pattern_length <= len(iv) // 2:
+                    pattern = iv[:pattern_length]
+                    matches = 0
+                    for i in range(pattern_length, len(iv), pattern_length):
+                        if i + pattern_length <= len(iv):
+                            if iv[i : i + pattern_length] == pattern:
+                                matches += 1
+                    if matches >= 2:
+                        return False
+                    pattern_length += 1
+
             # Extract authentication tag (last 16 bytes)
             tag = decoded[-16:]
             # Verify tag is not all zeros (weak tag detection)
@@ -323,13 +361,22 @@ class EncryptionService:
                 if all(b == 0 for b in ciphertext):
                     return False
 
-            # Additional validation: check for common weak patterns
-            # Reject if IV starts with predictable patterns (like timestamps)
-            # First 4 bytes should not be a common pattern
-            if len(iv) >= 4:
-                first_four = iv[:4]
-                # Reject if first 4 bytes are all same
-                if all(b == first_four[0] for b in first_four):
+            # Optional signature verification (HMAC-SHA256, 32 bytes)
+            # Structure with signature: IV (12) + ciphertext (variable) + tag (16) + signature (32)
+            # Without signature: IV (12) + ciphertext (variable) + tag (16)
+            # Accept both formats for backward compatibility
+            # If signature is present, verify it has correct format (32 bytes, high entropy)
+            if (
+                len(decoded) >= 92
+            ):  # Minimum: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes
+                signature = decoded[-32:]
+                # Verify signature has sufficient entropy (not all zeros or repeating)
+                signature_unique_bytes = len(set(signature))
+                if (
+                    signature_unique_bytes < 16
+                ):  # Require at least 16 unique bytes in signature
+                    return False
+                if all(b == 0 for b in signature):
                     return False
 
             return True

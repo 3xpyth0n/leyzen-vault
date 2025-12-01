@@ -1939,10 +1939,6 @@ def create_app(
         # Return JSON for API endpoints
         if request.path.startswith("/api/"):
             # Log 404 for API endpoints to help debug
-            print(
-                f"404 for API endpoint: {request.path} {request.method}",
-                file=sys.stderr,
-            )
             current_app.logger.error(
                 f"404 for API endpoint: {request.path} {request.method}",
                 extra={
@@ -1962,12 +1958,11 @@ def create_app(
                 )
             ]
             if matching_rules:
-                print(
-                    f"Matching rules found: {[r.rule for r in matching_rules]}",
-                    file=sys.stderr,
+                current_app.logger.debug(
+                    f"Matching rules found: {[r.rule for r in matching_rules]}"
                 )
             else:
-                print(f"No matching rules found for {request.path}", file=sys.stderr)
+                current_app.logger.debug(f"No matching rules found for {request.path}")
             return jsonify({"error": "Not found", "path": request.path}), 404
 
         # Don't intercept static files

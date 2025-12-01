@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 from typing import Any
 
 
@@ -32,6 +33,15 @@ def sanitize_for_logging(value: Any, max_length: int = 100) -> str:
     # Truncate if too long
     if len(str_value) > max_length:
         str_value = str_value[:max_length] + "..."
+
+    # URL decode before sanitization to catch encoded secrets
+    try:
+        decoded_value = urllib.parse.unquote(str_value)
+        if decoded_value != str_value:
+            # Re-apply sanitization to decoded value
+            str_value = decoded_value
+    except Exception:
+        pass
 
     # Mask JWT tokens (Bearer tokens) - keep only first 4 characters
     str_value = re.sub(
