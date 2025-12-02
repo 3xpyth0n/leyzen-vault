@@ -193,8 +193,24 @@ class ContextMenu {
    */
   async handleRename(id, target, type) {
     try {
+      // Helper functions to extract extension and name without extension
+      const getExtension = (filename) => {
+        if (!filename) return null;
+        const lastDot = filename.lastIndexOf(".");
+        if (lastDot === -1 || lastDot === 0) return null;
+        return filename.substring(lastDot);
+      };
+
+      const getNameWithoutExtension = (filename) => {
+        if (!filename) return filename;
+        const lastDot = filename.lastIndexOf(".");
+        if (lastDot === -1 || lastDot === 0) return filename;
+        return filename.substring(0, lastDot);
+      };
+
       // Get current name
       let currentName = "";
+      let fileExtension = null;
       const filesList = window.filesList || [];
       const foldersList = window.foldersList || [];
 
@@ -203,11 +219,16 @@ class ContextMenu {
           filesList.find((f) => f.id === id || f.file_id === id) ||
           filesList.find((f) => f.file_id === id);
         currentName = file?.original_name || file?.name || "";
+        // Extract extension for files
+        fileExtension = getExtension(currentName);
+        currentName = getNameWithoutExtension(currentName);
       } else {
         const folder =
           foldersList.find((f) => f.id === id || f.folder_id === id) ||
           foldersList.find((f) => f.folder_id === id);
         currentName = folder?.original_name || folder?.name || "";
+        // Folders don't have extensions
+        fileExtension = null;
       }
 
       // Fallback: try to get from DOM
@@ -215,17 +236,29 @@ class ContextMenu {
         const nameElement = target.querySelector(
           ".file-name, .folder-name, .file-row-name, .folder-row-name",
         );
-        currentName = nameElement?.textContent?.trim() || "";
+        const fullName = nameElement?.textContent?.trim() || "";
+        if (fullName && type === "file") {
+          fileExtension = getExtension(fullName);
+          currentName = getNameWithoutExtension(fullName);
+        } else {
+          currentName = fullName;
+        }
       }
 
       if (!currentName) {
         currentName = type === "file" ? "Untitled" : "Untitled Folder";
       }
 
-      // Prompt for new name
+      // Prompt for new name (without extension for files)
       const newName = prompt(`Enter new name:`, currentName);
       if (!newName || newName.trim() === "" || newName === currentName) {
         return; // User cancelled or didn't change name
+      }
+
+      // Reattach extension for files before sending to API
+      let finalName = newName.trim();
+      if (type === "file" && fileExtension) {
+        finalName = finalName + fileExtension;
       }
 
       // Load files API
@@ -253,7 +286,7 @@ class ContextMenu {
       }
 
       // Rename file or folder
-      await files.rename(id, newName.trim());
+      await files.rename(id, finalName);
 
       if (window.Notifications) {
         window.Notifications.success(

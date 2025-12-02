@@ -22,7 +22,9 @@ def _get_audit() -> AuditService:
 def _get_auth_service() -> AuthService:
     """Get AuthService instance."""
     secret_key = current_app.config.get("SECRET_KEY", "")
-    return AuthService(secret_key)
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    return AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
 
 
 def _get_rate_limiter() -> RateLimiter:

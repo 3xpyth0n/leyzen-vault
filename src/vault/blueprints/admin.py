@@ -88,7 +88,10 @@ def update_user(user_id: str):
         return jsonify({"error": "Authentication required"}), 401
 
     data = request.get_json()
-    auth_service = AuthService(current_app.config.get("SECRET_KEY", ""))
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
 
     # Get target user to check their role
     target_user = db.session.query(User).filter_by(id=user_id).first()
@@ -165,7 +168,10 @@ def delete_user(user_id: str):
     if not current_user:
         return jsonify({"error": "Authentication required"}), 401
 
-    auth_service = AuthService(current_app.config.get("SECRET_KEY", ""))
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
 
     # Get target user (including inactive users for deletion check)
     target_user = db.session.query(User).filter_by(id=user_id).first()
@@ -258,7 +264,10 @@ def update_user_role(user_id: str):
     except ValueError:
         return jsonify({"error": f"Invalid global_role: {role_str}"}), 400
 
-    auth_service = AuthService(current_app.config.get("SECRET_KEY", ""))
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
 
     # Get target user (including inactive users for role changes)
     target_user = db.session.query(User).filter_by(id=user_id).first()

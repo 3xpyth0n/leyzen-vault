@@ -93,6 +93,7 @@ class VaultSettings:
     vault_url: str | None = None
     email_verification_expiry_minutes: int = 10
     max_total_size_mb: int | None = None
+    jwt_expiration_hours: int = 120
 
 
 def load_settings() -> VaultSettings:
@@ -232,6 +233,11 @@ def load_settings() -> VaultSettings:
             if parsed_value > 0:
                 max_total_size_mb = parsed_value
 
+    # JWT expiration time in hours (default: 120 hours = 5 days)
+    jwt_expiration_hours = parse_int_env_var(
+        "VAULT_JWT_EXPIRATION_HOURS", 120, env_values, min_value=1
+    )
+
     return VaultSettings(
         secret_key=secret_key,
         timezone=timezone,
@@ -248,6 +254,7 @@ def load_settings() -> VaultSettings:
         vault_url=vault_url,
         email_verification_expiry_minutes=email_verification_expiry_minutes,
         max_total_size_mb=max_total_size_mb,
+        jwt_expiration_hours=jwt_expiration_hours,
     )
 
 

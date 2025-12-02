@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from vault.database.schema import (
     File,
@@ -15,14 +16,22 @@ from vault.database.schema import (
     VaultSpaceType,
     db,
 )
+from vault.database.transaction import db_transaction
 from vault.services.encryption_service import EncryptionService
 from vault.storage import FileStorage
 
 from vault.services.vaultspace_service import VaultSpaceService
 from vault.services.search_service import SearchService
 from vault.services.cache_service import get_cache_service, cache_key
+from vault.services.file_event_service import (
+    FileEventService,
+    FileEventType,
+    get_file_event_service,
+)
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class AdvancedFileService:
@@ -33,6 +42,87 @@ class AdvancedFileService:
         self.vaultspace_service = VaultSpaceService()
         self.encryption_service = EncryptionService()
         self.search_service = SearchService()
+        self._event_service: FileEventService | None = None
+
+    def _get_event_service(self) -> FileEventService:
+        """Get the file event service instance (lazy initialization)."""
+        if self._event_service is None:
+            self._event_service = get_file_event_service()
+        return self._event_service
+
+    def _emit_file_event(
+        self,
+        event_type: FileEventType,
+        file_id: str,
+        vaultspace_id: str,
+        user_id: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit a file event (non-blocking).
+
+        Args:
+            event_type: Type of event
+            file_id: File ID
+            vaultspace_id: VaultSpace ID
+            user_id: User ID who triggered the event
+            data: Additional event data
+        """
+        try:
+            self._get_event_service().emit(
+                event_type=event_type,
+                file_id=file_id,
+                vaultspace_id=vaultspace_id,
+                user_id=user_id,
+                data=data or {},
+            )
+        except Exception as e:
+            # Don't fail the operation if event emission fails
+            logger.warning(f"Failed to emit file event: {e}", exc_info=True)
+
+    def _retry_with_backoff(
+        self,
+        operation: Callable[[], T],
+        max_retries: int = 3,
+        base_delay: float = 0.1,
+        max_delay: float = 2.0,
+        retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
+    ) -> T:
+        """Retry an operation with exponential backoff.
+
+        Args:
+            operation: Function to retry
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds for exponential backoff
+            max_delay: Maximum delay in seconds
+            retryable_exceptions: Tuple of exception types that should trigger retry
+
+        Returns:
+            Result of the operation
+
+        Raises:
+            Last exception if all retries fail
+        """
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                return operation()
+            except retryable_exceptions as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    # Calculate delay with exponential backoff
+                    delay = min(base_delay * (2**attempt), max_delay)
+                    logger.warning(
+                        f"Operation failed (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying after {delay}s: {e}"
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"Operation failed after {max_retries} attempts: {e}")
+                    raise
+        # Should never reach here, but type checker needs it
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Operation failed without exception")
 
     def _get_active_file_query(self):
         """Get a base query for active (non-deleted) files.
@@ -204,6 +294,19 @@ class AdvancedFileService:
         # Index file for search (outside transaction to avoid blocking)
         self.search_service.index_file(file_obj)
 
+        # Emit file creation event
+        self._emit_file_event(
+            event_type=FileEventType.CREATE,
+            file_id=file_obj.id,
+            vaultspace_id=vaultspace_id,
+            user_id=user_id,
+            data={
+                "original_name": original_name,
+                "parent_id": parent_id,
+                "mime_type": mime_type,
+            },
+        )
+
         return file_obj, file_key
 
     def delete_file(
@@ -234,21 +337,41 @@ class AdvancedFileService:
                 f"User {user_id} does not have permission to delete file {file_id}"
             )
 
-        # Delete all FileKeys (cascade will handle)
-        file_keys = self.encryption_service.get_all_file_keys(file_id)
-        for fk in file_keys:
-            db.session.delete(fk)
-
         # Store parent_id and vaultspace_id before deletion for cache invalidation
         parent_id = file_obj.parent_id
         vaultspace_id = file_obj.vaultspace_id
         owner_user_id = file_obj.owner_user_id
 
-        # Soft delete: set deleted_at timestamp instead of hard delete
-        from datetime import datetime, timezone
+        # Perform deletion in atomic transaction with retry
+        def _delete_operation():
+            # Refresh file object to ensure we have latest state
+            db.session.refresh(file_obj)
+            if file_obj.deleted_at is not None:
+                # Already deleted
+                return True
 
-        file_obj.deleted_at = datetime.now(timezone.utc)
-        db.session.commit()
+            # Delete all FileKeys (cascade will handle)
+            file_keys = self.encryption_service.get_all_file_keys(file_id)
+            for fk in file_keys:
+                db.session.delete(fk)
+
+            # Soft delete: set deleted_at timestamp instead of hard delete
+            file_obj.deleted_at = datetime.now(timezone.utc)
+            db.session.flush()  # Flush to ensure state is saved
+            return True
+
+        # Retry with exponential backoff for database operations
+        try:
+            with db_transaction():
+                self._retry_with_backoff(
+                    _delete_operation,
+                    max_retries=3,
+                    base_delay=0.1,
+                    retryable_exceptions=(Exception,),
+                )
+        except Exception as e:
+            logger.error(f"Failed to delete file {file_id} after retries: {e}")
+            raise
 
         # Invalidate cache for the parent folder to ensure fresh data
         # The cache key format is: "files:vaultspace_id:user_id:parent_id:page:per_page"
@@ -298,6 +421,18 @@ class AdvancedFileService:
                     f"Failed to remove file {file_id} from search index: {e}"
                 )
 
+        # Emit file deletion event
+        self._emit_file_event(
+            event_type=FileEventType.DELETE,
+            file_id=file_id,
+            vaultspace_id=vaultspace_id,
+            user_id=owner_user_id,
+            data={
+                "parent_id": parent_id,
+                "mime_type": file_obj.mime_type,
+            },
+        )
+
         return True
 
     def restore_file(
@@ -338,6 +473,18 @@ class AdvancedFileService:
         # Re-index file after restore
         self.search_service.index_file(file_obj)
 
+        # Emit file restore event
+        self._emit_file_event(
+            event_type=FileEventType.RESTORE,
+            file_id=file_id,
+            vaultspace_id=file_obj.vaultspace_id,
+            user_id=user_id,
+            data={
+                "parent_id": file_obj.parent_id,
+                "mime_type": file_obj.mime_type,
+            },
+        )
+
         return file_obj
 
     def permanently_delete_file(
@@ -371,14 +518,34 @@ class AdvancedFileService:
         storage_ref = file_obj.storage_ref
         mime_type = file_obj.mime_type
 
-        # Delete all FileKeys (cascade will handle)
-        file_keys = self.encryption_service.get_all_file_keys(file_id)
-        for fk in file_keys:
-            db.session.delete(fk)
+        # Perform permanent deletion in atomic transaction with retry
+        def _permanent_delete_operation():
+            # Refresh file object to ensure we have latest state
+            db.session.refresh(file_obj)
+            # Delete all FileKeys (cascade will handle)
+            file_keys = self.encryption_service.get_all_file_keys(file_id)
+            for fk in file_keys:
+                db.session.delete(fk)
 
-        # Hard delete file from database
-        db.session.delete(file_obj)
-        db.session.commit()
+            # Hard delete file from database
+            db.session.delete(file_obj)
+            db.session.flush()  # Flush to ensure state is saved
+            return True
+
+        # Retry with exponential backoff for database operations
+        try:
+            with db_transaction():
+                self._retry_with_backoff(
+                    _permanent_delete_operation,
+                    max_retries=3,
+                    base_delay=0.1,
+                    retryable_exceptions=(Exception,),
+                )
+        except Exception as e:
+            logger.error(
+                f"Failed to permanently delete file {file_id} after retries: {e}"
+            )
+            raise
 
         # Delete physical file from storage AFTER database commit
         # This ensures we only delete files that were successfully removed from DB
@@ -644,6 +811,44 @@ class AdvancedFileService:
 
         return folder
 
+    @staticmethod
+    def _get_extension(filename: str) -> str | None:
+        """Extract file extension from filename.
+
+        Args:
+            filename: File name with or without extension
+
+        Returns:
+            Extension string (e.g., ".txt", ".pdf") or None if no extension
+        """
+        if not filename:
+            return None
+
+        last_dot = filename.rfind(".")
+        if last_dot == -1 or last_dot == 0:
+            return None
+
+        return filename[last_dot:]
+
+    @staticmethod
+    def _get_name_without_extension(filename: str) -> str:
+        """Get filename without extension.
+
+        Args:
+            filename: File name with or without extension
+
+        Returns:
+            Filename without extension
+        """
+        if not filename:
+            return filename
+
+        last_dot = filename.rfind(".")
+        if last_dot == -1 or last_dot == 0:
+            return filename
+
+        return filename[:last_dot]
+
     def rename_file(
         self,
         file_id: str,
@@ -674,6 +879,37 @@ class AdvancedFileService:
                 f"User {user_id} does not have permission to rename file {file_id}"
             )
 
+        # Preserve file extension for security
+        original_name = file_obj.original_name
+        is_folder = file_obj.mime_type == "application/x-directory"
+
+        if is_folder:
+            # For folders: remove any extension from new name
+            new_name = self._get_name_without_extension(new_name)
+        else:
+            # For files: preserve original extension or add one from mime-type
+            original_ext = self._get_extension(original_name)
+
+            if original_ext:
+                # File had an extension: preserve it
+                new_name_base = self._get_name_without_extension(new_name)
+                new_name = new_name_base + original_ext
+            else:
+                # File had no extension: try to add one from mime-type
+                from vault.utils.mime_type_detection import get_extension_from_mime_type
+
+                if file_obj.mime_type:
+                    mime_ext = get_extension_from_mime_type(file_obj.mime_type)
+                    if mime_ext:
+                        # Add extension from mime-type
+                        new_name = new_name + mime_ext
+                    else:
+                        # No extension can be determined, keep name without extension
+                        new_name = self._get_name_without_extension(new_name)
+                else:
+                    # No mime-type, keep name without extension
+                    new_name = self._get_name_without_extension(new_name)
+
         # Validate filename format using common validation utility
         from vault.utils.file_validation import validate_filename
 
@@ -692,8 +928,36 @@ class AdvancedFileService:
                 f"A file with the name '{new_name}' already exists in this folder"
             )
 
-        file_obj.original_name = new_name
-        db.session.commit()
+        # Perform rename in atomic transaction with retry
+        def _rename_operation():
+            # Refresh file object to ensure we have latest state
+            db.session.refresh(file_obj)
+            # Re-check for duplicates (optimistic locking)
+            if self._check_duplicate_name_in_folder(
+                file_obj.vaultspace_id,
+                file_obj.parent_id,
+                new_name,
+                exclude_file_id=file_id,
+            ):
+                raise ValueError(
+                    f"A file with the name '{new_name}' already exists in this folder"
+                )
+            file_obj.original_name = new_name
+            db.session.flush()  # Flush to ensure state is saved
+            return file_obj
+
+        # Retry with exponential backoff for database operations
+        try:
+            with db_transaction():
+                file_obj = self._retry_with_backoff(
+                    _rename_operation,
+                    max_retries=3,
+                    base_delay=0.1,
+                    retryable_exceptions=(Exception,),
+                )
+        except Exception as e:
+            logger.error(f"Failed to rename file {file_id} after retries: {e}")
+            raise
 
         # Invalidate cache for this vaultspace/parent to ensure fresh data
         cache = get_cache_service()
@@ -709,6 +973,19 @@ class AdvancedFileService:
 
         # Re-index file after rename
         self.search_service.index_file(file_obj)
+
+        # Emit file rename event
+        self._emit_file_event(
+            event_type=FileEventType.RENAME,
+            file_id=file_id,
+            vaultspace_id=file_obj.vaultspace_id,
+            user_id=user_id,
+            data={
+                "old_name": file_obj.original_name,
+                "new_name": new_name,
+                "parent_id": file_obj.parent_id,
+            },
+        )
 
         return file_obj
 
@@ -767,8 +1044,43 @@ class AdvancedFileService:
         vaultspace_id = file_obj.vaultspace_id
         user_id = file_obj.owner_user_id
 
-        file_obj.parent_id = new_parent_id
-        db.session.commit()
+        # Perform move in atomic transaction with retry
+        def _move_operation():
+            # Refresh file object to ensure we have latest state
+            db.session.refresh(file_obj)
+            # Re-validate parent if provided (optimistic locking)
+            if new_parent_id:
+                parent_file = (
+                    self._get_active_file_query()
+                    .filter_by(id=new_parent_id, vaultspace_id=file_obj.vaultspace_id)
+                    .first()
+                )
+                if not parent_file:
+                    raise ValueError(
+                        f"Parent folder {new_parent_id} not found or has been deleted"
+                    )
+                if parent_file.mime_type != "application/x-directory":
+                    raise ValueError(f"Parent {new_parent_id} is not a folder")
+                # Re-check for cycles
+                if file_obj.mime_type == "application/x-directory":
+                    if self._would_create_cycle(file_id, new_parent_id):
+                        raise ValueError("Moving folder would create a cycle")
+            file_obj.parent_id = new_parent_id
+            db.session.flush()  # Flush to ensure state is saved
+            return file_obj
+
+        # Retry with exponential backoff for database operations
+        try:
+            with db_transaction():
+                file_obj = self._retry_with_backoff(
+                    _move_operation,
+                    max_retries=3,
+                    base_delay=0.1,
+                    retryable_exceptions=(Exception,),
+                )
+        except Exception as e:
+            logger.error(f"Failed to move file {file_id} after retries: {e}")
+            raise
 
         # Invalidate cache for this vaultspace to ensure fresh data
         cache = get_cache_service()
@@ -782,6 +1094,19 @@ class AdvancedFileService:
 
         # Re-index file after move
         self.search_service.index_file(file_obj)
+
+        # Emit file move event
+        self._emit_file_event(
+            event_type=FileEventType.MOVE,
+            file_id=file_id,
+            vaultspace_id=vaultspace_id,
+            user_id=user_id,
+            data={
+                "old_parent_id": old_parent_id,
+                "new_parent_id": new_parent_id,
+                "mime_type": file_obj.mime_type,
+            },
+        )
 
         return file_obj
 

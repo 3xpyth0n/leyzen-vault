@@ -4,6 +4,14 @@
       <div class="preview-header">
         <h2>{{ fileName }}</h2>
         <div class="preview-actions">
+          <button
+            v-if="isZip"
+            @click="handleUnzip"
+            class="btn btn-primary"
+            :disabled="unzipping"
+          >
+            {{ unzipping ? "Extracting..." : "Unzip" }}
+          </button>
           <button @click="download" class="btn btn-secondary">Download</button>
           <button @click="close" class="btn-icon">✕</button>
         </div>
@@ -265,6 +273,76 @@
           <pre class="text-content">{{ textContent }}</pre>
         </div>
 
+        <!-- ZIP Preview -->
+        <div v-else-if="isZip" class="zip-preview">
+          <div v-if="zipLoading" class="loading">Loading ZIP contents...</div>
+          <div v-else-if="zipFiles.length > 0" class="zip-content">
+            <div class="zip-header">
+              <h3>Archive Contents</h3>
+              <p class="zip-info">
+                {{ zipFileCount }} {{ zipFileCount === 1 ? "file" : "files" }}
+                <span v-if="zipFolderCount > 0">
+                  in {{ zipFolderCount }}
+                  {{ zipFolderCount === 1 ? "folder" : "folders" }}
+                </span>
+              </p>
+            </div>
+            <div class="zip-file-list">
+              <div
+                v-for="(item, index) in zipFiles"
+                :key="index"
+                class="zip-file-item"
+                :class="{
+                  'zip-folder-item': item.type === 'folder',
+                  'zip-clickable': item.type === 'folder' && item.hasChildren,
+                }"
+                :style="{ paddingLeft: item.depth * 1.5 + 0.75 + 'rem' }"
+                @click="
+                  item.type === 'folder' && item.hasChildren
+                    ? toggleFolder(item.path)
+                    : null
+                "
+              >
+                <div
+                  class="zip-expand-icon"
+                  v-if="item.type === 'folder' && item.hasChildren"
+                >
+                  <span
+                    v-html="
+                      getIcon(
+                        isFolderExpanded(item.path)
+                          ? 'chevronDown'
+                          : 'chevronRight',
+                        14,
+                      )
+                    "
+                  ></span>
+                </div>
+                <div
+                  class="zip-expand-placeholder"
+                  v-else-if="item.type === 'folder' && !item.hasChildren"
+                ></div>
+                <div class="zip-file-icon">
+                  <span
+                    v-html="
+                      getIcon(item.type === 'folder' ? 'folder' : 'file', 20)
+                    "
+                  ></span>
+                </div>
+                <div class="zip-file-info">
+                  <div class="zip-file-name">{{ item.name }}</div>
+                </div>
+                <div class="zip-file-size" v-if="item.type === 'file'">
+                  {{ formatFileSize(item.size) }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="zip-empty">
+            <p>This ZIP file appears to be empty.</p>
+          </div>
+        </div>
+
         <!-- Unsupported Type -->
         <div v-else class="unsupported-preview">
           <div class="unsupported-icon" ref="defaultIconRef"></div>
@@ -290,6 +368,7 @@ import {
 import { decryptFile, decryptFileKey } from "../services/encryption";
 import { normalizeMimeType } from "../utils/mimeType";
 import * as mm from "music-metadata";
+import JSZip from "jszip";
 
 export default {
   name: "FilePreview",
@@ -315,7 +394,7 @@ export default {
       required: true,
     },
   },
-  emits: ["close", "download"],
+  emits: ["close", "download", "unzip"],
   setup(props, { emit }) {
     // Watch for sidebar state changes to adjust padding
     const updatePadding = () => {
@@ -405,6 +484,13 @@ export default {
     const markdownContentRef = ref(null);
     const defaultIconRef = ref(null);
 
+    // ZIP preview state
+    const zipFiles = ref([]);
+    const zipTree = ref({});
+    const zipLoading = ref(false);
+    const unzipping = ref(false);
+    const expandedFolders = ref(new Set());
+
     // Audio player state
     const audioElement = ref(null);
     const isPlaying = ref(false);
@@ -481,6 +567,45 @@ export default {
             props.mimeType.includes("html")) &&
           !isMarkdown.value)
       );
+    });
+
+    const isZip = computed(() => {
+      if (!props.fileName && !props.mimeType) return false;
+      const fileName = props.fileName.toLowerCase();
+      return (
+        fileName.endsWith(".zip") ||
+        normalizedMimeType.value === "application/zip" ||
+        normalizedMimeType.value === "application/x-zip-compressed" ||
+        props.mimeType === "application/zip" ||
+        props.mimeType === "application/x-zip-compressed"
+      );
+    });
+
+    // Count items recursively in tree
+    const countItemsInTree = (tree, type) => {
+      let count = 0;
+      const traverse = (node) => {
+        Object.values(node).forEach((item) => {
+          if (item.type === type) {
+            count++;
+          }
+          if (item.children && Object.keys(item.children).length > 0) {
+            traverse(item.children);
+          }
+        });
+      };
+      traverse(tree);
+      return count;
+    };
+
+    const zipFileCount = computed(() => {
+      if (!zipTree.value || Object.keys(zipTree.value).length === 0) return 0;
+      return countItemsInTree(zipTree.value, "file");
+    });
+
+    const zipFolderCount = computed(() => {
+      if (!zipTree.value || Object.keys(zipTree.value).length === 0) return 0;
+      return countItemsInTree(zipTree.value, "folder");
     });
 
     // Simple Markdown to HTML converter (basic implementation)
@@ -689,6 +814,10 @@ export default {
       previewUrl.value = null;
       textContent.value = "";
       markdownContent.value = "";
+      zipFiles.value = [];
+      zipTree.value = {};
+      zipLoading.value = false;
+      expandedFolders.value.clear();
 
       // Clean up previous audio cover
       if (audioCoverUrl.value) {
@@ -732,7 +861,10 @@ export default {
         const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
 
         // Create preview based on file type
-        if (isImage.value || isVideo.value || isAudio.value) {
+        if (isZip.value) {
+          // For ZIP files, load archive contents
+          await loadZipPreview(decryptedData);
+        } else if (isImage.value || isVideo.value || isAudio.value) {
           // Create blob URL for media files using normalized mime type
           const blob = new Blob([decryptedData], {
             type: normalizedMimeType.value,
@@ -786,6 +918,251 @@ export default {
       }
     };
 
+    // Build hierarchical structure from paths
+    const buildTreeStructure = (items) => {
+      const tree = {};
+      const seenPaths = new Set();
+
+      items.forEach((item) => {
+        const pathParts = item.path.split("/").filter((p) => p);
+        if (pathParts.length === 0) return;
+
+        let current = tree;
+
+        // First, ensure all parent folders exist
+        pathParts.forEach((part, index) => {
+          const isLast = index === pathParts.length - 1;
+          const currentPath = pathParts.slice(0, index + 1).join("/");
+
+          if (!current[part]) {
+            // Create folder entry if it doesn't exist
+            current[part] = {
+              name: part,
+              type: isLast && item.type === "file" ? "file" : "folder",
+              size: isLast && item.type === "file" ? item.size : 0,
+              path: currentPath,
+              children: {},
+            };
+            if (!isLast || item.type === "folder") {
+              seenPaths.add(currentPath);
+            }
+          } else if (isLast && item.type === "file") {
+            // Update existing entry if it's a file
+            current[part].type = "file";
+            current[part].size = item.size;
+          }
+
+          if (!isLast) {
+            current = current[part].children;
+          }
+        });
+      });
+
+      // Sort tree children
+      const sortTree = (node) => {
+        const sorted = {};
+        const entries = Object.entries(node).sort(([aKey, a], [bKey, b]) => {
+          // Folders first, then files, both alphabetically
+          if (a.type === "folder" && b.type !== "folder") return -1;
+          if (a.type !== "folder" && b.type === "folder") return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        entries.forEach(([key, item]) => {
+          sorted[key] = { ...item };
+          if (item.type === "folder" && Object.keys(item.children).length > 0) {
+            sorted[key].children = sortTree(item.children);
+          }
+        });
+
+        return sorted;
+      };
+
+      return sortTree(tree);
+    };
+
+    // Generate visible list from tree based on expanded folders
+    const generateVisibleList = (tree, expanded, depth = 0) => {
+      const visible = [];
+
+      const traverse = (node, currentDepth = 0) => {
+        const children = Object.values(node).sort((a, b) => {
+          // Folders first, then files, both alphabetically
+          if (a.type === "folder" && b.type !== "folder") return -1;
+          if (a.type !== "folder" && b.type === "folder") return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        children.forEach((item) => {
+          visible.push({
+            name: item.name,
+            type: item.type,
+            size: item.size,
+            path: item.path,
+            depth: currentDepth,
+            hasChildren:
+              item.type === "folder" &&
+              Object.keys(item.children || {}).length > 0,
+          });
+
+          // If it's a folder and it's expanded, traverse its children
+          if (
+            item.type === "folder" &&
+            expanded.has(item.path) &&
+            Object.keys(item.children || {}).length > 0
+          ) {
+            traverse(item.children, currentDepth + 1);
+          }
+        });
+      };
+
+      traverse(tree, depth);
+      return visible;
+    };
+
+    // Toggle folder expansion state
+    const toggleFolder = (folderPath) => {
+      if (expandedFolders.value.has(folderPath)) {
+        expandedFolders.value.delete(folderPath);
+      } else {
+        expandedFolders.value.add(folderPath);
+      }
+      // Regenerate visible list
+      zipFiles.value = generateVisibleList(
+        zipTree.value,
+        expandedFolders.value,
+      );
+    };
+
+    // Check if folder is expanded
+    const isFolderExpanded = (folderPath) => {
+      return expandedFolders.value.has(folderPath);
+    };
+
+    // Load ZIP preview contents
+    const loadZipPreview = async (decryptedData) => {
+      zipLoading.value = true;
+      zipFiles.value = [];
+
+      try {
+        // Load ZIP file using JSZip
+        const zip = await JSZip.loadAsync(decryptedData);
+
+        // Extract file and folder list
+        const itemsList = [];
+        const folderPaths = new Set();
+
+        zip.forEach((relativePath, file) => {
+          // Extract folder paths from file paths
+          if (!file.dir && relativePath) {
+            const pathParts = relativePath.split("/").filter((p) => p);
+            // Create folder paths for all parent directories
+            for (let i = 1; i < pathParts.length; i++) {
+              const folderPath = pathParts.slice(0, i).join("/");
+              folderPaths.add(folderPath);
+            }
+          }
+
+          // Get file size from JSZip file object
+          let fileSize = 0;
+          if (file.dir) {
+            // It's a directory entry
+            const cleanPath = relativePath.endsWith("/")
+              ? relativePath.slice(0, -1)
+              : relativePath;
+            itemsList.push({
+              name:
+                cleanPath
+                  .split("/")
+                  .filter((p) => p)
+                  .pop() || cleanPath,
+              path: cleanPath,
+              type: "folder",
+              size: 0,
+            });
+          } else {
+            // It's a file
+            if (file._data && file._data.uncompressedSize !== undefined) {
+              fileSize = file._data.uncompressedSize;
+            } else if (file._data && file._data.length !== undefined) {
+              fileSize = file._data.length;
+            }
+
+            itemsList.push({
+              name: relativePath.split("/").pop(),
+              path: relativePath,
+              type: "file",
+              size: fileSize,
+            });
+          }
+        });
+
+        // Add missing folder entries
+        folderPaths.forEach((folderPath) => {
+          // Check if folder is already in itemsList
+          const exists = itemsList.some(
+            (item) => item.path === folderPath && item.type === "folder",
+          );
+          if (!exists) {
+            itemsList.push({
+              name: folderPath.split("/").pop(),
+              path: folderPath,
+              type: "folder",
+              size: 0,
+            });
+          }
+        });
+
+        // Build hierarchical structure
+        const treeStructure = buildTreeStructure(itemsList);
+        zipTree.value = treeStructure;
+
+        // Generate visible list from tree (all folders collapsed by default)
+        zipFiles.value = generateVisibleList(
+          treeStructure,
+          expandedFolders.value,
+        );
+      } catch (err) {
+        error.value = `Failed to load ZIP contents: ${err.message}`;
+        zipFiles.value = [];
+      } finally {
+        zipLoading.value = false;
+      }
+    };
+
+    // Format file size for display
+    const formatFileSize = (bytes) => {
+      if (!bytes || bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB", "TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+    };
+
+    // Handle unzip action
+    const handleUnzip = () => {
+      unzipping.value = true;
+      emit("unzip", props.fileId);
+    };
+
+    // Get icon from Lucide library
+    const getIcon = (iconName, size = 24) => {
+      if (!window.Icons) {
+        return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      // Fallback to old method
+      if (window.Icons[iconName]) {
+        const iconFunction = window.Icons[iconName];
+        if (typeof iconFunction === "function") {
+          return iconFunction.call(window.Icons, size, "currentColor");
+        }
+      }
+      return "";
+    };
+
     // Default file icon SVG
     const defaultFileIcon = computed(() => {
       if (!window.Icons) {
@@ -835,6 +1212,12 @@ export default {
       // Clean up content
       textContent.value = "";
       markdownContent.value = "";
+      // Clean up ZIP preview
+      zipFiles.value = [];
+      zipTree.value = {};
+      unzipping.value = false;
+      zipLoading.value = false;
+      expandedFolders.value.clear();
       emit("close");
     };
 
@@ -1480,6 +1863,17 @@ export default {
       videoContainer,
       isFullscreen,
       toggleFullscreen,
+      isZip,
+      zipFiles,
+      zipLoading,
+      unzipping,
+      zipFileCount,
+      zipFolderCount,
+      formatFileSize,
+      handleUnzip,
+      getIcon,
+      toggleFolder,
+      isFolderExpanded,
     };
   },
 };
@@ -2163,5 +2557,197 @@ export default {
 
 .btn-icon:hover {
   color: var(--text-primary, #f1f5f9);
+}
+
+/* ZIP Preview Styles */
+.zip-preview {
+  width: 100%;
+  max-width: 900px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.zip-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.zip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  margin-bottom: 1rem;
+}
+
+.zip-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.zip-info {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.zip-file-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(70vh - 100px);
+}
+
+.zip-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: 0.25rem;
+  background: rgba(148, 163, 184, 0.03);
+  transition: background 0.2s ease;
+  min-height: 40px;
+}
+
+.zip-file-item:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.zip-file-item.zip-folder-item {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.zip-file-item.zip-folder-item:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.zip-file-item.zip-clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.zip-file-item.zip-clickable:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.zip-expand-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary, #cbd5e1);
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+.zip-expand-placeholder {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.zip-file-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary, #cbd5e1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zip-file-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.zip-folder-item .zip-file-icon {
+  color: var(--accent-blue, #38bdf8);
+  opacity: 0.9;
+}
+
+.zip-file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.zip-file-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary, #f1f5f9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zip-folder-item .zip-file-name {
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.zip-file-path {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #cbd5e1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.zip-file-size {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #cbd5e1);
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: right;
+}
+
+.zip-empty {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.zip-empty p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  color: var(--text-primary, #f1f5f9);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md, 8px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 </style>

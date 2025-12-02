@@ -216,7 +216,11 @@ class InvitationService:
             from flask import current_app
 
             secret_key = current_app.config.get("SECRET_KEY", "")
-            self.auth_service = AuthService(secret_key)
+            settings = current_app.config.get("VAULT_SETTINGS")
+            jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+            self.auth_service = AuthService(
+                secret_key, jwt_expiration_hours=jwt_expiration_hours
+            )
 
         # Invited accounts always start as regular users
         new_user = self.auth_service.create_user(

@@ -176,6 +176,14 @@ export default {
     };
 
     const handleScroll = () => {
+      // Disable scroll activation in mobile mode
+      const isMobile =
+        window.matchMedia("(max-width: 768px)").matches ||
+        document.body.classList.contains("mobile-mode");
+      if (isMobile) {
+        return;
+      }
+
       const currentScrollY = window.scrollY || window.pageYOffset;
 
       // Expand on any scroll (up or down)

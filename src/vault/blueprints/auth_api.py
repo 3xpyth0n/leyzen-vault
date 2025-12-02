@@ -123,7 +123,8 @@ def _refresh_captcha() -> str:
 def _get_auth_service() -> AuthService:
     """Get AuthService instance."""
     secret_key = current_app.config.get("SECRET_KEY", "")
-    return AuthService(secret_key)
+    settings = _settings()
+    return AuthService(secret_key, jwt_expiration_hours=settings.jwt_expiration_hours)
 
 
 @auth_api_bp.route("/config", methods=["GET"])
@@ -1290,7 +1291,10 @@ def verify_email(token: str):
                 jwt_token = parts[1]
                 secret_key = current_app.config.get("SECRET_KEY")
                 if secret_key:
-                    auth_service = AuthService(secret_key)
+                    settings = _settings()
+                    auth_service = AuthService(
+                        secret_key, jwt_expiration_hours=settings.jwt_expiration_hours
+                    )
                     current_user = auth_service.verify_token(jwt_token)
                     if current_user:
                         user_was_logged_in = True

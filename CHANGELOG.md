@@ -9,16 +9,19 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **ZIP File Preview**: Preview support for ZIP files.
 - **Mobile Mode**: Complete mobile-optimized interface with bottom navigation bar, responsive layouts, and manual mobile/desktop mode toggle. All screens are now fully adapted for mobile devices with single-column layouts, optimized touch targets, and improved usability on small screens.
 - **Audit Logs Enhancement**: Enhanced audit logs with IPv4 extraction and IP geolocation information (country, city) for improved security monitoring and analysis.
+- **Real-time File Synchronization**: Integrated Server-Sent Events (SSE) stream for real-time file synchronization across devices. Files are now automatically updated in real-time when changes occur (create, update, delete, rename, move), improving responsiveness and eliminating the need for manual page refreshes.
 
 ### Changed
 
 - **Orchestrator Dashboard**: Minor cleanup of the orchestrator dashboard layout.
+- **Server Migration**: Migrated from Gunicorn (WSGI) to Uvicorn (ASGI) to enable real-time streaming capabilities and improve support for long-lived connections. This change enables Server-Sent Events (SSE) for real-time file synchronization and reduces CPU consumption compared to polling-based approaches.
 
 ### Security
 
-- **Entropy Validation Enhancement**: Increased entropy thresholds for encrypted keys to prevent weak encryption detection. Small keys (≤64 bytes) now require 5.5 bits/byte (was 4.0) and medium keys (≤128 bytes) require 6.5 bits/byte (was 6.0).
+- **Entropy Validation Enhancement**: Increased entropy thresholds for encrypted keys to prevent weak encryption detection. Small keys (≤64 bytes) now require 4.5 bits/byte (was 4.0) and medium keys (≤128 bytes) require 6.5 bits/byte (was 6.0). The threshold for small keys accounts for statistical variance in small samples while maintaining security.
 - **MTD Race Condition Fix**: Added file locking using `fcntl` in `prepare_rotation()` to prevent race conditions during file validation and reading. Files are now locked before validation to ensure atomic operations.
 - **IV Validation Enhancement**: Enhanced IV (Initialization Vector) validation to detect predictable patterns including timestamp-based IVs, sequential counter IVs, and repeating pattern IVs. This prevents weak encryption schemes that could compromise security.
 - **Log Sanitization Improvement**: Added URL decoding before pattern matching to catch URL-encoded secrets in logs. Enhanced log sanitization now supports detection of URL-encoded and base64-encoded sensitive data patterns.

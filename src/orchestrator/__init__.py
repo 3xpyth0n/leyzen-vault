@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-
+from datetime import timedelta
 
 from flask import Flask, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=settings.session_cookie_secure,
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
     )
 
     logger = FileLogger(settings)

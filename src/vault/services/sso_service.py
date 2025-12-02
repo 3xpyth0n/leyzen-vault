@@ -75,7 +75,11 @@ class SSOService:
         self.auth_service = auth_service
         if self.auth_service is None:
             secret_key = current_app.config.get("SECRET_KEY", "")
-            self.auth_service = AuthService(secret_key)
+            settings = current_app.config.get("VAULT_SETTINGS")
+            jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+            self.auth_service = AuthService(
+                secret_key, jwt_expiration_hours=jwt_expiration_hours
+            )
 
     def _validate_provider_config_urls(
         self, provider_type: SSOProviderType, config: dict[str, Any]

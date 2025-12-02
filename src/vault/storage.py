@@ -295,6 +295,33 @@ class FileStorage:
                 source_file_path, encrypted_data, expected_hash, file_id
             )
 
+            # Verify file was written correctly
+            if not source_file_path.exists():
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"File {file_id} promotion failed: file not found after write"
+                )
+                return False
+
+            # Verify file integrity
+            written_data = source_file_path.read_bytes()
+            written_hash = self.compute_hash(written_data)
+            if written_hash != expected_hash:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"File {file_id} promotion failed: hash mismatch after write"
+                )
+                # Clean up corrupted file
+                try:
+                    source_file_path.unlink()
+                except Exception:
+                    pass
+                return False
+
             return True
 
         except Exception as e:
@@ -370,6 +397,9 @@ class FileStorage:
     def delete_file(self, file_id: str) -> bool:
         """Delete a stored file from both primary and source storage.
 
+        This method ensures atomic deletion from both locations to maintain consistency.
+        If deletion fails in one location, it still attempts to delete from the other.
+
         Args:
             file_id: File identifier (storage_ref)
 
@@ -378,19 +408,33 @@ class FileStorage:
         """
         deleted_primary = False
         deleted_source = False
+        errors = []
 
         # Delete from primary storage (/data/files/)
         file_path = self.get_file_path(file_id)
         if file_path.exists():
-            file_path.unlink()
-            deleted_primary = True
+            try:
+                file_path.unlink()
+                deleted_primary = True
+            except Exception as e:
+                errors.append(f"Primary storage deletion failed: {e}")
 
         # Delete from source storage (/data-source/files/)
         if self.source_dir:
             source_file_path = self.get_source_file_path(file_id)
             if source_file_path and source_file_path.exists():
-                source_file_path.unlink()
-                deleted_source = True
+                try:
+                    source_file_path.unlink()
+                    deleted_source = True
+                except Exception as e:
+                    errors.append(f"Source storage deletion failed: {e}")
+
+        # Log errors if any occurred
+        if errors:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"File deletion errors for {file_id}: {'; '.join(errors)}")
 
         # Return True if deleted from at least one location
         return deleted_primary or deleted_source

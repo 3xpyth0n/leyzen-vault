@@ -394,7 +394,11 @@ def create_share_link(file_id: str):
 
         from vault.services.auth_service import AuthService
 
-        auth_service = AuthService(secret_key)
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        auth_service = AuthService(
+            secret_key, jwt_expiration_hours=jwt_expiration_hours
+        )
         user = auth_service.verify_token(token)
 
         if not user:
@@ -537,7 +541,11 @@ def list_share_links(file_id: str):
 
         from vault.services.auth_service import AuthService
 
-        auth_service = AuthService(secret_key)
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        auth_service = AuthService(
+            secret_key, jwt_expiration_hours=jwt_expiration_hours
+        )
         user = auth_service.verify_token(token)
 
         if not user:
@@ -994,7 +1002,9 @@ def list_shared_files():
 
     from vault.services.auth_service import AuthService
 
-    auth_service = AuthService(secret_key)
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
     user = auth_service.verify_token(token)
 
     if not user:
@@ -1157,7 +1167,9 @@ def revoke_share_link(link_token: str):
 
     from vault.services.auth_service import AuthService
 
-    auth_service = AuthService(secret_key)
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
     user = auth_service.verify_token(token)
 
     if not user:

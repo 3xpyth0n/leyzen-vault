@@ -329,7 +329,11 @@ def jwt_required(f: F) -> F:
             return jsonify({"error": "Server configuration error"}), 500
 
         # Try JWT authentication first
-        auth_service = AuthService(secret_key)
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        auth_service = AuthService(
+            secret_key, jwt_expiration_hours=jwt_expiration_hours
+        )
         user = auth_service.verify_token(token)
 
         # If JWT authentication failed, try API key authentication

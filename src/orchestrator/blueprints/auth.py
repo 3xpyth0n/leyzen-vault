@@ -261,7 +261,7 @@ def login():
 
         if verify_credentials(username, password):
             session["logged_in"] = True
-            session.permanent = False
+            session.permanent = True
             _drop_captcha_from_store(
                 captcha_nonce_field or session.get("captcha_nonce")
             )

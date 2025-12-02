@@ -306,6 +306,7 @@
       previewMimeType = '';
     "
     @download="handlePreviewDownload"
+    @unzip="handlePreviewUnzip"
   />
 
   <!-- Encryption Overlay (Glassmorphic) - Fixed position covering page-content -->
@@ -416,6 +417,7 @@ import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
 import ConflictResolutionModal from "../components/ConflictResolutionModal.vue";
 import { zipFolder, extractZip } from "../services/zipService.js";
+import { trash } from "../services/trash.js";
 import PasswordInput from "../components/PasswordInput.vue";
 
 export default {
@@ -515,6 +517,11 @@ export default {
     this.debouncedLoadFiles = debounce((parentId = null) => {
       this.loadFilesInternal(parentId);
     }, 300);
+
+    // Initialize file sync composable
+    // Note: In Vue 2, we need to use setup() or adapt the composable
+    // For now, we'll initialize it in mounted() after vaultspace is loaded
+    this.fileSync = null;
   },
   async mounted() {
     // Check if user master key is available first
@@ -600,6 +607,9 @@ export default {
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
 
+    // Initialize file sync after vaultspace is loaded
+    this.initializeFileSync();
+
     // Check if folder parameter is in URL query string
     // This handles direct navigation to a folder (e.g., from favorites)
     const folderIdFromQuery = this.$route.query.folder;
@@ -660,6 +670,12 @@ export default {
     // Cleanup global function
     if (window.showConfirmationModal) {
       delete window.showConfirmationModal;
+    }
+
+    // Cleanup file sync
+    if (this.fileSync) {
+      this.fileSync.disconnect();
+      this.fileSync = null;
     }
   },
   computed: {
@@ -878,6 +894,104 @@ export default {
         logger.error("Failed to load VaultSpace key:", err);
         this.error = err.message;
       }
+    },
+
+    initializeFileSync() {
+      if (!this.$route.params.id) {
+        return;
+      }
+
+      // Disconnect existing sync if any
+      if (this.fileSync) {
+        this.fileSync.disconnect();
+      }
+
+      // Import fileEventsClient dynamically
+      import("../services/fileEvents.js").then(({ fileEventsClient }) => {
+        // Event handlers
+        const handleFileEvent = (event) => {
+          if (!event || !event.event_type) {
+            return;
+          }
+
+          const { event_type, file_id, data } = event;
+
+          switch (event_type) {
+            case "create":
+              // File created - refresh if in the same parent folder
+              if (!data.parent_id || data.parent_id === this.currentParentId) {
+                this.loadFiles(this.currentParentId);
+              }
+              break;
+
+            case "delete":
+              // File deleted - remove from list if visible
+              if (!data.parent_id || data.parent_id === this.currentParentId) {
+                this.filesList = this.filesList.filter((f) => f.id !== file_id);
+                this.folders = this.folders.filter((f) => f.id !== file_id);
+                this.files = [...this.folders, ...this.filesList];
+              }
+              break;
+
+            case "rename":
+              // File renamed - update in list if visible
+              const file = this.filesList.find((f) => f.id === file_id);
+              if (file) {
+                file.original_name = data.new_name;
+              }
+              const folder = this.folders.find((f) => f.id === file_id);
+              if (folder) {
+                folder.original_name = data.new_name;
+              }
+              break;
+
+            case "move":
+              // File moved - refresh if it affects current view
+              if (
+                data.old_parent_id === this.currentParentId ||
+                data.new_parent_id === this.currentParentId
+              ) {
+                this.loadFiles(this.currentParentId);
+              }
+              break;
+
+            case "restore":
+              // File restored - refresh if in the same parent folder
+              if (!data.parent_id || data.parent_id === this.currentParentId) {
+                this.loadFiles(this.currentParentId);
+              }
+              break;
+          }
+        };
+
+        // Subscribe to file events
+        const unsubscribe = fileEventsClient.subscribe(({ type, data }) => {
+          if (type === "file_event") {
+            handleFileEvent(data);
+          } else if (type === "connected") {
+            logger.debug("File sync connected via SSE");
+          } else if (type === "error") {
+            logger.warn("File sync error:", data);
+          }
+        });
+
+        // Store unsubscribe function
+        this._fileSyncUnsubscribe = unsubscribe;
+
+        // Connect to SSE stream
+        fileEventsClient.connect(this.$route.params.id, null);
+
+        // Store sync reference
+        this.fileSync = {
+          disconnect: () => {
+            if (this._fileSyncUnsubscribe) {
+              this._fileSyncUnsubscribe();
+              this._fileSyncUnsubscribe = null;
+            }
+            fileEventsClient.disconnect();
+          },
+        };
+      });
     },
 
     goToPage(page) {
@@ -2994,6 +3108,25 @@ export default {
       }
     },
 
+    handlePreviewUnzip(fileId) {
+      const file = this.filesList.find((f) => f.id === fileId);
+      if (file) {
+        // Close preview modal before extraction
+        this.showPreview = false;
+        this.previewFileId = null;
+        this.previewFileName = "";
+        this.previewMimeType = "";
+        // Extract the ZIP file
+        this.handleExtractZip(file);
+      } else {
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "File not found",
+        });
+      }
+    },
+
     handleRevokeConfirm() {
       this.showRevokeConfirm = false;
       if (this.pendingRevokeCallback) {
@@ -3462,20 +3595,19 @@ export default {
         const itemParentId = item.parent_id || this.currentParentId;
         const allFolders = await this.getAllFolders(itemParentId);
 
-        if (allFolders.length === 0) {
-          this.showAlert({
-            type: "info",
-            title: "No Folders",
-            message: "No folders available. You can only copy to the root.",
-          });
-        }
-
-        // Show folder picker
+        // Show folder picker with vaultspace info
+        const vaultspaceInfo = this.vaultspace
+          ? {
+              name: this.vaultspace.name,
+              icon_name: this.vaultspace.icon_name || "folder",
+            }
+          : null;
         const selectedFolderId = await folderPicker.show(
           allFolders,
           this.currentParentId,
           this.$route.params.id,
           item.mime_type === "application/x-directory" ? item.id : null,
+          vaultspaceInfo,
         );
 
         // User cancelled
@@ -3569,42 +3701,86 @@ export default {
           return;
         }
 
-        // Initialize ZIP progress
-        this.zipping = true;
-        this.zipProgress = 0;
-        this.zipMessage = `Preparing ${folder.original_name}...`;
+        const zipFileName = `${folder.original_name}.zip`;
+        const parentId = folder.parent_id || this.currentParentId || null;
 
-        try {
-          // Zip the folder
-          const zipFileId = await zipFolder(
-            folder.id,
-            this.$route.params.id,
-            this.vaultspaceKey,
-            (current, total, message) => {
-              // Update progress
-              if (total > 0) {
-                this.zipProgress = Math.round((current / total) * 100);
+        // Check if a ZIP file with the same name already exists
+        const existingZipFile = this.filesList.find(
+          (f) =>
+            f.mime_type === "application/zip" &&
+            f.original_name === zipFileName &&
+            (f.parent_id || null) === parentId,
+        );
+
+        if (existingZipFile) {
+          // Show conflict modal
+          this.conflictResolution = null;
+          this.conflictData = {
+            title: "ZIP File Already Exists",
+            message: `A ZIP file named "${zipFileName}" already exists in this location.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
+
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
               } else {
-                this.zipProgress = current;
+                setTimeout(checkResolution, 100);
               }
-              this.zipMessage = message || `Zipping ${folder.original_name}...`;
-            },
-          );
+            };
+            checkResolution();
+          });
 
-          // Reload files to show the new ZIP file
-          await this.loadFiles();
+          const resolution = this.conflictResolution;
+          this.conflictResolution = null;
+          this.showConflictModal = false;
 
-          // Show success message
-          if (window.Notifications) {
-            window.Notifications.success(
-              `Folder "${folder.original_name}" zipped successfully`,
+          if (resolution === "skip") {
+            return;
+          } else if (resolution === "replace") {
+            // Delete existing ZIP file
+            try {
+              await files.delete(existingZipFile.id);
+            } catch (deleteErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to delete existing ZIP file: ${deleteErr.message}`,
+              });
+              return;
+            }
+          } else if (resolution === "keep-both") {
+            // Generate unique name
+            const existingNames = new Set(
+              this.filesList
+                .filter(
+                  (f) =>
+                    f.mime_type === "application/zip" &&
+                    (f.parent_id || null) === parentId,
+                )
+                .map((f) => {
+                  // Remove .zip extension to check name
+                  const nameWithoutExt = f.original_name.replace(/\.zip$/i, "");
+                  return nameWithoutExt;
+                }),
             );
+            let uniqueName = folder.original_name;
+            let counter = 1;
+            while (existingNames.has(uniqueName)) {
+              uniqueName = `${folder.original_name}(${counter})`;
+              counter++;
+            }
+            // Use unique name without .zip extension (will be added in zipService)
+            return await this.performZipFolder(folder, uniqueName, parentId);
           }
-        } finally {
-          this.zipping = false;
-          this.zipProgress = null;
-          this.zipMessage = "";
         }
+
+        // No conflict or replace - proceed with normal zip
+        await this.performZipFolder(folder, folder.original_name, parentId);
       } catch (err) {
         logger.error("Failed to zip folder:", err);
         this.showAlert({
@@ -3612,6 +3788,143 @@ export default {
           title: "Error",
           message: err.message || "Failed to zip folder. Please try again.",
         });
+        this.zipping = false;
+        this.zipProgress = null;
+        this.zipMessage = "";
+      }
+    },
+
+    async performZipFolder(folder, zipFileName, parentId) {
+      // Initialize ZIP progress
+      this.zipping = true;
+      this.zipProgress = 0;
+      this.zipMessage = `Preparing ${folder.original_name}...`;
+
+      try {
+        // Zip the folder
+        const zipFileId = await zipFolder(
+          folder.id,
+          this.$route.params.id,
+          this.vaultspaceKey,
+          (current, total, message) => {
+            // Update progress
+            if (total > 0) {
+              this.zipProgress = Math.round((current / total) * 100);
+            } else {
+              this.zipProgress = current;
+            }
+            this.zipMessage = message || `Zipping ${folder.original_name}...`;
+          },
+          zipFileName,
+          parentId,
+        );
+
+        // Reload files to show the new ZIP file
+        await this.loadFiles();
+
+        // Show success message
+        if (window.Notifications) {
+          window.Notifications.success(
+            `Folder "${folder.original_name}" zipped successfully`,
+          );
+        }
+      } catch (err) {
+        // Check if it's a conflict error (409)
+        if (
+          err.isConflict ||
+          (err.message && err.message.includes("already exists"))
+        ) {
+          // Reload files to get latest state
+          await this.loadFiles();
+
+          // Show conflict modal again
+          const fullZipFileName = `${zipFileName}.zip`;
+          this.conflictResolution = null;
+          this.conflictData = {
+            title: "ZIP File Already Exists",
+            message: `A ZIP file named "${fullZipFileName}" already exists in this location.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
+
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
+              } else {
+                setTimeout(checkResolution, 100);
+              }
+            };
+            checkResolution();
+          });
+
+          const resolution = this.conflictResolution;
+          this.conflictResolution = null;
+          this.showConflictModal = false;
+
+          if (resolution === "skip") {
+            this.zipping = false;
+            this.zipProgress = null;
+            this.zipMessage = "";
+            return;
+          } else if (resolution === "replace") {
+            // Find and delete existing ZIP file
+            const existingZipFile = this.filesList.find(
+              (f) =>
+                f.mime_type === "application/zip" &&
+                f.original_name === fullZipFileName &&
+                (f.parent_id || null) === parentId,
+            );
+            if (existingZipFile) {
+              try {
+                await files.delete(existingZipFile.id);
+                await this.loadFiles();
+              } catch (deleteErr) {
+                this.showAlert({
+                  type: "error",
+                  title: "Error",
+                  message: `Failed to delete existing ZIP file: ${deleteErr.message}`,
+                });
+                this.zipping = false;
+                this.zipProgress = null;
+                this.zipMessage = "";
+                return;
+              }
+            }
+            // Retry with same name
+            await this.performZipFolder(folder, zipFileName, parentId);
+            return;
+          } else if (resolution === "keep-both") {
+            // Generate unique name and retry
+            await this.loadFiles();
+            const existingNames = new Set(
+              this.filesList
+                .filter(
+                  (f) =>
+                    f.mime_type === "application/zip" &&
+                    (f.parent_id || null) === parentId,
+                )
+                .map((f) => {
+                  const nameWithoutExt = f.original_name.replace(/\.zip$/i, "");
+                  return nameWithoutExt;
+                }),
+            );
+            let uniqueName = zipFileName;
+            let counter = 1;
+            while (existingNames.has(uniqueName)) {
+              uniqueName = `${zipFileName}(${counter})`;
+              counter++;
+            }
+            // Retry with unique name
+            await this.performZipFolder(folder, uniqueName, parentId);
+            return;
+          }
+        }
+        // Re-throw other errors
+        throw err;
+      } finally {
         this.zipping = false;
         this.zipProgress = null;
         this.zipMessage = "";
@@ -3644,44 +3957,113 @@ export default {
           return;
         }
 
-        // Initialize extract progress
-        this.extracting = true;
-        this.extractProgress = 0;
-        this.extractMessage = `Preparing extraction of ${zipFile.original_name}...`;
+        const folderName = zipFile.original_name.replace(/\.zip$/i, "");
+        const parentId = this.currentParentId || null;
 
-        try {
-          // Extract the ZIP file
-          const extractedFolderId = await extractZip(
-            zipFile.id,
-            this.$route.params.id,
-            this.vaultspaceKey,
-            this.currentParentId,
-            (current, total, message) => {
-              // Update progress
-              if (total > 0) {
-                this.extractProgress = Math.round((current / total) * 100);
-              } else {
-                this.extractProgress = current;
-              }
-              this.extractMessage =
-                message || `Extracting ${zipFile.original_name}...`;
-            },
-          );
+        // Reload files to get the latest state before checking conflicts
+        await this.loadFiles();
 
-          // Reload files to show extracted files
-          await this.loadFiles();
+        // Check if a folder with the same name already exists
+        // Search in all items (files and folders)
+        let existingFolder = (this.files || []).find(
+          (f) =>
+            f.mime_type === "application/x-directory" &&
+            (f.name === folderName || f.original_name === folderName) &&
+            (f.parent_id || null) === parentId &&
+            !f.deleted_at,
+        );
 
-          // Show success message
-          if (window.Notifications) {
-            window.Notifications.success(
-              `ZIP file "${zipFile.original_name}" extracted successfully`,
+        // Also check via API to be sure (in case files list is not up to date)
+        if (!existingFolder) {
+          try {
+            const result = await files.list(
+              this.$route.params.id,
+              parentId,
+              1,
+              100,
             );
+            existingFolder = (result.files || []).find(
+              (f) =>
+                f.mime_type === "application/x-directory" &&
+                (f.name === folderName || f.original_name === folderName) &&
+                !f.deleted_at,
+            );
+          } catch (apiErr) {
+            logger.warn("Failed to check folder existence via API:", apiErr);
           }
-        } finally {
-          this.extracting = false;
-          this.extractProgress = null;
-          this.extractMessage = "";
         }
+
+        if (existingFolder) {
+          // Show conflict modal
+          this.conflictResolution = null;
+          this.conflictData = {
+            title: "Folder Already Exists",
+            message: `A folder named "${folderName}" already exists in this location.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
+
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
+              } else {
+                setTimeout(checkResolution, 100);
+              }
+            };
+            checkResolution();
+          });
+
+          const resolution = this.conflictResolution;
+          this.conflictResolution = null;
+          this.showConflictModal = false;
+
+          if (resolution === "skip") {
+            return;
+          } else if (resolution === "replace") {
+            // Permanently delete existing folder
+            try {
+              // Soft delete first (required before permanent delete)
+              await files.delete(existingFolder.id);
+              // Then permanently delete
+              await trash.permanentlyDelete(existingFolder.id);
+              await this.loadFiles();
+            } catch (deleteErr) {
+              this.showAlert({
+                type: "error",
+                title: "Error",
+                message: `Failed to delete existing folder: ${deleteErr.message}`,
+              });
+              return;
+            }
+          } else if (resolution === "keep-both") {
+            // Generate unique name
+            const existingNames = new Set(
+              (this.files || [])
+                .filter(
+                  (f) =>
+                    f.mime_type === "application/x-directory" &&
+                    (f.parent_id || null) === parentId &&
+                    !f.deleted_at,
+                )
+                .map((f) => f.name || f.original_name),
+            );
+            let uniqueName = folderName;
+            let counter = 1;
+            while (existingNames.has(uniqueName)) {
+              uniqueName = `${folderName}(${counter})`;
+              counter++;
+            }
+            // Extract with unique folder name
+            await this.performExtractZip(zipFile, uniqueName);
+            return;
+          }
+        }
+
+        // No conflict or replace - proceed with normal extraction
+        await this.performExtractZip(zipFile, folderName);
       } catch (err) {
         logger.error("Failed to extract ZIP:", err);
         this.showAlert({
@@ -3690,6 +4072,146 @@ export default {
           message:
             err.message || "Failed to extract ZIP file. Please try again.",
         });
+        this.extracting = false;
+        this.extractProgress = null;
+        this.extractMessage = "";
+      }
+    },
+
+    async performExtractZip(zipFile, folderName) {
+      // Initialize extract progress
+      this.extracting = true;
+      this.extractProgress = 0;
+      this.extractMessage = `Preparing extraction of ${zipFile.original_name}...`;
+
+      try {
+        // Extract the ZIP file
+        const extractedFolderId = await extractZip(
+          zipFile.id,
+          this.$route.params.id,
+          this.vaultspaceKey,
+          this.currentParentId,
+          (current, total, message) => {
+            // Update progress
+            if (total > 0) {
+              this.extractProgress = Math.round((current / total) * 100);
+            } else {
+              this.extractProgress = current;
+            }
+            this.extractMessage =
+              message || `Extracting ${zipFile.original_name}...`;
+          },
+          folderName,
+        );
+
+        // Reload files to show extracted files
+        await this.loadFiles();
+
+        // Show success message
+        if (window.Notifications) {
+          window.Notifications.success(
+            `ZIP file "${zipFile.original_name}" extracted successfully`,
+          );
+        }
+      } catch (err) {
+        // Check if it's a conflict error (409)
+        if (
+          err.isConflict ||
+          (err.message && err.message.includes("already exists"))
+        ) {
+          // Reload files to get latest state
+          await this.loadFiles();
+
+          // Show conflict modal again
+          const parentId = this.currentParentId || null;
+          this.conflictResolution = null;
+          this.conflictData = {
+            title: "Folder Already Exists",
+            message: `A folder named "${folderName}" already exists in this location.`,
+            showApplyToAll: false,
+            remainingCount: null,
+          };
+          this.showConflictModal = true;
+
+          // Wait for user decision
+          await new Promise((resolve) => {
+            const checkResolution = () => {
+              if (this.conflictResolution) {
+                resolve();
+              } else {
+                setTimeout(checkResolution, 100);
+              }
+            };
+            checkResolution();
+          });
+
+          const resolution = this.conflictResolution;
+          this.conflictResolution = null;
+          this.showConflictModal = false;
+
+          if (resolution === "skip") {
+            this.extracting = false;
+            this.extractProgress = null;
+            this.extractMessage = "";
+            return;
+          } else if (resolution === "replace") {
+            // Find and delete existing folder
+            const existingFolder = (this.files || []).find(
+              (f) =>
+                f.mime_type === "application/x-directory" &&
+                (f.name === folderName || f.original_name === folderName) &&
+                (f.parent_id || null) === parentId &&
+                !f.deleted_at,
+            );
+            if (existingFolder) {
+              try {
+                // Soft delete first (required before permanent delete)
+                await files.delete(existingFolder.id);
+                // Then permanently delete
+                await trash.permanentlyDelete(existingFolder.id);
+                await this.loadFiles();
+              } catch (deleteErr) {
+                this.showAlert({
+                  type: "error",
+                  title: "Error",
+                  message: `Failed to delete existing folder: ${deleteErr.message}`,
+                });
+                this.extracting = false;
+                this.extractProgress = null;
+                this.extractMessage = "";
+                return;
+              }
+            }
+            // Retry with same name
+            await this.performExtractZip(zipFile, folderName);
+            return;
+          } else if (resolution === "keep-both") {
+            // Generate unique name and retry
+            await this.loadFiles();
+            const existingNames = new Set(
+              (this.files || [])
+                .filter(
+                  (f) =>
+                    f.mime_type === "application/x-directory" &&
+                    (f.parent_id || null) === parentId &&
+                    !f.deleted_at,
+                )
+                .map((f) => f.name || f.original_name),
+            );
+            let uniqueName = folderName;
+            let counter = 1;
+            while (existingNames.has(uniqueName)) {
+              uniqueName = `${folderName}(${counter})`;
+              counter++;
+            }
+            // Retry with unique name
+            await this.performExtractZip(zipFile, uniqueName);
+            return;
+          }
+        }
+        // Re-throw other errors
+        throw err;
+      } finally {
         this.extracting = false;
         this.extractProgress = null;
         this.extractMessage = "";

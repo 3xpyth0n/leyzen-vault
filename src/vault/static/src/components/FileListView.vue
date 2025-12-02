@@ -396,9 +396,25 @@ export default {
     const menuItem = ref(null);
     const menuPosition = ref({ x: 0, y: 0 });
     const editingName = ref("");
+    const editingExtension = ref(null); // Store extension separately during editing
     const dropTargetId = ref(null);
     const draggedItemId = ref(null);
     const focusedItemIndex = ref(-1); // Index of focused element for keyboard navigation
+
+    // Helper functions to extract extension and name without extension
+    const getExtension = (filename) => {
+      if (!filename) return null;
+      const lastDot = filename.lastIndexOf(".");
+      if (lastDot === -1 || lastDot === 0) return null;
+      return filename.substring(lastDot);
+    };
+
+    const getNameWithoutExtension = (filename) => {
+      if (!filename) return filename;
+      const lastDot = filename.lastIndexOf(".");
+      if (lastDot === -1 || lastDot === 0) return filename;
+      return filename.substring(0, lastDot);
+    };
 
     // Listen for mobile mode changes
     const handleMobileModeChange = (event) => {
@@ -1033,18 +1049,36 @@ export default {
     };
 
     const saveRename = (item) => {
-      if (
-        editingName.value.trim() &&
-        editingName.value !== item.original_name
-      ) {
-        emit("action", "rename", item, editingName.value.trim());
+      if (!editingName.value.trim()) {
+        editingName.value = "";
+        editingExtension.value = null;
+        emit("action", "cancel-rename");
+        return;
       }
+
+      let finalName = editingName.value.trim();
+
+      // For files (not folders), reattach extension if it existed
+      if (
+        item.mime_type !== "application/x-directory" &&
+        editingExtension.value
+      ) {
+        finalName = finalName + editingExtension.value;
+      }
+
+      // Only emit rename if name actually changed
+      if (finalName !== item.original_name) {
+        emit("action", "rename", item, finalName);
+      }
+
       editingName.value = "";
+      editingExtension.value = null;
       emit("action", "cancel-rename");
     };
 
     const cancelRename = () => {
       editingName.value = "";
+      editingExtension.value = null;
       emit("action", "cancel-rename");
     };
 
@@ -1587,7 +1621,14 @@ export default {
         if (newId) {
           const item = allItems.value.find((i) => i.id === newId);
           if (item) {
-            editingName.value = item.original_name;
+            // For folders, show full name. For files, hide extension
+            if (item.mime_type === "application/x-directory") {
+              editingName.value = item.original_name;
+              editingExtension.value = null;
+            } else {
+              editingExtension.value = getExtension(item.original_name);
+              editingName.value = getNameWithoutExtension(item.original_name);
+            }
             nextTick(() => {
               const input = document.querySelector(".inline-edit-input");
               if (input) {
@@ -1598,6 +1639,7 @@ export default {
           }
         } else {
           editingName.value = "";
+          editingExtension.value = null;
         }
       },
     );

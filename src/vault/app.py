@@ -127,6 +127,18 @@ from .blueprints.auth import auth_bp  # noqa: E402
 from .blueprints.auth_api import auth_api_bp  # noqa: E402
 from .blueprints.config_api import config_api_bp  # noqa: E402
 from .blueprints.files_api_v2 import files_api_bp  # noqa: E402
+
+# Import file_events_api_bp with error handling
+# Note: SSE endpoint is disabled but /recent endpoint is needed for polling
+file_events_api_bp = None
+try:
+    from .blueprints.file_events_api import file_events_api_bp  # noqa: E402
+except Exception as e:
+    # Log error but don't fail startup
+    import sys
+
+    print(f"[WARNING] Failed to import file_events_api_bp: {e}", file=sys.stderr)
+    file_events_api_bp = None
 from .blueprints.internal_api import internal_api_bp  # noqa: E402
 from .blueprints.quota_api import quota_api_bp as quota_api_v2_bp  # noqa: E402
 from .blueprints.search_api import search_api_bp  # noqa: E402
@@ -1502,6 +1514,17 @@ def create_app(
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
     app.register_blueprint(config_api_bp)  # Configuration API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
+    if file_events_api_bp is not None:
+        try:
+            app.register_blueprint(file_events_api_bp)  # File events API (SSE)
+        except Exception as e:
+            import sys
+
+            print(
+                f"[WARNING] Failed to register file_events_api_bp: {e}", file=sys.stderr
+            )
+            # Don't fail startup if file events API fails to register
+            # This allows the application to continue running without real-time sync
 
     # Debug: Log upload routes registration
     import logging

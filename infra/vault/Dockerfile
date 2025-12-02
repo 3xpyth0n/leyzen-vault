@@ -75,6 +75,10 @@ HEALTHCHECK --interval=1s --timeout=5s --retries=10 \
 ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 
 # Run the application
+# Use Uvicorn for ASGI support (enables SSE streaming)
 # Use shell form to allow environment variable expansion with default value
-CMD python -m gunicorn --bind 0.0.0.0:80 --workers ${VAULT_WORKERS:-2} --timeout 120 --chdir /app/src vault.app:application
+# Note: Uvicorn uses --app-dir instead of --chdir, and we need to specify the module path
+# --no-access-log: Disable access logs (200, 300, 400 responses)
+# --log-level error: Only log errors and critical issues
+CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error
 

@@ -102,9 +102,9 @@ jobs:
           fi
           echo "✅ Generated fresh docker-generated.yml"
 
-      - name: Prefix volumes, networks, and images with project name
+      - name: Prefix volumes, networks, and containers with project name
         run: |
-          # Prefix all volume, network, container, and image names with the project name to ensure complete isolation
+          # Prefix all volume, network, and container names with the project name to ensure complete isolation
           python3 << PYEOF
           import re
           import os
@@ -129,13 +129,6 @@ jobs:
               content
           )
 
-          # Prefix image names (pattern: image: "leyzen/..." or image: "leyzen-vault-...")
-          content = re.sub(
-              r'(\s+image:\s+)"(leyzen[/-][^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
-              content
-          )
-
           with open(yaml_file, 'w') as f:
               f.write(content)
           PYEOF
@@ -144,9 +137,6 @@ jobs:
         run: |
           docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" pull || true
           docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" build --no-cache
-          for img in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^leyzen/" | grep -v "^${COMPOSE_PROJECT_NAME}-" || true); do
-            docker rmi "$img" 2>/dev/null || true
-          done
           docker compose -f docker-generated.yml -p "$COMPOSE_PROJECT_NAME" up -d
 
       - name: Wait for containers to become healthy
@@ -258,4 +248,3 @@ jobs:
           docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
           docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
           docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
-          docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rmi -f 2>/dev/null || true

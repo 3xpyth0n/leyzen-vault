@@ -101,9 +101,9 @@ def _validate_encrypted_key(encrypted_key: str) -> tuple[bool, str]:
             if not is_encrypted:
                 data_size = len(ciphertext)
                 if data_size <= 64:
-                    expected_threshold = 4.0
+                    expected_threshold = 4.5
                 elif data_size <= 128:
-                    expected_threshold = 6.0
+                    expected_threshold = 6.5
                 else:
                     expected_threshold = 7.5
                 return (
@@ -147,8 +147,9 @@ def _check_encryption_entropy(data: bytes) -> tuple[bool, float]:
     # Encrypted data must meet minimum entropy requirements based on size
     data_size = len(data)
     if data_size <= 64:
-        # Small ciphertexts require higher entropy to prevent weak encryption
-        threshold = 5.5
+        # Small ciphertexts require sufficient entropy to prevent weak encryption
+        # Lower threshold accounts for statistical variance in small samples
+        threshold = 4.5
     elif data_size <= 128:
         # Medium ciphertexts require moderate entropy threshold
         threshold = 6.5

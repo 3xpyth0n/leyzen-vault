@@ -77,7 +77,8 @@ def _logger() -> FileLogger:
 def _get_auth_service() -> AuthService:
     """Get AuthService instance."""
     secret_key = current_app.config.get("SECRET_KEY", "")
-    return AuthService(secret_key)
+    settings = _settings()
+    return AuthService(secret_key, jwt_expiration_hours=settings.jwt_expiration_hours)
 
 
 def _get_captcha_store():

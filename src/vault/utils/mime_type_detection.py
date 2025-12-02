@@ -42,6 +42,23 @@ def detect_mime_type_from_extension(filename: str) -> str | None:
     return mime_type
 
 
+def get_extension_from_mime_type(mime_type: str) -> str | None:
+    """Get file extension from MIME type using Python's mimetypes module.
+
+    Args:
+        mime_type: MIME type string (e.g., "image/png", "application/pdf")
+
+    Returns:
+        File extension string (e.g., ".png", ".pdf") or None if not found
+    """
+    if not mime_type:
+        return None
+
+    # Use mimetypes.guess_extension() to get extension from MIME type
+    extension = mimetypes.guess_extension(mime_type)
+    return extension
+
+
 def detect_mime_type_from_content(file_data: bytes) -> str | None:
     """Detect MIME type from file content using magic bytes.
 
@@ -155,4 +172,5 @@ __all__ = [
     "detect_mime_type",
     "detect_mime_type_from_extension",
     "detect_mime_type_from_content",
+    "get_extension_from_mime_type",
 ]

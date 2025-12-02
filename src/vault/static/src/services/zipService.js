@@ -24,6 +24,8 @@ import { logger } from "../utils/logger.js";
  * @param {string} vaultspaceId - VaultSpace ID
  * @param {CryptoKey} vaultspaceKey - Decrypted VaultSpace key
  * @param {function} onProgress - Progress callback (current, total, message)
+ * @param {string|null} zipFileName - Optional custom ZIP file name (without .zip extension)
+ * @param {string|null} parentId - Optional parent folder ID for the ZIP file
  * @returns {Promise<string>} File ID of created ZIP file
  */
 export async function zipFolder(
@@ -31,6 +33,8 @@ export async function zipFolder(
   vaultspaceId,
   vaultspaceKey,
   onProgress = null,
+  zipFileName = null,
+  parentId = null,
 ) {
   try {
     // Step 1: Get folder tree with file keys
@@ -186,16 +190,21 @@ export async function zipFolder(
       onProgress(totalFiles + 10, totalFiles + 10, "Uploading ZIP file...");
     }
 
-    const zipFileName = `${folder_name}.zip`;
+    const finalZipFileName = zipFileName
+      ? `${zipFileName}.zip`
+      : `${folder_name}.zip`;
     const zipBlobForUpload = new Blob([combined], {
       type: "application/octet-stream",
     });
 
     const formData = new FormData();
-    formData.append("file", zipBlobForUpload, zipFileName);
+    formData.append("file", zipBlobForUpload, finalZipFileName);
     formData.append("vaultspace_id", vaultspaceId);
     formData.append("encrypted_file_key", encryptedZipFileKey);
     formData.append("mime_type", "application/zip");
+    if (parentId) {
+      formData.append("parent_id", parentId);
+    }
 
     try {
       // Use fetch directly instead of apiRequest to avoid Content-Type issues with FormData
@@ -223,6 +232,15 @@ export async function zipFolder(
           throw new Error(
             "Storage quota exceeded. Please free up space before creating ZIP files.",
           );
+        }
+        // Check for conflict errors (409)
+        if (uploadResponse.status === 409) {
+          const conflictError = new Error(
+            errorData.error || "A file with this name already exists",
+          );
+          conflictError.statusCode = 409;
+          conflictError.isConflict = true;
+          throw conflictError;
         }
         throw new Error(errorData.error || "Failed to upload ZIP file");
       }
@@ -252,6 +270,7 @@ export async function zipFolder(
  * @param {CryptoKey} vaultspaceKey - Decrypted VaultSpace key
  * @param {string|null} targetParentId - Target parent folder ID (null for root)
  * @param {function} onProgress - Progress callback (current, total, message)
+ * @param {string|null} rootFolderName - Optional custom root folder name (without .zip extension)
  * @returns {Promise<string>} Folder ID of created folder (or target parent ID)
  */
 export async function extractZip(
@@ -260,6 +279,7 @@ export async function extractZip(
   vaultspaceKey,
   targetParentId = null,
   onProgress = null,
+  rootFolderName = null,
 ) {
   try {
     // Step 1: Get ZIP file info and key
@@ -337,10 +357,6 @@ export async function extractZip(
       }
     });
 
-    if (zipFiles.length === 0) {
-      throw new Error("ZIP file is empty");
-    }
-
     // Step 5: Create folder structure and upload files
     const totalFiles = zipFiles.length;
     let processedFiles = 0;
@@ -348,42 +364,69 @@ export async function extractZip(
     // Create a map to track created folders
     const createdFolders = new Map(); // path -> folderId
 
-    // Determine root folder name from ZIP file name
-    const zipFileName = zipFile.original_name.replace(/\.zip$/i, "");
+    // Determine root folder name from ZIP file name or use provided name
+    const zipFileName =
+      rootFolderName || zipFile.original_name.replace(/\.zip$/i, "");
     let rootFolderId = targetParentId;
 
-    // Create root folder if needed (use ZIP file name)
-    if (zipFiles.length > 0) {
-      if (onProgress) {
-        onProgress(50, 100, `Creating folder "${zipFileName}"...`);
-      }
-
-      try {
-        const createFolderResponse = await apiRequest("/v2/files/folders", {
-          method: "POST",
-          body: JSON.stringify({
-            vaultspace_id: vaultspaceId,
-            name: zipFileName,
-            parent_id: targetParentId,
-          }),
-        });
-
-        if (createFolderResponse.ok) {
-          const folderData = await createFolderResponse.json();
-          rootFolderId = folderData.folder.id;
-          createdFolders.set("", rootFolderId);
-        } else {
-          // Folder might already exist, try to find it or use target parent
-          logger.warn("Failed to create root folder, using target parent");
-          rootFolderId = targetParentId;
-        }
-      } catch (error) {
-        logger.warn("Error creating root folder:", error);
-        rootFolderId = targetParentId;
-      }
+    // Always create root folder with ZIP file name (even if ZIP is empty)
+    if (onProgress) {
+      onProgress(50, 100, `Creating folder "${zipFileName}"...`);
     }
 
-    // Process each file
+    try {
+      const createFolderResponse = await apiRequest("/v2/files/folders", {
+        method: "POST",
+        body: JSON.stringify({
+          vaultspace_id: vaultspaceId,
+          name: zipFileName,
+          parent_id: targetParentId,
+        }),
+      });
+
+      if (createFolderResponse.ok) {
+        const folderData = await createFolderResponse.json();
+        rootFolderId = folderData.folder.id;
+        createdFolders.set("", rootFolderId);
+      } else {
+        const errorData = await parseErrorResponse(createFolderResponse);
+        // Check if it's a conflict error (409)
+        if (createFolderResponse.status === 409) {
+          const conflictError = new Error(
+            errorData.error || "A folder with this name already exists",
+          );
+          conflictError.statusCode = 409;
+          conflictError.isConflict = true;
+          throw conflictError;
+        }
+        // Other errors - cannot continue without creating the folder
+        throw new Error(
+          errorData.error || "Failed to create folder for ZIP extraction",
+        );
+      }
+    } catch (error) {
+      // If it's a conflict error, re-throw it
+      if (error.isConflict) {
+        throw error;
+      }
+      // For other errors, log and re-throw
+      logger.error("Error creating root folder:", error);
+      throw error;
+    }
+
+    // Verify that root folder was created successfully
+    if (rootFolderId === targetParentId) {
+      throw new Error(
+        "Failed to create root folder for ZIP extraction. Cannot continue.",
+      );
+    }
+
+    // Process each file (only if ZIP is not empty)
+    if (zipFiles.length === 0) {
+      // ZIP is empty, but folder is already created, return it
+      return rootFolderId;
+    }
+
     for (const zipFileEntry of zipFiles) {
       try {
         const { path, file: zipFileEntryObj } = zipFileEntry;
