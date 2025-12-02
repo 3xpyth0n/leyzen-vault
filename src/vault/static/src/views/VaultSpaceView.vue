@@ -4,10 +4,12 @@
       v-if="!showEncryptionOverlay || !isMasterKeyRequired"
       class="view-header"
     >
-      <button @click="$router.push('/dashboard')" class="btn btn-back">
-        ← Back
-      </button>
-      <h1>{{ vaultspace?.name || "Loading..." }}</h1>
+      <div class="header-top">
+        <button @click="$router.push('/dashboard')" class="btn btn-back">
+          ← Back
+        </button>
+        <h1>{{ vaultspace?.name || "Loading..." }}</h1>
+      </div>
       <div class="header-actions">
         <button @click="createFolderDirect" class="btn btn-primary">
           New Folder
@@ -314,7 +316,7 @@
       :style="{
         ...overlayStyle,
         'pointer-events': showPasswordModal ? 'none' : 'auto',
-        'z-index': '9999',
+        'z-index': '50',
       }"
       data-encryption-overlay="true"
     >
@@ -3098,6 +3100,7 @@ export default {
       this.$nextTick(() => {
         const header = document.querySelector(".app-header");
         const pageContent = document.querySelector(".page-content");
+        const isMobileMode = document.body.classList.contains("mobile-mode");
         if (header && pageContent) {
           const headerRect = header.getBoundingClientRect();
           const pageContentRect = pageContent.getBoundingClientRect();
@@ -3106,7 +3109,9 @@ export default {
           const overlayTop = headerRect.bottom; // Start exactly below header
           const overlayLeft = pageContentRect.left; // Start at page-content left edge
           const overlayWidth = window.innerWidth - overlayLeft;
-          const overlayHeight = window.innerHeight - overlayTop;
+          // In mobile mode, leave space for bottom navigation bar (approximately 100px from bottom)
+          const bottomOffset = isMobileMode ? 100 : 0;
+          const overlayHeight = window.innerHeight - overlayTop - bottomOffset;
 
           this.overlayStyle = {
             position: "fixed",
@@ -3114,7 +3119,8 @@ export default {
             left: `${overlayLeft}px`,
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
-            zIndex: 0, // Below header (z-index: 1) and sidebar (z-index: 100)
+            zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
+            pointerEvents: "auto", // Ensure overlay is interactive
           };
         }
       });
@@ -3915,6 +3921,11 @@ export default {
   z-index: 1;
 }
 
+.mobile-mode .vaultspace-view {
+  padding: 1rem;
+  padding-bottom: calc(1rem + 64px);
+}
+
 .view-header {
   background: var(--bg-glass);
   backdrop-filter: var(--blur);
@@ -3930,6 +3941,28 @@ export default {
   z-index: 2;
 }
 
+.mobile-mode .view-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.mobile-mode .header-top {
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .view-header h1 {
   margin: 0;
   flex: 1;
@@ -3937,6 +3970,16 @@ export default {
   color: var(--text-primary);
   font-size: 1.75rem;
   font-weight: 600;
+}
+
+.mobile-mode .view-header h1 {
+  text-align: right;
+  font-size: 1.25rem;
+  width: auto;
+  flex: 1;
+  margin: 0;
+  margin-left: auto;
+  margin-right: 0.5rem;
 }
 
 .search-container {
@@ -3949,6 +3992,18 @@ export default {
   gap: 0.75rem;
   position: relative;
   z-index: 3;
+}
+
+.mobile-mode .header-actions {
+  width: 100%;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-mode .header-actions .btn {
+  width: 100%;
+  font-size: 0.9rem;
+  padding: 0.625rem 1rem;
 }
 
 .header-actions .btn {
@@ -3976,6 +4031,10 @@ export default {
   max-width: 1400px;
   margin: 0 auto;
   position: relative;
+}
+
+.mobile-mode .view-main {
+  padding: 0;
 }
 
 .breadcrumbs {
@@ -4195,9 +4254,16 @@ export default {
 
 .btn-back {
   background: var(--bg-glass);
+  flex-shrink: 0;
   backdrop-filter: var(--blur);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
+}
+
+.mobile-mode .btn-back {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
 }
 
 .btn-back:hover {
@@ -4716,9 +4782,10 @@ body.sidebar-collapsed .modal-overlay {
   box-shadow: none !important;
   animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) !important;
   /* pointer-events is controlled via inline style */
-  /* Ensure overlay covers content but stays below modals */
+  /* Ensure overlay covers content but stays below header and dropdown */
   isolation: isolate !important;
   pointer-events: auto !important;
+  z-index: 50 !important; /* Below header (100), dropdown (1000), bottom bar (99999) but above content */
 }
 
 @keyframes overlayFadeIn {

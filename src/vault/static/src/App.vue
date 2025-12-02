@@ -23,10 +23,11 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { auth } from "./services/api";
 import AppLayout from "./components/AppLayout.vue";
+import { initMobileMode } from "./utils/mobileMode";
 
 const route = useRoute();
 
@@ -49,6 +50,10 @@ const needsAppLayout = computed(() => {
 const handleLogout = () => {
   auth.logout();
 };
+
+onMounted(() => {
+  initMobileMode();
+});
 </script>
 <style>
 /* Global styles */

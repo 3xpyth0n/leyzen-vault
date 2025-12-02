@@ -33,19 +33,12 @@
     <div v-if="showFilters" class="search-filters glass glass-card">
       <div class="filter-group">
         <label>Type:</label>
-        <select
+        <CustomSelect
           v-model="filters.mimeType"
+          :options="mimeTypeOptions"
           @change="applyFiltersAuto"
-          class="input"
-        >
-          <option value="">All types</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
-          <option value="audio">Audio</option>
-          <option value="application/pdf">PDFs</option>
-          <option value="text">Text files</option>
-          <option value="application/x-directory">Folders</option>
-        </select>
+          placeholder="All types"
+        />
       </div>
 
       <div class="filter-group">
@@ -71,24 +64,20 @@
 
       <div class="filter-group">
         <label>Sort by:</label>
-        <select
-          v-model="filters.sortBy"
-          @change="applyFiltersAuto"
-          class="input"
-        >
-          <option value="relevance">Relevance</option>
-          <option value="name">Name</option>
-          <option value="date">Date</option>
-          <option value="size">Size</option>
-        </select>
-        <select
-          v-model="filters.sortOrder"
-          @change="applyFiltersAuto"
-          class="input"
-        >
-          <option value="desc">Descending</option>
-          <option value="asc">Ascending</option>
-        </select>
+        <div class="sort-controls-group">
+          <CustomSelect
+            v-model="filters.sortBy"
+            :options="sortByOptions"
+            @change="applyFiltersAuto"
+            placeholder="Sort by"
+          />
+          <CustomSelect
+            v-model="filters.sortOrder"
+            :options="sortOrderOptions"
+            @change="applyFiltersAuto"
+            placeholder="Order"
+          />
+        </div>
       </div>
 
       <div class="filter-group">
@@ -182,9 +171,13 @@
 import { ref, computed, watch } from "vue";
 import { search as searchApi } from "../services/search";
 import { useRouter } from "vue-router";
+import CustomSelect from "./CustomSelect.vue";
 
 export default {
   name: "SearchBar",
+  components: {
+    CustomSelect,
+  },
   props: {
     vaultspaceId: {
       type: String,
@@ -227,6 +220,28 @@ export default {
       sortOrder: "desc",
       fileTypeFilter: "all", // "all", "files", "folders"
     });
+
+    const mimeTypeOptions = [
+      { value: "", label: "All types" },
+      { value: "image", label: "Images" },
+      { value: "video", label: "Videos" },
+      { value: "audio", label: "Audio" },
+      { value: "application/pdf", label: "PDFs" },
+      { value: "text", label: "Text files" },
+      { value: "application/x-directory", label: "Folders" },
+    ];
+
+    const sortByOptions = [
+      { value: "relevance", label: "Relevance" },
+      { value: "name", label: "Name" },
+      { value: "date", label: "Date" },
+      { value: "size", label: "Size" },
+    ];
+
+    const sortOrderOptions = [
+      { value: "desc", label: "Descending" },
+      { value: "asc", label: "Ascending" },
+    ];
 
     let searchTimeout = null;
 
@@ -445,6 +460,9 @@ export default {
       showFilters,
       hasMore,
       filters,
+      mimeTypeOptions,
+      sortByOptions,
+      sortOrderOptions,
       handleSearch,
       performSearch,
       loadMore,
@@ -465,9 +483,7 @@ export default {
 <style scoped>
 .search-bar {
   position: relative;
-  width: 85%;
-  max-width: 90%;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .search-input-wrapper {
@@ -537,10 +553,20 @@ export default {
   font-size: 0.9rem;
 }
 
-.filter-group select,
+.filter-group .custom-select,
 .filter-group input[type="number"] {
   width: 100%;
   margin-bottom: 0.5rem;
+}
+
+.sort-controls-group {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.sort-controls-group .custom-select {
+  flex: 1;
 }
 
 .size-range {

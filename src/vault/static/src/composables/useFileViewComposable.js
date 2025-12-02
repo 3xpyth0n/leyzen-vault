@@ -292,6 +292,7 @@ export function useFileViewComposable(options = {}) {
     nextTick(() => {
       const header = document.querySelector(".app-header");
       const pageContent = document.querySelector(".page-content");
+      const isMobileMode = document.body.classList.contains("mobile-mode");
       if (header && pageContent) {
         const headerRect = header.getBoundingClientRect();
         const pageContentRect = pageContent.getBoundingClientRect();
@@ -300,7 +301,9 @@ export function useFileViewComposable(options = {}) {
         const overlayTop = headerRect.bottom; // Start exactly below header
         const overlayLeft = pageContentRect.left; // Start at page-content left edge
         const overlayWidth = window.innerWidth - overlayLeft;
-        const overlayHeight = window.innerHeight - overlayTop;
+        // In mobile mode, leave space for bottom navigation bar (approximately 100px from bottom)
+        const bottomOffset = isMobileMode ? 100 : 0;
+        const overlayHeight = window.innerHeight - overlayTop - bottomOffset;
 
         overlayStyle.value = {
           position: "fixed",
@@ -308,7 +311,7 @@ export function useFileViewComposable(options = {}) {
           left: `${overlayLeft}px`,
           width: `${overlayWidth}px`,
           height: `${overlayHeight}px`,
-          zIndex: 9999, // Above content but below password modal (z-index: 100000)
+          zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
           pointerEvents: "auto", // Ensure overlay is interactive
         };
       }

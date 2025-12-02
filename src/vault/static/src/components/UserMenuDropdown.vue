@@ -44,7 +44,23 @@
             <span class="user-menu-item-label">Admin</span>
           </router-link>
 
-          <div class="user-menu-divider" v-if="isAdmin"></div>
+          <div class="user-menu-divider"></div>
+
+          <!-- Mobile Mode Toggle -->
+          <div class="user-menu-item user-menu-item-toggle" @click.stop>
+            <span class="user-menu-item-label">Mobile Mode</span>
+            <label class="toggle-switch">
+              <input
+                type="checkbox"
+                v-model="mobileMode"
+                @change="handleMobileModeToggle"
+                class="toggle-input"
+              />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="user-menu-divider"></div>
 
           <button
             class="user-menu-item user-menu-item-logout"
@@ -63,6 +79,8 @@
 </template>
 
 <script>
+import { isMobileMode, setMobileMode } from "../utils/mobileMode";
+
 export default {
   name: "UserMenuDropdown",
   props: {
@@ -79,7 +97,30 @@ export default {
       escapeKeyHandler: null,
       menuTop: 0,
       menuLeft: 0,
+      mobileMode: false,
     };
+  },
+  mounted() {
+    // Initialize mobile mode state
+    this.mobileMode = isMobileMode();
+
+    // Listen for mobile mode changes
+    this.mobileModeChangeHandler = () => {
+      this.mobileMode = isMobileMode();
+    };
+    window.addEventListener(
+      "mobile-mode-changed",
+      this.mobileModeChangeHandler,
+    );
+  },
+  beforeUnmount() {
+    if (this.mobileModeChangeHandler) {
+      window.removeEventListener(
+        "mobile-mode-changed",
+        this.mobileModeChangeHandler,
+      );
+    }
+    this.removeEventListeners();
   },
   computed: {
     menuStyle() {
@@ -212,6 +253,9 @@ export default {
       this.closeMenu();
       this.$emit("logout");
     },
+    handleMobileModeToggle() {
+      setMobileMode(this.mobileMode);
+    },
   },
   beforeUnmount() {
     this.removeEventListeners();
@@ -273,7 +317,7 @@ export default {
 
 .user-menu-dropdown {
   position: fixed;
-  z-index: 1000;
+  z-index: 1000 !important; /* Above header (100) and encryption overlay (50) */
   min-width: 180px;
   background: linear-gradient(140deg, #1e293b8c, #0f172a66);
   backdrop-filter: blur(20px) saturate(180%);
@@ -343,6 +387,66 @@ export default {
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
   margin: 0.25rem 0;
+}
+
+.user-menu-item-toggle {
+  cursor: default;
+  justify-content: space-between;
+}
+
+.user-menu-item-toggle:hover {
+  background: transparent;
+  color: #e6eef6;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle-input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #e6eef6;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-input:checked + .toggle-slider {
+  background-color: rgba(88, 166, 255, 0.5);
+}
+
+.toggle-input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+}
+
+.toggle-input:focus + .toggle-slider {
+  box-shadow: 0 0 1px rgba(88, 166, 255, 0.5);
 }
 
 /* Transition animations */

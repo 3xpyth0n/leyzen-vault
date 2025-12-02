@@ -46,6 +46,13 @@ def _logger() -> FileLogger:
     return current_app.config["LOGGER"]
 
 
+def _get_audit():
+    """Get audit service from Flask app config."""
+    from vault.services.audit import AuditService
+
+    return current_app.config.get("VAULT_AUDIT")
+
+
 def _get_captcha_store():
     """Get or create CAPTCHA store with current settings TTL."""
     global _captcha_store
@@ -338,6 +345,22 @@ def signup():
                 # Key already exists or error - log but don't fail signup
                 current_app.logger.warning(f"Failed to store VaultSpace key: {e}")
 
+        # Log signup
+        client_ip = get_client_ip() or "unknown"
+        audit = _get_audit()
+        if audit:
+            audit.log_action(
+                action="auth_signup",
+                user_ip=client_ip,
+                details={
+                    "email": email,
+                    "user_id": user.id,
+                    "email_verification_required": True,
+                },
+                success=True,
+                user_id=user.id,
+            )
+
         # Note: User cannot login until email is verified
         # Don't return token - user must verify email first
         return (
@@ -408,8 +431,8 @@ def login():
 
         # Rate limiting: 5 attempts per minute per IP and user
         rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+        client_ip = get_client_ip() or "unknown"
         if rate_limiter:
-            client_ip = get_client_ip() or "unknown"
             # Try to get user_id from email if user exists (for multi-factor rate limiting)
             user_id_for_rate_limit = None
             if username_or_email:
@@ -428,6 +451,19 @@ def login():
                 user_id=user_id_for_rate_limit,
             )
             if not is_allowed:
+                # Log rate limit exceeded
+                audit = _get_audit()
+                if audit:
+                    audit.log_action(
+                        action="auth_rate_limit_exceeded",
+                        user_ip=client_ip,
+                        details={
+                            "username_or_email": username_or_email,
+                            "reason": error_msg or "Too many attempts",
+                        },
+                        success=False,
+                        user_id=user_id_for_rate_limit,
+                    )
                 return (
                     jsonify(
                         {
@@ -545,8 +581,20 @@ def login():
             received_normalized = captcha_response.strip().upper()
 
             if received_normalized != expected_normalized:
-                client_ip = get_client_ip()
+                client_ip = get_client_ip() or "unknown"
                 register_failed_attempt(client_ip)
+                # Log CAPTCHA failure
+                audit = _get_audit()
+                if audit:
+                    audit.log_action(
+                        action="auth_captcha_failed",
+                        user_ip=client_ip,
+                        details={
+                            "username_or_email": username_or_email,
+                            "reason": "Invalid captcha response",
+                        },
+                        success=False,
+                    )
                 if captcha_nonce:
                     captcha_store.drop(captcha_nonce)
                 # SECURITY: Never log CAPTCHA values in production
@@ -577,8 +625,33 @@ def login():
             return jsonify({"error": str(e)}), 403
 
         if not result:
-            client_ip = get_client_ip()
+            client_ip = get_client_ip() or "unknown"
             register_failed_attempt(client_ip)
+            # Log authentication failure
+            audit = _get_audit()
+            if audit:
+                # Try to get user_id if user exists
+                user_id_for_log = None
+                if username_or_email:
+                    from vault.database.schema import User, db
+
+                    existing_user = (
+                        db.session.query(User)
+                        .filter_by(email=username_or_email)
+                        .first()
+                    )
+                    if existing_user:
+                        user_id_for_log = existing_user.id
+                audit.log_action(
+                    action="auth_login_failed",
+                    user_ip=client_ip,
+                    details={
+                        "username_or_email": username_or_email,
+                        "reason": "Invalid credentials",
+                    },
+                    success=False,
+                    user_id=user_id_for_log,
+                )
             return jsonify({"error": "Invalid credentials"}), 401
 
         user, token = result
@@ -604,6 +677,21 @@ def login():
 
         # Full authentication success - clear 2FA session data
         session.pop("2fa_credentials_validated", None)
+        # Log successful authentication
+        client_ip = get_client_ip() or "unknown"
+        audit = _get_audit()
+        if audit:
+            audit.log_action(
+                action="auth_login_success",
+                user_ip=client_ip,
+                details={
+                    "username_or_email": username_or_email,
+                    "user_id": user.id,
+                    "has_2fa": user.totp_secret is not None,
+                },
+                success=True,
+                user_id=user.id,
+            )
         return (
             jsonify(
                 {
@@ -658,6 +746,17 @@ def refresh():
         return jsonify({"error": "Invalid or expired token"}), 401
 
     user, new_token = result
+    # Log token refresh
+    client_ip = get_client_ip() or "unknown"
+    audit = _get_audit()
+    if audit:
+        audit.log_action(
+            action="auth_token_refresh",
+            user_ip=client_ip,
+            details={"user_id": user.id},
+            success=True,
+            user_id=user.id,
+        )
     return (
         jsonify(
             {
@@ -747,6 +846,19 @@ def logout():
             )
         except Exception as e:
             current_app.logger.warning(f"Failed to blacklist token: {type(e).__name__}")
+
+    # Log logout
+    user = get_current_user()
+    client_ip = get_client_ip() or "unknown"
+    audit = _get_audit()
+    if audit and user:
+        audit.log_action(
+            action="auth_logout",
+            user_ip=client_ip,
+            details={"user_id": user.id},
+            success=True,
+            user_id=user.id,
+        )
 
     return jsonify({"message": "Logged out successfully"}), 200
 

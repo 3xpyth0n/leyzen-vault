@@ -118,21 +118,13 @@
           <form @submit.prevent="saveQuota" class="modal-form">
             <div class="form-group">
               <label>User:</label>
-              <select
+              <CustomSelect
                 v-model="quotaForm.user_id"
+                :options="userOptions"
                 :disabled="editingQuota"
+                placeholder="Select a user..."
                 required
-                class="form-select"
-              >
-                <option value="">Select a user...</option>
-                <option
-                  v-for="quota in quotas"
-                  :key="quota.user_id"
-                  :value="quota.user_id"
-                >
-                  {{ quota.user_email || quota.user_id }}
-                </option>
-              </select>
+              />
             </div>
             <div class="form-group">
               <label>Max Storage (GB):</label>
@@ -187,9 +179,13 @@
 <script>
 import { ref, onMounted, computed } from "vue";
 import { admin } from "../../services/api";
+import CustomSelect from "../CustomSelect.vue";
 
 export default {
   name: "QuotaManagement",
+  components: {
+    CustomSelect,
+  },
   setup() {
     const quotas = ref([]);
     const loading = ref(false);
@@ -213,6 +209,13 @@ export default {
         (sum, q) => sum + (q.used_storage_bytes || 0),
         0,
       );
+    });
+
+    const userOptions = computed(() => {
+      return quotas.value.map((quota) => ({
+        value: quota.user_id,
+        label: quota.user_email || quota.user_id || "Unknown",
+      }));
     });
 
     const getIcon = (iconName, size = 24) => {
@@ -470,6 +473,7 @@ export default {
       quotaForm,
       usersWithQuotas,
       totalStorageUsed,
+      userOptions,
       getIcon,
       loadQuotas,
       formatSize,
@@ -515,9 +519,41 @@ export default {
   overflow: hidden;
 }
 
+.mobile-mode .table-container {
+  padding: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
 .quotas-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.mobile-mode .quotas-table {
+  min-width: 700px;
+  width: 100%;
 }
 
 .quotas-table th {
@@ -761,6 +797,12 @@ body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .modal-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
+}
+
 .modal {
   background: linear-gradient(
     140deg,
@@ -909,5 +951,23 @@ body.sidebar-collapsed .modal-overlay {
   width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
+}
+/* Mobile Mode Styles */
+.mobile-mode .quota-card {
+  width: 100%;
+  padding: 1rem;
+}
+
+.mobile-mode .quota-form {
+  width: 100%;
+}
+
+.mobile-mode .form-actions {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-mode .form-actions button {
+  width: 100%;
 }
 </style>

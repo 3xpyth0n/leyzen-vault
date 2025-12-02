@@ -75,6 +75,14 @@ export default {
 .recent-activity-list {
   padding: 1.5rem;
   border-radius: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.mobile-mode .recent-activity-list {
+  padding: 1rem;
+  max-width: 100%;
 }
 
 .section-header {
@@ -161,6 +169,12 @@ export default {
 .log-content {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+.mobile-mode .log-content {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .log-action {
@@ -169,6 +183,12 @@ export default {
   font-weight: 500;
   margin-bottom: 0.25rem;
   text-transform: capitalize;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.mobile-mode .log-action {
+  font-size: 0.85rem;
 }
 
 .log-meta {

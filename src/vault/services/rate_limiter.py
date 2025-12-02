@@ -88,6 +88,25 @@ class RateLimiter:
             if entry:
                 # Update existing entry
                 if entry.request_count >= max_uploads:
+                    # Log rate limit exceeded
+                    try:
+                        from flask import current_app
+
+                        audit = current_app.config.get("VAULT_AUDIT")
+                        if audit:
+                            audit.log_action(
+                                action="rate_limit_exceeded",
+                                user_ip=ip,
+                                details={
+                                    "action": "upload",
+                                    "limit": max_uploads,
+                                    "count": entry.request_count,
+                                },
+                                success=False,
+                            )
+                    except Exception:
+                        # Don't fail rate limiting if audit logging fails
+                        pass
                     db.session.commit()
                     return (
                         False,

@@ -8,16 +8,12 @@
     </div>
 
     <div class="filters glass glass-card">
-      <select
+      <CustomSelect
         v-model="filterUserId"
+        :options="userFilterOptions"
         @change="loadApiKeys"
-        class="filter-select"
-      >
-        <option value="">All Users</option>
-        <option v-for="user in users" :key="user.id" :value="user.id">
-          {{ user.email }}
-        </option>
-      </select>
+        placeholder="All Users"
+      />
     </div>
 
     <div v-if="loading" class="loading glass glass-card">
@@ -74,36 +70,58 @@
             ×
           </button>
         </div>
-        <form @submit.prevent="generateApiKey" class="modal-form">
-          <div
-            v-if="currentUser?.global_role === 'superadmin'"
-            class="form-group"
-          >
-            <label>User:</label>
-            <select v-model="apiKeyForm.userId" class="form-select">
-              <option value="">Select a user</option>
-              <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.email }}
-              </option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Name:</label>
-            <input
-              v-model="apiKeyForm.name"
-              type="text"
-              required
-              placeholder="e.g., n8n automation"
-              class="form-input"
-            />
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Generate</button>
-            <button type="button" @click="closeModal" class="btn btn-secondary">
-              Cancel
-            </button>
-          </div>
-        </form>
+        <div class="modal-body">
+          <form @submit.prevent="generateApiKey" class="modal-form">
+            <div v-if="isSuperadmin" class="form-group">
+              <label>User:</label>
+              <CustomSelect
+                :key="`user-select-${userOptions?.length || 0}-${showCreateModal}-${isSuperadmin}`"
+                v-model="apiKeyForm.userId"
+                :options="userOptions || []"
+                placeholder="Select a user"
+              />
+            </div>
+            <div
+              v-else-if="
+                currentUser && currentUser.global_role !== 'superadmin'
+              "
+              class="form-group"
+            >
+              <label>User:</label>
+              <div class="form-help form-help-info">
+                API key will be generated for:
+                {{ currentUser.email || currentUser.id }}
+              </div>
+            </div>
+            <div v-else class="form-group">
+              <label>User:</label>
+              <div class="form-help">
+                Loading user information... (Role:
+                {{ currentUser?.global_role || "unknown" }})
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Name:</label>
+              <input
+                v-model="apiKeyForm.name"
+                type="text"
+                required
+                placeholder="e.g., n8n automation"
+                class="form-input"
+              />
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Generate</button>
+              <button
+                type="button"
+                @click="closeModal"
+                class="btn btn-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -182,16 +200,18 @@
 </template>
 
 <script>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed, nextTick } from "vue";
 import { admin, auth } from "../../services/api";
 import ConfirmationModal from "../ConfirmationModal.vue";
 import AlertModal from "../AlertModal.vue";
+import CustomSelect from "../CustomSelect.vue";
 
 export default {
   name: "ApiKeyManagement",
   components: {
     ConfirmationModal,
     AlertModal,
+    CustomSelect,
   },
   setup() {
     const apiKeys = ref([]);
@@ -276,6 +296,37 @@ export default {
       const user = users.value.find((u) => u.id === userId);
       return user ? user.email : null;
     };
+
+    const userFilterOptions = computed(() => {
+      return [
+        { value: "", label: "All Users" },
+        ...users.value.map((user) => ({
+          value: user.id,
+          label: user.email,
+        })),
+      ];
+    });
+
+    const userOptions = computed(() => {
+      if (!users.value || users.value.length === 0) {
+        return [];
+      }
+      const options = users.value.map((user) => {
+        const email = user.email || user.id || "Unknown";
+        const role = user.global_role || "user";
+        return {
+          value: user.id,
+          label: `${email} (${role})`,
+        };
+      });
+      return options;
+    });
+
+    const isSuperadmin = computed(() => {
+      return (
+        currentUser.value && currentUser.value.global_role === "superadmin"
+      );
+    });
 
     const generateApiKey = async () => {
       // For admins, ensure userId is set to current user
@@ -382,12 +433,26 @@ export default {
       };
     };
 
-    const openCreateModal = () => {
+    const openCreateModal = async () => {
+      // Ensure currentUser is loaded
+      if (!currentUser.value) {
+        try {
+          currentUser.value = await auth.getCurrentUser();
+        } catch (err) {
+          console.error("Failed to load current user:", err);
+        }
+      }
+      // Ensure users are loaded before opening modal
+      if (users.value.length === 0) {
+        await loadUsers();
+      }
       // For admins, automatically set userId to current user
       if (currentUser.value?.global_role === "admin") {
         apiKeyForm.value.userId = currentUser.value.id;
       }
       showCreateModal.value = true;
+      // Force re-render of CustomSelect after modal is shown
+      await nextTick();
     };
 
     const closeKeyModal = () => {
@@ -476,6 +541,9 @@ export default {
       getIcon,
       loadApiKeys,
       getUserEmail,
+      userFilterOptions,
+      userOptions,
+      isSuperadmin,
       generateApiKey,
       revokeApiKey,
       copyToClipboard,
@@ -547,9 +615,40 @@ export default {
   overflow: hidden;
 }
 
+.mobile-mode .table-container {
+  padding: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
 .api-keys-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.mobile-mode .api-keys-table {
+  min-width: 600px;
 }
 
 .api-keys-table th {
@@ -564,10 +663,29 @@ export default {
   border-bottom: 2px solid rgba(148, 163, 184, 0.2);
 }
 
+.api-keys-table th:last-child {
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
+  text-align: center;
+}
+
 .api-keys-table td {
   padding: 1rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   color: #e6eef6;
+  vertical-align: middle;
+}
+
+.api-keys-table td:last-child {
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
+  text-align: center;
+  white-space: nowrap;
+  padding: 1rem 0.5rem;
+  vertical-align: middle;
+  display: table-cell;
 }
 
 .api-keys-table tr:hover {
@@ -585,8 +703,16 @@ export default {
 }
 
 .actions {
-  display: flex;
+  display: inline-flex;
   gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.api-keys-table td:last-child .actions {
+  display: inline-flex;
+  vertical-align: middle;
 }
 
 .btn-icon {
@@ -648,6 +774,12 @@ export default {
 /* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
+}
+
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .modal-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
 }
 
 .modal {
@@ -732,7 +864,8 @@ body.sidebar-collapsed .modal-overlay {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 0;
+  padding: 2rem;
+  padding-top: 1.5rem;
   width: 100%;
   box-sizing: border-box;
 }
@@ -771,6 +904,86 @@ body.sidebar-collapsed .modal-overlay {
   font-size: 0.95rem;
   transition: all 0.2s ease;
   box-sizing: border-box;
+}
+
+/* Force CustomSelect visibility - using higher specificity */
+.modal-form .form-group :deep(.custom-select) {
+  width: 100% !important;
+  display: block !important;
+  margin-bottom: 0.5rem !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  min-height: 40px !important;
+  position: relative !important;
+}
+
+.modal-form .form-group :deep(.custom-select-trigger) {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 0.75rem 1rem !important;
+  padding-right: 2.5rem !important;
+  background: rgba(30, 41, 59, 0.4) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  border-radius: 0.75rem !important;
+  color: #e6eef6 !important;
+  font-size: 0.95rem !important;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif !important;
+  cursor: pointer !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+.modal-form .form-group :deep(.custom-select-value) {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: #94a3b8 !important;
+  flex: 1 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  min-height: 1.2em !important;
+  line-height: 1.5 !important;
+}
+
+.modal-form
+  .form-group
+  :deep(.custom-select.is-placeholder .custom-select-value) {
+  color: #94a3b8 !important;
+}
+
+.modal-form .form-group :deep(.custom-select-arrow) {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: absolute !important;
+  right: 0.75rem !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 1rem !important;
+  height: 1rem !important;
+  color: #94a3b8 !important;
+  transition: transform 0.2s ease !important;
+  pointer-events: none !important;
+  flex-shrink: 0 !important;
+}
+
+.modal-form .form-group :deep(.custom-select-arrow svg) {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+  color: #94a3b8 !important;
 }
 
 .form-input:focus,
@@ -926,5 +1139,31 @@ body.sidebar-collapsed .modal-overlay {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.form-help {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 0.5rem;
+  display: block;
+}
+
+.form-help-success {
+  color: #22c55e;
+}
+
+.form-help-info {
+  color: #94a3b8;
+  padding: 0.5rem;
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 0.5rem;
+}
+
+.form-input-loading {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: #94a3b8;
+  cursor: default;
 }
 </style>

@@ -140,6 +140,12 @@ body.sidebar-collapsed .modal-overlay {
   padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
 }
 
+/* Remove sidebar padding in mobile mode - must come after sidebar-collapsed rule */
+body.mobile-mode .modal-overlay {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

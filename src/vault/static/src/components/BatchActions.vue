@@ -201,6 +201,12 @@ export default {
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .modal-overlay {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 /* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(0px + 70px); /* Sidebar collapsed (70px) */

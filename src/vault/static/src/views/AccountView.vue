@@ -190,7 +190,23 @@
         Warning: Deleting your account will permanently remove all your data.
         This action cannot be undone.
       </p>
-      <button @click="showDeleteModal = true" class="btn btn-danger">
+      <p
+        v-if="accountInfo.global_role === 'superadmin'"
+        class="warning-text"
+        style="margin-bottom: 1rem"
+      >
+        Superadmin accounts cannot be deleted. Transfer the superadmin role to
+        another user first.
+      </p>
+      <button
+        @click="
+          if (accountInfo.global_role !== 'superadmin') {
+            showDeleteModal = true;
+          }
+        "
+        class="btn btn-danger"
+        :disabled="accountInfo.global_role === 'superadmin'"
+      >
         Delete Account
       </button>
     </section>
@@ -207,6 +223,13 @@
           This action cannot be undone. All your data will be permanently
           deleted.
         </p>
+        <p
+          v-if="accountInfo.global_role === 'superadmin'"
+          class="error-message"
+        >
+          Superadmin accounts cannot be deleted. Transfer the superadmin role to
+          another user first.
+        </p>
         <form @submit.prevent="handleDeleteAccount">
           <div class="form-group">
             <label for="delete-password">Enter your password to confirm:</label>
@@ -215,7 +238,9 @@
               v-model="deleteForm.password"
               autocomplete="current-password"
               required
-              :disabled="deleteForm.loading"
+              :disabled="
+                deleteForm.loading || accountInfo.global_role === 'superadmin'
+              "
               placeholder="Enter your password"
             />
           </div>
@@ -225,7 +250,9 @@
           <div class="form-actions">
             <button
               type="submit"
-              :disabled="deleteForm.loading"
+              :disabled="
+                deleteForm.loading || accountInfo.global_role === 'superadmin'
+              "
               class="btn btn-danger"
             >
               {{
@@ -1047,6 +1074,13 @@ export default {
       this.deleteForm.loading = true;
       this.deleteForm.error = null;
 
+      if (this.accountInfo.global_role === "superadmin") {
+        this.deleteForm.error =
+          "Superadmin accounts cannot be deleted. Transfer the superadmin role to another user first.";
+        this.deleteForm.loading = false;
+        return;
+      }
+
       if (!this.deleteForm.password) {
         this.deleteForm.error = "Please enter your password";
         this.deleteForm.loading = false;
@@ -1169,6 +1203,11 @@ export default {
   padding: 2rem;
 }
 
+.mobile-mode .account-view {
+  padding: 1rem;
+  max-width: 100%;
+}
+
 .account-view h1 {
   margin-bottom: 2rem;
   color: #e6eef6;
@@ -1181,6 +1220,11 @@ export default {
   border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 2rem;
+}
+
+.mobile-mode .account-section {
+  padding: 1rem;
+  margin-bottom: 1rem;
 }
 
 .account-section h2 {
@@ -1279,6 +1323,7 @@ export default {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-primary {

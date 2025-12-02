@@ -125,6 +125,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.api_keys_prefix_migration import (
         ApiKeysPrefixMigration,
     )
+    from vault.database.migrations.audit_logs_enrichment_migration import (
+        AuditLogsEnrichmentMigration,
+    )
     from vault.database.migrations.jwt_jti_migration import JwtJtiMigration
     from vault.database.migrations.pinned_vaultspaces_migration import (
         PinnedVaultSpacesMigration,
@@ -136,6 +139,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(ApiKeysPrefixMigration)
     registry.register(JwtJtiMigration)
     registry.register(PinnedVaultSpacesMigration)
+    registry.register(AuditLogsEnrichmentMigration)
 
     migrations = registry.get_all_migrations()
 

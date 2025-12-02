@@ -15,21 +15,18 @@
         placeholder="Search by email..."
         class="search-input"
       />
-      <select v-model="filterRole" @change="loadUsers" class="filter-select">
-        <option value="">All Roles</option>
-        <option value="user">User</option>
-        <option value="admin">Admin</option>
-        <option value="superadmin">Superadmin</option>
-      </select>
-      <select
+      <CustomSelect
+        v-model="filterRole"
+        :options="roleFilterOptions"
+        @change="loadUsers"
+        placeholder="All Roles"
+      />
+      <CustomSelect
         v-model="filterVerificationStatus"
+        :options="verificationFilterOptions"
         @change="handleVerificationFilterChange"
-        class="filter-select"
-      >
-        <option value="">All Users</option>
-        <option value="verified">Verified</option>
-        <option value="unverified">Unverified</option>
-      </select>
+        placeholder="All Users"
+      />
     </div>
 
     <div v-if="loading" class="loading glass glass-card">
@@ -37,71 +34,73 @@
       Loading users...
     </div>
     <div v-else-if="error" class="error glass glass-card">{{ error }}</div>
-    <div v-else class="table-container glass glass-card">
-      <table class="users-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Last Login</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="user in users" :key="user?.id || Math.random()">
-            <td>{{ user?.email || "N/A" }}</td>
-            <td>
-              <span
-                class="role-badge"
-                :class="`role-${user?.global_role || 'user'}`"
-              >
-                {{ user?.global_role || "user" }}
-              </span>
-            </td>
-            <td>
-              <span
-                class="status-badge"
-                :class="{
-                  verified: user?.email_verified,
-                  unverified: !user?.email_verified,
-                }"
-              >
-                {{ user?.email_verified ? "Verified" : "Unverified" }}
-              </span>
-            </td>
-            <td>{{ formatDate(user?.created_at) }}</td>
-            <td>{{ formatDate(user?.last_login) }}</td>
-            <td class="actions">
-              <button
-                @click="viewUser(user?.id)"
-                class="btn-icon"
-                title="View"
-                :disabled="!user?.id"
-                v-html="getIcon('eye', 18)"
-              ></button>
-              <button
-                @click.stop.prevent="handleEditClick(user, $event)"
-                class="btn-icon"
-                title="Edit"
-                :disabled="!user"
-                v-html="getIcon('edit', 18)"
-              ></button>
-              <button
-                v-if="!user?.email_verified"
-                @click.stop.prevent="sendVerificationEmail(user?.id)"
-                class="btn-icon"
-                title="Send Verification Email"
-                :disabled="!user?.id"
-                v-html="getIcon('mail', 18)"
-              ></button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else class="table-wrapper">
+      <div class="table-container glass glass-card">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Last Login</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="user in users" :key="user?.id || Math.random()">
+              <td>{{ user?.email || "N/A" }}</td>
+              <td>
+                <span
+                  class="role-badge"
+                  :class="`role-${user?.global_role || 'user'}`"
+                >
+                  {{ user?.global_role || "user" }}
+                </span>
+              </td>
+              <td>
+                <span
+                  class="status-badge"
+                  :class="{
+                    verified: user?.email_verified,
+                    unverified: !user?.email_verified,
+                  }"
+                >
+                  {{ user?.email_verified ? "Verified" : "Unverified" }}
+                </span>
+              </td>
+              <td>{{ formatDate(user?.created_at) }}</td>
+              <td>{{ formatDate(user?.last_login) }}</td>
+              <td class="actions">
+                <button
+                  @click="viewUser(user?.id)"
+                  class="btn-icon"
+                  title="View"
+                  :disabled="!user?.id"
+                  v-html="getIcon('eye', 18)"
+                ></button>
+                <button
+                  @click.stop.prevent="handleEditClick(user, $event)"
+                  class="btn-icon"
+                  title="Edit"
+                  :disabled="!user"
+                  v-html="getIcon('edit', 18)"
+                ></button>
+                <button
+                  v-if="!user?.email_verified"
+                  @click.stop.prevent="sendVerificationEmail(user?.id)"
+                  class="btn-icon"
+                  title="Send Verification Email"
+                  :disabled="!user?.id"
+                  v-html="getIcon('mail', 18)"
+                ></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <div class="pagination">
+      <div class="pagination glass glass-card">
         <button
           @click="changePage((page || 1) - 1)"
           :disabled="!page || page === 1"
@@ -166,19 +165,12 @@
 
             <div class="form-group">
               <label>New Role:</label>
-              <select
+              <CustomSelect
                 v-model="actionsForm.newRole"
+                :options="availableRolesOptions"
+                placeholder="Select role"
                 required
-                class="form-select"
-              >
-                <option
-                  v-for="role in availableRoles"
-                  :key="role"
-                  :value="role"
-                >
-                  {{ role }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -479,12 +471,14 @@ import { ref, onMounted, computed } from "vue";
 import { admin, auth } from "../../services/api";
 import ConfirmationModal from "../ConfirmationModal.vue";
 import AlertModal from "../AlertModal.vue";
+import CustomSelect from "../CustomSelect.vue";
 
 export default {
   name: "UserManagement",
   components: {
     ConfirmationModal,
     AlertModal,
+    CustomSelect,
   },
   setup() {
     const users = ref([]);
@@ -838,6 +832,19 @@ export default {
       return true;
     });
 
+    const roleFilterOptions = [
+      { value: "", label: "All Roles" },
+      { value: "user", label: "User" },
+      { value: "admin", label: "Admin" },
+      { value: "superadmin", label: "Superadmin" },
+    ];
+
+    const verificationFilterOptions = [
+      { value: "", label: "All Users" },
+      { value: "verified", label: "Verified" },
+      { value: "unverified", label: "Unverified" },
+    ];
+
     const availableRoles = computed(() => {
       if (!currentUser.value) {
         return ["user"];
@@ -1019,6 +1026,14 @@ export default {
       canChangeRole,
       canDeleteUser,
       availableRoles,
+      availableRolesOptions: computed(() => {
+        return availableRoles.value.map((role) => ({
+          value: role,
+          label: role.charAt(0).toUpperCase() + role.slice(1),
+        }));
+      }),
+      roleFilterOptions,
+      verificationFilterOptions,
       showAlert,
       showConfirm,
       handleConfirmModalConfirm,
@@ -1065,9 +1080,32 @@ export default {
   margin-bottom: 1.5rem;
   padding: 1.5rem;
   border-radius: 1rem;
+  flex-wrap: wrap;
 }
 
-.search-input,
+.mobile-mode .filters {
+  flex-direction: column;
+}
+
+.mobile-mode .search-input,
+.mobile-mode .filter-select {
+  width: 100%;
+  flex: 1 1 100%;
+  min-width: 100%;
+}
+
+.search-input {
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.4);
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  flex: 2;
+  min-width: 200px;
+}
+
 .filter-select {
   padding: 0.75rem 1rem;
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -1077,7 +1115,7 @@ export default {
   font-size: 0.95rem;
   transition: all 0.2s ease;
   flex: 1;
-  min-width: 0;
+  min-width: 150px;
 }
 
 .search-input:focus,
@@ -1091,15 +1129,65 @@ export default {
   color: #94a3b8;
 }
 
+.table-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
 .table-container {
   padding: 1.5rem;
-  border-radius: 1rem;
+  border-radius: 1rem 1rem 0 0;
   overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mobile-mode .table-container {
+  padding: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+  position: relative;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+
+.mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
 
 .users-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
+}
+
+.users-table tbody tr {
+  height: auto;
+}
+
+.users-table tbody tr td {
+  height: auto;
+}
+
+.mobile-mode .users-table {
+  min-width: 600px;
+  width: 100%;
 }
 
 .users-table th {
@@ -1114,10 +1202,34 @@ export default {
   border-bottom: 2px solid rgba(148, 163, 184, 0.2);
 }
 
+.users-table th:last-child {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  text-align: center;
+}
+
 .users-table td {
   padding: 1rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   color: #e6eef6;
+  vertical-align: middle;
+}
+
+.users-table td:last-child {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  text-align: center;
+  white-space: nowrap;
+  padding: 1rem 0.5rem;
+  vertical-align: middle;
+  display: table-cell;
+}
+
+.users-table td:last-child .actions {
+  display: inline-flex;
+  vertical-align: middle;
 }
 
 .users-table tr:hover {
@@ -1171,8 +1283,11 @@ export default {
 }
 
 .actions {
-  display: flex;
+  display: inline-flex;
   gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  vertical-align: middle;
 }
 
 .btn-icon {
@@ -1211,14 +1326,47 @@ export default {
   justify-content: center;
   align-items: center;
   gap: 1rem;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 0 0 1rem 1rem;
+  overflow: hidden;
+  flex-wrap: nowrap;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: 0;
+  position: relative;
   border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.mobile-mode .pagination {
+  gap: 0.75rem;
+  padding: 1rem;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
 }
 
 .page-info {
   color: #cbd5e1;
   font-size: 0.9rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mobile-mode .page-info {
+  font-size: 0.85rem;
+  padding: 0 0.25rem;
+}
+
+.pagination .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.mobile-mode .pagination .btn {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  min-width: auto;
 }
 
 .modal-overlay {
@@ -1243,6 +1391,12 @@ export default {
 /* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
+}
+
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .modal-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
 }
 
 .modal {
@@ -1716,4 +1870,22 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 /* Glass morphism effect - uses global styles from assets/styles.css */
+/* Mobile Mode Styles */
+.mobile-mode .users-table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-mode .form-group {
+  width: 100%;
+}
+
+.mobile-mode .form-actions {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-mode .form-actions button {
+  width: 100%;
+}
 </style>

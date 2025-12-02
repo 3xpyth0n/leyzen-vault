@@ -562,6 +562,11 @@ export default {
   width: 100%;
 }
 
+.mobile-mode .stats-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
 .stat-card {
   background: linear-gradient(
     140deg,
@@ -575,6 +580,18 @@ export default {
   padding: 1.5rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.mobile-mode .stat-card {
+  padding: 1rem;
+  max-width: 100%;
+}
+
+.mobile-mode .stat-card-large {
+  grid-column: span 1;
 }
 
 .stat-card-large {
@@ -712,6 +729,74 @@ export default {
   .overview-section {
     grid-template-columns: 1fr;
   }
+}
+
+.mobile-mode .overview-section {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.mobile-mode .overview-left,
+.mobile-mode .overview-right {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Mobile Mode Styles */
+.mobile-mode .admin-tabs-wrapper {
+  overflow: hidden; /* Hide scrollbar on wrapper */
+}
+
+.mobile-mode .admin-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0.75rem 1rem;
+  gap: 0.25rem;
+  justify-content: flex-start; /* Align tabs to the left instead of center */
+  min-width: 100%; /* Ensure tabs can extend beyond viewport */
+}
+
+.mobile-mode .admin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-mode .admin-tab-button {
+  padding: 0.625rem 1rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mobile-mode .admin-content-wrapper {
+  padding: 1rem;
+}
+
+.mobile-mode .quick-stats-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.mobile-mode .quick-stat-card {
+  padding: 1rem;
+}
+
+.mobile-mode .dashboard-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.mobile-mode .overview-section {
+  grid-template-columns: 1fr;
+  gap: 1rem;
 }
 
 .alerts-section {

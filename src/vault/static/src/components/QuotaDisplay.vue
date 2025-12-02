@@ -222,6 +222,11 @@ export default {
   margin-bottom: 1rem;
 }
 
+.mobile-mode .quota-display {
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
 .quota-header {
   display: flex;
   justify-content: space-between;

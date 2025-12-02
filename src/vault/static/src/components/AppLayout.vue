@@ -1,7 +1,11 @@
 <template>
-  <div class="app-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+  <div class="app-layout" :class="{ 'mobile-active': isMobileMode }">
+    <!-- Sidebar (hidden on mobile) -->
+    <aside
+      v-if="!isMobileMode"
+      class="sidebar"
+      :class="{ collapsed: sidebarCollapsed }"
+    >
       <nav class="sidebar-nav">
         <button
           @click="$router.push('/dashboard')"
@@ -96,7 +100,10 @@
     <!-- Main Content Area -->
     <div
       class="main-content"
-      :class="{ 'sidebar-collapsed': sidebarCollapsed }"
+      :class="{
+        'sidebar-collapsed': sidebarCollapsed,
+        'mobile-active': isMobileMode,
+      }"
     >
       <!-- Header -->
       <header class="app-header">
@@ -124,6 +131,9 @@
       </main>
     </div>
 
+    <!-- Bottom Navigation (Mobile Only) -->
+    <BottomNavigation v-if="isMobileMode" />
+
     <!-- Logout Confirmation Modal -->
     <ConfirmationModal
       :show="showLogoutModal"
@@ -142,7 +152,9 @@
 import ConfirmationModal from "./ConfirmationModal.vue";
 import ServerStatusIndicator from "./ServerStatusIndicator.vue";
 import UserMenuDropdown from "./UserMenuDropdown.vue";
+import BottomNavigation from "./BottomNavigation.vue";
 import { auth, account, vaultspaces } from "../services/api";
+import { isMobileMode as checkMobileMode } from "../utils/mobileMode";
 
 export default {
   name: "AppLayout",
@@ -150,6 +162,7 @@ export default {
     ConfirmationModal,
     ServerStatusIndicator,
     UserMenuDropdown,
+    BottomNavigation,
   },
   emits: ["logout"],
   data() {
@@ -165,6 +178,8 @@ export default {
       vaultspaceDeletedHandler: null,
       disintegratingPinnedItems: new Set(),
       updatingPinnedItems: new Set(),
+      isMobileMode: false,
+      mobileModeChangeHandler: null,
     };
   },
   computed: {
@@ -258,6 +273,18 @@ export default {
     },
   },
   async mounted() {
+    // Initialize mobile mode state
+    this.isMobileMode = checkMobileMode();
+
+    // Listen for mobile mode changes
+    const handleMobileModeChange = (event) => {
+      this.isMobileMode = event.detail?.mobileMode ?? checkMobileMode();
+    };
+    window.addEventListener("mobile-mode-changed", handleMobileModeChange);
+
+    // Store handler for cleanup
+    this.mobileModeChangeHandler = handleMobileModeChange;
+
     // Load sidebar state from localStorage
     const saved = localStorage.getItem("sidebarCollapsed");
     if (saved !== null) {
@@ -345,6 +372,13 @@ export default {
     );
   },
   beforeUnmount() {
+    // Clean up mobile mode change listener
+    if (this.mobileModeChangeHandler) {
+      window.removeEventListener(
+        "mobile-mode-changed",
+        this.mobileModeChangeHandler,
+      );
+    }
     // Remove document event listeners
     if (this.pinnedVaultSpacesChangedHandler) {
       document.removeEventListener(
@@ -406,6 +440,10 @@ export default {
   opacity: 1;
   will-change: width;
   contain: layout style paint;
+}
+
+.mobile-mode .sidebar {
+  display: none !important;
 }
 
 /* Custom scrollbar for sidebar */
@@ -737,6 +775,14 @@ export default {
   margin-left: 70px;
 }
 
+.mobile-mode .main-content {
+  margin-left: 0 !important;
+}
+
+.mobile-mode .main-content.sidebar-collapsed {
+  margin-left: 0 !important;
+}
+
 /* Header */
 .app-header {
   background: rgba(255, 255, 255, 0.03);
@@ -744,6 +790,8 @@ export default {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   border-top-left-radius: 0.75rem;
   padding: 1.5rem 2rem;
+  position: relative;
+  z-index: 100; /* Above encryption overlay (50) but below dropdown (1000) */
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -780,12 +828,20 @@ export default {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 600;
-  color: #e6eef6;
-  transition: color 0.2s ease;
+  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition:
+    background 0.3s ease,
+    transform 0.2s ease;
 }
 
 .app-title:hover {
-  color: rgba(88, 166, 255, 0.8);
+  background: linear-gradient(120deg, #c5b0ffff, #a575ffff, #818cf8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  transform: scale(1.03);
 }
 
 .app-slogan {
@@ -814,7 +870,39 @@ export default {
   z-index: 1;
 }
 
-/* Responsive */
+.mobile-mode .page-content {
+  padding-bottom: calc(2rem + 64px);
+  padding: 1rem;
+}
+
+/* Mobile Mode Styles */
+.mobile-mode .app-header {
+  padding: 1rem;
+}
+
+.mobile-mode .app-title {
+  font-size: 1.25rem;
+  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.mobile-mode .app-slogan {
+  font-size: 0.7rem;
+  display: none;
+}
+
+.mobile-mode .header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-mode .header-right {
+  flex-shrink: 0;
+}
+
+/* Responsive (viewport-based) */
 @media (max-width: 768px) {
   .sidebar {
     width: 70px;
@@ -838,6 +926,10 @@ export default {
 
   .app-title {
     font-size: 1.5rem;
+    background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   .app-slogan {

@@ -73,12 +73,17 @@ class FileMetadata:
 class AuditLog:
     """Audit log entry for tracking actions."""
 
-    action: str  # upload, download, delete, share, access_denied
+    action: (
+        str  # upload, download, delete, share, access_denied, auth_login_success, etc.
+    )
     file_id: str | None
     user_ip: str
     timestamp: datetime
     details: dict[str, Any]
     success: bool
+    ipv4: str | None = None
+    ip_location: dict[str, Any] | None = None
+    user_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -86,8 +91,11 @@ class AuditLog:
             "action": self.action,
             "file_id": self.file_id,
             "user_ip": self.user_ip,
-            "timestamp": self.timestamp.isoformat(),
-            "details": self.details,
+            "ipv4": self.ipv4,
+            "ip_location": self.ip_location,
+            "user_id": self.user_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "details": self.details or {},
             "success": self.success,
         }
 

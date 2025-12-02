@@ -540,6 +540,11 @@ export default {
   box-sizing: border-box;
 }
 
+.mobile-mode .dashboard-main {
+  gap: 1rem;
+  padding: 0 0.5rem;
+}
+
 .vaultspaces-section {
   background: linear-gradient(
     140deg,
@@ -553,11 +558,28 @@ export default {
   box-shadow: 0 12px 40px rgba(2, 6, 23, 0.35);
 }
 
+.mobile-mode .vaultspaces-section {
+  padding: 1rem;
+  border-radius: 1rem;
+}
+
 .vaultspaces-section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+}
+
+.mobile-mode .vaultspaces-section-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.mobile-mode .vaultspaces-section-header h2 {
+  font-size: 1.25rem;
 }
 
 .vaultspaces-section h2 {
@@ -657,6 +679,11 @@ export default {
   gap: 1.25rem;
 }
 
+.mobile-mode .vaultspaces-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
 .vaultspace-card {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(8px);
@@ -667,6 +694,11 @@ export default {
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+.mobile-mode .vaultspace-card {
+  padding: 1rem;
+  width: 100%;
 }
 
 .vaultspace-card:hover {
@@ -842,6 +874,11 @@ export default {
   align-items: center;
   justify-content: center;
   color: #e6eef6;
+}
+
+.mobile-mode .vaultspace-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
 }
 
 .vaultspace-icon :deep(svg) {

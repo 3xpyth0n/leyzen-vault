@@ -66,6 +66,14 @@ export default {
 .top-users-card {
   padding: 1.5rem;
   border-radius: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.mobile-mode .top-users-card {
+  padding: 1rem;
+  max-width: 100%;
 }
 
 .section-header {
@@ -114,6 +122,12 @@ export default {
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+}
+
+.mobile-mode .user-item {
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .user-rank {
@@ -133,6 +147,13 @@ export default {
 .user-info {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+.mobile-mode .user-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 3rem);
 }
 
 .user-email {
@@ -157,6 +178,17 @@ export default {
   border-radius: 3px;
   overflow: hidden;
   min-width: 100px;
+}
+
+.mobile-mode .user-item {
+  flex-wrap: nowrap;
+}
+
+.mobile-mode .user-bar {
+  flex: 0 0 100%;
+  order: 3;
+  margin-top: 0.5rem;
+  min-width: 0;
 }
 
 .user-bar-fill {

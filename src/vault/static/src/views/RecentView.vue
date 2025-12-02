@@ -243,7 +243,7 @@
 <script>
 import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { useRouter } from "vue-router";
-import { files, auth } from "../services/api";
+import { files, auth, vaultspaces } from "../services/api";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
 import FilePreview from "../components/FilePreview.vue";
@@ -255,6 +255,13 @@ import { folderPicker } from "../utils/FolderPicker";
 import { decryptFileKey, decryptFile } from "../services/encryption.js";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import PasswordInput from "../components/PasswordInput.vue";
+import {
+  getUserMasterKey,
+  decryptVaultSpaceKeyForUser,
+  cacheVaultSpaceKey,
+  getCachedVaultSpaceKey,
+  createVaultSpaceKey,
+} from "../services/keyManager.js";
 
 export default {
   name: "RecentView",
@@ -266,6 +273,7 @@ export default {
     AlertModal,
     BatchActions,
     CustomSelect,
+    PasswordInput,
   },
   setup() {
     const router = useRouter();
@@ -339,11 +347,87 @@ export default {
         );
         // Filter out any deleted files that might have slipped through (defensive)
         recentFiles.value = (data.files || []).filter((f) => !f.deleted_at);
+
+        // Load VaultSpace keys for all unique vaultspace_ids
+        await loadVaultSpaceKeysForFiles();
       } catch (err) {
         error.value = err.message || "Failed to load recent files";
       } finally {
         loading.value = false;
       }
+    };
+
+    const loadVaultSpaceKeysForFiles = async () => {
+      // Check if master key is available
+      const userMasterKey = await getUserMasterKey();
+      if (!userMasterKey) {
+        return; // Silently return if master key is not available
+      }
+
+      // Extract unique vaultspace_ids from files
+      const vaultspaceIds = new Set();
+      recentFiles.value.forEach((file) => {
+        if (file.vaultspace_id) {
+          vaultspaceIds.add(file.vaultspace_id);
+        }
+      });
+
+      // Load keys for each vaultspace_id in parallel
+      const loadKeyPromises = Array.from(vaultspaceIds).map(
+        async (vaultspaceId) => {
+          try {
+            // Check if key is already cached
+            const cachedKey = getCachedVaultSpaceKey(vaultspaceId);
+            if (cachedKey) {
+              return; // Already cached
+            }
+
+            // Try to get encrypted VaultSpace key from server
+            const vaultspaceKeyData = await vaultspaces.getKey(vaultspaceId);
+
+            if (!vaultspaceKeyData) {
+              // Key doesn't exist, create it
+              const currentUser = await auth.getCurrentUser();
+              const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
+              await vaultspaces.share(
+                vaultspaceId,
+                currentUser.id,
+                encryptedKey,
+              );
+              const vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                userMasterKey,
+                encryptedKey,
+              );
+              cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+            } else {
+              // Decrypt VaultSpace key with user master key
+              try {
+                const vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                  userMasterKey,
+                  vaultspaceKeyData.encrypted_key,
+                );
+                cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+              } catch (decryptErr) {
+                // Decryption failed - VaultSpace key was encrypted with a different master key
+                // Silently fail for this vaultspace
+                console.debug(
+                  `Failed to decrypt VaultSpace key for ${vaultspaceId}:`,
+                  decryptErr,
+                );
+              }
+            }
+          } catch (err) {
+            // Silently fail for individual vaultspaces
+            console.debug(
+              `Failed to load VaultSpace key for ${vaultspaceId}:`,
+              err,
+            );
+          }
+        },
+      );
+
+      // Wait for all keys to load (or fail silently)
+      await Promise.allSettled(loadKeyPromises);
     };
 
     // Use file view composable for shared functionality
@@ -964,6 +1048,11 @@ export default {
   padding: 2rem;
 }
 
+.mobile-mode .recent-view {
+  padding: 1rem;
+  padding-bottom: calc(1rem + 64px);
+}
+
 .view-header {
   display: flex;
   justify-content: space-between;
@@ -973,6 +1062,13 @@ export default {
   border-radius: 2rem;
 }
 
+.mobile-mode .view-header {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .view-header h1 {
   margin: 0;
   font-size: 1.75rem;
@@ -980,6 +1076,11 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.mobile-mode .view-header h1 {
+  font-size: 1.25rem;
+  width: 100%;
 }
 
 .header-icon {
@@ -992,12 +1093,30 @@ export default {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.mobile-mode .header-actions {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.5rem;
 }
 
 .filter-group {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.mobile-mode .filter-group {
+  width: 100%;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.mobile-mode .filter-group label {
+  font-size: 0.85rem;
 }
 
 .filter-group label {
@@ -1056,6 +1175,7 @@ export default {
   animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   /* pointer-events is controlled via inline style */
   isolation: isolate;
+  z-index: 50 !important; /* Below header (100), dropdown (1000), bottom bar (99999) but above content */
 }
 
 @keyframes overlayFadeIn {

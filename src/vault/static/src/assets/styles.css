@@ -349,6 +349,27 @@ body.sidebar-collapsed .modal-overlay {
   overflow-y: auto !important;
 }
 
+.mobile-mode .modal-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
+}
+
+.mobile-mode .modal {
+  min-width: auto !important;
+  max-width: 90vw !important;
+  padding: 1rem !important;
+  border-radius: 1rem !important;
+}
+
+.mobile-mode .modal .form-actions {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-mode .modal .form-actions button {
+  width: 100%;
+}
+
 /* Folder picker modal specific styles */
 .folder-picker-modal {
   max-width: 500px !important;

@@ -1420,6 +1420,11 @@ export default {
   padding: 2rem;
 }
 
+.mobile-mode .shared-view {
+  padding: 1rem;
+  padding-bottom: calc(1rem + 64px);
+}
+
 .view-header {
   margin-bottom: 2rem;
 }
@@ -1449,6 +1454,10 @@ export default {
   border-radius: 1rem;
   padding: 1.5rem;
   transition: all 0.2s ease;
+}
+
+.mobile-mode .shared-file-item {
+  padding: 1rem;
 }
 
 .shared-file-item:hover {
@@ -1566,12 +1575,27 @@ export default {
   border-radius: 0.75rem;
   padding: 1rem;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   gap: 1rem;
 }
 
+.mobile-mode .share-link-card {
+  padding: 0.75rem;
+  gap: 0.75rem;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
 .link-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-mode .link-info {
+  gap: 0.375rem;
   flex: 1;
   min-width: 0;
 }
@@ -1580,13 +1604,20 @@ export default {
   font-size: 0.85rem;
   color: #94a3b8;
   word-break: break-all;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
   font-family: monospace;
   position: relative;
   padding: 0.5rem 0.75rem;
   background: rgba(15, 23, 42, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 0.375rem;
+}
+
+.mobile-mode .link-url {
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  max-height: 3rem;
+  overflow-y: auto;
 }
 
 .link-warning {
@@ -1618,9 +1649,18 @@ export default {
   margin-bottom: 0.25rem;
 }
 
+.mobile-mode .link-meta {
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 .link-status {
   font-size: 0.75rem;
   font-weight: 500;
+}
+
+.mobile-mode .link-status {
+  font-size: 0.7rem;
 }
 
 .status-active {
@@ -1639,6 +1679,22 @@ export default {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+  align-items: flex-start;
+}
+
+.mobile-mode .link-actions {
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  min-width: 100px;
+  align-self: flex-start;
+}
+
+.mobile-mode .link-actions .btn {
+  width: 100%;
+  white-space: nowrap;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
 }
 
 .btn-small {
@@ -1747,6 +1803,12 @@ export default {
 /* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .email-modal .modal-overlay {
   padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
+}
+
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .email-modal .modal-overlay {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
 }
 
 .email-modal .modal-container {

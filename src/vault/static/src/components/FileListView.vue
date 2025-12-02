@@ -6,52 +6,61 @@
     tabindex="0"
   >
     <div class="view-controls glass">
-      <div class="view-toggle">
-        <button
-          @click="$emit('view-change', 'grid')"
-          class="btn-icon"
-          :class="{ active: viewMode !== 'list' }"
-          title="Grid View"
+      <div class="view-controls-grid">
+        <div class="view-toggle-panel" v-if="!isMobileView">
+          <div class="view-toggle">
+            <button
+              @click="$emit('view-change', 'grid')"
+              class="btn-icon"
+              :class="{ active: viewMode !== 'list' }"
+              title="Grid View"
+            >
+              <span v-html="getIcon('grid')"></span>
+            </button>
+            <button
+              @click="$emit('view-change', 'list')"
+              class="btn-icon"
+              :class="{ active: viewMode === 'list' }"
+              title="List View"
+            >
+              <span v-html="getIcon('list')"></span>
+            </button>
+          </div>
+        </div>
+        <div
+          class="controls-right-panel"
+          :class="{ 'mobile-full-width': isMobileView }"
         >
-          <span v-html="getIcon('grid')"></span>
-        </button>
-        <button
-          @click="$emit('view-change', 'list')"
-          class="btn-icon"
-          :class="{ active: viewMode === 'list' }"
-          title="List View"
-        >
-          <span v-html="getIcon('list')"></span>
-        </button>
-      </div>
-      <div class="sort-controls">
-        <CustomSelect
-          v-model="sortBy"
-          :options="sortOptions"
-          @change="handleSortChange"
-          size="small"
-          placeholder="Sort by"
-        />
-        <button
-          @click="toggleSortOrder"
-          class="btn-icon"
-          :title="sortOrder === 'asc' ? 'Ascending' : 'Descending'"
-        >
-          <span v-html="getSortIcon()"></span>
-        </button>
-      </div>
-      <div class="filter-controls">
-        <CustomSelect
-          v-model="filterType"
-          :options="filterOptions"
-          @change="handleFilterChange"
-          size="small"
-          placeholder="Filter"
-        />
+          <div class="sort-controls">
+            <CustomSelect
+              v-model="sortBy"
+              :options="sortOptions"
+              @change="handleSortChange"
+              size="small"
+              placeholder="Sort by"
+            />
+            <button
+              @click="toggleSortOrder"
+              class="btn-icon"
+              :title="sortOrder === 'asc' ? 'Ascending' : 'Descending'"
+            >
+              <span v-html="getSortIcon()"></span>
+            </button>
+          </div>
+          <div class="filter-controls">
+            <CustomSelect
+              v-model="filterType"
+              :options="filterOptions"
+              @change="handleFilterChange"
+              size="small"
+              placeholder="Filter"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
-    <div v-if="viewMode === 'list'" class="list-view">
+    <div v-if="viewMode === 'list' && !isMobileView" class="list-view">
       <div
         ref="tableContainer"
         class="grid-container glass"
@@ -320,6 +329,7 @@ import { getCachedVaultSpaceKey } from "../services/keyManager";
 import * as mm from "music-metadata";
 import FileMenuDropdown from "./FileMenuDropdown.vue";
 import CustomSelect from "./CustomSelect.vue";
+import { isMobileMode } from "../utils/mobileMode";
 
 export default {
   name: "FileListView",
@@ -378,6 +388,7 @@ export default {
     "drop",
   ],
   setup(props, { emit }) {
+    const isMobileView = ref(isMobileMode());
     const sortBy = ref(props.defaultSortBy);
     const sortOrder = ref(props.defaultSortOrder);
     const filterType = ref("all");
@@ -388,6 +399,22 @@ export default {
     const dropTargetId = ref(null);
     const draggedItemId = ref(null);
     const focusedItemIndex = ref(-1); // Index of focused element for keyboard navigation
+
+    // Listen for mobile mode changes
+    const handleMobileModeChange = (event) => {
+      isMobileView.value = event.detail?.mobileMode ?? isMobileMode();
+    };
+
+    // Force grid mode on mobile
+    watch(
+      [isMobileView, () => props.viewMode],
+      ([mobile, mode]) => {
+        if (mobile && mode === "list") {
+          emit("view-change", "grid");
+        }
+      },
+      { immediate: true },
+    );
 
     // Expose newlyCreatedItemId for template access
     const newlyCreatedItemId = computed(() => props.newlyCreatedItemId);
@@ -663,6 +690,11 @@ export default {
 
     // Load column widths on mount
     onMounted(() => {
+      // Setup mobile mode listener
+      window.addEventListener("mobile-mode-changed", handleMobileModeChange);
+      // Check on mount
+      isMobileView.value = isMobileMode();
+
       initializeColumnWidths();
     });
 
@@ -1260,20 +1292,24 @@ export default {
       return "Unknown";
     };
 
-    const thumbnailUrls = ref({}); // Cache blob URLs as reactive object
+    // Initialize global thumbnail cache if not exists
+    if (!window.__leyzenThumbnailUrls) {
+      window.__leyzenThumbnailUrls = new Map();
+    }
+
     const thumbnailUpdateTrigger = ref(0); // Force reactivity trigger
 
     const getThumbnailUrl = (fileId) => {
       // Access thumbnailUpdateTrigger to create dependency
       void thumbnailUpdateTrigger.value;
-      // Return cached URL if available
-      return thumbnailUrls.value[fileId] || "";
+      // Return cached URL from global cache if available
+      return window.__leyzenThumbnailUrls.get(fileId) || "";
     };
 
     // Load thumbnail URL - for images, load the image directly without checking for thumbnail
     // This avoids 404 errors in the network tab
     const loadThumbnailUrl = async (fileId, file = null) => {
-      if (thumbnailUrls.value[fileId]) {
+      if (window.__leyzenThumbnailUrls.has(fileId)) {
         return; // Already loaded
       }
 
@@ -1355,10 +1391,8 @@ export default {
         const blob = new Blob([decryptedData], { type: file.mime_type });
         const blobUrl = URL.createObjectURL(blob);
 
-        // Store in cache
-        const newUrls = { ...thumbnailUrls.value };
-        newUrls[file.id] = blobUrl;
-        thumbnailUrls.value = newUrls;
+        // Store in global cache
+        window.__leyzenThumbnailUrls.set(file.id, blobUrl);
 
         // Force Vue to update
         thumbnailUpdateTrigger.value++;
@@ -1470,10 +1504,8 @@ export default {
             });
             const blobUrl = URL.createObjectURL(pictureBlob);
 
-            // Store in cache
-            const newUrls = { ...thumbnailUrls.value };
-            newUrls[file.id] = blobUrl;
-            thumbnailUrls.value = newUrls;
+            // Store in global cache
+            window.__leyzenThumbnailUrls.set(file.id, blobUrl);
 
             // Force Vue to update
             thumbnailUpdateTrigger.value++;
@@ -1495,7 +1527,7 @@ export default {
       // The actual check is done when loading the thumbnail
       return (
         isImageFile(file) ||
-        (isAudioFile(file) && thumbnailUrls.value[file.id]) ||
+        (isAudioFile(file) && window.__leyzenThumbnailUrls.has(file.id)) ||
         generatedThumbnails.value.has(file.id)
       );
     };
@@ -2041,7 +2073,7 @@ export default {
                 if (
                   file &&
                   (isImageFile(file) || isAudioFile(file)) &&
-                  !thumbnailUrls.value[file.id] && // Thumbnail not loaded yet
+                  !window.__leyzenThumbnailUrls.has(file.id) && // Thumbnail not loaded yet
                   !generatingThumbnails.value.has(file.id) &&
                   !failedThumbnails.value.has(file.id)
                 ) {
@@ -2148,6 +2180,9 @@ export default {
 
     // Cleanup observer on unmount
     onUnmounted(() => {
+      // Remove mobile mode listener
+      window.removeEventListener("mobile-mode-changed", handleMobileModeChange);
+
       if (thumbnailObserver) {
         thumbnailObserver.disconnect();
         thumbnailObserver = null;
@@ -2181,6 +2216,7 @@ export default {
     });
 
     return {
+      isMobileView,
       newlyCreatedItemId,
       isNewlyCreated,
       sortBy,
@@ -2258,43 +2294,87 @@ export default {
 }
 
 .view-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
+  padding: 0.75rem;
   margin-bottom: 1rem;
   border-radius: var(--radius-md, 8px);
-  gap: 1rem;
+  display: block;
+}
+
+.view-controls-grid {
+  display: grid;
+  grid-template-columns: 0fr 1fr;
+  grid-template-rows: 1fr;
+  gap: 0.5rem;
+  align-items: stretch;
+  min-height: 100px;
+  width: 100%;
+}
+
+.view-toggle-panel {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  height: 100%;
 }
 
 .view-toggle {
   display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.controls-right-panel {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+  height: 100%;
 }
 
 .view-toggle .btn-icon {
-  padding: 0;
-  background: transparent;
-  border: none;
+  padding: 0.75rem;
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-md, 8px);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  min-height: 48px;
   opacity: 0.8;
-  transition: opacity 0.2s;
-  min-width: 24px;
-  min-height: 24px;
+  transition: all 0.2s;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.view-toggle .btn-icon:first-child {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+
+.view-toggle .btn-icon:last-child {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .view-toggle .btn-icon:hover {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(148, 163, 184, 0.4);
   opacity: 1;
 }
 
 .view-toggle .btn-icon.active {
-  background: transparent;
+  background: rgba(88, 166, 255, 0.15);
+  border-color: rgba(88, 166, 255, 0.3);
   opacity: 1;
+  color: #60a5fa;
 }
 
 .view-toggle .btn-icon svg {
@@ -2318,6 +2398,8 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  flex: 1;
 }
 
 .sort-controls .btn-icon {
@@ -2671,6 +2753,7 @@ export default {
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
+  z-index: 10;
 }
 
 .file-icon-large {
@@ -2815,5 +2898,94 @@ export default {
     transform: translateX(0);
     background-color: transparent;
   }
+}
+
+/* Mobile Mode Styles */
+.mobile-mode .view-controls {
+  padding: 0.75rem;
+}
+
+.mobile-mode .view-controls-grid {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto;
+  gap: 0.75rem;
+}
+
+.mobile-mode .view-toggle-panel {
+  display: none !important;
+}
+
+.mobile-mode .controls-right-panel {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.mobile-mode .controls-right-panel.mobile-full-width {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mobile-mode .sort-controls,
+.mobile-mode .filter-controls {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.mobile-mode .grid-container {
+  min-width: 100%;
+  font-size: 0.85rem;
+}
+
+.mobile-mode .grid-cell {
+  padding: 0.5rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.mobile-mode .grid-cell-type {
+  display: none;
+}
+
+.mobile-mode .grid-cell-date {
+  font-size: 0.75rem;
+}
+
+.mobile-mode .grid-cell-size {
+  font-size: 0.75rem;
+}
+
+.mobile-mode .files-grid {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.mobile-mode .file-card {
+  padding: 0.75rem;
+}
+
+.mobile-mode .file-thumbnail {
+  width: 100%;
+  height: 80px;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-mode .file-info h3 {
+  font-size: 0.85rem;
+}
+
+.mobile-mode .file-meta {
+  font-size: 0.75rem;
+}
+
+.mobile-mode .btn-menu-grid {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
 }
 </style>

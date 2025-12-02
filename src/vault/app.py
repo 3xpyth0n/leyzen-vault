@@ -1178,6 +1178,11 @@ def create_app(
     # FileStorage will check source_dir/files if file is not found in storage_dir/files
     storage = FileStorage(storage_dir, source_dir=source_dir)
 
+    # Initialize IP enrichment service (uses free public APIs, no configuration needed)
+    from vault.services.ip_enrichment import IPEnrichmentService
+
+    ip_enrichment_service = IPEnrichmentService()
+
     # Initialize audit service (uses PostgreSQL)
     try:
         settings = app.config.get("VAULT_SETTINGS")
@@ -1185,17 +1190,26 @@ def create_app(
             audit_service = AuditService(
                 timezone=settings.timezone,
                 retention_days=settings.audit_retention_days,
+                ip_enrichment_service=ip_enrichment_service,
             )
         else:
             # Fallback: use UTC and default retention
             from zoneinfo import ZoneInfo
 
-            audit_service = AuditService(timezone=ZoneInfo("UTC"), retention_days=90)
+            audit_service = AuditService(
+                timezone=ZoneInfo("UTC"),
+                retention_days=90,
+                ip_enrichment_service=ip_enrichment_service,
+            )
     except Exception:
         # Fallback: use UTC and default retention
         from zoneinfo import ZoneInfo
 
-        audit_service = AuditService(timezone=ZoneInfo("UTC"), retention_days=90)
+        audit_service = AuditService(
+            timezone=ZoneInfo("UTC"),
+            retention_days=90,
+            ip_enrichment_service=ip_enrichment_service,
+        )
 
     # Initialize share service (uses PostgreSQL)
     try:

@@ -1083,6 +1083,13 @@ class AuditLogEntry(db.Model):
         UUID(as_uuid=False), ForeignKey("files.id", ondelete="SET NULL"), nullable=True
     )
     user_ip: Mapped[str] = mapped_column(String(45), nullable=False)  # IPv6 max length
+    ipv4: Mapped[str | None] = mapped_column(String(15), nullable=True)  # IPv4 address
+    ip_location: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # JSON string with location data
+    user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -1095,6 +1102,7 @@ class AuditLogEntry(db.Model):
         Index("ix_audit_logs_file_id", "file_id"),
         Index("ix_audit_logs_user_ip", "user_ip"),
         Index("ix_audit_logs_success", "success"),
+        Index("ix_audit_logs_user_id", "user_id"),
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1104,6 +1112,18 @@ class AuditLogEntry(db.Model):
             "action": self.action,
             "file_id": self.file_id,
             "user_ip": self.user_ip,
+            "ipv4": self.ipv4,
+            "ip_location": (
+                safe_json_loads(
+                    self.ip_location,
+                    max_size=5 * 1024,  # 5KB for location data
+                    max_depth=10,
+                    context="audit log ip_location",
+                )
+                if self.ip_location
+                else None
+            ),
+            "user_id": self.user_id,
             "timestamp": self.timestamp.isoformat(),
             "details": (
                 safe_json_loads(

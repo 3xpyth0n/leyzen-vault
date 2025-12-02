@@ -7,6 +7,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Mobile Mode**: Complete mobile-optimized interface with bottom navigation bar, responsive layouts, and manual mobile/desktop mode toggle. All screens are now fully adapted for mobile devices with single-column layouts, optimized touch targets, and improved usability on small screens.
+- **Audit Logs Enhancement**: Enhanced audit logs with IPv4 extraction and IP geolocation information (country, city) for improved security monitoring and analysis.
+
 ### Changed
 
 - **Orchestrator Dashboard**: Minor cleanup of the orchestrator dashboard layout.

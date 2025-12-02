@@ -11,6 +11,12 @@
     </div>
 
     <div class="filters">
+      <CustomSelect
+        v-model="filters.action_type"
+        :options="actionTypeFilterOptions"
+        @change="loadLogs"
+        placeholder="All Actions"
+      />
       <input
         v-model="filters.action"
         @input="debouncedLoad"
@@ -29,18 +35,15 @@
         v-model="filters.user_ip"
         @input="debouncedLoad"
         type="text"
-        placeholder="Filter by IP..."
+        placeholder="Filter by IP or location..."
         class="filter-input"
       />
-      <select
+      <CustomSelect
         v-model="filters.success"
+        :options="successFilterOptions"
         @change="loadLogs"
-        class="filter-select"
-      >
-        <option :value="null">All</option>
-        <option :value="true">Success</option>
-        <option :value="false">Failed</option>
-      </select>
+        placeholder="All"
+      />
       <input
         v-model.number="filters.limit"
         @change="loadLogs"
@@ -63,6 +66,9 @@
           v-for="log in logs"
           :key="log.id || log.timestamp"
           class="log-entry"
+          :class="{
+            'security-event': isSecurityEvent(log.action),
+          }"
         >
           <div class="log-header">
             <span
@@ -77,11 +83,46 @@
             <span class="log-timestamp">{{ formatDate(log.timestamp) }}</span>
           </div>
           <div class="log-details">
+            <div v-if="log.user_id" class="log-detail">
+              <strong>User ID:</strong> {{ log.user_id }}
+            </div>
             <div v-if="log.file_id" class="log-detail">
               <strong>File ID:</strong> {{ log.file_id }}
             </div>
             <div class="log-detail"><strong>IP:</strong> {{ log.user_ip }}</div>
-            <div v-if="log.details" class="log-detail">
+            <div class="log-detail">
+              <strong>IPv4:</strong>
+              <span v-if="log.ipv4" class="ip-display"> {{ log.ipv4 }}</span>
+              <span v-else class="ip-not-found"> not found</span>
+            </div>
+            <div class="log-detail">
+              <strong>Location:</strong>
+              <span v-if="log.ip_location" class="ip-location">
+                <template v-if="log.ip_location.country_code">
+                  <span class="location-flag">
+                    {{ getCountryFlag(log.ip_location.country_code) }}
+                  </span>
+                </template>
+                <span v-if="log.ip_location.country" class="location-text">
+                  {{ log.ip_location.country }}
+                  <span v-if="log.ip_location.city"
+                    >, {{ log.ip_location.city }}</span
+                  >
+                </span>
+                <span
+                  v-else-if="log.ip_location.country_code"
+                  class="location-text"
+                >
+                  {{ log.ip_location.country_code }}
+                </span>
+                <span v-else class="location-text">Unknown</span>
+              </span>
+              <span v-else class="location-not-found"> not found</span>
+            </div>
+            <div
+              v-if="log.details && Object.keys(log.details).length > 0"
+              class="log-detail"
+            >
               <strong>Details:</strong>
               <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
             </div>
@@ -106,23 +147,40 @@
 import { ref, onMounted } from "vue";
 import { admin } from "../../services/api";
 import AlertModal from "../AlertModal.vue";
+import CustomSelect from "../CustomSelect.vue";
 
 export default {
   name: "AuditLogViewer",
   components: {
     AlertModal,
+    CustomSelect,
   },
   setup() {
     const logs = ref([]);
     const loading = ref(false);
     const error = ref(null);
     const filters = ref({
+      action_type: null,
       action: "",
       file_id: "",
       user_ip: "",
       success: null,
       limit: 100,
     });
+
+    const actionTypeFilterOptions = [
+      { value: null, label: "All Actions" },
+      { value: "auth", label: "Authentication" },
+      { value: "rate_limit", label: "Rate Limiting" },
+      { value: "file", label: "File Operations" },
+      { value: "share", label: "Sharing" },
+    ];
+
+    const successFilterOptions = [
+      { value: null, label: "All" },
+      { value: true, label: "Success" },
+      { value: false, label: "Failed" },
+    ];
     const showAlertModal = ref(false);
     const alertModalConfig = ref({
       type: "error",
@@ -146,7 +204,33 @@ export default {
           options.success = filters.value.success;
 
         const result = await admin.getAuditLogs(options);
-        logs.value = result.logs || [];
+        let filteredLogs = result.logs || [];
+
+        // Filter by action type if selected
+        if (filters.value.action_type) {
+          const actionType = filters.value.action_type;
+          filteredLogs = filteredLogs.filter((log) => {
+            const action = log.action || "";
+            if (actionType === "auth") {
+              return action.startsWith("auth_");
+            } else if (actionType === "rate_limit") {
+              return action.includes("rate_limit");
+            } else if (actionType === "file") {
+              return [
+                "upload",
+                "download",
+                "delete",
+                "rename",
+                "move",
+              ].includes(action);
+            } else if (actionType === "share") {
+              return action.includes("share");
+            }
+            return true;
+          });
+        }
+
+        logs.value = filteredLogs;
       } catch (err) {
         error.value = err.message || "Failed to load audit logs";
       } finally {
@@ -217,6 +301,34 @@ export default {
       return new Date(dateString).toLocaleString();
     };
 
+    const getCountryFlag = (countryCode) => {
+      if (!countryCode || countryCode.length !== 2) return "";
+      try {
+        // Convert country code to flag emoji
+        // Each letter of the country code (e.g., "FR") is converted to a regional indicator symbol
+        // Regional Indicator Symbol Letter A = U+1F1E6 (127462)
+        const codePoints = countryCode
+          .toUpperCase()
+          .split("")
+          .map((char) => 127462 + (char.charCodeAt(0) - 65));
+        const flag = String.fromCodePoint(...codePoints);
+        return flag + " "; // Add space after flag
+      } catch (e) {
+        // Fallback if code point conversion fails
+        console.warn("Failed to generate flag emoji for", countryCode, e);
+        return "";
+      }
+    };
+
+    const isSecurityEvent = (action) => {
+      if (!action) return false;
+      return (
+        action.startsWith("auth_") ||
+        action.includes("rate_limit") ||
+        action === "access_denied"
+      );
+    };
+
     onMounted(() => {
       loadLogs();
     });
@@ -226,6 +338,8 @@ export default {
       loading,
       error,
       filters,
+      actionTypeFilterOptions,
+      successFilterOptions,
       loadLogs,
       debouncedLoad,
       exportCSV,
@@ -234,6 +348,8 @@ export default {
       alertModalConfig,
       handleAlertModalClose,
       formatDate,
+      getCountryFlag,
+      isSecurityEvent,
     };
   },
 };
@@ -308,6 +424,21 @@ export default {
   border: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 8px;
   padding: 1rem;
+  overflow-x: visible;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.log-entry.security-event {
+  border-left: 3px solid #f59e0b;
+}
+
+.log-entry.security-event.log-failed {
+  border-left-color: #ef4444;
+}
+
+.log-entry.security-event.log-success {
+  border-left-color: #10b981;
 }
 
 .log-header {
@@ -344,6 +475,8 @@ export default {
 .log-detail {
   color: #cbd5e1;
   font-size: 0.9rem;
+  overflow-x: visible;
+  max-width: 100%;
 }
 
 .log-detail pre {
@@ -352,7 +485,47 @@ export default {
   background: rgba(15, 23, 42, 0.5);
   border-radius: 4px;
   overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: pre;
+  word-break: normal;
   font-size: 0.85rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ip-display {
+  font-weight: 500;
+}
+
+.ip-original {
+  color: #94a3b8;
+  font-size: 0.85em;
+  margin-left: 0.25rem;
+}
+
+.ip-location {
+  margin-left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.location-flag {
+  font-size: 1.1em;
+}
+
+.location-text {
+  color: #cbd5e1;
+  font-size: 0.9em;
+}
+
+.ip-not-found,
+.location-not-found {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 0.9em;
 }
 
 .btn {

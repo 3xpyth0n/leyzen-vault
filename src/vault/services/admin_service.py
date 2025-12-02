@@ -460,12 +460,12 @@ class AdminService:
             return []
 
         logs = self.audit_service.get_logs(
-            limit=limit, action=action, file_id=file_id, success=success
+            limit=limit,
+            action=action,
+            file_id=file_id,
+            success=success,
+            user_ip=user_ip,
         )
-
-        # Filter by IP if provided
-        if user_ip:
-            logs = [log for log in logs if log.user_ip == user_ip]
 
         return [log.to_dict() for log in logs]
 

@@ -1587,6 +1587,17 @@ h1 {
   margin-bottom: 1.5rem;
 }
 
+.mobile-mode .section-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.mobile-mode .section-header .btn {
+  width: 100%;
+}
+
 .section-header h2 {
   color: #e6eef6;
   margin: 0;
@@ -1604,11 +1615,23 @@ h1 {
   gap: 1rem;
 }
 
+.mobile-mode .providers-list {
+  gap: 0.75rem;
+}
+
 .provider-card {
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 8px;
   padding: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.mobile-mode .provider-card {
+  padding: 1rem;
+  max-width: 100%;
 }
 
 .provider-header {
@@ -1616,17 +1639,38 @@ h1 {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.mobile-mode .provider-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
 }
 
 .provider-info {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-mode .provider-info {
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .provider-info h3 {
   color: #e6eef6;
   margin: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.mobile-mode .provider-info h3 {
+  font-size: 0.95rem;
 }
 
 .provider-type {
@@ -1641,15 +1685,43 @@ h1 {
 .provider-actions {
   display: flex;
   gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.mobile-mode .provider-actions {
+  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mobile-mode .provider-actions .btn {
+  flex: 1 1 auto;
+  min-width: 80px;
+  font-size: 0.8rem;
+  padding: 0.5rem 0.75rem;
 }
 
 .provider-details {
   color: #94a3b8;
   font-size: 0.9rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .provider-details p {
   margin: 0.25rem 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.mobile-mode .provider-details {
+  font-size: 0.8rem;
+}
+
+.mobile-mode .provider-details p {
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .provider-inactive {
@@ -1725,6 +1797,12 @@ h1 {
 /* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
+}
+
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .modal-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
 }
 
 .modal-content {
@@ -2046,6 +2124,17 @@ body.sidebar-collapsed .modal-overlay {
 .button-group {
   display: flex;
   gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .button-group {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .button-group .btn {
+    width: 100%;
+  }
 }
 
 .domain-rules-list {

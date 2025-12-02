@@ -69,6 +69,35 @@ async function loadAccountInfo() {
             </div>
         `,
     );
+
+    // Disable delete account section if user is superadmin
+    if (user.global_role === "superadmin") {
+      const deleteAccountForm = document.getElementById("delete-account-form");
+      if (deleteAccountForm) {
+        const deleteButton = deleteAccountForm.querySelector(
+          'button[type="submit"]',
+        );
+        const deletePasswordInput = document.getElementById("delete-password");
+        const deleteSection = deleteAccountForm.closest(
+          ".account-section-danger",
+        );
+
+        if (deleteButton) {
+          deleteButton.disabled = true;
+        }
+        if (deletePasswordInput) {
+          deletePasswordInput.disabled = true;
+        }
+        if (deleteSection) {
+          const warningText = document.createElement("p");
+          warningText.className = "danger-text";
+          warningText.style.marginBottom = "1rem";
+          warningText.textContent =
+            "Superadmin accounts cannot be deleted. Transfer the superadmin role to another user first.";
+          deleteSection.insertBefore(warningText, deleteAccountForm);
+        }
+      }
+    }
   } catch (error) {
     console.error("Error loading account info:", error);
     setInnerHTML(
@@ -149,6 +178,31 @@ async function handleDeleteAccount(e) {
   e.preventDefault();
   const errorDiv = document.getElementById("delete-error");
   errorDiv.classList.add("hidden");
+
+  // Check if user is superadmin
+  try {
+    const jwtToken = localStorage.getItem("jwt_token");
+    if (jwtToken) {
+      const response = await fetch("/api/auth/me", {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+        credentials: "same-origin",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const user = data.user || data;
+        if (user.global_role === "superadmin") {
+          errorDiv.textContent =
+            "Superadmin accounts cannot be deleted. Transfer the superadmin role to another user first.";
+          errorDiv.classList.remove("hidden");
+          return;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error checking user role:", error);
+  }
 
   const password = document.getElementById("delete-password").value;
 

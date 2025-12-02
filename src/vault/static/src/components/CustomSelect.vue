@@ -23,7 +23,7 @@
       :aria-haspopup="true"
       :aria-label="label"
     >
-      <span class="custom-select-value">{{ displayValue }}</span>
+      <span class="custom-select-value">{{ displayValue || placeholder }}</span>
       <span class="custom-select-arrow" :class="{ 'is-open': isOpen }">
         <span v-html="getIcon('chevron-down')"></span>
       </span>
@@ -46,7 +46,7 @@
                 class="custom-select-option"
                 :class="{ 'is-selected': isSelected(option) }"
                 @click="selectOption(option)"
-                @mouseenter="highlightedIndex = options.indexOf(option)"
+                @mouseenter="handleOptionMouseEnter(option)"
               >
                 <span class="custom-select-option-text">{{
                   getOptionLabel(option)
@@ -397,6 +397,10 @@ export default {
       }
     };
 
+    const handleOptionMouseEnter = (option) => {
+      highlightedIndex.value = props.options.indexOf(option);
+    };
+
     const selectOption = (option) => {
       const value = getOptionValue(option);
       emit("update:modelValue", value);
@@ -468,6 +472,7 @@ export default {
     });
 
     return {
+      options: computed(() => props.options),
       isOpen,
       selectContainer,
       dropdown,
@@ -480,6 +485,7 @@ export default {
       toggleDropdown,
       openDropdown,
       closeDropdown,
+      handleOptionMouseEnter,
       selectOption,
       getOptionLabel,
       getOptionValue,
@@ -498,24 +504,27 @@ export default {
 
 .custom-select-trigger {
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  padding: 0.75rem 1rem;
   padding-right: 2.5rem;
-  background: var(--bg-glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: var(--font-size-base);
-  font-family: var(--font-family-base);
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: space-between;
   text-align: left;
   min-height: 2.5rem;
   position: relative;
+  box-sizing: border-box;
 }
 
 .custom-select-trigger:hover:not(:disabled) {
@@ -558,25 +567,30 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-primary);
-  padding-right: var(--space-2);
+  color: #e6eef6;
+  padding-right: 0.5rem;
+  min-height: 1.2em;
+  line-height: 1.5;
+  display: block;
 }
 
 .custom-select.is-placeholder .custom-select-value {
-  color: var(--text-muted);
+  color: #94a3b8;
 }
 
 .custom-select-arrow {
   position: absolute;
-  right: var(--space-3);
+  right: 0.75rem;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform var(--transition-base);
-  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  color: #94a3b8;
   flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
   pointer-events: none;
 }
 
@@ -637,12 +651,12 @@ export default {
 }
 
 .custom-select-option:hover {
-  background: var(--bg-glass-hover);
+  background: rgba(30, 41, 59, 0.6);
 }
 
 .custom-select-option.is-selected {
   background: rgba(56, 189, 248, 0.1);
-  color: var(--accent-blue);
+  color: #38bdf8;
 }
 
 .custom-select-option-text {

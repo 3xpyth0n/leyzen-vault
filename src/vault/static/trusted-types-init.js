@@ -1,12 +1,12 @@
 // Initialize Trusted Types policies before CSP enforcement
 // This script must be loaded before any other scripts that use Trusted Types
 // CRITICAL: This script must execute IMMEDIATELY to patch DOM methods before
-// third-party scripts (like Cloudflare) inject code that uses innerHTML
+// third-party scripts inject code that uses innerHTML
 
-// First, create a default policy IMMEDIATELY to handle Cloudflare and third-party scripts
+// First, create a default policy IMMEDIATELY to handle third-party scripts
 // The default policy is used automatically for all innerHTML assignments that don't specify a policy
 (function initImmediate() {
-  // Intercept and suppress TrustedHTML errors from third-party scripts (e.g., Cloudflare)
+  // Intercept and suppress TrustedHTML errors from third-party scripts
   // This must be done FIRST, before any third-party code runs
 
   // Also intercept console.error to filter out TrustedHTML errors
@@ -83,7 +83,7 @@
     }
   });
 
-  // Create defaultPolicy FIRST - this is critical for Cloudflare and third-party scripts
+  // Create defaultPolicy FIRST - this is critical for third-party scripts
   // The default policy is automatically used for any innerHTML assignment without explicit policy
   if (window.trustedTypes && window.trustedTypes.createPolicy) {
     try {
@@ -117,7 +117,7 @@
   }
 
   // Patch Element.prototype.innerHTML and insertAdjacentHTML IMMEDIATELY
-  // to intercept Cloudflare and other third-party scripts that inject code
+  // to intercept third-party scripts that inject code
   if (typeof Element === "undefined" || !Element.prototype) {
     return;
   }
@@ -141,7 +141,7 @@
             originalInnerHTML.set.call(this, value);
             return;
           } catch (e) {
-            // Silently ignore errors from third-party code (e.g., Cloudflare)
+            // Silently ignore errors from third-party code
             // This prevents console errors for non-critical third-party scripts
             if (window.__suppressTrustedTypesErrors) {
               return;
@@ -181,7 +181,7 @@
         try {
           originalInnerHTML.set.call(this, value);
         } catch (e) {
-          // Silently ignore TrustedHTML errors from third-party scripts (e.g., Cloudflare)
+          // Silently ignore TrustedHTML errors from third-party scripts
           // These are not critical for application functionality
           const isTrustedHTMLError =
             e.message &&
@@ -244,7 +244,7 @@
       try {
         return originalInsertAdjacentHTML.call(this, position, text);
       } catch (e) {
-        // Silently ignore TrustedHTML errors from third-party scripts (e.g., Cloudflare)
+        // Silently ignore TrustedHTML errors from third-party scripts
         // These are not critical for application functionality
         const isTrustedHTMLError =
           e.message &&

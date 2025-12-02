@@ -322,17 +322,26 @@ export default {
       const sidebar = document.querySelector(".sidebar");
       const overlay = document.querySelector(".file-preview-overlay");
       if (overlay && sidebar) {
-        const isCollapsed = sidebar.classList.contains("collapsed");
-        const padding = isCollapsed
-          ? "calc(2rem + 70px)"
-          : "calc(2rem + 250px)";
-        overlay.style.paddingLeft = padding;
+        // Check if mobile mode is active
+        const isMobileMode = document.body.classList.contains("mobile-mode");
+        if (isMobileMode) {
+          // In mobile mode, don't account for sidebar
+          overlay.style.paddingLeft = "2rem";
+        } else {
+          // In desktop mode, account for sidebar
+          const isCollapsed = sidebar.classList.contains("collapsed");
+          const padding = isCollapsed
+            ? "calc(2rem + 70px)"
+            : "calc(2rem + 250px)";
+          overlay.style.paddingLeft = padding;
+        }
       }
     };
 
     // Set up observer for sidebar changes when component is mounted
     let sidebarObserver = null;
     let resizeHandler = null;
+    let mobileModeHandler = null;
 
     if (typeof window !== "undefined") {
       watch(
@@ -356,6 +365,13 @@ export default {
                 // Also listen for resize events
                 resizeHandler = updatePadding;
                 window.addEventListener("resize", resizeHandler);
+
+                // Listen for mobile mode changes
+                mobileModeHandler = () => updatePadding();
+                window.addEventListener(
+                  "mobile-mode-changed",
+                  mobileModeHandler,
+                );
               });
             });
           } else {
@@ -367,6 +383,13 @@ export default {
             if (resizeHandler) {
               window.removeEventListener("resize", resizeHandler);
               resizeHandler = null;
+            }
+            if (mobileModeHandler) {
+              window.removeEventListener(
+                "mobile-mode-changed",
+                mobileModeHandler,
+              );
+              mobileModeHandler = null;
             }
           }
         },
@@ -1480,6 +1503,12 @@ export default {
   /* Start with collapsed state (70px) as default, will be updated on mount */
   padding-left: calc(2rem + 70px);
   transition: padding-left 0.3s ease;
+}
+
+/* Remove sidebar padding in mobile mode */
+.mobile-mode .file-preview-overlay {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
 }
 
 .file-preview-modal {
