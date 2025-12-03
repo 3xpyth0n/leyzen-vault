@@ -50,9 +50,11 @@ RUN find /app/src -type f \( -name "*.py" -o -name "*.js" -o -name "*.html" \) -
 # Create non-privileged user for running the application
 RUN adduser -D -u 1000 vault
 
-# Copy entrypoint
+# Copy entrypoint and healthcheck script
 COPY infra/vault/entrypoint.sh /usr/local/bin/vault-entrypoint.sh
-RUN chmod +x /usr/local/bin/vault-entrypoint.sh
+COPY infra/vault/healthcheck.py /app/infra/vault/healthcheck.py
+RUN chmod +x /usr/local/bin/vault-entrypoint.sh && \
+    chmod +x /app/infra/vault/healthcheck.py
 
 # Create data directories and set ownership
 RUN mkdir -p /data /data-source && \
@@ -68,8 +70,8 @@ ENV FLASK_APP=vault.app:create_app
 EXPOSE 80
 
 # Health check
-HEALTHCHECK --interval=1s --timeout=5s --retries=10 \
-    CMD curl -f http://localhost/healthz || exit 1
+HEALTHCHECK --interval=1s --timeout=2s --retries=2 --start-period=5s \
+    CMD python3 /app/infra/vault/healthcheck.py || exit 1
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
@@ -80,5 +82,6 @@ ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 # Note: Uvicorn uses --app-dir instead of --chdir, and we need to specify the module path
 # --no-access-log: Disable access logs (200, 300, 400 responses)
 # --log-level error: Only log errors and critical issues
-CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error
+# --timeout-graceful-shutdown: Reduce graceful shutdown timeout to speed up container stops
+CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error --timeout-graceful-shutdown 2
 

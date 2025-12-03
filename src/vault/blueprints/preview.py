@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..storage import FileStorage
 from ..services.preview import PreviewService
-from ..middleware.jwt_auth import jwt_required
+from ..middleware.jwt_auth import jwt_required, get_current_user
 from ..utils.mime_type_detection import detect_mime_type_from_extension
 from .utils import get_client_ip
 
@@ -34,12 +34,20 @@ def get_thumbnail(file_id: str):
     """Get thumbnail for a file."""
     from vault.database.schema import File, db
 
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
     preview_service = _get_preview_service()
 
     # Verify file exists
     file_obj = db.session.query(File).filter_by(id=file_id, deleted_at=None).first()
     if not file_obj:
         return jsonify({"error": "File not found"}), 404
+
+    # Check if user has read permission
+    if file_obj.owner_user_id != user.id:
+        return jsonify({"error": "Permission denied"}), 403
 
     # Check if thumbnail exists
     thumbnail_data = preview_service.get_thumbnail(file_id)

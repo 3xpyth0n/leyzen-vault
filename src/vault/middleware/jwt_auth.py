@@ -312,16 +312,22 @@ def jwt_required(f: F) -> F:
             return jsonify({"error": content_type_error}), 400
 
         # Validate JWT token
+        # Try to get token from Authorization header first (priority for API keys)
+        token = None
         auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return jsonify({"error": "Authorization header missing"}), 401
+        if auth_header:
+            # Extract token from "Bearer <token>"
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
 
-        # Extract token from "Bearer <token>"
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return jsonify({"error": "Invalid authorization header format"}), 401
+        # Fallback to cookie if Authorization header is not present
+        # This supports SSO flows that use HttpOnly cookies
+        if not token:
+            token = request.cookies.get("jwt_token")
 
-        token = parts[1]
+        if not token:
+            return jsonify({"error": "Authorization header or cookie missing"}), 401
 
         # Get secret key from app config
         secret_key = current_app.config.get("SECRET_KEY")
@@ -346,8 +352,9 @@ def jwt_required(f: F) -> F:
             # Log error without exposing any token data
             return jsonify({"error": "Invalid or expired token"}), 401
 
-        # Store user in Flask g for use in route handlers
+        # Store user and token in Flask g for use in route handlers
         g.current_user = user
+        g.current_token = token  # Store token for logout/blacklist operations
 
         return f(*args, **kwargs)
 

@@ -116,10 +116,22 @@ export async function getUserMasterKey() {
         return encryptedKey;
       }
     } catch (error) {
+      // If decryption fails, it may be due to old key format (using user_id-based derivation)
+      // Force clear all encrypted keys to force re-authentication with new secure system
       logger.warn(
-        "Failed to retrieve encrypted master key from IndexedDB:",
+        "Failed to retrieve encrypted master key from IndexedDB (may be old format):",
         error,
       );
+      try {
+        const { clearAllEncryptedMasterKeys } =
+          await import("./masterKeyStorage.js");
+        await clearAllEncryptedMasterKeys();
+        logger.info(
+          "Cleared all encrypted master keys due to decryption failure (migration to new secure format)",
+        );
+      } catch (clearError) {
+        logger.error("Failed to clear encrypted master keys:", clearError);
+      }
     }
   }
 

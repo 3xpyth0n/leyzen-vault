@@ -44,39 +44,98 @@ function openDB() {
 }
 
 /**
+ * Verify JWT structure and extract payload.
+ * Validates JWT format and required claims without cryptographic signature verification
+ * (signature is verified server-side during authentication).
+ *
+ * @param {string} jwtToken - JWT token
+ * @returns {object} Decoded JWT payload
+ * @throws {Error} If JWT format is invalid or required claims are missing
+ */
+function verifyJWTStructure(jwtToken) {
+  // Validate JWT format (header.payload.signature)
+  const parts = jwtToken.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Invalid JWT format: must have 3 parts");
+  }
+
+  // Decode and parse header
+  let header;
+  try {
+    const headerStr = atob(parts[0].replace(/-/g, "+").replace(/_/g, "/"));
+    header = JSON.parse(headerStr);
+  } catch (e) {
+    throw new Error("Invalid JWT format: header is not valid base64url JSON");
+  }
+
+  // Verify algorithm (must be HS256)
+  if (header.alg !== "HS256") {
+    throw new Error(`Invalid JWT algorithm: expected HS256, got ${header.alg}`);
+  }
+
+  // Decode and parse payload
+  let payload;
+  try {
+    const payloadStr = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    payload = JSON.parse(payloadStr);
+  } catch (e) {
+    throw new Error("Invalid JWT format: payload is not valid base64url JSON");
+  }
+
+  // Verify required claims
+  if (!payload.user_id) {
+    throw new Error("Invalid JWT: missing user_id claim");
+  }
+
+  if (!payload.session_key_salt) {
+    throw new Error("Invalid JWT: missing session_key_salt claim");
+  }
+
+  // Verify expiration if present
+  if (payload.exp) {
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp < now) {
+      throw new Error("Invalid JWT: token has expired");
+    }
+  }
+
+  return payload;
+}
+
+/**
  * Derive a session key from JWT token.
- * Uses the user_id from JWT payload to derive a stable key for encrypting the master key.
- * The key is stable across JWT refreshes for the same user.
+ * Uses the session_key_salt from JWT payload to derive a secure key for encrypting the master key.
+ * The key is stable across JWT refreshes for the same user as long as session_key_salt remains the same.
  *
  * @param {string} jwtToken - JWT token
  * @returns {Promise<CryptoKey>} Session key for encrypting master key
  */
 async function deriveSessionKeyFromJWT(jwtToken) {
-  // Extract payload from JWT (base64url encoded)
-  const parts = jwtToken.split(".");
-  if (parts.length !== 3) {
-    throw new Error("Invalid JWT format");
-  }
+  // Verify JWT structure and extract payload
+  const payload = verifyJWTStructure(jwtToken);
 
-  // Decode payload
-  const payload = JSON.parse(
-    atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
-  );
-
-  // Use only user_id to create a stable session identifier
-  // This ensures the same session key is derived for the same user across JWT refreshes
-  // Security: The key is still protected because only authenticated users with valid JWT can derive it
   const userId = payload.user_id;
-  if (!userId) {
-    throw new Error("Invalid JWT: missing user_id");
+  const sessionKeySaltBase64 = payload.session_key_salt;
+
+  // Decode session_key_salt from base64
+  let sessionKeySaltBytes;
+  try {
+    const saltStr = atob(sessionKeySaltBase64);
+    sessionKeySaltBytes = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
+  } catch (e) {
+    throw new Error("Invalid session_key_salt: not valid base64");
   }
 
-  // Derive key using PBKDF2 with user_id as input
+  // Validate salt length (should be 32 bytes)
+  if (sessionKeySaltBytes.length !== 32) {
+    throw new Error(
+      `Invalid session_key_salt length: expected 32 bytes, got ${sessionKeySaltBytes.length}`,
+    );
+  }
+
+  // Derive key using PBKDF2 with user_id and session_key_salt
   const encoder = new TextEncoder();
   const userIdBytes = encoder.encode(`leyzen_master_key:${userId}`);
-
-  // Use a fixed salt derived from user_id (deterministic but user-specific)
-  const salt = await crypto.subtle.digest("SHA-256", userIdBytes);
 
   // Import user ID as key material
   const keyMaterial = await crypto.subtle.importKey(
@@ -87,12 +146,12 @@ async function deriveSessionKeyFromJWT(jwtToken) {
     ["deriveBits", "deriveKey"],
   );
 
-  // Derive session key using PBKDF2
+  // Derive session key using PBKDF2 with server-provided salt
   const sessionKey = await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt,
-      iterations: 100000, // Lower iterations for session key (used frequently, but still secure)
+      salt: sessionKeySaltBytes,
+      iterations: 100000,
       hash: "SHA-256",
     },
     keyMaterial,

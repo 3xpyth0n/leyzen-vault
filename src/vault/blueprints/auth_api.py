@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import secrets
 from threading import Lock
 
 from flask import (
     Blueprint,
     current_app,
+    g,
     jsonify,
     make_response,
     request,
@@ -398,9 +398,6 @@ def login():
         from flask import session
         from vault.blueprints.auth import register_failed_attempt
         from vault.blueprints.utils import _settings, get_client_ip
-        from common.captcha_helpers import (
-            get_captcha_store_for_app,
-        )
         from vault.database.schema import SystemSettings, db
 
         # Check if password authentication is enabled
@@ -488,7 +485,7 @@ def login():
 
         # Get settings and captcha store once
         settings = _settings()
-        captcha_store = get_captcha_store_for_app(settings)
+        captcha_store = _get_captcha_store()
 
         # Check if this is a 2FA verification step (credentials already validated)
         totp_token = data.get("totp_token", "").strip() or None
@@ -516,62 +513,41 @@ def login():
 
         # Verify CAPTCHA response (skip if this is a 2FA verification step)
         if not is_2fa_step:
-            expected_captcha = None
-            # Try to get captcha from store if nonce provided
-            if captcha_nonce:
-                expected_captcha = captcha_store.get(captcha_nonce)
-                # SECURITY: Never log CAPTCHA values or nonces in production
-                is_production = current_app.config.get("IS_PRODUCTION", True)
-                if not is_production:
-                    # Only log lookup status in development, never actual values
-                    current_app.logger.debug(
-                        f"CAPTCHA lookup by nonce: found={expected_captcha is not None}"
-                    )
+            if not captcha_nonce:
+                client_ip = get_client_ip()
+                register_failed_attempt(client_ip)
+                return (
+                    jsonify(
+                        {
+                            "error": "CAPTCHA nonce is required. Please refresh the CAPTCHA and try again."
+                        }
+                    ),
+                    400,
+                )
 
-            # Fallback to session-based captcha (preferred for API)
-            if not expected_captcha:
-                session_text = session.get("captcha_text")
-                session_nonce = session.get("captcha_nonce")
-                if session_text:
-                    expected_captcha = str(session_text)
-                    # If nonce was provided, verify it matches session
-                    if (
-                        captcha_nonce
-                        and session_nonce
-                        and session_nonce != captcha_nonce
-                    ):
-                        # Nonce mismatch - the provided nonce doesn't match session nonce
-                        # This might happen if multiple CAPTCHAs were generated
-                        # SECURITY: Never log nonce values in production
-                        is_production = current_app.config.get("IS_PRODUCTION", True)
-                        if not is_production:
-                            # Only log mismatch status in development, never actual nonce values
-                            current_app.logger.debug(
-                                f"CAPTCHA nonce mismatch: using session CAPTCHA anyway"
-                            )
-                        # Still use session CAPTCHA even if nonce doesn't match
-                        # (nonce is optional for session-based verification)
-                    elif captcha_nonce and not session_nonce:
-                        # Nonce provided but no session nonce - this is OK, use session text
-                        pass
+            expected_captcha = captcha_store.get(captcha_nonce)
+            # SECURITY: Never log CAPTCHA values or nonces in production
+            is_production = current_app.config.get("IS_PRODUCTION", True)
+            if not is_production:
+                # Only log lookup status in development, never actual values
+                current_app.logger.debug(
+                    f"CAPTCHA lookup by nonce: found={expected_captcha is not None}"
+                )
 
             # Validate CAPTCHA response
             if not expected_captcha:
                 client_ip = get_client_ip()
                 register_failed_attempt(client_ip)
-                # CAPTCHA not found in store or session
+                # CAPTCHA not found in store
                 # SECURITY: Never log CAPTCHA details in production
                 is_production = current_app.config.get("IS_PRODUCTION", True)
                 if not is_production:
                     # Only log status in development, never actual values
-                    current_app.logger.debug(
-                        f"CAPTCHA not found: session has captcha_text={session.get('captcha_text') is not None}, "
-                        f"session has captcha_nonce={session.get('captcha_nonce') is not None}"
-                    )
+                    current_app.logger.debug("CAPTCHA not found in store")
                 return (
                     jsonify(
                         {
-                            "error": "CAPTCHA session expired. Please refresh the page and try again."
+                            "error": "CAPTCHA expired or invalid. Please refresh the CAPTCHA and try again."
                         }
                     ),
                     400,
@@ -611,8 +587,6 @@ def login():
             # Clean up captcha after successful verification
             if captcha_nonce:
                 captcha_store.drop(captcha_nonce)
-            session.pop("captcha_nonce", None)
-            session.pop("captcha_text", None)
 
         auth_service = _get_auth_service()
 
@@ -805,10 +779,18 @@ def logout():
     Returns:
         JSON with success message
     """
-    # Get token from Authorization header and blacklist it
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
+    # Get token from g (stored by jwt_required middleware) or fallback to header/cookie
+    token = getattr(g, "current_token", None)
+    if not token:
+        # Fallback: try to get from Authorization header or cookie
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        else:
+            # Fallback to cookie (for SSO flows using HttpOnly cookies)
+            token = request.cookies.get("jwt_token")
+
+    if token:
         try:
             import jwt
             from datetime import datetime
@@ -861,7 +843,11 @@ def logout():
             user_id=user.id,
         )
 
-    return jsonify({"message": "Logged out successfully"}), 200
+    # Create response and delete jwt_token cookie
+    response = make_response(jsonify({"message": "Logged out successfully"}), 200)
+    response.set_cookie("jwt_token", "", expires=0, path="/")
+
+    return response
 
 
 @auth_api_bp.route("/setup/status", methods=["GET"])
@@ -1535,42 +1521,16 @@ def captcha_image():
     if renew:
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
-        text = session.get("captcha_text", "")
+        text = _get_captcha_from_store(nonce_param)
     else:
         # Try to get CAPTCHA from store if nonce provided
         if nonce_param:
             text = _get_captcha_from_store(nonce_param)
-            # If found in store, ensure it's also in session for API fallback
-            if text:
-                session["captcha_text"] = text
-                session["captcha_nonce"] = nonce_param
 
-        # Fallback to session-based CAPTCHA
-        if not text:
-            session_text = session.get("captcha_text")
-            session_nonce = session.get("captcha_nonce")
-            if session_text:
-                text = str(session_text)
-                # If nonce was provided, store it in the store for consistency
-                if nonce_param and nonce_param != session_nonce:
-                    # Nonce mismatch - store the session CAPTCHA with the provided nonce
-                    _store_captcha_entry(nonce_param, text)
-                elif not nonce_param and session_nonce:
-                    # No nonce provided but session has one - use session nonce
-                    nonce_param = session_nonce
-                    _store_captcha_entry(nonce_param, text)
-                elif not nonce_param:
-                    # No nonce at all - create one and store
-                    if not session_nonce:
-                        session_nonce = secrets.token_urlsafe(8)
-                        session["captcha_nonce"] = session_nonce
-                    nonce_param = session_nonce
-                    _store_captcha_entry(nonce_param, text)
-
-        # Last resort: create new CAPTCHA only if absolutely nothing exists
+        # If no nonce provided or CAPTCHA not found, generate a new one
         if not text:
             nonce_param = _refresh_captcha()
-            text = session.get("captcha_text", "")
+            text = _get_captcha_from_store(nonce_param)
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 

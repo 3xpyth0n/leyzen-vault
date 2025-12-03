@@ -132,6 +132,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.pinned_vaultspaces_migration import (
         PinnedVaultSpacesMigration,
     )
+    from vault.database.migrations.session_key_salt_migration import (
+        SessionKeySaltMigration,
+    )
 
     registry = MigrationRegistry()
 
@@ -140,6 +143,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(JwtJtiMigration)
     registry.register(PinnedVaultSpacesMigration)
     registry.register(AuditLogsEnrichmentMigration)
+    registry.register(SessionKeySaltMigration)
 
     migrations = registry.get_all_migrations()
 

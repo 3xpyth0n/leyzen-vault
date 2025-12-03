@@ -1839,8 +1839,104 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static"), "favicon.png", mimetype="image/png"
+            str(vault_dir / "static" / "icons"), "favicon.ico", mimetype="image/x-icon"
         )
+
+    @app.route("/site.webmanifest")
+    def webmanifest():
+        """Serve web app manifest."""
+        from flask import send_from_directory
+
+        return send_from_directory(
+            str(vault_dir / "static" / "icons"),
+            "site.webmanifest",
+            mimetype="application/manifest+json",
+        )
+
+    @app.route("/apple-touch-icon.png")
+    def apple_touch_icon():
+        """Serve Apple touch icon."""
+        from flask import send_from_directory
+
+        return send_from_directory(
+            str(vault_dir / "static" / "icons"),
+            "apple-touch-icon.png",
+            mimetype="image/png",
+        )
+
+    @app.route("/favicon.svg")
+    def favicon_svg():
+        """Serve SVG favicon."""
+        from flask import send_from_directory
+
+        return send_from_directory(
+            str(vault_dir / "static" / "icons"), "favicon.svg", mimetype="image/svg+xml"
+        )
+
+    @app.route("/favicon-96x96.png")
+    def favicon_96x96():
+        """Serve 96x96 favicon."""
+        from flask import send_from_directory
+
+        return send_from_directory(
+            str(vault_dir / "static" / "icons"),
+            "favicon-96x96.png",
+            mimetype="image/png",
+        )
+
+    @app.route("/robots.txt")
+    def robots_txt():
+        """Serve robots.txt to disallow all crawling.
+
+        CRITICAL: This file is legally required by the license terms.
+        It MUST refuse all indexing (Disallow: /) to prevent external
+        organizations from discovering or reselling this software.
+        Never remove or modify this route without legal review.
+        """
+        from flask import Response, send_from_directory
+        from werkzeug.exceptions import NotFound
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # CRITICAL: Required content that MUST be served
+        # License requirement: must refuse all indexing to prevent resale
+        required_content = "User-agent: *\nDisallow: /\n"
+
+        # Try to serve the physical file first, but validate its content
+        robots_file = vault_dir / "static" / "icons" / "robots.txt"
+        if robots_file.exists():
+            try:
+                # Validate file content to ensure it contains "Disallow: /"
+                file_content = robots_file.read_text(encoding="utf-8")
+                if "Disallow: /" in file_content:
+                    # File is valid, serve it
+                    return send_from_directory(
+                        str(vault_dir / "static" / "icons"),
+                        "robots.txt",
+                        mimetype="text/plain",
+                    )
+                else:
+                    # File exists but is invalid - log warning and use safe content
+                    logger.error(
+                        "CRITICAL: robots.txt file exists but does not contain 'Disallow: /'. "
+                        "Serving correct content to comply with license requirements. "
+                        f"File location: {robots_file}"
+                    )
+                    return Response(required_content, mimetype="text/plain")
+            except (NotFound, Exception) as e:
+                logger.warning(
+                    f"Error reading robots.txt file: {e}. Using fallback content."
+                )
+
+        # CRITICAL FALLBACK: If file is missing or invalid, generate the required content
+        # This ensures robots.txt is ALWAYS served with Disallow: /
+        # License requirement: must refuse all indexing
+        logger.warning(
+            "robots.txt file not found or invalid, serving generated content. "
+            "Please ensure src/vault/static/icons/robots.txt exists with 'Disallow: /'."
+        )
+        return Response(required_content, mimetype="text/plain")
 
     @app.route("/healthz")
     def healthz():
@@ -1850,6 +1946,55 @@ def create_app(
         from flask import Response
 
         return Response('{"status":"ok"}', mimetype="application/json", status=200)
+
+    @app.route("/healthz/stream")
+    def healthz_stream():
+        """Server-Sent Events stream for real-time health status monitoring."""
+        import json
+        import time
+        from flask import Response, stream_with_context
+
+        @stream_with_context
+        def generate_health_events():
+            """Generate SSE health status events."""
+            try:
+                # Send initial status event
+                yield f"data: {json.dumps({'status': 'ok'})}\n\n"
+
+                # Send heartbeats every 25 seconds to keep connection alive
+                heartbeat_interval = 25.0
+                last_heartbeat = time.time()
+
+                while True:
+                    current_time = time.time()
+                    elapsed = current_time - last_heartbeat
+
+                    if elapsed >= heartbeat_interval:
+                        # Send heartbeat comment to keep connection alive
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = current_time
+                    else:
+                        # Sleep for remaining time until next heartbeat
+                        time.sleep(min(heartbeat_interval - elapsed, 1.0))
+
+            except (GeneratorExit, StopIteration):
+                # Client disconnected
+                pass
+            except Exception as e:
+                # Log error but don't send error event (connection will close naturally)
+                logger = current_app.logger
+                logger.debug(f"Health check SSE stream error: {e}")
+
+        response = Response(
+            generate_health_events(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+        return response
 
     # All frontend routes (/share) are handled by Vue.js SPA
     # Share route is now handled by Vue Router at /share/:token
@@ -2102,6 +2247,53 @@ def create_app(
         # For non-API routes, let Flask handle it (will show HTML error page)
         # But we still want to log it
         return e
+
+    # CRITICAL LICENSE VALIDATION: Verify robots.txt is present and correct
+    # This file is legally required to prevent external indexing/resale
+    robots_file = vault_dir / "static" / "icons" / "robots.txt"
+    try:
+        # Get logger from app config if available
+        validation_logger = app.config.get("LOGGER")
+        if validation_logger is None:
+            # Fallback to standard logging if FileLogger not yet initialized
+            import logging
+
+            validation_logger = logging.getLogger(__name__)
+
+            # Create a wrapper to match FileLogger interface
+            class LoggerWrapper:
+                def log(self, msg: str) -> None:
+                    logging.getLogger(__name__).info(msg)
+
+            validation_logger = LoggerWrapper()
+
+        if robots_file.exists():
+            file_content = robots_file.read_text(encoding="utf-8")
+            if "Disallow: /" not in file_content:
+                validation_logger.log(
+                    "[ERROR] CRITICAL LICENSE VIOLATION: robots.txt exists but does not contain 'Disallow: /'. "
+                    "This violates license terms prohibiting external indexing. "
+                    f"File location: {robots_file}. "
+                    "The route will serve correct content, but please fix the file."
+                )
+            else:
+                validation_logger.log(
+                    "[INIT] robots.txt validated: properly configured to disallow all indexing"
+                )
+        else:
+            validation_logger.log(
+                "[WARNING] robots.txt file not found at expected location. "
+                "Route will serve generated content, but please create the file: "
+                f"{robots_file}"
+            )
+    except Exception as e:
+        # Fallback logger in case of error
+        import logging
+
+        logging.getLogger(__name__).error(
+            f"Error validating robots.txt during startup: {e}. "
+            "Route will serve correct content as fallback."
+        )
 
     return app
 

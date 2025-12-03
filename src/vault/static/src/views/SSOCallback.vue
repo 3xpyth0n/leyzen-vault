@@ -74,26 +74,16 @@ onMounted(async () => {
       return;
     }
 
-    // Normal SSO flow - get token and user_id from query parameters
-    const token = route.query.token;
-
-    if (!token || !userId) {
-      error.value =
-        "Missing authentication token. Please try logging in again.";
-      loading.value = false;
-      return;
-    }
-
-    // Store token
-    localStorage.setItem("jwt_token", token);
-
+    // Normal SSO flow - token is now in HttpOnly cookie, not in URL
+    // Verify authentication by calling getCurrentUser which will use the cookie
     // Clear any existing master key (SSO users don't have passwords)
     await clearUserMasterKey();
 
     // Get user info to verify authentication
+    // The JWT token is automatically sent via HttpOnly cookie
     try {
       const user = await auth.getCurrentUser();
-      if (!user || user.id !== userId) {
+      if (!user) {
         throw new Error("User verification failed");
       }
 
@@ -110,8 +100,6 @@ onMounted(async () => {
       logger.error("Failed to verify user after SSO:", userErr);
       error.value = "Failed to verify authentication. Please try again.";
       loading.value = false;
-      // Clear token on error
-      localStorage.removeItem("jwt_token");
     }
   } catch (err) {
     logger.error("SSO callback error:", err);
@@ -129,13 +117,16 @@ const handle2FAVerify = async (totpToken) => {
   try {
     const response = await sso.verify2FA(totpToken);
 
-    if (response.token) {
+    // Token is now in HttpOnly cookie, not in response
+    // Verify that we got user info (indicates success)
+    if (response.user) {
       show2FAModal.value = false;
 
       // Clear any existing master key (SSO users don't have passwords)
       await clearUserMasterKey();
 
       // Get user info to verify authentication
+      // The JWT token is automatically sent via HttpOnly cookie
       try {
         const user = await auth.getCurrentUser();
         if (!user) {
@@ -150,9 +141,9 @@ const handle2FAVerify = async (totpToken) => {
         logger.error("Failed to verify user after SSO 2FA:", userErr);
         error.value = "Failed to verify authentication. Please try again.";
         twoFactorLoading.value = false;
-        // Clear token on error
-        localStorage.removeItem("jwt_token");
       }
+    } else {
+      throw new Error("Invalid response from 2FA verification");
     }
   } catch (err) {
     twoFactorError.value =

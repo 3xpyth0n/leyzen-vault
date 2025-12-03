@@ -212,12 +212,19 @@ class AuthService:
         prefixed_salt = b"argon2:" + salt_bytes
         master_key_salt = base64.b64encode(prefixed_salt).decode("utf-8")
 
+        # Generate session key salt (32 bytes, base64-encoded)
+        # This salt is used for secure session key derivation instead of user_id
+        # It prevents predictable key derivation attacks
+        session_key_salt_bytes = secrets.token_bytes(32)
+        session_key_salt = base64.b64encode(session_key_salt_bytes).decode("utf-8")
+
         # Create user with email_verified=False (verification always required)
         user = User(
             email=email,
             password_hash=password_hash,
             global_role=global_role,
             master_key_salt=master_key_salt,
+            session_key_salt=session_key_salt,
             email_verified=False,  # Email verification always required
         )
         db.session.add(user)
@@ -285,6 +292,14 @@ class AuthService:
                 # When decoded, the client will detect the prefix and use Argon2-browser
                 prefixed_salt = b"argon2:" + salt_bytes
                 user.master_key_salt = base64.b64encode(prefixed_salt).decode("utf-8")
+
+            # If user doesn't have a session_key_salt, generate one now
+            # This handles initialization for users created before session_key_salt was required
+            if not user.session_key_salt:
+                session_key_salt_bytes = secrets.token_bytes(32)
+                user.session_key_salt = base64.b64encode(session_key_salt_bytes).decode(
+                    "utf-8"
+                )
 
             db.session.commit()
 
@@ -639,6 +654,14 @@ class AuthService:
         # Generate unique JWT ID (jti) for replay protection
         jti = secrets.token_urlsafe(32)
 
+        # Ensure user has session_key_salt (generate if missing)
+        if not user.session_key_salt:
+            session_key_salt_bytes = secrets.token_bytes(32)
+            user.session_key_salt = base64.b64encode(session_key_salt_bytes).decode(
+                "utf-8"
+            )
+            db.session.commit()
+
         # Regular User payload with all required claims
         # CRITICAL: Always use HS256 algorithm explicitly
         payload = {
@@ -650,6 +673,7 @@ class AuthService:
             "typ": "JWT",  # Token type claim
             "iss": "leyzen-vault",  # Issuer claim for additional validation
             "jti": jti,  # JWT ID for replay protection
+            "session_key_salt": user.session_key_salt,  # Salt for secure session key derivation
         }
 
         # Encode with explicit algorithm specification

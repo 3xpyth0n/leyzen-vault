@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    session,
+    url_for,
+)
 from urllib.parse import parse_qs, urlparse, quote
+from datetime import datetime, timedelta, timezone
 
 from vault.database.schema import SSOProviderType, User
 from vault.extensions import csrf
@@ -317,10 +327,9 @@ def handle_callback(provider_id: str):
 
         # For SSO users, we need to handle master key differently
         # Since they don't have a password, we'll need to handle this in the frontend
-        # For now, redirect to frontend with token
         # The frontend will need to handle SSO users specially
 
-        # Build redirect URL with token
+        # Build redirect URL without token (token will be in HttpOnly cookie)
         # Use VAULT_URL (mandatory, no fallback to request.host_url)
         from vault.services.share_link_service import ShareService
 
@@ -331,13 +340,33 @@ def handle_callback(provider_id: str):
             current_app.logger.warning(
                 "VAULT_URL not configured, using relative URL for SSO callback"
             )
-            callback_url = (
-                f"/sso/callback/{provider_id}?token={token}&user_id={user.id}"
-            )
+            callback_url = f"/sso/callback/{provider_id}"
         else:
-            callback_url = f"{frontend_base}/sso/callback/{provider_id}?token={token}&user_id={user.id}"
+            callback_url = f"{frontend_base}/sso/callback/{provider_id}"
 
-        return redirect(callback_url)
+        # Create redirect response
+        response = make_response(redirect(callback_url))
+
+        # Set JWT token in HttpOnly cookie for security
+        # This prevents token exposure in URL, browser history, logs, and Referer headers
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        session_cookie_secure = settings.session_cookie_secure if settings else True
+
+        # Calculate cookie expiration based on JWT expiration
+        expires = datetime.now(timezone.utc) + timedelta(hours=jwt_expiration_hours)
+
+        response.set_cookie(
+            "jwt_token",
+            token,
+            expires=expires,
+            httponly=True,
+            secure=session_cookie_secure,
+            samesite="Lax",
+            path="/",
+        )
+
+        return response
 
     except Exception as e:
         current_app.logger.error(f"Error in SSO callback: {e}")
@@ -398,8 +427,6 @@ def verify_2fa():
         token = auth_service._generate_token(user)
 
         # Update last login
-        from datetime import datetime, timezone
-
         user.last_login = datetime.now(timezone.utc)
         db.session.commit()
 
@@ -411,16 +438,35 @@ def verify_2fa():
         session.pop("sso_discovery", None)
         session.pop("sso_2fa_pending", None)
 
-        # Return token and user info
-        return (
+        # Create JSON response with user info (token will be in HttpOnly cookie)
+        response = make_response(
             jsonify(
                 {
                     "user": user.to_dict(include_salt=True),
-                    "token": token,
                 }
-            ),
-            200,
+            )
         )
+
+        # Set JWT token in HttpOnly cookie for security
+        # This prevents token exposure in responses and localStorage
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        session_cookie_secure = settings.session_cookie_secure if settings else True
+
+        # Calculate cookie expiration based on JWT expiration
+        expires = datetime.now(timezone.utc) + timedelta(hours=jwt_expiration_hours)
+
+        response.set_cookie(
+            "jwt_token",
+            token,
+            expires=expires,
+            httponly=True,
+            secure=session_cookie_secure,
+            samesite="Lax",
+            path="/",
+        )
+
+        return response
 
     except Exception as e:
         current_app.logger.error(f"Error verifying 2FA for SSO: {e}")

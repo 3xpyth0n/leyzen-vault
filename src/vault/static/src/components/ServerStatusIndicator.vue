@@ -9,12 +9,40 @@
 </template>
 
 <script>
+import { watch, onMounted } from "vue";
 import { useHealthCheck } from "../composables/useHealthCheck";
 
 export default {
   name: "ServerStatusIndicator",
   setup() {
     const { isOnline, isChecking } = useHealthCheck();
+    let previousStatus = null;
+
+    // Watch for status changes and show notifications
+    watch(
+      isOnline,
+      (newStatus) => {
+        // Only show notification if status actually changed
+        if (previousStatus !== null && previousStatus !== newStatus) {
+          if (window.Notifications) {
+            if (newStatus) {
+              // Server came back online
+              window.Notifications.success("Server is back online", 5000);
+            } else {
+              // Server went offline
+              window.Notifications.error("Server is offline", 5000);
+            }
+          }
+        }
+        previousStatus = newStatus;
+      },
+      { immediate: true },
+    );
+
+    // Initialize previous status on mount
+    onMounted(() => {
+      previousStatus = isOnline.value;
+    });
 
     return {
       isOnline,

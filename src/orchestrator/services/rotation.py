@@ -398,8 +398,39 @@ class RotationService:
             self._next_switch_override = None
 
         self._logger.log("[INIT] Stopping all containers before rotation startup...")
+        failed_stops = []
         for name in managed_containers:
-            self._docker.stop_container(name, reason="initial cleanup")
+            # Use shorter timeout for initial cleanup to avoid long waits
+            # If docker-proxy is not ready, we'll continue anyway
+            stopped = self._docker.stop_container(
+                name, reason="initial cleanup", timeout=10
+            )
+            if not stopped:
+                failed_stops.append(name)
+
+        # For containers that failed to stop, verify their actual state
+        # They may already be stopped or the docker-proxy may not be ready yet
+        if failed_stops:
+            self._logger.log(
+                f"[INIT] Some containers could not be stopped cleanly: {failed_stops}. "
+                "Verifying actual container states..."
+            )
+            for name in failed_stops:
+                cont = self._docker.get_container_safe(name)
+                if cont:
+                    status = cont.status
+                    if status not in ("running", "restarting"):
+                        self._logger.log(
+                            f"[INIT] {name} is already {status}, continuing..."
+                        )
+                    else:
+                        self._logger.log(
+                            f"[INIT] {name} is still {status}, but continuing with startup..."
+                        )
+                else:
+                    self._logger.log(
+                        f"[INIT] {name} not found in docker-proxy, assuming stopped..."
+                    )
 
         active_index = None
         active_name = None
@@ -457,6 +488,11 @@ class RotationService:
 
                 if shared_index is not None and shared_index != active_index:
                     active_index = shared_index
+
+                # Periodically verify only one container is active (every 5 iterations to avoid overhead)
+                # This prevents both containers from being active simultaneously due to timeouts
+                if active_name and self.rotation_count % 5 == 0:
+                    self._docker.ensure_single_active(active_name, managed_containers)
 
                 override = None
                 with self._rotation_lock:
@@ -667,23 +703,114 @@ class RotationService:
                     f"Accumulated {elapsed}s for {active_name} (total={total_seconds}s) before rotation"
                 )
 
+            # Use shorter timeout for rotation to speed up the handoff
             released = self._docker.stop_container(
-                active_name, reason="releasing for rotation"
+                active_name, reason="releasing for rotation", timeout=10
             )
 
             if not released:
                 self._logger.log(
-                    f"[WARNING] Failed to stop {active_name} after {next_name} became healthy."
+                    f"[WARNING] Failed to stop {active_name} after {next_name} became healthy. "
+                    "Verifying container states and forcing cleanup."
                 )
-                # Stop the new container because we couldn't stop the previous active container
-                self._docker.stop_container(
-                    next_name, reason="failed to stop previous active container"
-                )
-                self.mark_active(active_name)
-                time.sleep(ROTATION_ERROR_RETRY_SLEEP)
-                continue
+                # Verify actual container states before making decisions
+                active_cont = self._docker.get_container_safe(active_name)
+                next_cont = self._docker.get_container_safe(next_name)
 
-            # 5. Rotation successful: mark the new one as active
+                active_running = active_cont and active_cont.status == "running"
+                next_running = next_cont and next_cont.status == "running"
+
+                if active_running and next_running:
+                    # Both are running - force stop the old one with kill
+                    self._logger.log(
+                        f"[ROTATION] Both containers running - forcing stop of {active_name}"
+                    )
+                    try:
+                        # Try to force stop the old container
+                        self._docker.stop_container(
+                            active_name, reason="force stop after timeout", timeout=5
+                        )
+                        # Verify it's actually stopped
+                        active_cont = self._docker.get_container_safe(active_name)
+                        if active_cont and active_cont.status == "running":
+                            # Still running - stop the new one and abort
+                            self._logger.log(
+                                f"[ROTATION ERROR] {active_name} still running after force stop. "
+                                f"Aborting rotation and stopping {next_name}."
+                            )
+                            self._docker.stop_container(
+                                next_name,
+                                reason="aborting rotation - old container still running",
+                            )
+                            self.mark_active(active_name)
+                            time.sleep(ROTATION_ERROR_RETRY_SLEEP)
+                            continue
+                        else:
+                            # Old container is now stopped - proceed with rotation
+                            self._logger.log(
+                                f"[ROTATION] {active_name} stopped successfully after force stop"
+                            )
+                            # Continue to mark new container as active
+                    except Exception as exc:
+                        self._logger.log(
+                            f"[ROTATION ERROR] Failed to force stop {active_name}: {exc}. "
+                            f"Aborting rotation and stopping {next_name}."
+                        )
+                        self._docker.stop_container(
+                            next_name, reason="aborting rotation - force stop failed"
+                        )
+                        self.mark_active(active_name)
+                        time.sleep(ROTATION_ERROR_RETRY_SLEEP)
+                        continue
+                elif not active_running and next_running:
+                    # Old container is already stopped - proceed with rotation
+                    self._logger.log(
+                        f"[ROTATION] {active_name} is already stopped. Proceeding with rotation."
+                    )
+                    # Continue to mark new container as active
+                else:
+                    # Unexpected state - abort rotation
+                    self._logger.log(
+                        f"[ROTATION ERROR] Unexpected container states: "
+                        f"{active_name}={active_cont.status if active_cont else 'None'}, "
+                        f"{next_name}={next_cont.status if next_cont else 'None'}. "
+                        f"Aborting rotation."
+                    )
+                    if next_running:
+                        self._docker.stop_container(
+                            next_name, reason="aborting rotation - unexpected state"
+                        )
+                    self.mark_active(active_name)
+                    time.sleep(ROTATION_ERROR_RETRY_SLEEP)
+                    continue
+
+            # 5. Final verification before marking new container as active
+            # Ensure old container is actually stopped
+            active_cont = self._docker.get_container_safe(active_name)
+            if active_cont and active_cont.status == "running":
+                self._logger.log(
+                    f"[ROTATION WARNING] {active_name} is still running before marking {next_name} as active. "
+                    "Forcing stop one more time."
+                )
+                self._docker.stop_container(
+                    active_name, reason="final cleanup before rotation", timeout=5
+                )
+                # Check again
+                active_cont = self._docker.get_container_safe(active_name)
+                if active_cont and active_cont.status == "running":
+                    self._logger.log(
+                        f"[ROTATION ERROR] {active_name} still running after final cleanup. "
+                        f"Aborting rotation and stopping {next_name}."
+                    )
+                    self._docker.stop_container(
+                        next_name,
+                        reason="aborting rotation - old container still running after cleanup",
+                    )
+                    self.mark_active(active_name)
+                    time.sleep(ROTATION_ERROR_RETRY_SLEEP)
+                    continue
+
+            # 6. Rotation successful: mark the new one as active
             self._logger.log(
                 f"{next_name} marked ACTIVE at {datetime.now(self._settings.timezone).strftime('%H:%M:%S')}"
             )

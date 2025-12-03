@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Leyzen Vault — Beyond File Security</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Leyzen Vault" />
+    <link rel="manifest" href="/site.webmanifest" />
     <script src="/static/trusted-types-init.js"></script>
     <!-- Service Worker Registration DISABLED -->
     <!-- Service worker is disabled to prevent cache issues with CSS/JS files -->
@@ -14,6 +18,8 @@
 
     <!-- Cleanup: Remove any stuck confirmation modal if it exists (respects CSP) -->
     <script src="/static/cleanup-modal.js"></script>
+    <!-- Load notifications system before Vue app -->
+    <script src="/static/notifications.js"></script>
     <!-- Load Vue app (icon system is now loaded via main.js) -->
     <script type="module" src="/src/main.js"></script>
     <!-- sharing.js can be loaded after Vue app -->

@@ -187,11 +187,14 @@ def build_vault_services(
             "env_file": [env_file_name],
             "restart": "on-failure",
             "healthcheck": {
-                "test": ["CMD-SHELL", "curl -f http://localhost/healthz || exit 1"],
-                "interval": "2s",
-                "timeout": "5s",
-                "retries": 10,
-                "start_period": "30s",
+                "test": [
+                    "CMD-SHELL",
+                    "python3 /app/infra/vault/healthcheck.py || exit 1",
+                ],
+                "interval": "1s",
+                "timeout": "2s",
+                "retries": 2,
+                "start_period": "5s",
             },
             "tmpfs": [
                 f"/data:size={tmpfs_size_mb}M,noexec,nosuid,nodev",
@@ -207,6 +210,7 @@ def build_vault_services(
                 "postgres": {"condition": "service_healthy"},
             },
             "networks": ["vault-net"],
+            "stop_grace_period": "2s",
         }
         services[container_name] = service_def
 

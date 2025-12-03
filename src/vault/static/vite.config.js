@@ -43,8 +43,32 @@ function relativeUrlsPlugin() {
   };
 }
 
+// Plugin to prevent Vite from trying to resolve Flask-served static files
+function flaskStaticPlugin() {
+  return {
+    name: "flask-static-plugin",
+    enforce: "pre",
+    resolveId(id) {
+      // Mark Flask-served static files as external to prevent bundling
+      if (
+        id === "/favicon.ico" ||
+        id === "favicon.ico" ||
+        id.endsWith("/favicon.ico")
+      ) {
+        return { id, external: true };
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [vue(), staticScriptsPlugin(), relativeUrlsPlugin()],
+  plugins: [
+    vue(),
+    staticScriptsPlugin(),
+    relativeUrlsPlugin(),
+    flaskStaticPlugin(),
+  ],
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -119,6 +143,13 @@ export default defineConfig({
           }
         },
       },
+      external(id) {
+        // Mark Flask-served static files as external
+        if (id === "/favicon.ico" || id.endsWith("/favicon.ico")) {
+          return true;
+        }
+        return false;
+      },
       onwarn(warning, warn) {
         // Suppress warnings about static scripts that are served by Flask
         if (
@@ -141,6 +172,16 @@ export default defineConfig({
           typeof warning.message === "string" &&
           warning.message.includes("file-type/core.js") &&
           warning.message.includes("eval")
+        ) {
+          return;
+        }
+        // Suppress warnings/errors about favicon.ico resolution
+        if (
+          warning.message &&
+          typeof warning.message === "string" &&
+          (warning.message.includes("/favicon.ico") ||
+            warning.message.includes("favicon.ico") ||
+            warning.code === "UNRESOLVED_IMPORT")
         ) {
           return;
         }

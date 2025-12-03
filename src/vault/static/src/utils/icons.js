@@ -86,6 +86,7 @@ const ICON_NAME_MAP = {
   chevronLeft: "ChevronLeft",
   "chevron-left": "ChevronLeft",
   mail: "Mail",
+  satellite: "Satellite",
 };
 
 // File type to icon mapping
@@ -778,6 +779,7 @@ if (typeof window !== "undefined") {
     chevronLeft: (size, color) => getIcon("chevronLeft", size, color),
     "chevron-left": (size, color) => getIcon("chevron-left", size, color),
     mail: (size, color) => getIcon("mail", size, color),
+    satellite: (size, color) => getIcon("satellite", size, color),
   };
 
   // Add getFileIconName for backward compatibility

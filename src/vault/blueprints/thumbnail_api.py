@@ -53,9 +53,19 @@ def get_thumbnail(file_id: str):
 
     try:
         # Check if user has access to file
-        file_obj, _ = file_service.get_file_with_permissions(file_id, user.id)
+        file_obj, permissions = file_service.get_file_with_permissions(file_id, user.id)
         if not file_obj:
             return jsonify({"error": "File not found"}), 404
+
+        # Check if user has read permission
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
 
         # Get thumbnail from storage (if it exists)
         thumbnail_data = thumbnail_service.get_thumbnail(file_id, size)
@@ -95,9 +105,19 @@ def generate_thumbnail(file_id: str):
 
     try:
         # Check if user has access to file
-        file_obj, _ = file_service.get_file_with_permissions(file_id, user.id)
+        file_obj, permissions = file_service.get_file_with_permissions(file_id, user.id)
         if not file_obj:
             return jsonify({"error": "File not found"}), 404
+
+        # Check if user has read permission
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
 
         # Get file data (decrypted)
         data = request.get_json() or {}

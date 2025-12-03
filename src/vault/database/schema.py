@@ -178,6 +178,9 @@ class User(db.Model):
     master_key_salt: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # Base64-encoded salt for master key derivation (16 bytes)
+    session_key_salt: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Base64-encoded salt for session key derivation (32 bytes)
     email_verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )  # Email verification status (always required)

@@ -864,6 +864,19 @@ select.input-sm:disabled {
   z-index: 1; /* Lower z-index so dropdown can be above */
 }
 
+.header-brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-logo {
+  height: 1.75rem;
+  width: 1.75rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .header-brand h1 {
   font-size: 1.75rem;
   font-weight: 700;

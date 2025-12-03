@@ -26,4 +26,4 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 2375
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "2375", "--workers", "2", "--timeout-keep-alive", "5", "--log-level", "info"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "2375", "--workers", "2", "--timeout-keep-alive", "5"]

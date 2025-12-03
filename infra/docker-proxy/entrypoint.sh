@@ -91,5 +91,49 @@ if [ -z "$SU_EXEC_BIN" ]; then
     exit 1
 fi
 
+# Build command arguments dynamically
+# If the first argument is "uvicorn", inject the log-level from DOCKER_PROXY_LOG_LEVEL
+if [ "$1" = "uvicorn" ]; then
+    LOG_LEVEL="${DOCKER_PROXY_LOG_LEVEL:-warning}"
+    # Convert to lowercase for uvicorn compatibility
+    LOG_LEVEL=$(echo "$LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
+    
+    # First, check if --log-level already exists in arguments
+    HAS_LOG_LEVEL=false
+    for arg in "$@"; do
+        if [ "$arg" = "--log-level" ]; then
+            HAS_LOG_LEVEL=true
+            break
+        fi
+    done
+    
+    # Build new arguments array, replacing or adding --log-level
+    TEMP_ARGS=""
+    SKIP_NEXT=false
+    ARG_COUNT=0
+    
+    for arg in "$@"; do
+        ARG_COUNT=$((ARG_COUNT + 1))
+        if [ "$SKIP_NEXT" = true ]; then
+            SKIP_NEXT=false
+            continue
+        fi
+        if [ "$arg" = "--log-level" ]; then
+            # Replace existing --log-level with the one from environment
+            TEMP_ARGS="$TEMP_ARGS --log-level $LOG_LEVEL"
+            SKIP_NEXT=true
+        else
+            TEMP_ARGS="$TEMP_ARGS $arg"
+            # If we've processed the second argument, haven't found --log-level yet, and it doesn't exist, insert it
+            if [ "$HAS_LOG_LEVEL" = false ] && [ $ARG_COUNT -eq 2 ]; then
+                TEMP_ARGS="$TEMP_ARGS --log-level $LOG_LEVEL"
+            fi
+        fi
+    done
+    
+    # Rebuild the argument list
+    eval "set -- $TEMP_ARGS"
+fi
+
 # Execute as dockerproxy user with the target group (either the socket's group or default)
 exec "$SU_EXEC_BIN" "${PROXY_USER}:${TARGET_GROUP}" "$@"

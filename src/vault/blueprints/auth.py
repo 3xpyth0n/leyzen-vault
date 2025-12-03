@@ -15,7 +15,6 @@ See docs/AUTHENTICATION.md for migration guide.
 
 from __future__ import annotations
 
-import secrets
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -26,6 +25,7 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    g,
     jsonify,
     make_response,
     request,
@@ -248,42 +248,16 @@ def captcha_image():
     if renew:
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
-        text = session.get("captcha_text", "")
+        text = _get_captcha_from_store(nonce_param)
     else:
         # Try to get CAPTCHA from store if nonce provided
         if nonce_param:
             text = _get_captcha_from_store(nonce_param)
-            # If found in store, ensure it's also in session for API fallback
-            if text:
-                session["captcha_text"] = text
-                session["captcha_nonce"] = nonce_param
 
-        # Fallback to session-based CAPTCHA
-        if not text:
-            session_text = session.get("captcha_text")
-            session_nonce = session.get("captcha_nonce")
-            if session_text:
-                text = str(session_text)
-                # If nonce was provided, store it in the store for consistency
-                if nonce_param and nonce_param != session_nonce:
-                    # Nonce mismatch - store the session CAPTCHA with the provided nonce
-                    _store_captcha_entry(nonce_param, text)
-                elif not nonce_param and session_nonce:
-                    # No nonce provided but session has one - use session nonce
-                    nonce_param = session_nonce
-                    _store_captcha_entry(nonce_param, text)
-                elif not nonce_param:
-                    # No nonce at all - create one and store
-                    if not session_nonce:
-                        session_nonce = secrets.token_urlsafe(8)
-                        session["captcha_nonce"] = session_nonce
-                    nonce_param = session_nonce
-                    _store_captcha_entry(nonce_param, text)
-
-        # Last resort: create new CAPTCHA only if absolutely nothing exists
+        # If no nonce provided or CAPTCHA not found, generate a new one
         if not text:
             nonce_param = _refresh_captcha()
-            text = session.get("captcha_text", "")
+            text = _get_captcha_from_store(nonce_param)
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 
@@ -335,42 +309,51 @@ def logout():
     import jwt
     from datetime import datetime, timezone
 
-    # Get token from Authorization header
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
+    # Get token from Authorization header or cookie (stored in g by jwt_required)
+    token = getattr(g, "current_token", None)
+    if not token:
+        # Fallback: try to get from Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
 
-        # Get current user (already validated by jwt_required)
-        user = get_current_user()
+    # Get current user (already validated by jwt_required)
+    user = get_current_user()
 
-        if user and token:
-            # Blacklist the token
-            secret_key = current_app.config.get("SECRET_KEY")
-            if secret_key:
-                try:
-                    # Decode token to get expiration
-                    payload = jwt.decode(
-                        token,
-                        secret_key,
-                        algorithms=["HS256"],
-                        options={"verify_signature": False, "verify_exp": False},
-                    )
-                    expiration_time = datetime.fromtimestamp(
-                        payload.get("exp", 0), tz=timezone.utc
-                    )
+    if user and token:
+        # Blacklist the token
+        secret_key = current_app.config.get("SECRET_KEY")
+        if secret_key:
+            try:
+                # Decode token to get expiration
+                payload = jwt.decode(
+                    token,
+                    secret_key,
+                    algorithms=["HS256"],
+                    options={"verify_signature": False, "verify_exp": False},
+                )
+                expiration_time = datetime.fromtimestamp(
+                    payload.get("exp", 0), tz=timezone.utc
+                )
 
-                    # Blacklist token
-                    auth_service = AuthService(secret_key)
-                    auth_service.blacklist_token(token, expiration_time)
-                except Exception:
-                    # If token decode fails, still return success
-                    # (token might already be invalid)
-                    pass
+                # Blacklist token
+                auth_service = AuthService(secret_key)
+                auth_service.blacklist_token(token, expiration_time)
+            except Exception:
+                # If token decode fails, still return success
+                # (token might already be invalid)
+                pass
 
     # Clear any session data (for backward compatibility)
     session.clear()
 
-    return jsonify({"status": "success", "message": "Logged out successfully"}), 200
+    # Create response and delete jwt_token cookie
+    response = make_response(
+        jsonify({"status": "success", "message": "Logged out successfully"}), 200
+    )
+    response.set_cookie("jwt_token", "", expires=0, path="/")
+
+    return response
 
 
 __all__ = [

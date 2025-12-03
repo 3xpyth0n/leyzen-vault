@@ -129,9 +129,18 @@ def create_app() -> WSGIMiddleware:
     def handle_shutdown(
         sig: int, frame: object
     ) -> None:  # pragma: no cover - runtime signal handler
-        """Handle shutdown signals gracefully."""
-        log_shutdown(sig)
-        sys.exit(0)
+        """Handle shutdown signals gracefully.
+
+        Note: We don't call sys.exit() here because Uvicorn/uvloop handles
+        shutdown automatically. Calling sys.exit() causes exceptions in the
+        async event loop.
+        """
+        try:
+            log_shutdown(sig)
+        except Exception:
+            # Ignore errors during shutdown logging
+            pass
+        # Don't call sys.exit() - let Uvicorn handle shutdown gracefully
 
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)

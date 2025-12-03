@@ -44,6 +44,21 @@
             <span class="user-menu-item-label">Admin</span>
           </router-link>
 
+          <a
+            v-if="isSuperAdmin"
+            href="/orchestrator"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="user-menu-item"
+            @click="closeMenu"
+          >
+            <span
+              class="user-menu-item-icon"
+              v-html="getIcon('satellite', 16)"
+            ></span>
+            <span class="user-menu-item-label">Orchestrator</span>
+          </a>
+
           <div class="user-menu-divider"></div>
 
           <!-- Mobile Mode Toggle -->
@@ -85,6 +100,10 @@ export default {
   name: "UserMenuDropdown",
   props: {
     isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    isSuperAdmin: {
       type: Boolean,
       default: false,
     },

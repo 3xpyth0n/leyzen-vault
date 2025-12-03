@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -648,6 +649,14 @@ class SSOService:
             import jwt
             import secrets
 
+            # Ensure user has session_key_salt (generate if missing)
+            if not user.session_key_salt:
+                session_key_salt_bytes = secrets.token_bytes(32)
+                user.session_key_salt = base64.b64encode(session_key_salt_bytes).decode(
+                    "utf-8"
+                )
+                db.session.commit()
+
             expiration = datetime.now(timezone.utc) + timedelta(hours=24)
             issued_at = datetime.now(timezone.utc)
 
@@ -663,6 +672,7 @@ class SSOService:
                 "typ": "JWT",  # Token type claim
                 "iss": "leyzen-vault",  # Issuer claim for additional validation
                 "jti": jti,  # JWT ID for replay protection (REQUIRED in production)
+                "session_key_salt": user.session_key_salt,  # Salt for secure session key derivation
             }
             secret_key = current_app.config.get("SECRET_KEY", "")
             token = jwt.encode(payload, secret_key, algorithm="HS256")
@@ -1071,6 +1081,14 @@ class SSOService:
             if user.totp_enabled:
                 return user, None
 
+            # Ensure user has session_key_salt (generate if missing)
+            if not user.session_key_salt:
+                session_key_salt_bytes = secrets.token_bytes(32)
+                user.session_key_salt = base64.b64encode(session_key_salt_bytes).decode(
+                    "utf-8"
+                )
+                db.session.commit()
+
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
@@ -1091,6 +1109,7 @@ class SSOService:
                 "typ": "JWT",  # Token type claim
                 "iss": "leyzen-vault",  # Issuer claim for additional validation
                 "jti": jti,  # JWT ID for replay protection (REQUIRED in production)
+                "session_key_salt": user.session_key_salt,  # Salt for secure session key derivation
             }
             secret_key = current_app.config.get("SECRET_KEY", "")
             token = jwt.encode(payload, secret_key, algorithm="HS256")

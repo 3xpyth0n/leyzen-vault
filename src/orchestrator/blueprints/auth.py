@@ -239,9 +239,24 @@ def login():
         password = request.form.get("password", "")
         captcha_response = request.form.get("captcha", "").strip().upper()
         captcha_nonce_field = request.form.get("captcha_nonce", "").strip()
-        expected_captcha = session.get("captcha_text")
-        if not expected_captcha:
-            expected_captcha = _get_captcha_from_store(captcha_nonce_field)
+
+        if not captcha_nonce_field:
+            error = (
+                "CAPTCHA nonce is required. Please refresh the CAPTCHA and try again."
+            )
+            captcha_nonce = _refresh_captcha()
+            login_csrf_token = _issue_login_csrf_token()
+            return (
+                render_template(
+                    "login.html",
+                    error=error,
+                    captcha_nonce=captcha_nonce,
+                    login_csrf_token=login_csrf_token,
+                ),
+                400,
+            )
+
+        expected_captcha = _get_captcha_from_store(captcha_nonce_field)
 
         if not expected_captcha or captcha_response != str(expected_captcha).upper():
             register_failed_attempt(client_ip)
@@ -262,9 +277,8 @@ def login():
         if verify_credentials(username, password):
             session["logged_in"] = True
             session.permanent = True
-            _drop_captcha_from_store(
-                captcha_nonce_field or session.get("captcha_nonce")
-            )
+            if captcha_nonce_field:
+                _drop_captcha_from_store(captcha_nonce_field)
             _logger().log(
                 "[AUTH SUCCESS] Login allowed",
                 context={"username": username, "client_ip": client_ip},
@@ -273,7 +287,6 @@ def login():
             if not is_safe_redirect(next_url):
                 next_url = url_for("dashboard.dashboard")
             session.pop("captcha_nonce", None)
-            session.pop("captcha_text", None)
             return redirect(next_url)
 
         register_failed_attempt(client_ip)
@@ -282,7 +295,8 @@ def login():
             context={"username": username, "client_ip": client_ip},
         )
         error = "Invalid username or password."
-        _drop_captcha_from_store(captcha_nonce_field or session.get("captcha_nonce"))
+        if captcha_nonce_field:
+            _drop_captcha_from_store(captcha_nonce_field)
         captcha_nonce = _refresh_captcha()
         login_csrf_token = _issue_login_csrf_token()
 
@@ -308,26 +322,16 @@ def captcha_image():
     if renew:
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
-        text = session.get("captcha_text", "")
+        text = _get_captcha_from_store(nonce_param)
     else:
+        # Try to get CAPTCHA from store if nonce provided
         if nonce_param:
             text = _get_captcha_from_store(nonce_param)
 
-        if not text:
-            session_text = session.get("captcha_text")
-            session_nonce = session.get("captcha_nonce")
-            if (
-                session_text
-                and session_nonce
-                and (not nonce_param or nonce_param == session_nonce)
-            ):
-                nonce_param = session_nonce
-                text = str(session_text)
-                _store_captcha_entry(nonce_param, str(session_text))
-
+        # If no nonce provided or CAPTCHA not found, generate a new one
         if not text:
             nonce_param = _refresh_captcha()
-            text = session.get("captcha_text", "")
+            text = _get_captcha_from_store(nonce_param)
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 

@@ -1,5 +1,32 @@
 <template>
   <div class="app-layout" :class="{ 'mobile-active': isMobileMode }">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="app-title-wrapper">
+          <img :src="faviconUrl" alt="Leyzen Vault" class="app-logo" />
+          <h1
+            class="app-title"
+            @click="$router.push('/dashboard')"
+            style="cursor: pointer"
+          >
+            Leyzen Vault
+          </h1>
+        </div>
+        <p class="app-slogan">E2EE • Zero-Trust • Moving Target Defense</p>
+      </div>
+      <div class="header-right">
+        <div class="header-actions">
+          <ServerStatusIndicator />
+          <UserMenuDropdown
+            :is-admin="isAdmin"
+            :is-super-admin="isSuperAdmin"
+            @logout="handleLogout"
+          />
+        </div>
+      </div>
+    </header>
+
     <!-- Sidebar (hidden on mobile) -->
     <aside
       v-if="!isMobileMode"
@@ -105,26 +132,6 @@
         'mobile-active': isMobileMode,
       }"
     >
-      <!-- Header -->
-      <header class="app-header">
-        <div class="header-left">
-          <h1
-            class="app-title"
-            @click="$router.push('/dashboard')"
-            style="cursor: pointer"
-          >
-            Leyzen Vault
-          </h1>
-          <p class="app-slogan">E2EE • Zero-Trust • Moving Target Defense</p>
-        </div>
-        <div class="header-right">
-          <div class="header-actions">
-            <ServerStatusIndicator />
-            <UserMenuDropdown :is-admin="isAdmin" @logout="handleLogout" />
-          </div>
-        </div>
-      </header>
-
       <!-- Page Content -->
       <main class="page-content">
         <slot />
@@ -170,6 +177,7 @@ export default {
       sidebarCollapsed: false,
       showLogoutModal: false,
       isAdmin: false,
+      isSuperAdmin: false,
       loading: true,
       pinnedVaultSpaces: [],
       loadingPinned: false,
@@ -183,6 +191,12 @@ export default {
     };
   },
   computed: {
+    faviconUrl() {
+      // Construct URL at runtime to avoid Vite bundling
+      // Using template literal to prevent static analysis
+      const path = "/favicon";
+      return `${path}.ico`;
+    },
     logoutIcon() {
       // Return logout icon as SVG string
       if (window.Icons && window.Icons.logout) {
@@ -240,6 +254,18 @@ export default {
         document.body.classList.remove("sidebar-collapsed");
       }
     },
+    updateHeaderHeight() {
+      this.$nextTick(() => {
+        const header = document.querySelector(".app-header");
+        if (header) {
+          const height = header.offsetHeight;
+          document.documentElement.style.setProperty(
+            "--header-height",
+            `${height}px`,
+          );
+        }
+      });
+    },
     handleLogout(e) {
       // Prevent any default behavior
       if (e) {
@@ -285,6 +311,15 @@ export default {
     // Store handler for cleanup
     this.mobileModeChangeHandler = handleMobileModeChange;
 
+    // Calculate and set header height for sidebar positioning
+    this.$nextTick(() => {
+      this.updateHeaderHeight();
+      // Recalculate on resize
+      window.addEventListener("resize", this.updateHeaderHeight);
+      // Also recalculate when window loads to ensure accuracy
+      window.addEventListener("load", this.updateHeaderHeight);
+    });
+
     // Load sidebar state from localStorage
     const saved = localStorage.getItem("sidebarCollapsed");
     if (saved !== null) {
@@ -293,12 +328,13 @@ export default {
     // Update body class based on initial sidebar state
     this.updateBodyClass();
 
-    // Check if user is admin
+    // Check if user is admin or superadmin
     try {
       const accountInfo = await account.getAccount();
       this.isAdmin =
         accountInfo.global_role === "admin" ||
         accountInfo.global_role === "superadmin";
+      this.isSuperAdmin = accountInfo.global_role === "superadmin";
     } catch (err) {
       console.error("Failed to load account info:", err);
     } finally {
@@ -379,6 +415,9 @@ export default {
         this.mobileModeChangeHandler,
       );
     }
+    // Clean up resize and load listeners
+    window.removeEventListener("resize", this.updateHeaderHeight);
+    window.removeEventListener("load", this.updateHeaderHeight);
     // Remove document event listeners
     if (this.pinnedVaultSpacesChangedHandler) {
       document.removeEventListener(
@@ -407,6 +446,7 @@ export default {
 <style scoped>
 .app-layout {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   position: relative;
 }
@@ -415,8 +455,9 @@ export default {
 .sidebar {
   position: fixed;
   left: 0;
-  top: 0;
-  height: 100vh;
+  top: var(--header-height, 100px);
+  bottom: 0;
+  height: calc(100vh - var(--header-height, 100px));
   width: 250px;
   background: linear-gradient(
     180deg,
@@ -426,10 +467,10 @@ export default {
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0 1rem 1rem 0;
+  border-radius: 0 0 1rem 0;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
+  z-index: 99;
   overflow-y: auto;
   overflow-x: hidden;
   padding-top: 1.5rem;
@@ -766,9 +807,11 @@ export default {
 .main-content {
   flex: 1;
   margin-left: 250px;
+  padding-top: var(--header-height, 100px);
   transition: margin-left 0.3s ease;
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
 }
 
 .main-content.sidebar-collapsed {
@@ -777,10 +820,12 @@ export default {
 
 .mobile-mode .main-content {
   margin-left: 0 !important;
+  margin-top: 0 !important;
 }
 
 .mobile-mode .main-content.sidebar-collapsed {
   margin-left: 0 !important;
+  margin-top: 0 !important;
 }
 
 /* Header */
@@ -788,40 +833,38 @@ export default {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  border-top-left-radius: 0.75rem;
   padding: 1.5rem 2rem;
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 100; /* Above encryption overlay (50) but below dropdown (1000) */
   display: flex;
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 4px 20px rgba(2, 6, 23, 0.2);
-  position: relative;
-  z-index: 1;
-}
-
-/* Add a gradient overlay on the left edge of header to blend with sidebar */
-.app-header::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 20px;
-  background: linear-gradient(
-    to right,
-    rgba(30, 41, 59, 0.95),
-    rgba(30, 41, 59, 0.5),
-    transparent
-  );
-  pointer-events: none;
-  border-top-left-radius: 0.75rem;
+  width: 100%;
+  margin-left: 0;
+  flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.app-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-logo {
+  height: 1.75rem;
+  width: 1.75rem;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .app-title {

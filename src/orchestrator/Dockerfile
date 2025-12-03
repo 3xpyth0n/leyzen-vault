@@ -35,4 +35,4 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "80", "--no-access-log", "--log-level", "error", "--timeout-graceful-shutdown", "2"]

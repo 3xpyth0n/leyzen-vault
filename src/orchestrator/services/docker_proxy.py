@@ -405,10 +405,23 @@ class DockerProxyService:
 
         try:
             cont.stop(timeout=timeout)
+            # Use shorter wait timeout for faster rotation handoff
+            # The wait ensures the container actually stops, but we don't need to wait
+            # the full timeout if the container stops quickly
+            wait_timeout = min(timeout, 5)  # Cap wait at 5 seconds for faster rotation
             try:
-                cont.wait(timeout=timeout)
+                cont.wait(timeout=wait_timeout)
             except DockerProxyError:
-                pass
+                # Container may have stopped before wait completes, or wait timed out
+                # Verify actual status instead of failing
+                try:
+                    cont.reload()
+                    if cont.status not in ("running", "restarting"):
+                        # Container is stopped, which is what we want
+                        pass
+                except DockerProxyError:
+                    # Can't verify, but stop signal was sent
+                    pass
             log_reason = f" ({reason})" if reason else ""
             self._logger.log(f"[ACTION] Stopped {name}{log_reason}")
             return True
@@ -453,12 +466,39 @@ class DockerProxyService:
         return self.get_container_safe(name)
 
     def ensure_single_active(self, active_name: str, managed_names: list[str]) -> None:
+        """Ensure only the specified container is active, stopping all others.
+
+        This method is more robust than stop_container and will retry if needed.
+        """
         for name in managed_names:
             if name == active_name:
                 continue
             cont = self.get_container_safe(name)
             if cont and cont.status == "running":
-                self.stop_container(name, reason="enforcing single active container")
+                # Try to stop with normal timeout first
+                stopped = self.stop_container(
+                    name, reason="enforcing single active container", timeout=30
+                )
+                if not stopped:
+                    # If normal stop failed, verify state and try with shorter timeout
+                    cont = self.get_container_safe(name)
+                    if cont and cont.status == "running":
+                        self._logger.log(
+                            f"[ENFORCE] Normal stop failed for {name}, trying force stop"
+                        )
+                        # Try with shorter timeout as force stop
+                        self.stop_container(
+                            name,
+                            reason="force enforcing single active container",
+                            timeout=5,
+                        )
+                        # Final verification
+                        cont = self.get_container_safe(name)
+                        if cont and cont.status == "running":
+                            self._logger.log(
+                                f"[ENFORCE ERROR] Failed to stop {name} even after force stop. "
+                                "Container may be stuck."
+                            )
 
 
 __all__ = [

@@ -330,40 +330,44 @@ class SyncValidationService:
                 )
 
             # Verify magic bytes (content-based validation)
-            # Read first few bytes to verify file type matches expected format
-            try:
-                with open(file_path, "rb") as f:
-                    magic_bytes = f.read(16)  # Read first 16 bytes
+            # Only check magic bytes if hash validation passed
+            # If hash matches, file is valid regardless of magic bytes
+            # This check is mainly for detecting unencrypted files when hash is missing
+            if not expected_hash:
+                # Only check magic bytes if no hash is stored (should not happen in production)
+                try:
+                    with open(file_path, "rb") as f:
+                        magic_bytes = f.read(16)  # Read first 16 bytes
 
-                # Basic magic bytes validation (can be extended for specific file types)
-                # Encrypted files should not start with common plaintext signatures
-                # This is a basic check - more sophisticated validation can be added
-                plaintext_signatures = [
-                    b"PK\x03\x04",  # ZIP files
-                    b"\x89PNG",  # PNG images
-                    b"GIF89a",  # GIF images
-                    b"GIF87a",  # GIF images
-                    b"\xff\xd8\xff",  # JPEG images
-                    b"%PDF",  # PDF files
-                    b"<!DOCTYPE",  # HTML/XML
-                    b"<?xml",  # XML
-                ]
+                    # Basic magic bytes validation (can be extended for specific file types)
+                    # Encrypted files should not start with common plaintext signatures
+                    # This is a basic check - more sophisticated validation can be added
+                    plaintext_signatures = [
+                        b"PK\x03\x04",  # ZIP files
+                        b"\x89PNG",  # PNG images
+                        b"GIF89a",  # GIF images
+                        b"GIF87a",  # GIF images
+                        b"\xff\xd8\xff",  # JPEG images
+                        b"%PDF",  # PDF files
+                        b"<!DOCTYPE",  # HTML/XML
+                        b"<?xml",  # XML
+                    ]
 
-                # If file starts with plaintext signature and is supposed to be encrypted,
-                # this might indicate tampering (unless it's a known format)
-                # For now, we just log a warning but don't reject
-                for sig in plaintext_signatures:
-                    if magic_bytes.startswith(sig):
-                        self._logger.warning(
-                            f"File {file_id} starts with plaintext signature {sig.hex()} - "
-                            "may not be encrypted or may be a known format"
-                        )
-                        break
-            except Exception as e:
-                self._logger.warning(
-                    f"Failed to read magic bytes for file {file_id}: {e}"
-                )
-                # Don't fail validation if magic bytes check fails
+                    # If file starts with plaintext signature and is supposed to be encrypted,
+                    # this might indicate tampering (unless it's a known format)
+                    # For now, we just log a warning but don't reject
+                    for sig in plaintext_signatures:
+                        if magic_bytes.startswith(sig):
+                            self._logger.warning(
+                                f"File {file_id} starts with plaintext signature {sig.hex()} - "
+                                "may not be encrypted or may be a known format"
+                            )
+                            break
+                except Exception as e:
+                    self._logger.warning(
+                        f"Failed to read magic bytes for file {file_id}: {e}"
+                    )
+                    # Don't fail validation if magic bytes check fails
 
             # Verify file size (optional but recommended)
             actual_size = file_path.stat().st_size

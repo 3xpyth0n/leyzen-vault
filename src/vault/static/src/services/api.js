@@ -224,11 +224,26 @@ export async function apiRequest(endpoint, options = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  let response = await fetch(url, {
-    ...fetchOptions,
-    headers,
-    credentials: "same-origin", // Include cookies (session) in requests
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      headers,
+      credentials: "same-origin", // Include cookies (session) in requests
+    });
+  } catch (networkError) {
+    // Network errors (timeout, connection refused, etc.) during rotations
+    // Don't disconnect user - these are temporary
+    if (
+      networkError.name === "TypeError" ||
+      networkError.message?.includes("fetch") ||
+      networkError.message?.includes("network")
+    ) {
+      // Re-throw as a network error that callers can handle
+      throw new Error(`Network error: ${networkError.message}`);
+    }
+    throw networkError;
+  }
 
   // Handle token refresh if needed (for 401 errors)
   if (response.status === 401 && token && !skipAutoRefresh) {
@@ -298,10 +313,25 @@ export async function apiRequest(endpoint, options = {}) {
         throw new Error("Unauthorized");
       }
     } catch (refreshError) {
-      // Refresh failed - don't redirect for critical operations
+      // Check if refresh failed due to network error (rotation) vs auth error
+      const isNetworkError =
+        refreshError.message?.includes("Network error") ||
+        refreshError.message?.includes("fetch") ||
+        refreshError.name === "TypeError";
+
+      // Don't redirect for critical operations
       if (fetchOptions.method === "POST" || fetchOptions.method === "DELETE") {
         return response; // Return response so caller can handle error
       }
+
+      // If it's a network error during rotation, don't disconnect user
+      // The rotation will complete and requests will work again
+      if (isNetworkError) {
+        // Return the original 401 response - caller can retry later
+        return response;
+      }
+
+      // Only disconnect for actual auth errors (not network errors)
       removeToken();
       window.location.href = "/login";
       throw new Error("Unauthorized");
@@ -2631,9 +2661,8 @@ export const sso = {
     }
 
     const data = await response.json();
-    if (data.token) {
-      setToken(data.token);
-    }
+    // Token is now in HttpOnly cookie, not in response
+    // No need to store it in localStorage
     return data;
   },
 };

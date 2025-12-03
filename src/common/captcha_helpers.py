@@ -64,7 +64,7 @@ def refresh_captcha_with_store(
     Args:
         store: CaptchaStore instance to store the CAPTCHA
         settings: Application settings with captcha_length attribute
-        session_obj: Flask session dictionary to store CAPTCHA text and nonce
+        session_obj: Flask session dictionary (kept for compatibility, not used)
         on_svg_warning: Optional callback to log SVG fallback warnings
 
     Returns:
@@ -73,8 +73,6 @@ def refresh_captcha_with_store(
     captcha_length = getattr(settings, "captcha_length", 6)
     text = generate_captcha_text(captcha_length)
     nonce = secrets.token_urlsafe(8)
-    session_obj["captcha_text"] = text
-    session_obj["captcha_nonce"] = nonce
     store.store(nonce, text)
     return nonce
 
@@ -86,27 +84,20 @@ def get_captcha_nonce_with_store(
     *,
     on_svg_warning: Callable[[str], None] | None = None,
 ) -> str:
-    """Get existing CAPTCHA nonce from session or create a new one.
+    """Get existing CAPTCHA nonce from store or create a new one.
 
     Args:
         store: CaptchaStore instance to store/retrieve the CAPTCHA
-        session_obj: Flask session dictionary containing CAPTCHA text and nonce
+        session_obj: Flask session dictionary (kept for compatibility, not used)
         settings: Application settings with captcha_length attribute
         on_svg_warning: Optional callback to log SVG fallback warnings
 
     Returns:
         CAPTCHA nonce string
     """
-    text = session_obj.get("captcha_text")
-    nonce = session_obj.get("captcha_nonce")
-    if not text or not nonce:
-        return refresh_captcha_with_store(
-            store, settings, session_obj, on_svg_warning=on_svg_warning
-        )
-    else:
-        # Ensure the CAPTCHA is stored in the store
-        store.store(str(nonce), str(text))
-        return str(nonce)
+    return refresh_captcha_with_store(
+        store, settings, session_obj, on_svg_warning=on_svg_warning
+    )
 
 
 def build_captcha_image_with_settings(
