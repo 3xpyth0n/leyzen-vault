@@ -6,89 +6,127 @@
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
 
-> **Modular Moving-Target Defense Orchestrator — Enterprise-Grade Secure File Storage**
->
-> Licensed under the **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE) for details.
+> **Modular Moving-Target Defense Orchestrator — Enterprise-Grade Secure File Storage**  
+> **The first open-source file vault designed to stay ahead of attackers — by never standing still.**  
+> Licensed under **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE).
 
-Leyzen Vault automates ephemeral container rotation for a secure file storage system with enterprise-grade features. A hardened Flask orchestrator coordinates Docker lifecycle operations through an allowlisted proxy, while HAProxy front-ends every request with strict security headers. The system demonstrates how moving-target defense principles can be applied to real-world stacks without sacrificing observability or operator experience.
+## Overview
 
-**Version 2.3.0 Highlights**: Preview support for video, audio, text, and markdown files, enhanced UI with VaultSpace pinning, dynamic icon system, conflict resolution, and multiple bug fixes. See [`CHANGELOG.md`](CHANGELOG.md) for full details.
+Leyzen Vault is a **next-generation secure file storage platform** built around a fully automated **Moving-Target Defense (MTD)** model.
+Instead of relying on static, predictable infrastructures, it continuously rotates its backend containers, refreshes surface exposure, and isolates components — making targeted attacks dramatically harder.
 
-**End-to-End Encryption (E2EE)**: Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded to the server. The server stores only encrypted data and never has access to encryption keys or decrypted content. Decryption happens entirely in the user's browser when downloading files. This ensures that even if the server is compromised, file contents remain protected.
+It combines:
+
+- a hardened Python orchestrator,
+- a Go-based CLI,
+- a Vue.js interface with modern UX,
+- HAProxy security-focused ingress,
+- full client-side E2EE.
+
+This project aims to **bridge real-world usability and advanced cybersecurity research**, offering an infrastructure that is understandable to operators yet significantly more resilient than traditional file storage solutions.
+
+## What Leyzen Vault Is For
+
+Leyzen Vault is designed for:
+
+- individuals and teams needing **confidential, encrypted, and private file storage**,
+- security-conscious users wanting **client-side encryption with zero-trust architecture**,
+- developers and researchers exploring **practical implementations of moving-target defense**,
+- operators looking for a **self-hosted, auditable, enterprise-grade alternative** to mainstream cloud services.
+
+All encryption and decryption happen in the browser — servers never access plaintext.
+
+## Why It Matters
+
+Traditional self-hosted storage solutions, even encrypted ones, rely on static servers and predictable topologies. Attackers can perform recon, prepare exploits, and maintain persistence.
+
+Leyzen Vault breaks this model by providing:
+
+- **ephemeral backends that constantly rotate**,
+- **strict proxy boundaries**,
+- **hardened service orchestration**,
+- **auditable secure defaults**,
+- **client-encrypted data only**,
+- **zero exposure of keys, even on compromise**.
+
+This significantly reduces the feasibility of long-term intrusion, data exfiltration, and targeted exploitation.
+
+## How Leyzen Vault Differs From Other Solutions
+
+Leyzen Vault is **not** just another file storage tool. It differentiates itself through:
+
+### 1. Moving-Target Defense (MTD) at its core
+
+Most platforms run static containers. Leyzen Vault continuously rotates, regenerates, and re-attests its components.  
+Attackers cannot rely on stable targets.
+
+### 2. End-to-End Encryption by design
+
+Files are encrypted with **Web Crypto AES-GCM** before leaving the client.  
+Nothing is ever readable server-side.
+
+### 3. Full-stack security alignment
+
+HAProxy, orchestrator, Docker engine access, authentication and proxy boundaries are all designed to minimize trust and reduce attack surface.
+
+### 4. Modular, transparent, and auditable architecture
+
+Each service is isolated, documented, reproducible, and observable — offering a realistic, modern security-oriented reference architecture.
+
+### 5. Enterprise features without vendor lock-in
+
+SSO, encrypted search, audit logs, admin dashboard, device management, and REST API v2 — without subscriptions or proprietary dependencies.
+
+## Version 2.3.0 Highlights
+
+Preview support for video, audio, text, and markdown files, enhanced UI with VaultSpace pinning, dynamic icon system, conflict resolution modal, and multiple bug fixes.  
+See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
+
+**End-to-End Encryption (E2EE)**: Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded. The server only stores ciphertext.
 
 ## Author
 
-**Saad Idrissi** — a French cybersecurity student passionate about secure systems, automation, and digital defense.
-He created **Leyzen Vault** as a personal initiative to explore advanced moving-target defense concepts and practical infrastructure hardening.
-🌐 [portfolio.leyzen.com](https://portfolio.leyzen.com)
+**Saad Idrissi** — French cybersecurity student passionate about secure systems, automation, and digital defense.  
+Creator of **Leyzen Vault**, exploring real-world implementations of MTD concepts.  
+🌐 https://portfolio.leyzen.com
 
 ## Feature Highlights
 
 ### Core Features
 
-- **Dynamic stack composition** – `leyzenctl` regenerates Docker Compose and HAProxy artifacts on every lifecycle command so configuration always reflects the current setup.
-- **Rotation-aware control plane** – The orchestrator promotes one healthy replica at a time, keeps rotation state auditable, and exposes SSE telemetry for dashboards and automations.
-- **Defense-in-depth defaults** – CAPTCHA-backed authentication, CSP reporting, proxy trust limits, and bearer-token Docker access are enabled from the first boot.
-- **VaultSpaces** – Workspace system with personal spaces, each with its own encryption keys.
+- Dynamic stack composition
+- Rotation-aware control plane
+- Defense-in-depth defaults
+- VaultSpaces (workspace-specific keys)
 
 ### Enterprise Features
 
-- **Single Sign-On (SSO)** – SSO support with SAML, OAuth2, and OIDC providers.
-- **REST API v2** – Comprehensive RESTful API with JWT authentication for all operations.
-- **Search** – Encrypted search functionality with searchable encryption for secure, privacy-preserving file search.
-- **Admin Dashboard** – Comprehensive admin dashboard with user management, system settings, and analytics.
+- SSO (SAML, OAuth2, OIDC)
+- REST API v2
+- Encrypted search
+- Admin dashboard
 
 ### Security & Privacy
 
-- **PostgreSQL Database** – Secure database storage for all metadata, users, and system data.
-- **JWT Authentication** – JWT-based authentication for API endpoints with token refresh and blacklist support.
-- **Hierarchical Key Management** – VaultSpace keys and file keys, all encrypted with user master keys.
-- **Email Verification** – Email verification system for new user accounts.
-- **Device Management** – Device registration and management for enhanced security.
-- **Audit Logging** – Enhanced audit logging with PostgreSQL storage and automatic cleanup.
+- PostgreSQL secure metadata storage
+- JWT authentication
+- Hierarchical key management
+- Email verification & device management
+- Audit logging with automatic cleanup
 
 ## Documentation
 
-**Documentation Map**: Leyzen Vault maintains two types of documentation:
+### 📚 Official Documentation
 
-- **📚 Official Documentation** - For operators, users, and day-to-day usage. Contains guides on installation, configuration, CLI usage, architecture overview, and operational procedures. Available at [https://docs.leyzen.com](https://docs.leyzen.com).
-- **Repository `docs/` directory** - For developers and contributors. Contains coding standards, security policies, contribution guidelines, and code-level implementation details.
+https://docs.leyzen.com
 
-If you're **using** Leyzen Vault, start with the [Quickstart guide](https://docs.leyzen.com/getting-started/quickstart). If you're **contributing** code, start with [`docs/AGENTS.md`](docs/AGENTS.md) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
+Includes Quickstart, Architecture, Security Model, CLI, CI/CD, Developer Guide, FAQ.
 
-### 📚 Official Documentation (User & Operational Guides)
+### Repository Documentation
 
-Primary user-facing and operational documentation is maintained at [https://docs.leyzen.com](https://docs.leyzen.com):
-
-- [Home](https://docs.leyzen.com/)
-- [Quickstart](https://docs.leyzen.com/getting-started/quickstart)
-- [Architecture Overview](https://docs.leyzen.com/architecture/overview)
-- [Security Model](https://docs.leyzen.com/security/security-model)
-- [`leyzenctl` CLI](https://docs.leyzen.com/cli/leyzenctl)
-- [Vault Service & VaultSpaces](https://docs.leyzen.com/vaultspaces/vault)
-- [Telemetry & Monitoring](https://docs.leyzen.com/orchestrator/telemetry)
-- [CI/CD Workflows](https://docs.leyzen.com/ci-cd)
-- [Developer Guide](https://docs.leyzen.com/developer-guide)
-- [FAQ](https://docs.leyzen.com/faq)
-
-### Repository Documentation (Code & Policies)
-
-Repository-level documentation for developers and contributors:
-
-- [`docs/AGENTS.md`](docs/AGENTS.md) — Code style and architecture guidelines for AI assistants and contributors
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System architecture, service startup order, and component communication
-- [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md) — Complete REST API v2 documentation
-- [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md) — Authentication architecture and implementation details
-- [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) — Developer guide for contributing to the project
-- [`docs/SECURITY.md`](docs/SECURITY.md) — Security policy and vulnerability reporting
-- [`docs/SECURITY_RUNTIME.md`](docs/SECURITY_RUNTIME.md) — Runtime security controls and implementation details
-- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — Contribution workflow and commit conventions
-- [`docs/CODE_OF_CONDUCT.md`](docs/CODE_OF_CONDUCT.md) — Community standards
-- [`CHANGELOG.md`](CHANGELOG.md) — Release history and changes
+Developer & contributor documentation available in `docs/`.
 
 ## Getting Started
-
-Clone the repository, copy `env.template` to `.env`, and build the CLI with `./install.sh`. Full installation, configuration, and first-run steps are documented in the [Quickstart guide](https://docs.leyzen.com/getting-started/quickstart).
 
 ```bash
 git clone https://github.com/3xpyth0n/leyzen-vault.git
@@ -98,51 +136,49 @@ cp env.template .env
 ./leyzenctl start
 ```
 
-**First Run Setup**: On first startup, visit `/setup` to create your superadmin account. The system will check if any users exist in the PostgreSQL database. If none are found, the setup endpoint will be available. After creating the first user, the setup endpoint is automatically disabled for security.
+First-run setup is available at `/setup` until a superadmin is created.
 
-**PostgreSQL Required**: Version 2.0.0 requires PostgreSQL 16 for production deployments. The database schema is automatically created on first startup. Ensure PostgreSQL is running and configured before starting the application.
+**PostgreSQL Required**: Version 2.0.0 requires PostgreSQL 16 for production deployments.
 
-**Configuration**: You can override the default `.env` file location by setting the `LEYZEN_ENV_FILE` environment variable to an absolute or relative path. This is useful for managing multiple environments or CI/CD pipelines. See `env.template` for all available configuration options.
-
-**Note**: The `docker-generated.yml` file in the repository root is automatically generated by `src/compose/build.py`. Do not edit it manually; it will be regenerated by `leyzenctl` commands or when running the build script directly.
+**Configuration**: You can override the default `.env` file location with `LEYZEN_ENV_FILE`.
 
 ## Architecture at a Glance
 
-Leyzen Vault v2.3.0 comprises:
+Leyzen Vault v2.3.0 includes:
 
-- **Go CLI** (`leyzenctl`) for container lifecycle management
-- **Python Backend** (Flask) with PostgreSQL database and REST API v2
-- **Vue.js Frontend** (SPA) with modern UI/UX
-- **HAProxy** front-end reverse proxy with strict security headers
-- **Docker Proxy** for authenticated Docker Engine API access
-- **Flask Orchestrator** with rotation telemetry and SSE streaming
-- **PostgreSQL** database for all metadata, users, and system data
+- Go CLI
+- Flask backend & orchestrator
+- Vue.js frontend
+- HAProxy reverse proxy
+- Docker proxy
+- PostgreSQL database
 
-Review the [Architecture Overview](https://docs.leyzen.com/architecture/overview) page for diagrams, rotation flow, and component responsibilities. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for detailed technical documentation.
+See Architecture section in documentation for diagrams and detailed flow.
 
 ## Security & Compliance
 
-Security disclosures follow the process documented in [`docs/SECURITY.md`](docs/SECURITY.md). Runtime protections—including CSP enforcement, captcha, CSRF, proxy trust, and Docker proxy allowlists—are detailed in the [Security Model](https://docs.leyzen.com/security/security-model).
+Security disclosures follow the process documented in `docs/SECURITY.md`.
+Runtime protections include CSP enforcement, captcha, CSRF, trust boundaries, and Docker proxy allowlists.
 
 ## Contributing
 
-We welcome pull requests and feature ideas! Start with the [Developer Guide](https://docs.leyzen.com/developer-guide) for repository conventions, then review [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the [Code of Conduct](docs/CODE_OF_CONDUCT.md) before opening an issue or PR.
+Contributions are welcome.
+Start with the Developer Guide and `docs/CONTRIBUTING.md`.
+Please follow the Code of Conduct before submitting.
 
 ## Support & Contact
 
-- File bugs or feature requests in [GitHub Issues](https://github.com/3xpyth0n/leyzen-vault/issues).
-- Security reports should be submitted privately per [`docs/SECURITY.md`](docs/SECURITY.md).
-- For release history, consult [`CHANGELOG.md`](CHANGELOG.md).
+- Issues: [https://github.com/3xpyth0n/leyzen-vault/issues](https://github.com/3xpyth0n/leyzen-vault/issues)
+- Security reports: see `docs/SECURITY.md`
+- Release history: `CHANGELOG.md`
 
 ## Repository Structure
 
-The repository is organized as follows:
-
-- **`leyzen-vault/`** - Main Leyzen Vault project (core moving-target defense orchestrator)
-  - `src/` - Python source code (orchestrator, compose builder, vault application, common utilities)
-  - `infra/` - Infrastructure components (HAProxy config, Docker proxy, vault Dockerfile)
-  - `tools/cli/` - Go CLI source code (`leyzenctl`)
-  - `docs/` - Developer documentation and policies
+- `src/` — orchestrator, builder, vault backend
+- `infra/` — HAProxy, Docker proxy
+- `tools/cli/` — `leyzenctl` Go CLI
+- `docs/` — developer documentation
+- root — generated compose file (do not edit manually)
 
 ## Activity
 
@@ -150,4 +186,4 @@ The repository is organized as follows:
 
 ## License
 
-Source code is available under the Business Source License 1.1 (BSL 1.1).
+Source code is available under the **Business Source License 1.1 (BSL 1.1)**.
