@@ -57,123 +57,131 @@
     </div>
 
     <!-- Generate API Key Modal -->
-    <div v-if="showCreateModal" class="modal-overlay" @click.self="closeModal">
-      <div class="modal glass glass-card modal-wide" @click.stop>
-        <div class="modal-header">
-          <h3>Generate API Key</h3>
-          <button
-            @click="closeModal"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div class="modal-body">
-          <form @submit.prevent="generateApiKey" class="modal-form">
-            <div v-if="isSuperadmin" class="form-group">
-              <label>User:</label>
-              <CustomSelect
-                :key="`user-select-${userOptions?.length || 0}-${showCreateModal}-${isSuperadmin}`"
-                v-model="apiKeyForm.userId"
-                :options="userOptions || []"
-                placeholder="Select a user"
-              />
-            </div>
-            <div
-              v-else-if="
-                currentUser && currentUser.global_role !== 'superadmin'
-              "
-              class="form-group"
+    <teleport to="body">
+      <div
+        v-if="showCreateModal"
+        class="modal-overlay"
+        @click.self="closeModal"
+      >
+        <div class="modal glass glass-card modal-wide" @click.stop>
+          <div class="modal-header">
+            <h3>Generate API Key</h3>
+            <button
+              @click="closeModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
             >
-              <label>User:</label>
-              <div class="form-help form-help-info">
-                API key will be generated for:
-                {{ currentUser.email || currentUser.id }}
-              </div>
-            </div>
-            <div v-else class="form-group">
-              <label>User:</label>
-              <div class="form-help">
-                Loading user information... (Role:
-                {{ currentUser?.global_role || "unknown" }})
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Name:</label>
-              <input
-                v-model="apiKeyForm.name"
-                type="text"
-                required
-                placeholder="e.g., n8n automation"
-                class="form-input"
-              />
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Generate</button>
-              <button
-                type="button"
-                @click="closeModal"
-                class="btn btn-secondary"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- Show Generated Key Modal -->
-    <div
-      v-if="showKeyModal && generatedKey"
-      class="modal-overlay"
-      @click.self="closeKeyModal"
-    >
-      <div class="modal glass glass-card modal-wide" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <span v-html="getIcon('key', 20)"></span>
-            API Key Generated
-          </h3>
-          <button
-            @click="closeKeyModal"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="warning-message glass">
-            <span v-html="getIcon('warning', 16)"></span>
-            This is the only time you will see this API key. Make sure to copy
-            it now and store it securely.
-          </div>
-          <div class="form-group">
-            <label>API Key:</label>
-            <div class="key-display">
-              <code class="api-key-value">{{ generatedKey }}</code>
-              <button
-                @click="copyToClipboard"
-                class="btn btn-secondary btn-copy"
-                :class="{ copied: copied }"
-              >
-                <span v-if="!copied" v-html="getIcon('copy', 16)"></span>
-                <span v-else>Copied!</span>
-              </button>
-            </div>
-          </div>
-          <div class="form-actions">
-            <button @click="closeKeyModal" class="btn btn-primary">
-              I've copied the key
+              ×
             </button>
           </div>
+          <div class="modal-body">
+            <form @submit.prevent="generateApiKey" class="modal-form">
+              <div v-if="isSuperadmin" class="form-group">
+                <label>User:</label>
+                <CustomSelect
+                  :key="`user-select-${userOptions?.length || 0}-${showCreateModal}-${isSuperadmin}`"
+                  v-model="apiKeyForm.userId"
+                  :options="userOptions || []"
+                  placeholder="Select a user"
+                />
+              </div>
+              <div
+                v-else-if="
+                  currentUser && currentUser.global_role !== 'superadmin'
+                "
+                class="form-group"
+              >
+                <label>User:</label>
+                <div class="form-help form-help-info">
+                  API key will be generated for:
+                  {{ currentUser.email || currentUser.id }}
+                </div>
+              </div>
+              <div v-else class="form-group">
+                <label>User:</label>
+                <div class="form-help">
+                  Loading user information... (Role:
+                  {{ currentUser?.global_role || "unknown" }})
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Name:</label>
+                <input
+                  v-model="apiKeyForm.name"
+                  type="text"
+                  required
+                  placeholder="e.g., n8n automation"
+                  class="form-input"
+                />
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Generate</button>
+                <button
+                  type="button"
+                  @click="closeModal"
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
+    </teleport>
+
+    <!-- Show Generated Key Modal -->
+    <teleport to="body">
+      <div
+        v-if="showKeyModal && generatedKey"
+        class="modal-overlay"
+        @click.self="closeKeyModal"
+      >
+        <div class="modal glass glass-card modal-wide" @click.stop>
+          <div class="modal-header">
+            <h3>
+              <span v-html="getIcon('key', 20)"></span>
+              API Key Generated
+            </h3>
+            <button
+              @click="closeKeyModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="warning-message glass">
+              <span v-html="getIcon('warning', 16)"></span>
+              This is the only time you will see this API key. Make sure to copy
+              it now and store it securely.
+            </div>
+            <div class="form-group">
+              <label>API Key:</label>
+              <div class="key-display">
+                <code class="api-key-value">{{ generatedKey }}</code>
+                <button
+                  @click="copyToClipboard"
+                  class="btn btn-secondary btn-copy"
+                  :class="{ copied: copied }"
+                >
+                  <span v-if="!copied" v-html="getIcon('copy', 16)"></span>
+                  <span v-else>Copied!</span>
+                </button>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button @click="closeKeyModal" class="btn btn-primary">
+                I've copied the key
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- Confirmation Modal -->
     <ConfirmationModal
@@ -753,22 +761,31 @@ export default {
 }
 
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1 !important;
+  visibility: visible !important;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Adjust modal overlay when sidebar is collapsed */
@@ -777,7 +794,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 /* Remove sidebar padding in mobile mode */
-.mobile-mode .modal-overlay {
+body.mobile-mode .modal-overlay {
   padding-left: 2rem !important;
   padding-right: 2rem !important;
 }
@@ -803,6 +820,18 @@ body.sidebar-collapsed .modal-overlay {
   box-sizing: border-box;
   position: relative;
   overflow-y: auto;
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .modal-wide {

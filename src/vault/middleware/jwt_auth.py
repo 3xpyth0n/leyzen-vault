@@ -352,9 +352,35 @@ def jwt_required(f: F) -> F:
             # Log error without exposing any token data
             return jsonify({"error": "Invalid or expired token"}), 401
 
+        # Check if database was unavailable during authentication
+        # If so, return 503 but still allow authentication to proceed
+        # This prevents disconnection during database restarts
+        database_unavailable = getattr(user, "_database_unavailable", False)
+
         # Store user and token in Flask g for use in route handlers
         g.current_user = user
         g.current_token = token  # Store token for logout/blacklist operations
+
+        # If database was unavailable, return 503 but still process the request
+        # This allows the frontend to know the database is temporarily unavailable
+        # without disconnecting the user
+        if database_unavailable:
+            # Still allow the request to proceed, but indicate database unavailability
+            # The route handler can check g.database_unavailable if needed
+            g.database_unavailable = True
+            # For GET requests, allow them to proceed with 503 status
+            # For POST/PUT/DELETE, return 503 to prevent data corruption
+            if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+                return (
+                    jsonify(
+                        {
+                            "error": "Database temporarily unavailable. Please try again in a moment."
+                        }
+                    ),
+                    503,
+                )
+            # For GET requests, allow them to proceed but set a flag
+            # Route handlers can check g.database_unavailable if needed
 
         return f(*args, **kwargs)
 

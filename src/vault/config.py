@@ -20,43 +20,62 @@ from common.env import load_env_with_override, parse_timezone
 from common.exceptions import ConfigurationError
 
 
-def get_postgres_url(env_values: dict[str, str]) -> str:
-    """Build PostgreSQL connection URL from environment variables.
+def get_postgres_url(
+    env_values: dict[str, str],
+    app: Any = None,
+    secret_key: str | None = None,
+    use_app_role: bool = False,
+) -> str:
+    """Build PostgreSQL connection URL.
 
-    This function performs the primary validation of POSTGRES_PASSWORD. It ensures
-    that the password is present and non-empty before constructing the connection URL.
-
-    Note on validation layers:
-    - Primary validation (this function): Application-level validation that raises
-      ConfigurationError with a clear error message if POSTGRES_PASSWORD is missing.
-      This is called when the Vault application starts and provides better error
-      messages for operators.
-    - Secondary validation (Docker Compose): Infrastructure-level validation in
-      src/compose/build.py that uses Docker Compose's ${VAR:?error} syntax to prevent
-      the PostgreSQL container from starting without a password. This fails fast at
-      container startup time.
-
-    Both validations are necessary:
-    1. Docker Compose validation prevents containers from starting with invalid config
-    2. Application validation provides better error messages and handles runtime changes
+    This function can use either the leyzen_app role (from SystemSecrets) or
+    the default POSTGRES_USER. By default, uses POSTGRES_USER for backward compatibility.
 
     Args:
         env_values: Dictionary containing environment variables
+        app: Optional Flask app instance (required to read from SystemSecrets when use_app_role=True)
+        secret_key: Optional SECRET_KEY for decrypting password from SystemSecrets
+        use_app_role: If True, use leyzen_app role from SystemSecrets. If False, use POSTGRES_USER.
 
     Returns:
         PostgreSQL connection URL string
 
     Raises:
-        ConfigurationError: If POSTGRES_PASSWORD is missing or empty
+        ConfigurationError: If password cannot be obtained
     """
     postgres_host = env_values.get("POSTGRES_HOST", "postgres")
     postgres_port = env_values.get("POSTGRES_PORT", "5432")
     postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
-    postgres_user = env_values.get("POSTGRES_USER", "leyzen")
-    postgres_password = env_values.get("POSTGRES_PASSWORD", "")
 
-    if not postgres_password:
-        raise ConfigurationError("POSTGRES_PASSWORD is required")
+    if use_app_role:
+        # Use leyzen_app role from SystemSecrets
+        from vault.services.db_password_service import DBPasswordService
+
+        postgres_user = "leyzen_app"
+
+        # Try to get password from SystemSecrets
+        postgres_password = None
+        if app and secret_key:
+            try:
+                postgres_password = DBPasswordService.get_password(
+                    secret_key, DBPasswordService.SECRET_KEY_APP, app
+                )
+            except Exception:
+                # SystemSecrets not available yet
+                pass
+
+        if not postgres_password:
+            raise ConfigurationError(
+                "leyzen_app password not found in SystemSecrets. "
+                "Roles may not be initialized yet."
+            )
+    else:
+        # Use default POSTGRES_USER
+        postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+        postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+        if not postgres_password:
+            raise ConfigurationError("POSTGRES_PASSWORD is required")
 
     return f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
 

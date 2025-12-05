@@ -181,18 +181,74 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
         from cryptography.hazmat.backends import default_backend
         import base64
 
-        # Build PostgreSQL connection URL from environment
+        # Build PostgreSQL connection URL using leyzen_orchestrator role
+        # Try to get password from SystemSecrets first, fallback to POSTGRES_PASSWORD
         postgres_host = env_values.get("POSTGRES_HOST", "postgres")
         postgres_port = env_values.get("POSTGRES_PORT", "5432")
         postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
-        postgres_user = env_values.get("POSTGRES_USER", "leyzen")
-        postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+        # Use leyzen_orchestrator role (hardcoded)
+        postgres_user = "leyzen_orchestrator"
+
+        # Try to get password from SystemSecrets
+        postgres_password = None
+        try:
+            # We need to connect to get the password, so use a temporary connection
+            # with the main user to read SystemSecrets
+            temp_postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+            temp_postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+            if temp_postgres_password:
+                temp_url = f"postgresql://{temp_postgres_user}:{temp_postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+                temp_engine = create_engine(temp_url, pool_pre_ping=True)
+
+                try:
+                    with temp_engine.connect() as temp_conn:
+                        # Read orchestrator password from SystemSecrets
+                        result = temp_conn.execute(
+                            text(
+                                "SELECT encrypted_value FROM system_secrets WHERE key = :key"
+                            ),
+                            {"key": "postgres_orchestrator_password"},
+                        )
+                        row = result.fetchone()
+
+                        if row:
+                            # Decrypt password
+                            from cryptography.fernet import Fernet
+                            from cryptography.hazmat.primitives import hashes
+                            from cryptography.hazmat.primitives.kdf.pbkdf2 import (
+                                PBKDF2HMAC,
+                            )
+                            from cryptography.hazmat.backends import default_backend
+                            import base64
+
+                            kdf = PBKDF2HMAC(
+                                algorithm=hashes.SHA256(),
+                                length=32,
+                                salt=b"leyzen-vault-db-password-v1",
+                                iterations=100000,
+                                backend=default_backend(),
+                            )
+                            fernet_key = base64.urlsafe_b64encode(
+                                kdf.derive(secret_key.encode())
+                            )
+                            cipher = Fernet(fernet_key)
+
+                            postgres_password = cipher.decrypt(row[0].encode()).decode()
+                finally:
+                    temp_engine.dispose()
+        except Exception:
+            # Fallback to POSTGRES_PASSWORD if SystemSecrets not available
+            pass
 
         if not postgres_password:
-            # Password required for connection
-            return ""
+            postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+            if not postgres_password:
+                # Password required for connection
+                return ""
 
-        # Create SQLAlchemy engine
+        # Create SQLAlchemy engine with leyzen_orchestrator role
         postgres_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
         engine = create_engine(postgres_url, pool_pre_ping=True)
 

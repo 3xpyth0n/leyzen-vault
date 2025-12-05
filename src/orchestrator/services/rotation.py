@@ -97,6 +97,46 @@ class RotationService:
             self._sync_service = SyncService(self._settings, self._docker, self._logger)
         return self._sync_service
 
+    def _rotate_db_passwords(self) -> None:
+        """Rotate PostgreSQL role passwords before container rotation.
+
+        This ensures that new containers use fresh passwords, limiting
+        the impact of a compromised container.
+        """
+        try:
+            from common.env import load_env_with_override
+            import os
+            from vault.services.db_password_service import DBPasswordService
+
+            env_values = load_env_with_override()
+            env_values.update(dict(os.environ))
+
+            secret_key = env_values.get("SECRET_KEY", "")
+            if not secret_key:
+                self._logger.log(
+                    "[WARNING] SECRET_KEY not available for password rotation"
+                )
+                return
+
+            # We need a Flask app context to use DBPasswordService
+            # Create a minimal app context for this operation
+            from flask import Flask
+
+            temp_app = Flask(__name__)
+            temp_app.config["SECRET_KEY"] = secret_key
+
+            with temp_app.app_context():
+                # Rotate all passwords
+                new_passwords = DBPasswordService.rotate_all_passwords(
+                    secret_key, temp_app
+                )
+                self._logger.log(
+                    f"[ROTATION] Rotated PostgreSQL passwords for {len(new_passwords)} roles"
+                )
+        except Exception as e:
+            self._logger.log(f"[ERROR] Failed to rotate database passwords: {e}")
+            # Don't raise - password rotation failure shouldn't block container rotation
+
     def _get_security_metrics_service(self) -> "SecurityMetricsService":
         """Get or create the shared SecurityMetricsService instance.
 
@@ -664,7 +704,17 @@ class RotationService:
         for next_index in candidate_indices:
             next_name = managed_containers[next_index]
 
-            # 1. Prepare rotation with validation and secure promotion
+            # 1. Rotate PostgreSQL role passwords before rotation
+            try:
+                self._rotate_db_passwords()
+            except Exception as password_error:
+                self._logger.log(
+                    f"[WARNING] Failed to rotate database passwords: {password_error}. "
+                    "Continuing with rotation anyway."
+                )
+                # Continue rotation even if password rotation fails
+
+            # 2. Prepare rotation with validation and secure promotion
             try:
                 if not self._prepare_container_for_rotation(active_name):
                     raise RuntimeError(f"Failed to prepare {active_name} for rotation")
@@ -675,7 +725,7 @@ class RotationService:
                 # Stop rotation if preparation fails to prevent data loss
                 return False, active_index, active_name
 
-            # 2. Start the new container WITHOUT stopping the current active one
+            # 3. Start the new container WITHOUT stopping the current active one
             next_cont = self._docker.start_container(next_name, reason=start_reason)
             if not next_cont:
                 # If startup fails, try the next candidate (the current active container remains active)
@@ -684,7 +734,7 @@ class RotationService:
                 )
                 continue
 
-            # 3. Wait for the new container to be healthy
+            # 4. Wait for the new container to be healthy
             if not self._docker.wait_until_healthy(next_cont):
                 # If not healthy, stop the new one and try the next candidate
                 self._logger.log(
@@ -695,7 +745,7 @@ class RotationService:
                 )
                 continue  # Try the next candidate, the current active container remains active
 
-            # 4. The new container is healthy: stop the previous active container now
+            # 5. The new container is healthy: stop the previous active container now
             elapsed = self.accumulate_and_clear_active(active_name)
             if elapsed > 0:
                 total_seconds = self.container_total_active_seconds.get(active_name, 0)

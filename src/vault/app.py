@@ -404,8 +404,61 @@ def _get_or_generate_internal_api_token(
     # Encrypt token before storing
     encrypted_token = cipher.encrypt(new_token.encode()).decode()
 
-    # Store in database
+    # Store in database using leyzen_secrets role
     try:
+        # Use leyzen_secrets role to write to SystemSecrets
+        from vault.database.schema import get_secrets_connection
+        from sqlalchemy import text
+
+        try:
+            secrets_engine = get_secrets_connection(app, secret_key)
+            try:
+                # Use engine.begin() for automatic transaction management
+                # This ensures the operation is committed correctly in SQLAlchemy 2.0
+                with secrets_engine.begin() as secrets_conn:
+                    # Check if key already exists
+                    result = secrets_conn.execute(
+                        text("SELECT id FROM system_secrets WHERE key = :key"),
+                        {"key": secret_key_name},
+                    )
+                    existing = result.fetchone()
+
+                    if existing:
+                        # Update existing record
+                        secrets_conn.execute(
+                            text(
+                                """
+                                UPDATE system_secrets 
+                                SET encrypted_value = :encrypted_value, updated_at = NOW()
+                                WHERE key = :key
+                                """
+                            ),
+                            {
+                                "key": secret_key_name,
+                                "encrypted_value": encrypted_token,
+                            },
+                        )
+                    else:
+                        # Insert new record
+                        secrets_conn.execute(
+                            text(
+                                """
+                                INSERT INTO system_secrets (key, encrypted_value)
+                                VALUES (:key, :encrypted_value)
+                                """
+                            ),
+                            {
+                                "key": secret_key_name,
+                                "encrypted_value": encrypted_token,
+                            },
+                        )
+            finally:
+                secrets_engine.dispose()
+        except Exception:
+            # leyzen_secrets role not available yet, fall back to regular connection
+            raise
+    except Exception as secrets_error:
+        # Fallback: use regular connection (for first startup)
         with app.app_context():
             # Ensure SystemSecrets table exists before storing
             # Try multiple times to create the table if it doesn't exist
@@ -680,13 +733,25 @@ def create_app(
 
         # Configure PostgreSQL database
         try:
+            # For first startup, use POSTGRES_USER to create roles
+            secret_key = settings.secret_key
+
+            # Start with POSTGRES_USER (for role creation)
             postgres_url = get_postgres_url(env_values)
             app.config["SQLALCHEMY_DATABASE_URI"] = postgres_url
             app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
             app.config["SQLALCHEMY_COMMIT_ON_TEARDOWN"] = (
                 False  # Explicitly disable auto-commit on teardown
             )
+
+            # Initialize database (this will create roles if needed)
             init_db(app)
+
+            # Note: We keep using POSTGRES_USER for the default database connection
+            # The application can use the leyzen_app role by reading the password from system_secrets
+            # when needed, but we don't change the default connection after initialization
+            # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
+
             logger.log("[INIT] PostgreSQL database initialized")
 
             # Wait a moment to ensure all tables are fully created and visible before generating token
@@ -1085,7 +1150,7 @@ def create_app(
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
     # SECURITY: Configure allowed origins (CORS + Origin validation)
-    # In production, ALLOWED_ORIGINS must be set and non-empty
+    # If ALLOWED_ORIGINS is not set, VAULT_URL will be used as fallback
     vault_settings = app.config.get("VAULT_SETTINGS")
     trust_count = getattr(vault_settings, "proxy_trust_count", 1)
     if trust_count < 0:
@@ -1108,6 +1173,10 @@ def create_app(
             normalized = origin.strip()
             if normalized:
                 allowed_origins.append(normalized.rstrip("/"))
+
+    # SECURITY: Use VAULT_URL as fallback if ALLOWED_ORIGINS is empty
+    if not allowed_origins and vault_settings and vault_settings.vault_url:
+        allowed_origins.append(vault_settings.vault_url.rstrip("/"))
 
     # SECURITY: Validate CORS configuration at startup
     if is_production:
@@ -1134,8 +1203,6 @@ def create_app(
                     "This should only be used in development.",
                     UserWarning,
                 )
-    elif vault_settings and vault_settings.vault_url:
-        allowed_origins.append(vault_settings.vault_url.rstrip("/"))
 
     app.config["ALLOWED_ORIGINS"] = allowed_origins
     app.config["ALLOWED_ORIGINS_NORMALIZED"] = {

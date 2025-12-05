@@ -29,8 +29,11 @@ export default {
               // Server came back online
               window.Notifications.success("Server is back online", 5000);
             } else {
-              // Server went offline
-              window.Notifications.error("Server is offline", 5000);
+              // Server went offline - show persistent notification
+              window.Notifications.error(
+                "Server is offline. All actions are blocked until the server comes back online.",
+                10000,
+              );
             }
           }
         }

@@ -178,7 +178,7 @@
               </div>
               <div
                 class="quick-stat-card glass glass-card"
-                @click="activeTab = 'sso-providers'"
+                @click="activeTab = 'authentication'"
               >
                 <h4>Authentication</h4>
                 <div class="quick-stat-value">
@@ -217,7 +217,7 @@
         </div>
 
         <!-- SSO Providers Tab -->
-        <div v-if="activeTab === 'sso-providers'">
+        <div v-if="activeTab === 'authentication'">
           <AdminSSOProviders />
         </div>
       </div>
@@ -254,7 +254,6 @@ export default {
   },
   setup() {
     const router = useRouter();
-    const activeTab = ref("dashboard");
     const stats = ref(null);
     const statsLoading = ref(false);
     const statsError = ref(null);
@@ -271,10 +270,55 @@ export default {
       { id: "dashboard", label: "Dashboard" },
       { id: "users", label: "Users" },
       { id: "quotas", label: "Quotas" },
-      { id: "sso-providers", label: "Authentication" },
+      { id: "authentication", label: "Authentication" },
       { id: "api-keys", label: "API Keys" },
       { id: "audit", label: "Audit Logs" },
     ];
+
+    // Mapping between tab IDs and URL hashes
+    const tabToHashMap = {
+      dashboard: "dashboard",
+      users: "users",
+      quotas: "quotas",
+      authentication: "authentication",
+      "api-keys": "api-keys",
+      audit: "audit",
+    };
+
+    // Reverse mapping: hash to tab ID
+    const hashToTabMap = Object.fromEntries(
+      Object.entries(tabToHashMap).map(([tab, hash]) => [hash, tab]),
+    );
+
+    // Get tab ID from URL hash
+    const getTabFromHash = () => {
+      if (typeof window === "undefined") {
+        return "dashboard";
+      }
+      const hash = window.location.hash.replace("#", "");
+      return hashToTabMap[hash] || "dashboard";
+    };
+
+    // Get hash from tab ID
+    const getHashFromTab = (tabId) => {
+      return tabToHashMap[tabId] || "dashboard";
+    };
+
+    // Update URL hash without triggering navigation
+    const updateUrlHash = (tabId) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const hash = getHashFromTab(tabId);
+      if (window.location.hash !== `#${hash}`) {
+        window.history.replaceState(null, "", `#${hash}`);
+      }
+    };
+
+    // Initialize activeTab from URL hash, default to "dashboard"
+    const initialTab =
+      typeof window !== "undefined" ? getTabFromHash() : "dashboard";
+    const activeTab = ref(initialTab);
 
     const setTabRef = (el, tabId) => {
       if (el) {
@@ -320,9 +364,10 @@ export default {
       return new Date(date).toLocaleTimeString();
     };
 
-    // Watch for activeTab changes to update indicator position
-    watch(activeTab, () => {
+    // Watch for activeTab changes to update indicator position and URL hash
+    watch(activeTab, (newTab) => {
       updateIndicatorPosition();
+      updateUrlHash(newTab);
     });
 
     // Watch for window resize to update indicator position
@@ -330,7 +375,23 @@ export default {
       updateIndicatorPosition();
     };
 
+    // Handle hash changes from browser navigation (back/forward buttons)
+    const handleHashChange = () => {
+      const tabFromHash = getTabFromHash();
+      if (tabFromHash !== activeTab.value) {
+        activeTab.value = tabFromHash;
+      }
+    };
+
     onMounted(async () => {
+      // Initialize URL hash if not present
+      if (typeof window !== "undefined") {
+        const currentHash = window.location.hash.replace("#", "");
+        if (!currentHash || !hashToTabMap[currentHash]) {
+          updateUrlHash(activeTab.value);
+        }
+      }
+
       await loadStats();
       // Update indicator position after mounting with a small delay
       // to ensure DOM is fully rendered
@@ -338,16 +399,18 @@ export default {
         updateIndicatorPosition();
       }, 100);
 
-      // Add resize listener
+      // Add resize and hashchange listeners
       if (typeof window !== "undefined") {
         window.addEventListener("resize", handleResize);
+        window.addEventListener("hashchange", handleHashChange);
       }
     });
 
     onBeforeUnmount(() => {
-      // Remove resize listener on unmount
+      // Remove listeners on unmount
       if (typeof window !== "undefined") {
         window.removeEventListener("resize", handleResize);
+        window.removeEventListener("hashchange", handleHashChange);
       }
     });
 

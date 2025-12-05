@@ -128,6 +128,7 @@ export default {
 .mobile-mode .user-item {
   gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .user-rank {
@@ -148,27 +149,42 @@ export default {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .mobile-mode .user-info {
   flex: 1 1 auto;
   min-width: 0;
   max-width: calc(100% - 3rem);
+  order: 2;
 }
 
 .user-email {
   color: #e6eef6;
   font-size: 0.9rem;
   font-weight: 500;
-  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.mobile-mode .user-email {
+  font-size: 0.85rem;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
 .user-storage {
   color: #94a3b8;
   font-size: 0.85rem;
+}
+
+.mobile-mode .user-storage {
+  font-size: 0.8rem;
+  margin-top: 0.125rem;
 }
 
 .user-bar {
@@ -181,7 +197,8 @@ export default {
 }
 
 .mobile-mode .user-item {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  flex-direction: row;
 }
 
 .mobile-mode .user-bar {
@@ -189,6 +206,7 @@ export default {
   order: 3;
   margin-top: 0.5rem;
   min-width: 0;
+  width: 100%;
 }
 
 .user-bar-fill {

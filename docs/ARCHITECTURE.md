@@ -289,6 +289,57 @@ This dependency chain ensures that:
 - **Rate Limiting**: Dashboard authentication includes rate limiting
 - **Secret Rotation**: Secrets can be rotated without service downtime
 
+## Database Security Model
+
+Leyzen Vault implements a multi-role PostgreSQL security model to limit the impact of a compromised container. The system uses four distinct database roles with minimal required privileges:
+
+### Roles and Privileges
+
+1. **`leyzen_app`** (Application Runtime Role):
+   - **Privileges**: SELECT, INSERT, UPDATE, DELETE on all application tables (users, files, vaultspaces, etc.)
+   - **Restrictions**:
+     - No access to `system_secrets` table (cannot read encrypted passwords or tokens)
+     - No CREATE/ALTER/DROP privileges (cannot modify schema or execute migrations)
+     - No access to PostgreSQL system catalogs
+   - **Usage**: Used by Vault containers for normal application operations
+
+2. **`leyzen_migrator`** (Schema Migration Role):
+   - **Privileges**: CREATE, ALTER, DROP on schema and tables
+   - **Restrictions**: No data access (no SELECT/INSERT/UPDATE/DELETE on data tables)
+   - **Usage**: Used only during database initialization and schema migrations
+
+3. **`leyzen_secrets`** (Secrets Management Role):
+   - **Privileges**: Full access (SELECT, INSERT, UPDATE, DELETE) on `system_secrets` table only
+   - **Restrictions**: No access to any other tables
+   - **Usage**: Used for reading and writing encrypted secrets (passwords, tokens) to SystemSecrets
+
+4. **`leyzen_orchestrator`** (Orchestrator Role):
+   - **Privileges**: SELECT only on `system_secrets` table
+   - **Restrictions**: No write access, no access to other tables
+   - **Usage**: Used by orchestrator to read internal API tokens
+
+### Password Management
+
+- All role passwords are generated randomly at first startup
+- Passwords are stored encrypted in `SystemSecrets` using Fernet encryption with `SECRET_KEY`
+- Passwords are automatically rotated at each container rotation
+- New passwords are updated in both PostgreSQL (ALTER ROLE) and SystemSecrets
+- Existing connections continue to work until they expire naturally (no service interruption)
+
+### Security Benefits
+
+- **Container Compromise Protection**: If a Vault container is compromised:
+  - Attacker cannot read secrets from SystemSecrets (no access)
+  - Attacker cannot modify database schema (no CREATE/ALTER/DROP privileges)
+  - Attacker can only access application data (which the application normally accesses anyway)
+- **Orchestrator Isolation**: Orchestrator has read-only access to SystemSecrets only
+- **Migration Protection**: Migrations can only be executed with the migrator role, not during normal runtime
+
+### Limitations
+
+- **Host Compromise**: If an attacker gains full host/docker.sock access, they can execute commands in the database container directly. This is accepted as "game over" and is outside the scope of container-level protection.
+- **Application Data**: A compromised container can still read/modify application data (users, files, etc.), but this is expected behavior since the application needs this access to function normally.
+
 ## Configuration Management
 
 Configuration is centralized via environment variables:

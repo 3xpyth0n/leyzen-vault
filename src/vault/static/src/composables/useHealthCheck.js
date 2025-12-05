@@ -3,7 +3,7 @@
  * Uses Server-Sent Events (SSE) for real-time health status monitoring
  */
 
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 
 export function useHealthCheck() {
   const isOnline = ref(true);
@@ -50,6 +50,10 @@ export function useHealthCheck() {
         // If we were offline, we're now online
         if (!isOnline.value) {
           isOnline.value = true;
+          // Update global status immediately when marked online
+          if (typeof window !== "undefined" && window.updateServerStatus) {
+            window.updateServerStatus(true);
+          }
         }
       };
 
@@ -85,6 +89,10 @@ export function useHealthCheck() {
           // Only mark as offline if we still don't have a connection after grace period
           if (!eventSource && isOnline.value) {
             isOnline.value = false;
+            // Update global status immediately when marked offline
+            if (typeof window !== "undefined" && window.updateServerStatus) {
+              window.updateServerStatus(false);
+            }
           }
           offlineTimer = null;
         }, rotationGracePeriod);
@@ -96,6 +104,10 @@ export function useHealthCheck() {
       // Failed to create EventSource
       isChecking.value = false;
       isOnline.value = false;
+      // Update global status immediately when marked offline
+      if (typeof window !== "undefined" && window.updateServerStatus) {
+        window.updateServerStatus(false);
+      }
 
       // Start aggressive reconnection interval for fast detection
       startReconnectInterval();
@@ -127,6 +139,10 @@ export function useHealthCheck() {
             // Server is back online! Reconnect SSE immediately
             if (!isOnline.value) {
               isOnline.value = true;
+              // Update global status immediately when marked online
+              if (typeof window !== "undefined" && window.updateServerStatus) {
+                window.updateServerStatus(true);
+              }
             }
 
             // Stop polling and reconnect SSE
@@ -247,6 +263,25 @@ export function useHealthCheck() {
     isChecking.value = false;
   };
 
+  // Watch isOnline and update global status immediately
+  // This ensures the global status is always in sync with the composable
+  watch(
+    isOnline,
+    (newStatus) => {
+      if (typeof window !== "undefined" && window.updateServerStatus) {
+        window.updateServerStatus(newStatus);
+      }
+    },
+    { immediate: true },
+  );
+
+  // Also update global status on mount to ensure it's initialized
+  onMounted(() => {
+    if (typeof window !== "undefined" && window.updateServerStatus) {
+      window.updateServerStatus(isOnline.value);
+    }
+  });
+
   // Start health check when composable is used
   onMounted(() => {
     connectSSE();
@@ -262,5 +297,28 @@ export function useHealthCheck() {
     isChecking,
     connectSSE,
     disconnectSSE,
+  };
+}
+
+// Export a global function to check server status
+// This allows api.js to check if server is online before making requests
+// Initialize global status tracking
+if (typeof window !== "undefined") {
+  // Initialize global status (default to true)
+  if (!window._serverStatus) {
+    window._serverStatus = { isOnline: true };
+  }
+
+  // This will be updated by components using useHealthCheck
+  window.getServerStatus = () => {
+    return window._serverStatus ? window._serverStatus.isOnline : true;
+  };
+
+  // Function to update global status (called by components)
+  window.updateServerStatus = (status) => {
+    if (!window._serverStatus) {
+      window._serverStatus = { isOnline: true };
+    }
+    window._serverStatus.isOnline = status;
   };
 }

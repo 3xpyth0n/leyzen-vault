@@ -169,6 +169,74 @@ function removeToken() {
 export { removeToken };
 
 /**
+ * Check if an error is a network error (temporary connectivity issue)
+ * vs an authentication error (permanent auth failure).
+ *
+ * @param {Error|Response|object} error - Error to check
+ * @returns {boolean} True if error is a network error
+ */
+export function isNetworkError(error) {
+  // Check if it's a fetch error (network failure)
+  if (error instanceof TypeError) {
+    // TypeError usually indicates network failure (fetch failed)
+    return true;
+  }
+
+  // Check error message for network-related keywords
+  const errorMessage = error?.message || error?.error || "";
+  const networkKeywords = [
+    "network",
+    "fetch",
+    "connection",
+    "timeout",
+    "refused",
+    "failed to fetch",
+    "networkerror",
+    "aborted",
+    "temporarily unavailable",
+    "temporary",
+    "server is offline",
+    "offline",
+  ];
+
+  // Check if error has isOffline flag (set when server is offline)
+  if (error?.isOffline) {
+    return true;
+  }
+  if (
+    networkKeywords.some((keyword) =>
+      errorMessage.toLowerCase().includes(keyword),
+    )
+  ) {
+    return true;
+  }
+
+  // Check error name
+  const errorName = error?.name || "";
+  if (
+    errorName === "TypeError" ||
+    errorName === "NetworkError" ||
+    errorName === "AbortError"
+  ) {
+    return true;
+  }
+
+  // Check if it's a Response object with network-related status
+  // 0 status usually means network error (CORS, connection refused, etc.)
+  // 503 (Service Unavailable) indicates temporary server issues (e.g., database unavailable)
+  if (error?.status === 0 || error?.status === 503) {
+    return true;
+  }
+
+  // Check if error has explicit isNetworkError flag
+  if (error?.isNetworkError === true) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parse error response from API.
  * Handles both JSON and HTML error responses.
  *
@@ -208,10 +276,48 @@ export async function parseErrorResponse(response) {
  * @param {string} endpoint - API endpoint
  * @param {object} options - Fetch options
  * @param {boolean} options.skipAutoRefresh - If true, skip automatic token refresh and redirect
+ * @param {boolean} options.allowOffline - If true, allow request even when server is offline
  * @returns {Promise<Response>} Fetch response
  */
 export async function apiRequest(endpoint, options = {}) {
-  const { skipAutoRefresh = false, ...fetchOptions } = options;
+  const {
+    skipAutoRefresh = false,
+    allowOffline = false,
+    ...fetchOptions
+  } = options;
+
+  // Check if server is offline (unless allowOffline is true)
+  // Health check endpoint is always allowed to check server status
+  if (
+    !allowOffline &&
+    endpoint !== "/healthz" &&
+    endpoint !== "/healthz/stream"
+  ) {
+    let isServerOnline = true; // Default to true if status not available yet
+
+    if (typeof window !== "undefined" && window.getServerStatus) {
+      isServerOnline = window.getServerStatus();
+    }
+
+    if (!isServerOnline) {
+      // Server is offline - show notification and reject request
+      // Don't disconnect user - just block the request
+      if (typeof window !== "undefined" && window.Notifications) {
+        window.Notifications.error(
+          "Server is offline. Please wait for the server to come back online.",
+          5000,
+        );
+      }
+
+      // Return a rejected promise with a network error
+      // This error will be caught by callers and should NOT cause disconnection
+      const error = new Error("Network error: Server is offline");
+      error.isOffline = true;
+      error.isNetworkError = true; // Mark as network error explicitly
+      throw error;
+    }
+  }
+
   const token = getToken();
   const url = `${API_BASE_URL}${endpoint}`;
 
@@ -234,12 +340,9 @@ export async function apiRequest(endpoint, options = {}) {
   } catch (networkError) {
     // Network errors (timeout, connection refused, etc.) during rotations
     // Don't disconnect user - these are temporary
-    if (
-      networkError.name === "TypeError" ||
-      networkError.message?.includes("fetch") ||
-      networkError.message?.includes("network")
-    ) {
+    if (isNetworkError(networkError)) {
       // Re-throw as a network error that callers can handle
+      // Don't disconnect user for network errors
       throw new Error(`Network error: ${networkError.message}`);
     }
     throw networkError;
@@ -250,15 +353,28 @@ export async function apiRequest(endpoint, options = {}) {
     try {
       // Try to refresh the token before giving up
       // Call refresh endpoint directly to avoid circular dependency
-      const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "same-origin",
-        body: JSON.stringify({ token }),
-      });
+      let refreshResponse;
+      try {
+        refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({ token }),
+        });
+      } catch (refreshNetworkError) {
+        // If refresh request itself fails with network error, don't disconnect
+        // This happens during container restarts - server is temporarily unavailable
+        if (isNetworkError(refreshNetworkError)) {
+          // Return the original 401 response - caller can retry later when server is back
+          // Don't disconnect user for network errors during rotations
+          return response;
+        }
+        // If it's not a network error, re-throw it
+        throw refreshNetworkError;
+      }
 
       if (refreshResponse.ok) {
         const refreshData = await refreshResponse.json();
@@ -269,85 +385,83 @@ export async function apiRequest(endpoint, options = {}) {
 
           // Retry the original request with new token
           headers["Authorization"] = `Bearer ${refreshData.token}`;
-          response = await fetch(url, {
-            ...fetchOptions,
-            headers,
-            credentials: "same-origin",
-          });
-
-          // If still 401 after refresh, token is truly invalid
-          if (response.status === 401) {
-            // Don't redirect for critical operations - let caller handle it
-            if (
-              fetchOptions.method === "POST" ||
-              fetchOptions.method === "DELETE"
-            ) {
-              return response; // Return response so caller can handle error
+          try {
+            response = await fetch(url, {
+              ...fetchOptions,
+              headers,
+              credentials: "same-origin",
+            });
+          } catch (retryNetworkError) {
+            // If retry fails with network error, don't disconnect
+            if (isNetworkError(retryNetworkError)) {
+              // Return the original 401 response - caller can retry later
+              return response;
             }
-            removeToken();
-            window.location.href = "/login";
-            throw new Error("Unauthorized");
+            throw retryNetworkError;
           }
-        } else {
-          // Refresh failed - don't redirect for critical operations
-          if (
-            fetchOptions.method === "POST" ||
-            fetchOptions.method === "DELETE"
-          ) {
+
+          // If still 401 after refresh, token might be invalid
+          // But don't disconnect automatically - let caller handle it
+          // This could be a temporary issue during container restart
+          if (response.status === 401) {
+            // Always return response - let caller decide what to do
+            // Don't automatically disconnect - could be temporary network issue
             return response;
           }
-          removeToken();
-          window.location.href = "/login";
-          throw new Error("Unauthorized");
+        } else {
+          // Refresh returned OK but no token - this might be an auth error
+          // But don't disconnect automatically - could be temporary issue
+          // Always return response - let caller handle it
+          return response;
         }
       } else {
-        // Refresh failed - don't redirect for critical operations
-        if (
-          fetchOptions.method === "POST" ||
-          fetchOptions.method === "DELETE"
-        ) {
-          return response; // Return response so caller can handle error
+        // Refresh failed with non-OK status
+        // Check if it's a network-related status (0, 502, 503, 504)
+        const networkStatusCodes = [0, 502, 503, 504];
+        if (networkStatusCodes.includes(refreshResponse.status)) {
+          // Network error during refresh - don't disconnect
+          // Return the original 401 response - caller can retry later
+          return response;
         }
-        removeToken();
-        window.location.href = "/login";
-        throw new Error("Unauthorized");
+
+        // Refresh failed - don't disconnect automatically
+        // Could be temporary network issue or server restart
+        // Always return response - let caller handle it
+        return response;
       }
     } catch (refreshError) {
       // Check if refresh failed due to network error (rotation) vs auth error
-      const isNetworkError =
-        refreshError.message?.includes("Network error") ||
-        refreshError.message?.includes("fetch") ||
-        refreshError.name === "TypeError";
-
-      // Don't redirect for critical operations
-      if (fetchOptions.method === "POST" || fetchOptions.method === "DELETE") {
-        return response; // Return response so caller can handle error
-      }
-
-      // If it's a network error during rotation, don't disconnect user
-      // The rotation will complete and requests will work again
-      if (isNetworkError) {
+      if (isNetworkError(refreshError)) {
+        // Network error during refresh - don't disconnect user
+        // The rotation will complete and requests will work again
         // Return the original 401 response - caller can retry later
         return response;
       }
 
-      // Only disconnect for actual auth errors (not network errors)
-      removeToken();
-      window.location.href = "/login";
-      throw new Error("Unauthorized");
+      // Don't disconnect automatically - could be temporary network issue
+      // Always return response - let caller handle it
+      return response;
     }
   } else if (response.status === 401) {
     // No token at all or skipAutoRefresh is true
-    if (
-      skipAutoRefresh ||
-      fetchOptions.method === "POST" ||
-      fetchOptions.method === "DELETE"
-    ) {
-      return response; // Return response so caller can handle error
+    // Check if it's a network-related status
+    const networkStatusCodes = [0, 502, 503, 504];
+    if (networkStatusCodes.includes(response.status)) {
+      // Network error - don't disconnect
+      return response;
     }
-    removeToken();
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
+
+    // Always return response - don't automatically disconnect
+    // Let callers handle 401 errors appropriately
+    // This prevents disconnection during temporary network issues
+    return response;
+  }
+
+  // Check for 503 (Service Unavailable) - database or server temporarily unavailable
+  // Don't disconnect user for temporary server issues
+  if (response.status === 503) {
+    // Return response - caller can handle it, but don't disconnect
+    return response;
   }
 
   return response;
@@ -592,8 +706,49 @@ export const auth = {
    * @returns {Promise<object>} Current user
    */
   async getCurrentUser() {
-    const response = await apiRequest("/auth/me");
+    let response;
+    try {
+      response = await apiRequest("/auth/me");
+    } catch (error) {
+      // If it's a network error (including server offline), re-throw it so callers can handle it
+      // Don't wrap it in a generic error message
+      if (isNetworkError(error)) {
+        // Server is offline or network error - don't disconnect user
+        throw error;
+      }
+      // For other errors, throw with original message
+      throw error;
+    }
+
     if (!response.ok) {
+      // Check if it's a network-related status code
+      const networkStatusCodes = [0, 502, 503, 504];
+      if (networkStatusCodes.includes(response.status)) {
+        // Network error - throw as network error so callers can handle it
+        throw new Error(
+          `Network error: Server temporarily unavailable (${response.status})`,
+        );
+      }
+
+      // For 401, NEVER throw an error that could cause disconnection
+      // If we have a token, it's likely a temporary issue (server restart, etc.)
+      // Just return null or throw a network error so callers don't disconnect
+      if (response.status === 401) {
+        const token = getToken();
+        if (token) {
+          // We have a token but got 401 - this is likely temporary
+          // Throw as network error so callers don't disconnect
+          throw new Error(
+            "Network error: Authentication temporarily unavailable",
+          );
+        }
+        // No token - this is a real auth issue, but still don't disconnect automatically
+        // Let the router handle it based on token presence
+        const errorData = await parseErrorResponse(response);
+        throw new Error(errorData.error || "Failed to get current user");
+      }
+
+      // For other errors, throw normally
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to get current user");
     }
@@ -820,8 +975,45 @@ export const account = {
    * @returns {Promise<object>} Current user account info
    */
   async getAccount() {
-    const response = await apiRequest("/auth/me");
+    let response;
+    try {
+      response = await apiRequest("/auth/me");
+    } catch (error) {
+      // If it's a network error (including server offline), re-throw it so callers can handle it
+      if (isNetworkError(error)) {
+        // Server is offline or network error - don't disconnect user
+        throw error;
+      }
+      throw error;
+    }
+
     if (!response.ok) {
+      // Check if it's a network-related status code
+      const networkStatusCodes = [0, 502, 503, 504];
+      if (networkStatusCodes.includes(response.status)) {
+        // Network error - throw as network error so callers can handle it
+        throw new Error(
+          `Network error: Server temporarily unavailable (${response.status})`,
+        );
+      }
+
+      // For 401, NEVER throw an error that could cause disconnection
+      // If we have a token, it's likely a temporary issue (server restart, etc.)
+      if (response.status === 401) {
+        const token = getToken();
+        if (token) {
+          // We have a token but got 401 - this is likely temporary
+          // Throw as network error so callers don't disconnect
+          throw new Error(
+            "Network error: Authentication temporarily unavailable",
+          );
+        }
+        // No token - this is a real auth issue, but still don't disconnect automatically
+        const errorData = await parseErrorResponse(response);
+        throw new Error(errorData.error || "Failed to get account information");
+      }
+
+      // For other errors, throw normally
       const errorData = await parseErrorResponse(response);
       throw new Error(errorData.error || "Failed to get account information");
     }

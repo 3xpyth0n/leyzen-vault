@@ -1,94 +1,96 @@
 <template>
-  <div v-if="show" class="file-properties-overlay" @click="close">
-    <div class="file-properties-modal" @click.stop>
-      <div class="file-properties-header">
-        <h2>File Properties</h2>
-        <button @click="close" class="btn-icon">✕</button>
-      </div>
-
-      <div class="modal-content-scrollable" v-if="loading">
-        <div class="loading">Loading properties...</div>
-      </div>
-
-      <div class="modal-content-scrollable" v-else-if="error">
-        <div class="error-message">{{ error }}</div>
-      </div>
-
-      <div class="modal-content-scrollable" v-else-if="file">
-        <div class="properties-section">
-          <h3>General</h3>
-          <div class="property-row">
-            <span class="property-label">Name:</span>
-            <span class="property-value">{{ file.original_name }}</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Type:</span>
-            <span class="property-value">{{ getFileType(file) }}</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Size:</span>
-            <span class="property-value">{{
-              formatSize(file.total_size || file.size)
-            }}</span>
-          </div>
-          <div
-            class="property-row"
-            v-if="file.mime_type !== 'application/x-directory'"
-          >
-            <span class="property-label">Encrypted Size:</span>
-            <span class="property-value">{{
-              formatSize(file.encrypted_size)
-            }}</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Location:</span>
-            <span class="property-value">{{ getLocation() }}</span>
-          </div>
+  <teleport to="body">
+    <div v-if="show" class="file-properties-overlay" @click="close">
+      <div class="file-properties-modal" @click.stop>
+        <div class="file-properties-header">
+          <h2>File Properties</h2>
+          <button @click="close" class="btn-icon">✕</button>
         </div>
 
-        <div class="properties-section">
-          <h3>Dates</h3>
-          <div class="property-row">
-            <span class="property-label">Created:</span>
-            <span class="property-value">{{
-              formatDateTime(file.created_at)
-            }}</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Modified:</span>
-            <span class="property-value">{{
-              formatDateTime(file.updated_at)
-            }}</span>
-          </div>
+        <div class="modal-content-scrollable" v-if="loading">
+          <div class="loading">Loading properties...</div>
         </div>
 
-        <div class="properties-section" v-if="permissions">
-          <h3>Permissions</h3>
-          <div class="property-row">
-            <span class="property-label">Owner:</span>
-            <span class="property-value">{{
-              permissions.owner || "Unknown"
-            }}</span>
-          </div>
-          <div
-            class="property-row"
-            v-if="permissions.sharedWith && permissions.sharedWith.length > 0"
-          >
-            <span class="property-label">Shared With:</span>
-            <span class="property-value"
-              >{{ permissions.sharedWith.length }} user(s)</span
+        <div class="modal-content-scrollable" v-else-if="error">
+          <div class="error-message">{{ error }}</div>
+        </div>
+
+        <div class="modal-content-scrollable" v-else-if="file">
+          <div class="properties-section">
+            <h3>General</h3>
+            <div class="property-row">
+              <span class="property-label">Name:</span>
+              <span class="property-value">{{ file.original_name }}</span>
+            </div>
+            <div class="property-row">
+              <span class="property-label">Type:</span>
+              <span class="property-value">{{ getFileType(file) }}</span>
+            </div>
+            <div class="property-row">
+              <span class="property-label">Size:</span>
+              <span class="property-value">{{
+                formatSize(file.total_size || file.size)
+              }}</span>
+            </div>
+            <div
+              class="property-row"
+              v-if="file.mime_type !== 'application/x-directory'"
             >
+              <span class="property-label">Encrypted Size:</span>
+              <span class="property-value">{{
+                formatSize(file.encrypted_size)
+              }}</span>
+            </div>
+            <div class="property-row">
+              <span class="property-label">Location:</span>
+              <span class="property-value">{{ getLocation() }}</span>
+            </div>
           </div>
-          <div class="property-row" v-if="permissions.permissions">
-            <span class="property-label">Your Permissions:</span>
-            <span class="property-value">{{
-              permissions.permissions.join(", ")
-            }}</span>
+
+          <div class="properties-section">
+            <h3>Dates</h3>
+            <div class="property-row">
+              <span class="property-label">Created:</span>
+              <span class="property-value">{{
+                formatDateTime(file.created_at)
+              }}</span>
+            </div>
+            <div class="property-row">
+              <span class="property-label">Modified:</span>
+              <span class="property-value">{{
+                formatDateTime(file.updated_at)
+              }}</span>
+            </div>
+          </div>
+
+          <div class="properties-section" v-if="permissions">
+            <h3>Permissions</h3>
+            <div class="property-row">
+              <span class="property-label">Owner:</span>
+              <span class="property-value">{{
+                permissions.owner || "Unknown"
+              }}</span>
+            </div>
+            <div
+              class="property-row"
+              v-if="permissions.sharedWith && permissions.sharedWith.length > 0"
+            >
+              <span class="property-label">Shared With:</span>
+              <span class="property-value"
+                >{{ permissions.sharedWith.length }} user(s)</span
+              >
+            </div>
+            <div class="property-row" v-if="permissions.permissions">
+              <span class="property-label">Your Permissions:</span>
+              <span class="property-value">{{
+                permissions.permissions.join(", ")
+              }}</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script>
@@ -334,8 +336,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99999;
-  padding: 4rem 2rem 2rem 2rem;
+  z-index: 100000;
+  padding: 2rem;
   will-change: opacity;
   transform: translateZ(0);
 }

@@ -336,7 +336,21 @@ export default {
         accountInfo.global_role === "superadmin";
       this.isSuperAdmin = accountInfo.global_role === "superadmin";
     } catch (err) {
-      console.error("Failed to load account info:", err);
+      // Check if it's a network error (server offline, etc.)
+      // Don't log as error if it's just a network issue
+      const isNetworkErr =
+        err?.message?.toLowerCase().includes("network") ||
+        err?.message?.toLowerCase().includes("offline") ||
+        err?.isOffline;
+      if (isNetworkErr) {
+        console.warn(
+          "Server is offline - cannot load account info:",
+          err.message,
+        );
+      } else {
+        console.error("Failed to load account info:", err);
+      }
+      // Don't disconnect user - just leave isAdmin and isSuperAdmin as false
     } finally {
       this.loading = false;
     }

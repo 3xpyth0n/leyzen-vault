@@ -1071,16 +1071,7 @@ body.sidebar-collapsed .modal-overlay {
   visibility: visible !important;
   opacity: 1 !important;
   padding: 2rem !important;
-  padding-left: calc(
-    2rem + 250px
-  ) !important; /* Default: sidebar expanded (250px) */
   overflow-y: auto !important;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
 }
 
 .modal {
@@ -1114,6 +1105,17 @@ body.sidebar-collapsed .modal-overlay {
   margin-bottom: 1.5rem !important;
   border-bottom: 1px solid var(--border-color) !important;
   flex-shrink: 0 !important;
+}
+
+/* Exclude share modal from the above rule */
+#share-modal-advanced .modal-header,
+.modal-content-share .modal-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 1rem !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
 
 .modal-form {

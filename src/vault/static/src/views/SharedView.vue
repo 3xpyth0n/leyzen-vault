@@ -450,79 +450,6 @@ export default {
         }, 300); // Match fade out duration
       }, 1000); // Animation lasts 1 second
     },
-    showCopyNotification() {
-      try {
-        // Remove any existing notification
-        const existing = document.querySelector(".copy-notification-popup");
-        if (existing) {
-          existing.remove();
-        }
-
-        // Create notification element
-        const notification = document.createElement("div");
-        notification.className = "copy-notification-popup";
-        notification.textContent = "Link copied to clipboard";
-        notification.setAttribute("aria-live", "polite");
-        notification.setAttribute("role", "status");
-
-        // Apply inline styles as fallback to ensure visibility
-        notification.style.cssText = `
-          position: fixed !important;
-          top: 2rem !important;
-          left: 50% !important;
-          transform: translateX(-50%) !important;
-          z-index: 10000 !important;
-          background: rgba(16, 185, 129, 0.9) !important;
-          backdrop-filter: blur(12px) !important;
-          -webkit-backdrop-filter: blur(12px) !important;
-          color: white !important;
-          padding: 0.75rem 1.5rem !important;
-          border-radius: 0.75rem !important;
-          font-size: 0.9rem !important;
-          font-weight: 500 !important;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3) !important;
-          opacity: 0 !important;
-          pointer-events: none !important;
-          transition: opacity 0.3s ease, transform 0.3s ease !important;
-          white-space: nowrap !important;
-        `;
-
-        // Insert into body
-        if (!document.body) {
-          return;
-        }
-        document.body.appendChild(notification);
-
-        // Force reflow to ensure initial state is applied
-        void notification.offsetHeight;
-
-        // Trigger fade in animation
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            notification.classList.add("copy-notification-show");
-            // Also set opacity directly as fallback
-            notification.style.opacity = "1";
-            notification.style.transform = "translateX(-50%) translateY(0)";
-          });
-        });
-
-        // Remove after animation completes
-        setTimeout(() => {
-          notification.classList.remove("copy-notification-show");
-          notification.classList.add("copy-notification-hide");
-          // Also fade out using inline styles
-          notification.style.opacity = "0";
-          notification.style.transform = "translateX(-50%) translateY(-20px)";
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.remove();
-            }
-          }, 300); // Match fade out duration
-        }, 2000); // Show for 2 seconds
-      } catch (error) {
-        // Silent fail for notification display
-      }
-    },
     async copyLink(link, fileId) {
       try {
         // Use the same logic as getShareUrl to ensure we get the complete URL with key
@@ -538,9 +465,6 @@ export default {
         }
 
         await navigator.clipboard.writeText(result.url);
-
-        // Show popup notification
-        this.showCopyNotification();
 
         // Show animation on link URL element
         // Find the element by data-link-id attribute
@@ -1792,23 +1716,10 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.2s ease;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .email-modal .modal-overlay {
-  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-/* Remove sidebar padding in mobile mode */
-.mobile-mode .email-modal .modal-overlay {
-  padding-left: 1rem !important;
-  padding-right: 1rem !important;
 }
 
 .email-modal .modal-container {

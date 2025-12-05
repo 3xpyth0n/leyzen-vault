@@ -560,44 +560,36 @@ export default {
       const columns = [];
       const totalColumns = 6;
 
-      // Use fractions (fr) to ensure all columns fill available width
-      // Default proportions based on percentages
-      const defaultFractions = [0.03, 0.4, 0.18, 0.12, 0.18, 0.09];
+      // Use fixed widths for columns 0-4, and 1fr for the last column (Actions)
+      // This ensures the last column always touches the right edge
+      // When a column is resized, only that column changes width, others keep their size
+      for (let i = 0; i < totalColumns - 1; i++) {
+        const minWidth = columnMinWidths[i] || 80;
+        let width;
 
-      // If columns have been resized, calculate proportional fractions
-      const hasResizedColumns = Object.keys(columnWidths.value).length > 0;
-
-      if (hasResizedColumns) {
-        // Calculate total of resized widths for proportion
-        let totalResizedWidth = 0;
-        const resizedWidths = [];
-
-        for (let i = 0; i < totalColumns; i++) {
-          if (columnWidths.value[i] !== undefined) {
-            resizedWidths[i] = columnWidths.value[i];
-            totalResizedWidth += columnWidths.value[i];
+        if (columnWidths.value[i] !== undefined) {
+          // Use saved width for resized columns (fixed width)
+          width = `${Math.max(minWidth, columnWidths.value[i])}px`;
+        } else {
+          // Use default percentage-based width (fixed width)
+          const container = tableContainer.value;
+          if (container && container.offsetWidth > 0) {
+            const containerWidth = container.offsetWidth;
+            width = `${Math.max(minWidth, Math.floor((containerWidth * defaultColumnPercentages[i]) / 100))}px`;
           } else {
-            // Use default percentage for non-resized columns
-            const defaultWidth = calculateDefaultWidth(i);
-            resizedWidths[i] = defaultWidth || 200;
-            totalResizedWidth += resizedWidths[i];
+            // Fallback: use percentage of typical 1200px container
+            width = `${Math.max(minWidth, Math.floor((1200 * defaultColumnPercentages[i]) / 100))}px`;
           }
         }
 
-        // Convert to fractions
-        for (let i = 0; i < totalColumns; i++) {
-          const minWidth = columnMinWidths[i] || 80;
-          const fraction = resizedWidths[i] / totalResizedWidth;
-          columns.push(`minmax(${minWidth}px, ${fraction}fr)`);
-        }
-      } else {
-        // No resizing: use default fractions
-        for (let i = 0; i < totalColumns; i++) {
-          const minWidth = columnMinWidths[i] || 80;
-          const fraction = defaultFractions[i];
-          columns.push(`minmax(${minWidth}px, ${fraction}fr)`);
-        }
+        // Use fixed width - no minmax, just the fixed width
+        columns.push(width);
       }
+
+      // Last column (Actions) always uses 1fr to fill remaining space
+      // This ensures it always touches the right edge
+      const minWidth = columnMinWidths[totalColumns - 1] || 60;
+      columns.push(`minmax(${minWidth}px, 1fr)`);
 
       return columns.join(" ");
     });
@@ -606,6 +598,13 @@ export default {
     const handleResizeStart = (columnIndex, event) => {
       event.preventDefault();
       event.stopPropagation();
+
+      // Don't allow resizing the last column (Actions)
+      const totalColumns = 6;
+      if (columnIndex >= totalColumns - 1) {
+        return;
+      }
+
       isResizing.value = true;
       resizingColumnIndex.value = columnIndex;
       startX.value = event.clientX;
@@ -645,9 +644,47 @@ export default {
 
       const diff = event.clientX - startX.value;
       const minWidth = columnMinWidths[resizingColumnIndex.value] || 50;
-      const newWidth = Math.max(minWidth, startWidth.value + diff);
+      let newWidth = Math.max(minWidth, startWidth.value + diff);
 
-      // Update column width (only th will be updated, td inherit automatically)
+      // Calculate maximum width to ensure Actions column stays visible and never pushed out
+      const container = tableContainer.value;
+      if (container && container.offsetWidth > 0) {
+        const containerWidth = container.offsetWidth;
+        const totalColumns = 6;
+        const actionsMinWidth = columnMinWidths[totalColumns - 1] || 60;
+
+        // Calculate sum of all other fixed columns (0-4, excluding the one being resized)
+        let totalOtherFixedWidth = 0;
+        for (let i = 0; i < totalColumns - 1; i++) {
+          if (i === resizingColumnIndex.value) {
+            // Skip the column being resized
+            continue;
+          }
+
+          if (columnWidths.value[i] !== undefined) {
+            totalOtherFixedWidth += columnWidths.value[i];
+          } else {
+            // Use default width for non-resized columns
+            const defaultWidth = calculateDefaultWidth(i);
+            if (defaultWidth !== null) {
+              totalOtherFixedWidth += defaultWidth;
+            } else {
+              // Fallback to min width if calculation fails
+              totalOtherFixedWidth += columnMinWidths[i] || 80;
+            }
+          }
+        }
+
+        // Calculate maximum width: container width - other fixed columns - minimum Actions width
+        // Actions column must always have at least its minimum width visible
+        const maxWidth =
+          containerWidth - totalOtherFixedWidth - actionsMinWidth;
+
+        // Limit newWidth to maximum (ensure Actions column never gets pushed out)
+        newWidth = Math.min(newWidth, Math.max(minWidth, maxWidth));
+      }
+
+      // Update column width
       columnWidths.value[resizingColumnIndex.value] = newWidth;
     };
 
@@ -684,24 +721,8 @@ export default {
     // Initialize column widths on mount
     const initializeColumnWidths = () => {
       loadColumnWidths();
-
-      // Calculate and set default widths for columns that haven't been resized
-      nextTick(() => {
-        if (tableContainer.value) {
-          // Wait for table to be fully rendered
-          setTimeout(() => {
-            // Calculate default widths for all columns if not saved
-            [0, 1, 2, 3, 4, 5].forEach((index) => {
-              if (columnWidths.value[index] === undefined) {
-                const defaultWidth = calculateDefaultWidth(index);
-                if (defaultWidth !== null && defaultWidth > 0) {
-                  columnWidths.value[index] = defaultWidth;
-                }
-              }
-            });
-          }, 100);
-        }
-      });
+      // Don't initialize default widths - they will be calculated dynamically
+      // Only use saved widths from localStorage
     };
 
     // Load column widths on mount
@@ -2469,6 +2490,7 @@ export default {
 .list-view {
   width: 100%;
   overflow-x: auto;
+  box-sizing: border-box;
 }
 
 /* CSS Grid Container */
@@ -2479,6 +2501,9 @@ export default {
   grid-auto-rows: min-content;
   border-radius: var(--radius-md, 8px);
   overflow: hidden;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 /* Grid Header Row */
@@ -2489,6 +2514,11 @@ export default {
 .grid-header-row > .grid-cell {
   background: var(--bg-glass, rgba(30, 41, 59, 0.4));
   border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-right: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+}
+
+.grid-header-row > .grid-cell:last-child {
+  border-right: none;
 }
 
 /* Grid Body Rows */
@@ -2608,14 +2638,14 @@ export default {
   justify-content: flex-end;
   text-align: center;
   min-width: 60px;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem 0.75rem;
 }
 
 /* Column Resizer */
 .column-resizer {
   position: absolute;
   top: 0;
-  right: 0;
+  right: -2px;
   width: 4px;
   height: 100%;
   cursor: col-resize;

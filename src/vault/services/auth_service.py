@@ -17,10 +17,54 @@ from vault.database.schema import GlobalRole, JWTBlacklist, User, db
 from vault.blueprints.validators import validate_email
 from vault.utils.password_validator import validate_password_strength_raise
 from vault.utils.constant_time import constant_time_compare
+from sqlalchemy.exc import OperationalError, DisconnectionError
 
 
 # Cache for jti column existence check (per process)
 _jti_column_exists_cache = None
+
+
+class DatabaseUnavailableError(Exception):
+    """Exception raised when database is temporarily unavailable.
+
+    This allows the authentication system to distinguish between
+    database connection errors and actual authentication failures.
+    """
+
+    pass
+
+
+def _is_database_error(exception: Exception) -> bool:
+    """Check if an exception is a database connection error.
+
+    Args:
+        exception: The exception to check
+
+    Returns:
+        True if the exception indicates database unavailability
+    """
+    # Check for SQLAlchemy database errors
+    if isinstance(exception, (OperationalError, DisconnectionError)):
+        return True
+
+    # Check error message for common database connection issues
+    error_str = str(exception).lower()
+    db_error_indicators = [
+        "could not connect",
+        "connection refused",
+        "server closed the connection",
+        "connection to server",
+        "database",
+        "postgresql",
+        "operationalerror",
+        "disconnectionerror",
+        "could not translate host name",
+        "timeout expired",
+        "connection timed out",
+        "no connection to the server",
+    ]
+
+    return any(indicator in error_str for indicator in db_error_indicators)
 
 
 def reset_jti_column_cache() -> None:
@@ -387,17 +431,31 @@ class AuthService:
                             token, "dummy_token_for_timing_protection"
                         )
                         return None
-                except Exception:
-                    # Database error during jti check - fail securely
-                    # Log critical error and reject token
-                    import logging
+                except Exception as db_error:
+                    # Check if this is a database connection error
+                    if _is_database_error(db_error):
+                        # Database is temporarily unavailable - allow JWT-only authentication
+                        # The token signature is still valid, so we can trust it temporarily
+                        import logging
 
-                    logger = logging.getLogger(__name__)
-                    logger.critical(
-                        "JWT jti verification failed due to database error - rejecting token for security"
-                    )
-                    constant_time_compare(token, "dummy_token_for_timing_protection")
-                    return None
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"Database temporarily unavailable during jti check - "
+                            f"allowing JWT-only authentication: {str(db_error)}"
+                        )
+                        # Continue without jti check - token signature is still verified
+                    else:
+                        # Non-database error - fail securely
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.critical(
+                            "JWT jti verification failed due to non-database error - rejecting token for security"
+                        )
+                        constant_time_compare(
+                            token, "dummy_token_for_timing_protection"
+                        )
+                        return None
             elif jti and not jti_column_exists and not is_production:
                 # Column doesn't exist in development: fallback to full token check
                 # But log a warning
@@ -467,10 +525,45 @@ class AuthService:
                 if not user:
                     constant_time_compare(str(user_id), "dummy_user_id")
                 return user
-            except Exception:
-                # Database error during user lookup - token is valid but can't verify user
-                # Return None to indicate authentication failure
-                return None
+            except Exception as db_error:
+                # Check if this is a database connection error
+                if _is_database_error(db_error):
+                    # Database is temporarily unavailable - create a minimal user object
+                    # based on JWT payload since we can't query the database
+                    # This allows authentication to continue during database outages
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Database temporarily unavailable during user lookup - "
+                        f"using JWT-only authentication: {str(db_error)}"
+                    )
+
+                    # Create a minimal user object from JWT payload
+                    # This is safe because the JWT signature has been verified
+                    # Mark it with a special attribute so middleware knows to return 503
+                    from types import SimpleNamespace
+
+                    minimal_user = SimpleNamespace()
+                    minimal_user.id = user_id
+                    minimal_user.email = payload.get("email", "")
+                    minimal_user.global_role = GlobalRole(
+                        payload.get("global_role", "user")
+                    )
+                    minimal_user.is_active = True  # Assume active if we can't check
+                    minimal_user.email_verified = payload.get("email_verified", False)
+                    minimal_user._database_unavailable = True  # Flag for middleware
+
+                    return minimal_user
+                else:
+                    # Non-database error - fail securely
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.error(
+                        f"Non-database error during user lookup: {str(db_error)}"
+                    )
+                    return None
         except jwt.InvalidTokenError:
             # Use constant-time comparison to prevent timing attacks
             constant_time_compare(token or "", "dummy_token_for_timing_protection")

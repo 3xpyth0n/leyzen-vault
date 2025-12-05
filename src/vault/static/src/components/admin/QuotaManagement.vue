@@ -101,78 +101,84 @@
     </div>
 
     <!-- Create/Edit Quota Modal -->
-    <div v-if="showCreateModal" class="modal-overlay" @click.self="closeModal">
-      <div class="modal glass glass-card modal-wide" @click.stop>
-        <div class="modal-header">
-          <h3>{{ editingQuota ? "Edit Quota" : "Set Quota" }}</h3>
-          <button
-            @click="closeModal"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div class="modal-body">
-          <form @submit.prevent="saveQuota" class="modal-form">
-            <div class="form-group">
-              <label>User:</label>
-              <CustomSelect
-                v-model="quotaForm.user_id"
-                :options="userOptions"
-                :disabled="editingQuota"
-                placeholder="Select a user..."
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label>Max Storage (GB):</label>
-              <input
-                :value="quotaForm.max_storage_gb"
-                type="text"
-                min="0"
-                step="0.1"
-                placeholder="Leave empty for unlimited"
-                @input="normalizeQuotaInput"
-                class="form-input"
-              />
-              <small class="form-help">
-                Current usage: {{ getCurrentUsage(quotaForm.user_id) }}
-              </small>
-            </div>
-            <div class="form-group">
-              <label>Max Files:</label>
-              <input
-                v-model.number="quotaForm.max_files"
-                type="number"
-                min="0"
-                placeholder="Leave empty for unlimited"
-                class="form-input"
-              />
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save</button>
-              <button
-                type="button"
-                @click="closeModal"
-                class="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                v-if="editingQuota"
-                type="button"
-                @click="removeQuota"
-                class="btn btn-danger"
-              >
-                Remove Quota
-              </button>
-            </div>
-          </form>
+    <teleport to="body">
+      <div
+        v-if="showCreateModal"
+        class="modal-overlay"
+        @click.self="closeModal"
+      >
+        <div class="modal glass glass-card modal-wide" @click.stop>
+          <div class="modal-header">
+            <h3>{{ editingQuota ? "Edit Quota" : "Set Quota" }}</h3>
+            <button
+              @click="closeModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <form @submit.prevent="saveQuota" class="modal-form">
+              <div class="form-group">
+                <label>User:</label>
+                <CustomSelect
+                  v-model="quotaForm.user_id"
+                  :options="userOptions"
+                  :disabled="editingQuota"
+                  placeholder="Select a user..."
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label>Max Storage (GB):</label>
+                <input
+                  :value="quotaForm.max_storage_gb"
+                  type="text"
+                  min="0"
+                  step="0.1"
+                  placeholder="Leave empty for unlimited"
+                  @input="normalizeQuotaInput"
+                  class="form-input"
+                />
+                <small class="form-help">
+                  Current usage: {{ getCurrentUsage(quotaForm.user_id) }}
+                </small>
+              </div>
+              <div class="form-group">
+                <label>Max Files:</label>
+                <input
+                  v-model.number="quotaForm.max_files"
+                  type="number"
+                  min="0"
+                  placeholder="Leave empty for unlimited"
+                  class="form-input"
+                />
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <button
+                  type="button"
+                  @click="closeModal"
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  v-if="editingQuota"
+                  type="button"
+                  @click="removeQuota"
+                  class="btn btn-danger"
+                >
+                  Remove Quota
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
+    </teleport>
   </div>
 </template>
 
@@ -774,22 +780,31 @@ export default {
 }
 
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1 !important;
+  visibility: visible !important;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Adjust modal overlay when sidebar is collapsed */
@@ -798,7 +813,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 /* Remove sidebar padding in mobile mode */
-.mobile-mode .modal-overlay {
+body.mobile-mode .modal-overlay {
   padding-left: 2rem !important;
   padding-right: 2rem !important;
 }
@@ -824,6 +839,18 @@ body.sidebar-collapsed .modal-overlay {
   box-sizing: border-box;
   position: relative;
   overflow-y: auto;
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .modal-wide {

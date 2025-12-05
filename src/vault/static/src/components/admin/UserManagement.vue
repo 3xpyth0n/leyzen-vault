@@ -122,264 +122,275 @@
     </div>
 
     <!-- Edit User Modal (Actions) -->
-    <div
-      v-if="showActionsModal"
-      class="modal-overlay"
-      @click.self="showActionsModal = false"
-    >
-      <div class="modal glass glass-card modal-wide" @click.stop>
-        <div class="modal-header sticky-header">
-          <h3>
-            <span v-html="getIcon('edit', 20)"></span>
-            Edit User
-          </h3>
-          <button
-            @click="showActionsModal = false"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div class="modal-body">
-          <div v-if="actionsModalUser" class="user-info glass">
-            <p><strong>User:</strong> {{ actionsModalUser.email }}</p>
-            <p>
-              <strong>Current Role:</strong>
-              <span
-                class="role-badge"
-                :class="`role-${actionsModalUser.global_role}`"
-              >
-                {{ actionsModalUser.global_role }}
-              </span>
-            </p>
+    <teleport to="body">
+      <div
+        v-if="showActionsModal"
+        class="modal-overlay"
+        @click.self="showActionsModal = false"
+      >
+        <div class="modal glass glass-card modal-wide" @click.stop>
+          <div class="modal-header sticky-header">
+            <h3>
+              <span v-html="getIcon('edit', 20)"></span>
+              Edit User
+            </h3>
+            <button
+              @click="showActionsModal = false"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
           </div>
+          <div class="modal-body">
+            <div v-if="actionsModalUser" class="user-info glass">
+              <p><strong>User:</strong> {{ actionsModalUser.email }}</p>
+              <p>
+                <strong>Current Role:</strong>
+                <span
+                  class="role-badge"
+                  :class="`role-${actionsModalUser.global_role}`"
+                >
+                  {{ actionsModalUser.global_role }}
+                </span>
+              </p>
+            </div>
 
-          <!-- Change Role Section -->
-          <div
-            v-if="actionsModalUser && canChangeRole(actionsModalUser)"
-            class="actions-section glass"
-          >
-            <h4>Change Role</h4>
+            <!-- Change Role Section -->
+            <div
+              v-if="actionsModalUser && canChangeRole(actionsModalUser)"
+              class="actions-section glass"
+            >
+              <h4>Change Role</h4>
 
-            <div class="form-group">
-              <label>New Role:</label>
-              <CustomSelect
-                v-model="actionsForm.newRole"
-                :options="availableRolesOptions"
-                placeholder="Select role"
-                required
-              />
+              <div class="form-group">
+                <label>New Role:</label>
+                <CustomSelect
+                  v-model="actionsForm.newRole"
+                  :options="availableRolesOptions"
+                  placeholder="Select role"
+                  required
+                />
+              </div>
+
+              <div
+                v-if="actionsForm.newRole === 'superadmin'"
+                class="warning-message glass"
+              >
+                <span v-html="getIcon('warning', 16)"></span>
+                Assigning superadmin role will transfer the role from the
+                current superadmin. The current superadmin will become admin.
+              </div>
+
+              <div class="form-actions">
+                <button
+                  @click.prevent="saveRoleChange"
+                  class="btn btn-primary"
+                  :disabled="
+                    actionsForm.newRole === actionsModalUser.global_role
+                  "
+                >
+                  Change Role
+                </button>
+              </div>
             </div>
 
             <div
-              v-if="actionsForm.newRole === 'superadmin'"
-              class="warning-message glass"
+              v-else-if="actionsModalUser && !canChangeRole(actionsModalUser)"
+              class="info-message glass"
             >
-              <span v-html="getIcon('warning', 16)"></span>
-              Assigning superadmin role will transfer the role from the current
-              superadmin. The current superadmin will become admin.
-            </div>
-
-            <div class="form-actions">
-              <button
-                @click.prevent="saveRoleChange"
-                class="btn btn-primary"
-                :disabled="actionsForm.newRole === actionsModalUser.global_role"
+              <span v-html="getIcon('info', 16)"></span>
+              <span v-if="!currentUser">Unable to determine permissions.</span>
+              <span
+                v-else-if="
+                  currentUser.global_role === 'admin' &&
+                  actionsModalUser.global_role === 'superadmin'
+                "
               >
-                Change Role
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-else-if="actionsModalUser && !canChangeRole(actionsModalUser)"
-            class="info-message glass"
-          >
-            <span v-html="getIcon('info', 16)"></span>
-            <span v-if="!currentUser">Unable to determine permissions.</span>
-            <span
-              v-else-if="
-                currentUser.global_role === 'admin' &&
-                actionsModalUser.global_role === 'superadmin'
-              "
-            >
-              Admins cannot modify superadmin users.
-            </span>
-            <span
-              v-else-if="
-                currentUser.global_role === 'superadmin' &&
-                currentUser.id === actionsModalUser.id
-              "
-            >
-              You cannot change your own role.
-            </span>
-            <span v-else
-              >You do not have permission to change this user's role.</span
-            >
-          </div>
-
-          <!-- Delete User Section -->
-          <div
-            v-if="actionsModalUser && canDeleteUser(actionsModalUser)"
-            class="actions-section glass"
-          >
-            <h4>Delete User</h4>
-
-            <div class="danger-message glass">
-              <span v-html="getIcon('warning', 16)"></span>
-              This action will permanently delete the user and all associated
-              data. This cannot be undone.
-            </div>
-
-            <div class="form-actions">
-              <button
-                @click.prevent="confirmDeleteUser(actionsModalUser.id)"
-                class="btn btn-danger"
+                Admins cannot modify superadmin users.
+              </span>
+              <span
+                v-else-if="
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                "
               >
-                <span v-html="getIcon('delete', 16)"></span>
-                Delete User
-              </button>
+                You cannot change your own role.
+              </span>
+              <span v-else
+                >You do not have permission to change this user's role.</span
+              >
             </div>
-          </div>
 
-          <div
-            v-else-if="actionsModalUser && !canDeleteUser(actionsModalUser)"
-            class="info-message glass"
-          >
-            <span v-html="getIcon('info', 16)"></span>
-            <span v-if="!currentUser">Unable to determine permissions.</span>
-            <span
-              v-else-if="
-                currentUser.global_role === 'admin' &&
-                actionsModalUser.global_role === 'superadmin'
-              "
+            <!-- Delete User Section -->
+            <div
+              v-if="actionsModalUser && canDeleteUser(actionsModalUser)"
+              class="actions-section glass"
             >
-              Admins cannot delete superadmin users.
-            </span>
-            <span
-              v-else-if="
-                currentUser.global_role === 'superadmin' &&
-                currentUser.id === actionsModalUser.id
-              "
+              <h4>Delete User</h4>
+
+              <div class="danger-message glass">
+                <span v-html="getIcon('warning', 16)"></span>
+                This action will permanently delete the user and all associated
+                data. This cannot be undone.
+              </div>
+
+              <div class="form-actions">
+                <button
+                  @click.prevent="confirmDeleteUser(actionsModalUser.id)"
+                  class="btn btn-danger"
+                >
+                  <span v-html="getIcon('delete', 16)"></span>
+                  Delete User
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-else-if="actionsModalUser && !canDeleteUser(actionsModalUser)"
+              class="info-message glass"
             >
-              You cannot delete your own account. Transfer the superadmin role
-              first.
-            </span>
-            <span v-else>You do not have permission to delete this user.</span>
+              <span v-html="getIcon('info', 16)"></span>
+              <span v-if="!currentUser">Unable to determine permissions.</span>
+              <span
+                v-else-if="
+                  currentUser.global_role === 'admin' &&
+                  actionsModalUser.global_role === 'superadmin'
+                "
+              >
+                Admins cannot delete superadmin users.
+              </span>
+              <span
+                v-else-if="
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                "
+              >
+                You cannot delete your own account. Transfer the superadmin role
+                first.
+              </span>
+              <span v-else
+                >You do not have permission to delete this user.</span
+              >
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </teleport>
 
     <!-- User Details Modal -->
-    <div
-      v-if="viewingUserDetails"
-      class="modal-overlay"
-      @click.self="viewingUserDetails = null"
-    >
-      <div class="modal glass glass-card modal-wide modal-view" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <span v-html="getIcon('eye', 20)"></span>
-            User Details
-          </h3>
-          <button
-            @click="viewingUserDetails = null"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div v-if="userDetails && userDetails.user" class="user-details-grid">
-          <div class="detail-section glass">
-            <h4>Basic Information</h4>
-            <div class="detail-item">
-              <span class="detail-label">Email:</span>
-              <span class="detail-value">{{
-                userDetails.user?.email || "N/A"
-              }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Role:</span>
-              <span
-                class="role-badge"
-                :class="`role-${userDetails.user?.global_role || 'user'}`"
-              >
-                {{ userDetails.user?.global_role || "user" }}
-              </span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Status:</span>
-              <span
-                class="status-badge"
-                :class="{
-                  verified: userDetails.user?.email_verified,
-                  unverified: !userDetails.user?.email_verified,
-                }"
-              >
-                {{
-                  userDetails.user?.email_verified ? "Verified" : "Unverified"
-                }}
-              </span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Created:</span>
-              <span class="detail-value">{{
-                formatDate(userDetails.user?.created_at)
-              }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Last Login:</span>
-              <span class="detail-value">{{
-                formatDate(userDetails.user?.last_login)
-              }}</span>
-            </div>
+    <teleport to="body">
+      <div
+        v-if="viewingUserDetails"
+        class="modal-overlay"
+        @click.self="viewingUserDetails = null"
+      >
+        <div class="modal glass glass-card modal-wide modal-view" @click.stop>
+          <div class="modal-header">
+            <h3>
+              <span v-html="getIcon('eye', 20)"></span>
+              User Details
+            </h3>
+            <button
+              @click="viewingUserDetails = null"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
           </div>
-          <div class="detail-section glass">
-            <h4>Storage</h4>
-            <div class="detail-item">
-              <span class="detail-label">Files:</span>
-              <span class="detail-value">{{
-                userDetails?.files_count || 0
-              }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Used:</span>
-              <span class="detail-value">{{
-                formatSize(userDetails?.quota?.used)
-              }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Limit:</span>
-              <span class="detail-value">
-                <span v-if="userDetails?.quota?.limit">{{
-                  formatSize(userDetails.quota.limit)
+          <div v-if="userDetails && userDetails.user" class="user-details-grid">
+            <div class="detail-section glass">
+              <h4>Basic Information</h4>
+              <div class="detail-item">
+                <span class="detail-label">Email:</span>
+                <span class="detail-value">{{
+                  userDetails.user?.email || "N/A"
                 }}</span>
-                <span v-else>Unlimited</span>
-              </span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Role:</span>
+                <span
+                  class="role-badge"
+                  :class="`role-${userDetails.user?.global_role || 'user'}`"
+                >
+                  {{ userDetails.user?.global_role || "user" }}
+                </span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Status:</span>
+                <span
+                  class="status-badge"
+                  :class="{
+                    verified: userDetails.user?.email_verified,
+                    unverified: !userDetails.user?.email_verified,
+                  }"
+                >
+                  {{
+                    userDetails.user?.email_verified ? "Verified" : "Unverified"
+                  }}
+                </span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Created:</span>
+                <span class="detail-value">{{
+                  formatDate(userDetails.user?.created_at)
+                }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Last Login:</span>
+                <span class="detail-value">{{
+                  formatDate(userDetails.user?.last_login)
+                }}</span>
+              </div>
+            </div>
+            <div class="detail-section glass">
+              <h4>Storage</h4>
+              <div class="detail-item">
+                <span class="detail-label">Files:</span>
+                <span class="detail-value">{{
+                  userDetails?.files_count || 0
+                }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Used:</span>
+                <span class="detail-value">{{
+                  formatSize(userDetails?.quota?.used)
+                }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Limit:</span>
+                <span class="detail-value">
+                  <span v-if="userDetails?.quota?.limit">{{
+                    formatSize(userDetails.quota.limit)
+                  }}</span>
+                  <span v-else>Unlimited</span>
+                </span>
+              </div>
+            </div>
+            <div class="detail-section glass">
+              <h4>VaultSpaces</h4>
+              <div class="detail-item">
+                <span class="detail-label">Total:</span>
+                <span class="detail-value">{{
+                  userDetails?.vaultspaces?.length || 0
+                }}</span>
+              </div>
             </div>
           </div>
-          <div class="detail-section glass">
-            <h4>VaultSpaces</h4>
-            <div class="detail-item">
-              <span class="detail-label">Total:</span>
-              <span class="detail-value">{{
-                userDetails?.vaultspaces?.length || 0
-              }}</span>
-            </div>
+          <div class="form-actions">
+            <button
+              @click="viewingUserDetails = null"
+              class="btn btn-secondary"
+            >
+              Close
+            </button>
           </div>
-        </div>
-        <div class="form-actions">
-          <button @click="viewingUserDetails = null" class="btn btn-secondary">
-            Close
-          </button>
         </div>
       </div>
-    </div>
+    </teleport>
 
     <!-- Confirmation Modal -->
     <ConfirmationModal
@@ -404,65 +415,67 @@
     />
 
     <!-- Invite User Modal -->
-    <div
-      v-if="showInviteModal"
-      class="modal-overlay"
-      @click.self="showInviteModal = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <div class="modal-header">
-          <h3>Invite User</h3>
-          <button
-            @click="closeInviteModal"
-            class="modal-close-btn"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-        <div class="modal-body">
-          <form @submit.prevent="handleInviteUser" class="modal-form">
-            <div class="form-group">
-              <label for="invite-email">Email Address:</label>
-              <input
-                id="invite-email"
-                v-model="inviteForm.email"
-                type="email"
-                required
-                :disabled="inviteForm.loading"
-                placeholder="user@example.com"
-                autofocus
-                class="form-input"
-              />
-            </div>
-            <div v-if="inviteForm.error" class="error-message">
-              {{ inviteForm.error }}
-            </div>
-            <div v-if="inviteForm.success" class="success-message">
-              {{ inviteForm.success }}
-            </div>
-            <div class="form-actions">
-              <button
-                type="button"
-                @click="closeInviteModal"
-                class="btn btn-secondary"
-                :disabled="inviteForm.loading"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="inviteForm.loading"
-                class="btn btn-primary"
-              >
-                {{ inviteForm.loading ? "Sending..." : "Send Invitation" }}
-              </button>
-            </div>
-          </form>
+    <teleport to="body">
+      <div
+        v-if="showInviteModal"
+        class="modal-overlay"
+        @click.self="showInviteModal = false"
+      >
+        <div class="modal glass glass-card" @click.stop>
+          <div class="modal-header">
+            <h3>Invite User</h3>
+            <button
+              @click="closeInviteModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <form @submit.prevent="handleInviteUser" class="modal-form">
+              <div class="form-group">
+                <label for="invite-email">Email Address:</label>
+                <input
+                  id="invite-email"
+                  v-model="inviteForm.email"
+                  type="email"
+                  required
+                  :disabled="inviteForm.loading"
+                  placeholder="user@example.com"
+                  autofocus
+                  class="form-input"
+                />
+              </div>
+              <div v-if="inviteForm.error" class="error-message">
+                {{ inviteForm.error }}
+              </div>
+              <div v-if="inviteForm.success" class="success-message">
+                {{ inviteForm.success }}
+              </div>
+              <div class="form-actions">
+                <button
+                  type="button"
+                  @click="closeInviteModal"
+                  class="btn btn-secondary"
+                  :disabled="inviteForm.loading"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  :disabled="inviteForm.loading"
+                  class="btn btn-primary"
+                >
+                  {{ inviteForm.loading ? "Sending..." : "Send Invitation" }}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
+    </teleport>
   </div>
 </template>
 
@@ -1284,7 +1297,6 @@ export default {
 
 .actions {
   display: inline-flex;
-  gap: 0.5rem;
   justify-content: center;
   align-items: center;
   vertical-align: middle;
@@ -1303,6 +1315,11 @@ export default {
   color: #94a3b8;
   width: 36px;
   height: 36px;
+  margin-right: 0.5rem;
+}
+
+.btn-icon:last-child {
+  margin-right: 0;
 }
 
 .btn-icon:hover:not(:disabled) {
@@ -1370,22 +1387,31 @@ export default {
 }
 
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1 !important;
+  visibility: visible !important;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Adjust modal overlay when sidebar is collapsed */
@@ -1394,7 +1420,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 /* Remove sidebar padding in mobile mode */
-.mobile-mode .modal-overlay {
+body.mobile-mode .modal-overlay {
   padding-left: 2rem !important;
   padding-right: 2rem !important;
 }
@@ -1420,6 +1446,18 @@ body.sidebar-collapsed .modal-overlay {
   box-sizing: border-box;
   position: relative;
   overflow-y: auto;
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .modal-large {

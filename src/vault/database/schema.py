@@ -1727,6 +1727,468 @@ class UploadSession(db.Model):
         return f"<UploadSession {self.id} ({self.status})>"
 
 
+def init_db_roles(app: Any, secret_key: str) -> None:
+    """Initialize PostgreSQL roles with proper privileges.
+
+    Creates four roles with limited privileges:
+    - leyzen_app: SELECT/INSERT/UPDATE/DELETE on application tables (no SystemSecrets, no schema changes)
+    - leyzen_migrator: CREATE/ALTER/DROP on schema (no data access)
+    - leyzen_secrets: Full access to SystemSecrets only
+    - leyzen_orchestrator: SELECT only on SystemSecrets
+
+    Args:
+        app: Flask app instance
+        secret_key: SECRET_KEY for encrypting passwords in SystemSecrets
+    """
+    from sqlalchemy import create_engine, text
+    from common.env import load_env_with_override
+    import os
+    from vault.services.db_password_service import DBPasswordService
+
+    env_values = load_env_with_override()
+    env_values.update(dict(os.environ))
+
+    postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+    postgres_port = env_values.get("POSTGRES_PORT", "5432")
+    postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+    postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+    postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+    if not postgres_password:
+        raise RuntimeError("POSTGRES_PASSWORD is required for role initialization")
+
+    # Connect as main user to create roles
+    postgres_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+    engine = create_engine(postgres_url, pool_pre_ping=True)
+
+    app_logger = None
+    try:
+        app_logger = app.config.get("LOGGER")
+    except Exception:
+        pass
+
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Log that we're starting role initialization
+    log_msg = "[INIT] Starting PostgreSQL roles initialization"
+    if app_logger:
+        app_logger.log(log_msg)
+    else:
+        logger.info(log_msg)
+
+    # Store passwords_to_store outside try block so it's accessible in finally
+    passwords_to_store = {}
+
+    try:
+        # Use engine.begin() for automatic transaction management
+        # This ensures all operations are committed correctly in SQLAlchemy 2.0
+        with engine.begin() as conn:
+            # Check if roles already exist
+            role_check = conn.execute(
+                text(
+                    """
+                    SELECT rolname FROM pg_roles 
+                    WHERE rolname IN ('leyzen_app', 'leyzen_migrator', 'leyzen_secrets', 'leyzen_orchestrator')
+                    """
+                )
+            )
+            existing_roles = {row[0] for row in role_check.fetchall()}
+            log_msg = f"[INIT] Existing roles: {existing_roles}"
+            if app_logger:
+                app_logger.log(log_msg)
+            else:
+                logger.info(log_msg)
+
+            # Check which passwords already exist in SystemSecrets (direct SQL check)
+            # This is more reliable than using get_password which might fail
+            try:
+                secrets_check = conn.execute(
+                    text(
+                        """
+                        SELECT key FROM system_secrets 
+                        WHERE key IN (:key1, :key2, :key3, :key4)
+                        """
+                    ),
+                    {
+                        "key1": DBPasswordService.SECRET_KEY_APP,
+                        "key2": DBPasswordService.SECRET_KEY_MIGRATOR,
+                        "key3": DBPasswordService.SECRET_KEY_SECRETS,
+                        "key4": DBPasswordService.SECRET_KEY_ORCHESTRATOR,
+                    },
+                )
+                existing_secret_keys = {row[0] for row in secrets_check.fetchall()}
+                log_msg = f"[INIT] Existing secret keys in system_secrets: {existing_secret_keys}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+            except Exception as e:
+                # If system_secrets table doesn't exist yet, assume no passwords exist
+                existing_secret_keys = set()
+                log_msg = f"[INIT] Could not check system_secrets (table may not exist): {e}. Assuming no passwords exist."
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+
+            # Generate passwords for roles that don't exist or passwords not in SystemSecrets
+            # (passwords_to_store is already initialized outside the try block)
+
+            # Create or update leyzen_app role
+            if DBPasswordService.ROLE_APP not in existing_roles:
+                app_password = DBPasswordService.generate_password()
+                conn.execute(
+                    text(
+                        f'CREATE ROLE "{DBPasswordService.ROLE_APP}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": app_password},
+                )
+                passwords_to_store[DBPasswordService.SECRET_KEY_APP] = app_password
+                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_APP}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+            elif DBPasswordService.SECRET_KEY_APP not in existing_secret_keys:
+                # Role exists but password not in SystemSecrets - generate and store it
+                app_password = DBPasswordService.generate_password()
+                passwords_to_store[DBPasswordService.SECRET_KEY_APP] = app_password
+                conn.execute(
+                    text(
+                        f'ALTER ROLE "{DBPasswordService.ROLE_APP}" WITH PASSWORD :password'
+                    ),
+                    {"password": app_password},
+                )
+                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_APP}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+
+            # Create or update leyzen_migrator role
+            if DBPasswordService.ROLE_MIGRATOR not in existing_roles:
+                migrator_password = DBPasswordService.generate_password()
+                conn.execute(
+                    text(
+                        f'CREATE ROLE "{DBPasswordService.ROLE_MIGRATOR}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": migrator_password},
+                )
+                passwords_to_store[DBPasswordService.SECRET_KEY_MIGRATOR] = (
+                    migrator_password
+                )
+                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_MIGRATOR}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+            elif DBPasswordService.SECRET_KEY_MIGRATOR not in existing_secret_keys:
+                # Role exists but password not in SystemSecrets - generate and store it
+                migrator_password = DBPasswordService.generate_password()
+                passwords_to_store[DBPasswordService.SECRET_KEY_MIGRATOR] = (
+                    migrator_password
+                )
+                conn.execute(
+                    text(
+                        f'ALTER ROLE "{DBPasswordService.ROLE_MIGRATOR}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": migrator_password},
+                )
+                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_MIGRATOR}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+
+            # Create or update leyzen_secrets role
+            if DBPasswordService.ROLE_SECRETS not in existing_roles:
+                secrets_password = DBPasswordService.generate_password()
+                conn.execute(
+                    text(
+                        f'CREATE ROLE "{DBPasswordService.ROLE_SECRETS}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": secrets_password},
+                )
+                passwords_to_store[DBPasswordService.SECRET_KEY_SECRETS] = (
+                    secrets_password
+                )
+                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_SECRETS}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+            elif DBPasswordService.SECRET_KEY_SECRETS not in existing_secret_keys:
+                # Role exists but password not in SystemSecrets - generate and store it
+                secrets_password = DBPasswordService.generate_password()
+                passwords_to_store[DBPasswordService.SECRET_KEY_SECRETS] = (
+                    secrets_password
+                )
+                conn.execute(
+                    text(
+                        f'ALTER ROLE "{DBPasswordService.ROLE_SECRETS}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": secrets_password},
+                )
+                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_SECRETS}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+
+            # Create or update leyzen_orchestrator role
+            if DBPasswordService.ROLE_ORCHESTRATOR not in existing_roles:
+                orchestrator_password = DBPasswordService.generate_password()
+                conn.execute(
+                    text(
+                        f'CREATE ROLE "{DBPasswordService.ROLE_ORCHESTRATOR}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": orchestrator_password},
+                )
+                passwords_to_store[DBPasswordService.SECRET_KEY_ORCHESTRATOR] = (
+                    orchestrator_password
+                )
+                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_ORCHESTRATOR}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+            elif DBPasswordService.SECRET_KEY_ORCHESTRATOR not in existing_secret_keys:
+                # Role exists but password not in SystemSecrets - generate and store it
+                orchestrator_password = DBPasswordService.generate_password()
+                passwords_to_store[DBPasswordService.SECRET_KEY_ORCHESTRATOR] = (
+                    orchestrator_password
+                )
+                conn.execute(
+                    text(
+                        f'ALTER ROLE "{DBPasswordService.ROLE_ORCHESTRATOR}" WITH LOGIN PASSWORD :password'
+                    ),
+                    {"password": orchestrator_password},
+                )
+                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_ORCHESTRATOR}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+
+            # Configure privileges
+            # Grant USAGE on schema public to all roles
+            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_app"'))
+            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_migrator"'))
+            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_secrets"'))
+            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_orchestrator"'))
+
+            # Get list of all application tables (exclude system_secrets)
+            tables_result = conn.execute(
+                text(
+                    """
+                    SELECT tablename FROM pg_tables 
+                    WHERE schemaname = 'public' 
+                    AND tablename != 'system_secrets'
+                    ORDER BY tablename
+                    """
+                )
+            )
+            app_tables = [row[0] for row in tables_result.fetchall()]
+
+            # Grant privileges to leyzen_app on application tables
+            for table in app_tables:
+                conn.execute(
+                    text(
+                        f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"'
+                    )
+                )
+
+            # Grant CREATE privilege to leyzen_migrator on schema
+            # This allows leyzen_migrator to create, alter, and drop tables in the schema
+            # No need to grant ALTER/DROP on individual tables - CREATE on schema is sufficient
+            conn.execute(text('GRANT CREATE ON SCHEMA public TO "leyzen_migrator"'))
+
+            # Grant privileges to leyzen_secrets on system_secrets only
+            conn.execute(
+                text(
+                    'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"'
+                )
+            )
+
+            # Grant SELECT only to leyzen_orchestrator on system_secrets
+            conn.execute(
+                text('GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"')
+            )
+
+            # Revoke all privileges from leyzen_app on system_secrets
+            conn.execute(text('REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"'))
+
+            # Set default privileges for future tables
+            # Future tables created by leyzen_migrator will grant SELECT/INSERT/UPDATE/DELETE to leyzen_app
+            try:
+                conn.execute(
+                    text(
+                        'ALTER DEFAULT PRIVILEGES FOR ROLE "leyzen_migrator" IN SCHEMA public '
+                        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "leyzen_app"'
+                    )
+                )
+            except Exception as default_priv_error:
+                # Log but don't fail - default privileges might not be critical
+                error_msg = (
+                    f"[WARNING] Failed to set default privileges: {default_priv_error}"
+                )
+                if app_logger:
+                    app_logger.log(error_msg)
+                else:
+                    logger.warning(error_msg)
+
+            # Transaction commits here automatically with engine.begin()
+
+            log_msg = "[INIT] PostgreSQL roles initialized successfully"
+            if app_logger:
+                app_logger.log(log_msg)
+            else:
+                logger.info(log_msg)
+
+    except Exception as transaction_error:
+        # Log the error but continue to store passwords
+        # Passwords were already set in PostgreSQL before the error occurred
+        error_msg = f"[WARNING] Transaction error during role initialization: {transaction_error}"
+        if app_logger:
+            app_logger.log(error_msg)
+        else:
+            logger.warning(error_msg)
+
+    finally:
+        # Store passwords in SystemSecrets AFTER the transaction (or even if it failed)
+        # This ensures passwords are stored even if privilege configuration has issues
+        # (We're using a new admin connection, so use_admin_connection=True)
+        # IMPORTANT: Store passwords even if transaction failed - passwords were already set in PostgreSQL
+        if passwords_to_store:
+            log_msg = f"[INIT] passwords_to_store contains {len(passwords_to_store)} password(s) to store"
+            if app_logger:
+                app_logger.log(log_msg)
+            else:
+                logger.info(log_msg)
+            storage_errors = []
+            for password_key, password_value in passwords_to_store.items():
+                try:
+                    log_msg = f"[INIT] Attempting to store password for {password_key}"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.info(log_msg)
+                    DBPasswordService.store_password(
+                        secret_key,
+                        password_key,
+                        password_value,
+                        app,
+                        use_admin_connection=True,
+                    )
+                    log_msg = f"[INIT] Successfully stored password for {password_key} in SystemSecrets"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.info(log_msg)
+                except Exception as store_error:
+                    # Collect errors but continue to try storing all passwords
+                    error_msg = f"[ERROR] Failed to store password for {password_key} in SystemSecrets: {store_error}"
+                    import traceback
+
+                    error_msg += f"\n{traceback.format_exc()}"
+                    storage_errors.append((password_key, store_error))
+                    if app_logger:
+                        app_logger.log(error_msg)
+                    else:
+                        logger.error(error_msg)
+
+            # If any password storage failed, raise an error to prevent silent failures
+            if storage_errors:
+                error_details = "; ".join(
+                    [f"{key}: {str(err)}" for key, err in storage_errors]
+                )
+                raise RuntimeError(
+                    f"Failed to store {len(storage_errors)} password(s) in SystemSecrets: {error_details}"
+                )
+        else:
+            log_msg = "[INIT] No passwords to store (all passwords already exist or no roles to create)"
+            if app_logger:
+                app_logger.log(log_msg)
+            else:
+                logger.info(log_msg)
+
+        engine.dispose()
+
+
+def get_migrator_connection(app: Any, secret_key: str) -> Any:
+    """Get a database connection using the leyzen_migrator role.
+
+    Args:
+        app: Flask app instance
+        secret_key: SECRET_KEY for decrypting the migrator password
+
+    Returns:
+        SQLAlchemy engine with migrator role
+    """
+    from sqlalchemy import create_engine
+    from common.env import load_env_with_override
+    import os
+    from vault.services.db_password_service import DBPasswordService
+
+    env_values = load_env_with_override()
+    env_values.update(dict(os.environ))
+
+    postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+    postgres_port = env_values.get("POSTGRES_PORT", "5432")
+    postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+
+    migrator_password = DBPasswordService.get_password(
+        secret_key, DBPasswordService.SECRET_KEY_MIGRATOR, app
+    )
+
+    if not migrator_password:
+        raise RuntimeError(
+            "leyzen_migrator password not found in SystemSecrets. "
+            "Run init_db_roles() first."
+        )
+
+    postgres_url = f"postgresql://{DBPasswordService.ROLE_MIGRATOR}:{migrator_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+    return create_engine(postgres_url, pool_pre_ping=True)
+
+
+def get_secrets_connection(app: Any, secret_key: str) -> Any:
+    """Get a database connection using the leyzen_secrets role.
+
+    Args:
+        app: Flask app instance
+        secret_key: SECRET_KEY for decrypting the secrets password
+
+    Returns:
+        SQLAlchemy engine with secrets role
+    """
+    from sqlalchemy import create_engine
+    from common.env import load_env_with_override
+    import os
+    from vault.services.db_password_service import DBPasswordService
+
+    env_values = load_env_with_override()
+    env_values.update(dict(os.environ))
+
+    postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+    postgres_port = env_values.get("POSTGRES_PORT", "5432")
+    postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+
+    secrets_password = DBPasswordService.get_password(
+        secret_key, DBPasswordService.SECRET_KEY_SECRETS, app
+    )
+
+    if not secrets_password:
+        raise RuntimeError(
+            "leyzen_secrets password not found in SystemSecrets. "
+            "Run init_db_roles() first."
+        )
+
+    postgres_url = f"postgresql://{DBPasswordService.ROLE_SECRETS}:{secrets_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+    return create_engine(postgres_url, pool_pre_ping=True)
+
+
 def init_db(app) -> None:
     """Initialize database with Flask app.
 
@@ -1747,6 +2209,9 @@ def init_db(app) -> None:
             app_logger = app.config.get("LOGGER")
         except Exception:
             pass
+
+        # Note: PostgreSQL roles initialization is moved after db.create_all()
+        # to ensure system_secrets table exists before storing passwords
 
         # Helper function to check if error is a duplicate/already exists error
         def is_duplicate_error(error: Exception) -> bool:
@@ -2104,6 +2569,7 @@ def init_db(app) -> None:
 
             # Wrap db.create_all() in try/except to handle duplicate index errors
             # SQLAlchemy may try to create indexes that already exist
+            # Note: db.create_all() uses the current db.engine (cannot be replaced in SQLAlchemy 2.0)
             try:
                 db.create_all()
             except Exception as create_all_error:
@@ -2121,15 +2587,63 @@ def init_db(app) -> None:
                         logger.error(log_msg)
                     raise
 
+            # Initialize PostgreSQL roles AFTER tables are created
+            # This ensures system_secrets table exists before storing passwords
+            try:
+                secret_key = app.config.get("SECRET_KEY")
+                log_msg = f"[INIT] Checking if roles need initialization. SECRET_KEY present: {bool(secret_key)}"
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.info(log_msg)
+                if secret_key:
+                    log_msg = "[INIT] Calling init_db_roles..."
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.info(log_msg)
+                    init_db_roles(app, secret_key)
+                    log_msg = "[INIT] init_db_roles completed successfully"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.info(log_msg)
+                else:
+                    log_msg = "[WARNING] SECRET_KEY not available, skipping role initialization"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.warning(log_msg)
+            except RuntimeError as roles_error:
+                # RuntimeError indicates a critical failure (e.g., password storage failed)
+                # Don't silently ignore - this is a security issue
+                error_msg = f"[ERROR] Critical failure initializing PostgreSQL roles: {roles_error}"
+                if app_logger:
+                    app_logger.log(error_msg)
+                else:
+                    logger.error(error_msg)
+                raise  # Re-raise to prevent startup with incomplete security setup
+            except Exception as roles_error:
+                # Other exceptions might be non-critical (e.g., roles already exist)
+                log_msg = (
+                    f"[WARNING] Failed to initialize PostgreSQL roles: {roles_error}"
+                )
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.warning(log_msg)
+                # Continue anyway - roles might already exist
+
             # Wait a moment to ensure all tables are fully created and visible
             import time
 
             time.sleep(0.5)
 
             # Run database migrations using the uniform migration system
-            from vault.database.migrations.registry import run_migrations
-
+            # Note: run_migrations uses db.engine (cannot be replaced in SQLAlchemy 2.0)
             try:
+                from vault.database.migrations.registry import run_migrations
+
                 run_migrations(app_logger)
             except Exception as migration_error:
                 log_msg = (
@@ -2141,6 +2655,77 @@ def init_db(app) -> None:
                     logger.error(log_msg)
                 # Re-raise to prevent startup with incomplete migrations
                 raise
+
+            # Update privileges on newly created tables
+            if secret_key:
+                try:
+                    from sqlalchemy import create_engine, text
+                    from common.env import load_env_with_override
+                    import os
+
+                    env_values = load_env_with_override()
+                    env_values.update(dict(os.environ))
+
+                    postgres_host = env_values.get("POSTGRES_HOST", "postgres")
+                    postgres_port = env_values.get("POSTGRES_PORT", "5432")
+                    postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
+                    postgres_user = env_values.get("POSTGRES_USER", "leyzen")
+                    postgres_password = env_values.get("POSTGRES_PASSWORD", "")
+
+                    if postgres_password:
+                        postgres_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+                        admin_engine = create_engine(postgres_url, pool_pre_ping=True)
+
+                        try:
+                            # Use engine.begin() for automatic transaction management
+                            with admin_engine.begin() as conn:
+                                # Get all tables
+                                tables_result = conn.execute(
+                                    text(
+                                        """
+                                        SELECT tablename FROM pg_tables 
+                                        WHERE schemaname = 'public' 
+                                        AND tablename != 'system_secrets'
+                                        ORDER BY tablename
+                                        """
+                                    )
+                                )
+                                app_tables = [
+                                    row[0] for row in tables_result.fetchall()
+                                ]
+
+                                # Grant privileges to leyzen_app on all application tables
+                                for table in app_tables:
+                                    conn.execute(
+                                        text(
+                                            f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"'
+                                        )
+                                    )
+
+                                # Ensure system_secrets privileges are correct
+                                conn.execute(
+                                    text(
+                                        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"'
+                                    )
+                                )
+                                conn.execute(
+                                    text(
+                                        'GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"'
+                                    )
+                                )
+                                conn.execute(
+                                    text(
+                                        'REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"'
+                                    )
+                                )
+                        finally:
+                            admin_engine.dispose()
+                except Exception as priv_error:
+                    log_msg = f"[WARNING] Failed to update privileges: {priv_error}"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.warning(log_msg)
 
             # Old migration code removed - now handled by migration system above
             # (Removed: api_keys prefix validation and jwt_blacklist jti column migration)

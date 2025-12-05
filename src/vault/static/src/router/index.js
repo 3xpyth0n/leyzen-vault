@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getUserMasterKey, getStoredSalt } from "../services/keyManager";
-import { auth } from "../services/api";
+import { auth, isNetworkError } from "../services/api";
 
 /**
  * Clear all browser storage (cookies, localStorage, sessionStorage).
@@ -162,8 +162,19 @@ async function requireAdmin(to, from, next) {
       return;
     }
   } catch (err) {
-    // Error fetching user info (API error, token invalid, etc.)
-    // Redirect to dashboard for security
+    // Error fetching user info
+    // Check if it's a network error (server temporarily unavailable)
+    if (isNetworkError(err)) {
+      // Network error during container restart - allow navigation
+      // User will see appropriate error message in the component
+      // Don't disconnect user for temporary network issues
+      console.warn("Network error while verifying admin role:", err);
+      // Allow navigation - component will handle the error gracefully
+      next();
+      return;
+    }
+
+    // Actual API/auth error - redirect to dashboard for security
     console.error("Failed to verify admin role:", err);
     next("/dashboard");
     return;

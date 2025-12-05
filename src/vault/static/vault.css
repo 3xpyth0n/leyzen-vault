@@ -2828,26 +2828,10 @@ kbd {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   overflow-y: auto;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-/* Responsive: On mobile, sidebar is always 70px */
-@media (max-width: 768px) {
-  .modal-overlay {
-    padding-left: calc(
-      1rem + 70px
-    ) !important; /* Mobile: sidebar always 70px */
-  }
 }
 
 /* Standard modal container - True glassmorphism effect */
@@ -3890,11 +3874,15 @@ body.modal-open {
   overflow: hidden;
 }
 
+#share-modal-advanced .modal-content-share .modal-header,
 .modal-content-share .modal-header {
-  padding: 1.5rem;
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  flex-shrink: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 .modal-content-share .modal-header h2,
@@ -3902,8 +3890,8 @@ body.modal-open {
 .modal-content-share .modal-header .modal-title {
   margin: 0;
   padding: 0;
+  font-size: 1.25rem;
   color: var(--text-primary, #f1f5f9);
-  font-size: 1.5rem;
   font-weight: 600;
 }
 
@@ -3922,7 +3910,6 @@ body.modal-open {
 
 .share-section:not(:last-child) {
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .share-section h3 {

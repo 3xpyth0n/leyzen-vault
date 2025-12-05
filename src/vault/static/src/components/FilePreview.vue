@@ -1,90 +1,224 @@
 <template>
-  <div v-if="show" class="file-preview-overlay" @click="close">
-    <div class="file-preview-modal glass glass-card" @click.stop>
-      <div class="preview-header">
-        <h2>{{ fileName }}</h2>
-        <div class="preview-actions">
-          <button
-            v-if="isZip"
-            @click="handleUnzip"
-            class="btn btn-primary"
-            :disabled="unzipping"
-          >
-            {{ unzipping ? "Extracting..." : "Unzip" }}
-          </button>
-          <button @click="download" class="btn btn-secondary">Download</button>
-          <button @click="close" class="btn-icon">✕</button>
-        </div>
-      </div>
-
-      <div class="preview-content" v-if="loading">
-        <div class="loading">Loading preview...</div>
-      </div>
-
-      <div class="preview-content" v-else-if="error">
-        <div class="error-message glass">{{ error }}</div>
-      </div>
-
-      <div class="preview-content" v-else>
-        <!-- Image Preview -->
-        <div v-if="isImage" class="image-preview">
-          <img :src="previewUrl" :alt="fileName" @load="onImageLoad" />
-          <div v-if="imageLoading" class="loading-overlay">Loading...</div>
-        </div>
-
-        <!-- Video Preview -->
-        <div v-else-if="isVideo" class="video-preview">
-          <div
-            ref="videoContainer"
-            class="video-container"
-            @mouseenter="showVideoControls"
-            @mouseleave="hideVideoControls"
-            @mousemove="showVideoControls"
-          >
-            <video
-              ref="videoElement"
-              :src="previewUrl"
-              @timeupdate="updateVideoProgress"
-              @loadedmetadata="onVideoLoadedMetadata"
-              @play="isVideoPlaying = true"
-              @pause="isVideoPlaying = false"
-              @ended="isVideoPlaying = false"
-              class="video-player"
+  <teleport to="body">
+    <div v-if="show" class="file-preview-overlay" @click="close">
+      <div class="file-preview-modal glass glass-card" @click.stop>
+        <div class="preview-header">
+          <h2>{{ fileName }}</h2>
+          <div class="preview-actions">
+            <button
+              v-if="isZip"
+              @click="handleUnzip"
+              class="btn btn-primary"
+              :disabled="unzipping"
             >
-              Your browser does not support video playback.
-            </video>
+              {{ unzipping ? "Extracting..." : "Unzip" }}
+            </button>
+            <button @click="download" class="btn btn-secondary">
+              Download
+            </button>
+            <button @click="close" class="btn-icon">✕</button>
+          </div>
+        </div>
+
+        <div class="preview-content" v-if="loading">
+          <div class="loading">Loading preview...</div>
+        </div>
+
+        <div class="preview-content" v-else-if="error">
+          <div class="error-message glass">{{ error }}</div>
+        </div>
+
+        <div class="preview-content" v-else>
+          <!-- Image Preview -->
+          <div v-if="isImage" class="image-preview">
+            <img :src="previewUrl" :alt="fileName" @load="onImageLoad" />
+            <div v-if="imageLoading" class="loading-overlay">Loading...</div>
+          </div>
+
+          <!-- Video Preview -->
+          <div v-else-if="isVideo" class="video-preview">
             <div
-              class="video-player-controls"
-              :class="{ 'video-player-controls--visible': showControls }"
+              ref="videoContainer"
+              class="video-container"
+              @mouseenter="showVideoControls"
+              @mouseleave="hideVideoControls"
+              @mousemove="showVideoControls"
             >
-              <div class="video-player-controls__progress">
-                <p class="video-player-controls__time">
-                  {{ formattedVideoCurrentTime }}
-                </p>
-                <span
-                  class="video-player-controls__progress-bar"
-                  @click="seekVideoByClick"
-                  @mousedown="startVideoSeeking"
-                >
+              <video
+                ref="videoElement"
+                :src="previewUrl"
+                @timeupdate="updateVideoProgress"
+                @loadedmetadata="onVideoLoadedMetadata"
+                @play="isVideoPlaying = true"
+                @pause="isVideoPlaying = false"
+                @ended="isVideoPlaying = false"
+                class="video-player"
+              >
+                Your browser does not support video playback.
+              </video>
+              <div
+                class="video-player-controls"
+                :class="{ 'video-player-controls--visible': showControls }"
+              >
+                <div class="video-player-controls__progress">
+                  <p class="video-player-controls__time">
+                    {{ formattedVideoCurrentTime }}
+                  </p>
                   <span
-                    class="video-player-controls__progress-filled"
-                    :style="{ width: videoProgress + '%' }"
-                  ></span>
-                  <span
-                    class="video-player-controls__progress-thumb"
-                    :style="{ left: videoProgress + '%' }"
-                  ></span>
-                </span>
-                <p class="video-player-controls__time">
-                  {{ formattedVideoDuration }}
-                </p>
+                    class="video-player-controls__progress-bar"
+                    @click="seekVideoByClick"
+                    @mousedown="startVideoSeeking"
+                  >
+                    <span
+                      class="video-player-controls__progress-filled"
+                      :style="{ width: videoProgress + '%' }"
+                    ></span>
+                    <span
+                      class="video-player-controls__progress-thumb"
+                      :style="{ left: videoProgress + '%' }"
+                    ></span>
+                  </span>
+                  <p class="video-player-controls__time">
+                    {{ formattedVideoDuration }}
+                  </p>
+                </div>
+                <div class="video-player-controls__bottom">
+                  <div class="video-player-controls__left">
+                    <svg
+                      @click="seekVideoBackward"
+                      viewBox="0 0 16 16"
+                      class="video-player-controls__control-btn"
+                    >
+                      <path
+                        d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <svg
+                      @click="toggleVideoPlay"
+                      viewBox="0 0 16 16"
+                      class="video-player-controls__control-btn video-player-controls__control-btn--play"
+                      :class="{
+                        'video-player-controls__control-btn--playing':
+                          isVideoPlaying,
+                      }"
+                    >
+                      <path
+                        v-if="!isVideoPlaying"
+                        d="M4.018 14L14.41 8 4.018 2z"
+                        fill="currentColor"
+                      />
+                      <path
+                        v-else
+                        d="M3 2h3v12H3V2zm7 0h3v12h-3V2z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <svg
+                      @click="seekVideoForward"
+                      viewBox="0 0 16 16"
+                      class="video-player-controls__control-btn"
+                    >
+                      <path
+                        d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </div>
+                  <p class="video-player-controls__song-name">{{ fileName }}</p>
+                  <button
+                    @click="toggleFullscreen"
+                    class="video-player-controls__control-btn video-player-controls__control-btn--fullscreen"
+                    :aria-label="
+                      isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'
+                    "
+                  >
+                    <svg
+                      v-if="!isFullscreen"
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M8 3H5C3.89543 3 3 3.89543 3 5V8M21 8V5C21 3.89543 20.1046 3 19 3H16M16 21H19C20.1046 21 21 20.1046 21 19V16M3 16V19C3 20.1046 3.89543 21 5 21H8"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <svg
+                      v-else
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M9 9L4 4M4 4V8M4 4H8M15 9L20 4M20 4V8M20 4H16M9 15L4 20M4 20V16M4 20H8M15 15L20 20M20 20V16M20 20H16"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <div class="video-player-controls__bottom">
-                <div class="video-player-controls__left">
+            </div>
+          </div>
+
+          <!-- Audio Preview -->
+          <div v-else-if="isAudio" class="audio-preview">
+            <div class="audio-player">
+              <div class="audio-player__artwork">
+                <img
+                  v-if="hasAudioCover && audioCoverUrl"
+                  :src="audioCoverUrl"
+                  alt="Album cover"
+                  class="audio-player__artwork-image"
+                />
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                  />
+                </svg>
+              </div>
+              <div class="audio-player__container">
+                <p class="audio-player__song-name">{{ fileName }}</p>
+                <div class="audio-player__progress">
+                  <p class="audio-player__time">{{ formattedCurrentTime }}</p>
+                  <span
+                    class="audio-player__progress-bar"
+                    @click="seekAudioByClick"
+                    @mousedown="startSeeking"
+                    @mousemove="updateProgressHover"
+                    @mouseleave="hideProgressHover"
+                  >
+                    <span
+                      class="audio-player__progress-filled"
+                      :style="{ width: progress + '%' }"
+                    ></span>
+                    <span
+                      class="audio-player__progress-thumb"
+                      :style="{ left: progress + '%' }"
+                    ></span>
+                  </span>
+                  <p class="audio-player__time">{{ formattedDuration }}</p>
+                </div>
+                <div class="audio-player__controls">
                   <svg
-                    @click="seekVideoBackward"
+                    @click="seekBackward"
                     viewBox="0 0 16 16"
-                    class="video-player-controls__control-btn"
+                    class="audio-player__control-btn"
                   >
                     <path
                       d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
@@ -92,16 +226,13 @@
                     />
                   </svg>
                   <svg
-                    @click="toggleVideoPlay"
+                    @click="togglePlay"
                     viewBox="0 0 16 16"
-                    class="video-player-controls__control-btn video-player-controls__control-btn--play"
-                    :class="{
-                      'video-player-controls__control-btn--playing':
-                        isVideoPlaying,
-                    }"
+                    class="audio-player__control-btn audio-player__control-btn--play"
+                    :class="{ 'audio-player__control-btn--playing': isPlaying }"
                   >
                     <path
-                      v-if="!isVideoPlaying"
+                      v-if="!isPlaying"
                       d="M4.018 14L14.41 8 4.018 2z"
                       fill="currentColor"
                     />
@@ -112,9 +243,9 @@
                     />
                   </svg>
                   <svg
-                    @click="seekVideoForward"
+                    @click="seekForward"
                     viewBox="0 0 16 16"
-                    class="video-player-controls__control-btn"
+                    class="audio-player__control-btn"
                   >
                     <path
                       d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
@@ -122,239 +253,112 @@
                     />
                   </svg>
                 </div>
-                <p class="video-player-controls__song-name">{{ fileName }}</p>
-                <button
-                  @click="toggleFullscreen"
-                  class="video-player-controls__control-btn video-player-controls__control-btn--fullscreen"
-                  :aria-label="
-                    isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'
+              </div>
+            </div>
+            <audio
+              ref="audioElement"
+              :src="previewUrl"
+              @timeupdate="updateProgress"
+              @loadedmetadata="onLoadedMetadata"
+              @play="isPlaying = true"
+              @pause="isPlaying = false"
+              @ended="isPlaying = false"
+            ></audio>
+          </div>
+
+          <!-- Markdown Preview -->
+          <div v-else-if="isMarkdown" class="markdown-preview">
+            <div class="markdown-content" ref="markdownContentRef"></div>
+          </div>
+
+          <!-- Text Preview -->
+          <div v-else-if="isText" class="text-preview">
+            <pre class="text-content">{{ textContent }}</pre>
+          </div>
+
+          <!-- ZIP Preview -->
+          <div v-else-if="isZip" class="zip-preview">
+            <div v-if="zipLoading" class="loading">Loading ZIP contents...</div>
+            <div v-else-if="zipFiles.length > 0" class="zip-content">
+              <div class="zip-header">
+                <h3>Archive Contents</h3>
+                <p class="zip-info">
+                  {{ zipFileCount }} {{ zipFileCount === 1 ? "file" : "files" }}
+                  <span v-if="zipFolderCount > 0">
+                    in {{ zipFolderCount }}
+                    {{ zipFolderCount === 1 ? "folder" : "folders" }}
+                  </span>
+                </p>
+              </div>
+              <div class="zip-file-list">
+                <div
+                  v-for="(item, index) in zipFiles"
+                  :key="index"
+                  class="zip-file-item"
+                  :class="{
+                    'zip-folder-item': item.type === 'folder',
+                    'zip-clickable': item.type === 'folder' && item.hasChildren,
+                  }"
+                  :style="{ paddingLeft: item.depth * 1.5 + 0.75 + 'rem' }"
+                  @click="
+                    item.type === 'folder' && item.hasChildren
+                      ? toggleFolder(item.path)
+                      : null
                   "
                 >
-                  <svg
-                    v-if="!isFullscreen"
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
+                  <div
+                    class="zip-expand-icon"
+                    v-if="item.type === 'folder' && item.hasChildren"
                   >
-                    <path
-                      d="M8 3H5C3.89543 3 3 3.89543 3 5V8M21 8V5C21 3.89543 20.1046 3 19 3H16M16 21H19C20.1046 21 21 20.1046 21 19V16M3 16V19C3 20.1046 3.89543 21 5 21H8"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                  <svg
-                    v-else
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M9 9L4 4M4 4V8M4 4H8M15 9L20 4M20 4V8M20 4H16M9 15L4 20M4 20V16M4 20H8M15 15L20 20M20 20V16M20 20H16"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Audio Preview -->
-        <div v-else-if="isAudio" class="audio-preview">
-          <div class="audio-player">
-            <div class="audio-player__artwork">
-              <img
-                v-if="hasAudioCover && audioCoverUrl"
-                :src="audioCoverUrl"
-                alt="Album cover"
-                class="audio-player__artwork-image"
-              />
-              <svg
-                v-else
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                />
-              </svg>
-            </div>
-            <div class="audio-player__container">
-              <p class="audio-player__song-name">{{ fileName }}</p>
-              <div class="audio-player__progress">
-                <p class="audio-player__time">{{ formattedCurrentTime }}</p>
-                <span
-                  class="audio-player__progress-bar"
-                  @click="seekAudioByClick"
-                  @mousedown="startSeeking"
-                  @mousemove="updateProgressHover"
-                  @mouseleave="hideProgressHover"
-                >
-                  <span
-                    class="audio-player__progress-filled"
-                    :style="{ width: progress + '%' }"
-                  ></span>
-                  <span
-                    class="audio-player__progress-thumb"
-                    :style="{ left: progress + '%' }"
-                  ></span>
-                </span>
-                <p class="audio-player__time">{{ formattedDuration }}</p>
-              </div>
-              <div class="audio-player__controls">
-                <svg
-                  @click="seekBackward"
-                  viewBox="0 0 16 16"
-                  class="audio-player__control-btn"
-                >
-                  <path
-                    d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
-                    fill="currentColor"
-                  />
-                </svg>
-                <svg
-                  @click="togglePlay"
-                  viewBox="0 0 16 16"
-                  class="audio-player__control-btn audio-player__control-btn--play"
-                  :class="{ 'audio-player__control-btn--playing': isPlaying }"
-                >
-                  <path
-                    v-if="!isPlaying"
-                    d="M4.018 14L14.41 8 4.018 2z"
-                    fill="currentColor"
-                  />
-                  <path
-                    v-else
-                    d="M3 2h3v12H3V2zm7 0h3v12h-3V2z"
-                    fill="currentColor"
-                  />
-                </svg>
-                <svg
-                  @click="seekForward"
-                  viewBox="0 0 16 16"
-                  class="audio-player__control-btn"
-                >
-                  <path
-                    d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-          <audio
-            ref="audioElement"
-            :src="previewUrl"
-            @timeupdate="updateProgress"
-            @loadedmetadata="onLoadedMetadata"
-            @play="isPlaying = true"
-            @pause="isPlaying = false"
-            @ended="isPlaying = false"
-          ></audio>
-        </div>
-
-        <!-- Markdown Preview -->
-        <div v-else-if="isMarkdown" class="markdown-preview">
-          <div class="markdown-content" ref="markdownContentRef"></div>
-        </div>
-
-        <!-- Text Preview -->
-        <div v-else-if="isText" class="text-preview">
-          <pre class="text-content">{{ textContent }}</pre>
-        </div>
-
-        <!-- ZIP Preview -->
-        <div v-else-if="isZip" class="zip-preview">
-          <div v-if="zipLoading" class="loading">Loading ZIP contents...</div>
-          <div v-else-if="zipFiles.length > 0" class="zip-content">
-            <div class="zip-header">
-              <h3>Archive Contents</h3>
-              <p class="zip-info">
-                {{ zipFileCount }} {{ zipFileCount === 1 ? "file" : "files" }}
-                <span v-if="zipFolderCount > 0">
-                  in {{ zipFolderCount }}
-                  {{ zipFolderCount === 1 ? "folder" : "folders" }}
-                </span>
-              </p>
-            </div>
-            <div class="zip-file-list">
-              <div
-                v-for="(item, index) in zipFiles"
-                :key="index"
-                class="zip-file-item"
-                :class="{
-                  'zip-folder-item': item.type === 'folder',
-                  'zip-clickable': item.type === 'folder' && item.hasChildren,
-                }"
-                :style="{ paddingLeft: item.depth * 1.5 + 0.75 + 'rem' }"
-                @click="
-                  item.type === 'folder' && item.hasChildren
-                    ? toggleFolder(item.path)
-                    : null
-                "
-              >
-                <div
-                  class="zip-expand-icon"
-                  v-if="item.type === 'folder' && item.hasChildren"
-                >
-                  <span
-                    v-html="
-                      getIcon(
-                        isFolderExpanded(item.path)
-                          ? 'chevronDown'
-                          : 'chevronRight',
-                        14,
-                      )
-                    "
-                  ></span>
-                </div>
-                <div
-                  class="zip-expand-placeholder"
-                  v-else-if="item.type === 'folder' && !item.hasChildren"
-                ></div>
-                <div class="zip-file-icon">
-                  <span
-                    v-html="
-                      getIcon(item.type === 'folder' ? 'folder' : 'file', 20)
-                    "
-                  ></span>
-                </div>
-                <div class="zip-file-info">
-                  <div class="zip-file-name">{{ item.name }}</div>
-                </div>
-                <div class="zip-file-size" v-if="item.type === 'file'">
-                  {{ formatFileSize(item.size) }}
+                    <span
+                      v-html="
+                        getIcon(
+                          isFolderExpanded(item.path)
+                            ? 'chevronDown'
+                            : 'chevronRight',
+                          14,
+                        )
+                      "
+                    ></span>
+                  </div>
+                  <div
+                    class="zip-expand-placeholder"
+                    v-else-if="item.type === 'folder' && !item.hasChildren"
+                  ></div>
+                  <div class="zip-file-icon">
+                    <span
+                      v-html="
+                        getIcon(item.type === 'folder' ? 'folder' : 'file', 20)
+                      "
+                    ></span>
+                  </div>
+                  <div class="zip-file-info">
+                    <div class="zip-file-name">{{ item.name }}</div>
+                  </div>
+                  <div class="zip-file-size" v-if="item.type === 'file'">
+                    {{ formatFileSize(item.size) }}
+                  </div>
                 </div>
               </div>
             </div>
+            <div v-else class="zip-empty">
+              <p>This ZIP file appears to be empty.</p>
+            </div>
           </div>
-          <div v-else class="zip-empty">
-            <p>This ZIP file appears to be empty.</p>
-          </div>
-        </div>
 
-        <!-- Unsupported Type -->
-        <div v-else class="unsupported-preview">
-          <div class="unsupported-icon" ref="defaultIconRef"></div>
-          <p>Preview not available for this file type.</p>
-          <p class="mime-type">{{ mimeType }}</p>
-          <button @click="download" class="btn btn-primary">
-            Download File
-          </button>
+          <!-- Unsupported Type -->
+          <div v-else class="unsupported-preview">
+            <div class="unsupported-icon" ref="defaultIconRef"></div>
+            <p>Preview not available for this file type.</p>
+            <p class="mime-type">{{ mimeType }}</p>
+            <button @click="download" class="btn btn-primary">
+              Download File
+            </button>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script>
@@ -396,85 +400,6 @@ export default {
   },
   emits: ["close", "download", "unzip"],
   setup(props, { emit }) {
-    // Watch for sidebar state changes to adjust padding
-    const updatePadding = () => {
-      const sidebar = document.querySelector(".sidebar");
-      const overlay = document.querySelector(".file-preview-overlay");
-      if (overlay && sidebar) {
-        // Check if mobile mode is active
-        const isMobileMode = document.body.classList.contains("mobile-mode");
-        if (isMobileMode) {
-          // In mobile mode, don't account for sidebar
-          overlay.style.paddingLeft = "2rem";
-        } else {
-          // In desktop mode, account for sidebar
-          const isCollapsed = sidebar.classList.contains("collapsed");
-          const padding = isCollapsed
-            ? "calc(2rem + 70px)"
-            : "calc(2rem + 250px)";
-          overlay.style.paddingLeft = padding;
-        }
-      }
-    };
-
-    // Set up observer for sidebar changes when component is mounted
-    let sidebarObserver = null;
-    let resizeHandler = null;
-    let mobileModeHandler = null;
-
-    if (typeof window !== "undefined") {
-      watch(
-        () => props.show,
-        (isShowing) => {
-          if (isShowing) {
-            // Wait for DOM to be ready, then update padding
-            // Use multiple nextTick to ensure overlay is in DOM
-            nextTick(() => {
-              nextTick(() => {
-                updatePadding();
-                // Set up observer for sidebar changes
-                const sidebar = document.querySelector(".sidebar");
-                if (sidebar && window.MutationObserver) {
-                  sidebarObserver = new MutationObserver(updatePadding);
-                  sidebarObserver.observe(sidebar, {
-                    attributes: true,
-                    attributeFilter: ["class"],
-                  });
-                }
-                // Also listen for resize events
-                resizeHandler = updatePadding;
-                window.addEventListener("resize", resizeHandler);
-
-                // Listen for mobile mode changes
-                mobileModeHandler = () => updatePadding();
-                window.addEventListener(
-                  "mobile-mode-changed",
-                  mobileModeHandler,
-                );
-              });
-            });
-          } else {
-            // Clean up observer when preview is closed
-            if (sidebarObserver) {
-              sidebarObserver.disconnect();
-              sidebarObserver = null;
-            }
-            if (resizeHandler) {
-              window.removeEventListener("resize", resizeHandler);
-              resizeHandler = null;
-            }
-            if (mobileModeHandler) {
-              window.removeEventListener(
-                "mobile-mode-changed",
-                mobileModeHandler,
-              );
-              mobileModeHandler = null;
-            }
-          }
-        },
-        { immediate: true },
-      );
-    }
     const loading = ref(false);
     const error = ref(null);
     const previewUrl = ref(null);
@@ -1891,18 +1816,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 100000;
   padding: 2rem;
-  /* Default padding - will be adjusted dynamically based on sidebar state */
-  /* Start with collapsed state (70px) as default, will be updated on mount */
-  padding-left: calc(2rem + 70px);
-  transition: padding-left 0.3s ease;
-}
-
-/* Remove sidebar padding in mobile mode */
-.mobile-mode .file-preview-overlay {
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
 }
 
 .file-preview-modal {

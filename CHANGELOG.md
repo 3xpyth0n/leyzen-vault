@@ -9,6 +9,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **PostgreSQL Multi-Role Security System**: Implemented a multi-role PostgreSQL security architecture with separate roles for different application components, each with minimal required privileges. Role passwords are dynamically generated at startup, encrypted, and stored securely. Includes automatic password rotation support.
 - **ZIP File Preview**: Preview support for ZIP files.
 - **Mobile Mode**: Complete mobile-optimized interface with bottom navigation bar, responsive layouts, and manual mobile/desktop mode toggle. All screens are now fully adapted for mobile devices with single-column layouts, optimized touch targets, and improved usability on small screens.
 - **Audit Logs Enhancement**: Enhanced audit logs with IPv4 extraction and IP geolocation information (country, city) for improved security monitoring and analysis.

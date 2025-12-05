@@ -123,8 +123,6 @@ export async function getUserMasterKey() {
         error,
       );
       try {
-        const { clearAllEncryptedMasterKeys } =
-          await import("./masterKeyStorage.js");
         await clearAllEncryptedMasterKeys();
         logger.info(
           "Cleared all encrypted master keys due to decryption failure (migration to new secure format)",

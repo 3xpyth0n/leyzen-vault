@@ -158,7 +158,7 @@ export default {
         top: `${dropdownTop.value}px`,
         left: `${dropdownLeft.value}px`,
         width: `${dropdownWidth.value}px`,
-        zIndex: 99999,
+        zIndex: 100001,
       };
     });
 
@@ -605,7 +605,7 @@ export default {
 
 .custom-select-dropdown-container {
   position: fixed;
-  z-index: 99999;
+  z-index: 100001;
   pointer-events: none;
 }
 
