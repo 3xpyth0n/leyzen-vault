@@ -97,23 +97,34 @@ checks we expect before shipping changes.
   For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_python_paths()`
   directly if you need to configure paths before importing other modules.
 
+### Common Services (`src/common/services/`)
+
+The `src/common/services/` directory contains shared services used across multiple components:
+
+- **`file_promotion_service.py`** — `FilePromotionService` — Unified service for promoting validated files from tmpfs (`/data`) to persistent storage (`/data-source`) with strict validation. This service validates files using `SyncValidationService` (checks file ID exists in database AND hash matches) before promoting them. It also handles cleanup of orphaned files (files that don't exist in database). Used by both the vault (after each upload) and the orchestrator (during rotation).
+
+- **`sync_validation_service.py`** — `SyncValidationService` — Service for validating files before synchronization to prevent malware persistence. Validates that files exist in the database and that their hash matches before allowing promotion to persistent storage. Maintains a whitelist of legitimate files and thumbnails loaded from the database.
+
+- **`logging.py`** — `FileLogger` — Shared logging service used across services. Provides structured logging with file rotation and timezone awareness. Routes operational logs through `FileLogger` and keeps secrets out of log messages. Prefer `.log()` for structured entries; use `.warning()` only for noteworthy anomalies.
+
 ### Vault Application (`src/vault/`)
 
 The Vault application follows similar Python guidelines with additional considerations:
 
 - **Database**: Uses PostgreSQL via SQLAlchemy. Database initialization happens in `create_app()`.
   The application requires PostgreSQL in production mode but allows fallback in development.
-- **Background workers**: Background threads handle periodic tasks (e.g., audit log cleanup).
-  Workers are started as daemon threads in `create_app()`.
+- **Background workers**: Background threads handle periodic tasks (e.g., audit log cleanup, orphaned file cleanup, periodic file promotion).
+  Workers are started as daemon threads in `create_app()` and use `FilePromotionService` and `SyncValidationService` from `src/common/services/`.
 - **Service initialization**: Services are initialized with timezone awareness and registered in
   `app.config`. Services like `AuditService`, `ShareService`, and `RateLimiter` use the timezone
   from `VaultSettings.timezone`.
+- **IP Enrichment**: `IPEnrichmentService` is initialized at startup and used by `AuditService` to enrich IP addresses with geolocation and threat intelligence data from free public APIs.
+- **File Promotion and Validation**: `FilePromotionService` and `SyncValidationService` from `src/common/services/` are used in background workers to validate and promote files from tmpfs to persistent storage. These services ensure files are validated against the database before promotion to prevent malware persistence.
 - **Error handling**: Global exception handlers return JSON for API routes and HTML for SPA routes.
   Production mode hides error details from clients for security.
 - **Configuration fallback**: The application supports fallback configuration for development/testing,
   but production mode requires valid configuration and will fail fast if misconfigured.
-- **Internal API token**: The `INTERNAL_API_TOKEN` is auto-generated from `SECRET_KEY` if not
-  explicitly set. This token is used for orchestrator-to-vault communication.
+- **Internal API token**: The `INTERNAL_API_TOKEN` is derived deterministically from `SECRET_KEY` using `common.token_utils.derive_internal_api_token()` if not explicitly set in environment variables. This token is used for orchestrator-to-vault communication and ensures both services use the same token without requiring database access or manual configuration.
 
 ## Flask blueprints & templates
 
@@ -143,7 +154,9 @@ The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Bl
 
 - `admin_api_bp` — Admin API endpoints
 - `auth_api_bp` — JWT-based authentication API
+- `config_api_bp` — Configuration API for exposing public vault settings to frontend (endpoint `/api/v2/config`)
 - `files_api_bp` — Advanced files API v2 (upload, download, metadata)
+- `file_events_api_bp` — File events API for real-time file synchronization via SSE (Server-Sent Events), endpoint `/api/v2/files/events`
 - `internal_api_bp` — Internal API for orchestrator operations
 - `search_api_bp` — Search API endpoints
 - `sso_api_bp` — SSO API (SAML, OAuth2, OIDC)
@@ -169,6 +182,31 @@ The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Bl
 - Static files are served from `/static/` with fallback logic (dist/ → static/)
 - CSP nonces are generated per-request for inline scripts
 - CORS is restrictively configured with origin validation
+
+### Vault Middleware (`src/vault/middleware/`)
+
+The Vault application uses middleware components for authentication, authorization, and input validation:
+
+- **`jwt_auth.py`** — JWT authentication middleware providing:
+  - `@jwt_required` decorator for protecting routes with JWT authentication
+  - `get_current_user()` function to retrieve the authenticated user from the JWT token
+  - Origin/Referer validation for additional security
+  - JWT token validation and replay protection via `jti` (JWT ID) tracking
+
+- **`rbac.py`** — Role-Based Access Control (RBAC) middleware providing:
+  - `@require_role(role_name)` decorator for role-based authorization
+  - `@require_permission(permission_name)` decorator for permission-based authorization
+  - Integration with user roles and permissions stored in the database
+
+- **`input_validation.py`** — Input validation middleware providing validation decorators and helpers:
+  - `validate_uuid_param()` — Validates UUID parameters
+  - `validate_file_id_param()` — Validates file ID parameters
+  - `validate_vaultspace_id_param()` — Validates VaultSpace ID parameters
+  - `validate_pagination()` — Validates pagination parameters (page, per_page)
+  - `validate_email_param()` — Validates email parameters
+  - `validate_json_request()` — Validates JSON request body structure
+
+All middleware components are imported from `vault.middleware` and used as decorators on blueprint routes.
 
 ## Front-end assets
 
@@ -233,6 +271,14 @@ Services must start in a specific order to ensure dependencies are available:
 
 The orchestrator reads container names from the environment (injected by docker-compose via `build.py`). Container names are auto-generated from `WEB_REPLICAS` if not explicitly provided. The orchestrator starts Vault containers up to the configured replica count, waiting for health checks to pass before marking them as ready.
 
+**Background Workers**: After startup, the Vault application starts several background worker threads (daemon threads) for periodic tasks:
+
+- **Audit log cleanup worker**: Runs every hour to clean up old audit log entries based on retention policy
+- **Orphaned files cleanup worker**: Runs every hour to clean up orphaned files from persistent storage (files that don't exist in the database)
+- **Periodic file promotion worker**: Runs every 5 minutes to promote files from tmpfs to persistent storage, ensuring files are persisted even if immediate promotion during upload fails
+
+These workers use `FilePromotionService` and `SyncValidationService` from `src/common/services/` to validate and promote files safely. Workers are started automatically in `create_app()` and run as daemon threads.
+
 See [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#service-startup-order) for detailed sequence diagrams and startup flow documentation.
 
 ## Services Architecture
@@ -257,10 +303,12 @@ The Vault application has an extensive service layer covering various functional
 
 **Core Services:**
 
-- `audit.py` — `AuditService` — Audit logging and retention
+- `audit.py` — `AuditService` — Audit logging and retention with IP enrichment
 - `file_service.py` — `FileService` — File operations and metadata
+- `file_event_service.py` — `FileEventService` — File events service for real-time file synchronization, manages event streams and SSE connections
 - `encryption_service.py` — End-to-end encryption operations
 - `key_management.py` — Key management and rotation
+- `ip_enrichment.py` — `IPEnrichmentService` — IP enrichment service using free public APIs to enrich IP addresses with geolocation and threat intelligence data
 
 **Storage Layer:**
 
@@ -273,6 +321,7 @@ The Vault application has an extensive service layer covering various functional
 - `totp_service.py` — TOTP-based 2FA
 - `api_key_service.py` — API key management
 - `device_service.py` — Device management
+- `db_password_service.py` — Database password management for the `leyzen_app` role, handles encrypted password storage in SystemSecrets table
 
 **Sharing & Collaboration:**
 
@@ -304,12 +353,29 @@ The Vault application has an extensive service layer covering various functional
 
 - `admin_service.py`, `backup_service.py`, `domain_service.py`, `email_service.py`,
   `email_verification_service.py`, `log_filter.py`, `memory_cleanup_service.py`,
-  `mtd_compatibility.py`, `preview.py`, `sync_validation_service.py`, `template_service.py`,
+  `mtd_compatibility.py`, `preview.py`, `template_service.py`,
   `thumbnail_service.py`, `vaultspace_service.py`, `webhook_service.py`, `workflow_service.py`,
   `zip_service.py`
 
+**Note**: `sync_validation_service.py` has been moved to `src/common/services/` as a shared service used by both vault and orchestrator.
+
 Services are registered in `app.config` (e.g., `VAULT_STORAGE`, `VAULT_AUDIT`, `VAULT_SHARE`, `VAULT_RATE_LIMITER`)
 and accessed via `current_app.config` in blueprints.
+
+### Vault Utilities (`src/vault/utils/`)
+
+The Vault application includes utility modules for common operations:
+
+- **`constant_time.py`** — Constant-time comparison functions for security-critical operations (prevents timing attacks)
+- **`file_validation.py`** — File validation utilities for validating file types, sizes, and content
+- **`log_sanitizer.py`** — Log sanitization utilities to prevent information leakage in logs (removes sensitive data)
+- **`mime_type_detection.py`** — MIME type detection utilities for identifying file types
+- **`password_validator.py`** — Password validation utilities with strength checking
+- **`safe_json.py`** — Safe JSON parsing utilities with error handling and validation
+- **`valid_icons.py`** — Icon validation utilities for validating icon names and formats
+- **`validate_db_schema.py`** — Database schema validation utilities for verifying database structure
+
+These utilities are used throughout the Vault application for common operations and should be imported from `vault.utils`.
 
 ### Supporting Services
 
