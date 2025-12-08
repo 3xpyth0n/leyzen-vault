@@ -19,7 +19,7 @@
         class="bottom-nav-item"
         data-path="/dashboard"
         :class="{ 'router-link-active': $route.path === '/dashboard' }"
-        :disabled="!isClickable"
+        :disabled="!isClickable || isOffline"
         aria-label="Home"
       >
         <span v-html="getIcon('home', 24)" class="bottom-nav-icon"></span>
@@ -30,7 +30,7 @@
         class="bottom-nav-item"
         data-path="/starred"
         :class="{ 'router-link-active': $route.path === '/starred' }"
-        :disabled="!isClickable"
+        :disabled="!isClickable || isOffline"
         aria-label="Starred"
       >
         <span v-html="getIcon('star', 24)" class="bottom-nav-icon"></span>
@@ -41,7 +41,7 @@
         class="bottom-nav-item"
         data-path="/shared"
         :class="{ 'router-link-active': $route.path === '/shared' }"
-        :disabled="!isClickable"
+        :disabled="!isClickable || isOffline"
         aria-label="Shared"
       >
         <span v-html="getIcon('link', 24)" class="bottom-nav-icon"></span>
@@ -52,7 +52,7 @@
         class="bottom-nav-item"
         data-path="/recent"
         :class="{ 'router-link-active': $route.path === '/recent' }"
-        :disabled="!isClickable"
+        :disabled="!isClickable || isOffline"
         aria-label="Recent"
       >
         <span v-html="getIcon('clock', 24)" class="bottom-nav-icon"></span>
@@ -63,7 +63,7 @@
         class="bottom-nav-item"
         data-path="/trash"
         :class="{ 'router-link-active': $route.path === '/trash' }"
-        :disabled="!isClickable"
+        :disabled="!isClickable || isOffline"
         aria-label="Trash"
       >
         <span v-html="getIcon('trash', 24)" class="bottom-nav-icon"></span>
@@ -74,13 +74,15 @@
 </template>
 
 <script>
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
+import { useServerStatus } from "../composables/useServerStatus";
 
 export default {
   name: "BottomNavigation",
   setup() {
     const router = useRouter();
+    const { isOffline } = useServerStatus();
     const isExpanded = ref(false);
     const isClickable = ref(false); // Buttons become clickable 0.5s after expansion
     let lastScrollY = 0;
@@ -259,6 +261,10 @@ export default {
     });
 
     const handleNavClickToPath = (path) => {
+      // Block navigation if server is offline
+      if (isOffline.value) {
+        return;
+      }
       // Navigate
       if (router) {
         router.push(path);
@@ -316,6 +322,7 @@ export default {
     return {
       isExpanded,
       isClickable,
+      isOffline,
       toggleExpanded,
       onMouseEnter,
       onMouseLeave,
@@ -499,6 +506,11 @@ export default {
   pointer-events: none !important;
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.bottom-nav-item:disabled:hover {
+  background: transparent;
+  color: #94a3b8;
 }
 
 .bottom-nav-icon {

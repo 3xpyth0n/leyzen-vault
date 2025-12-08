@@ -12,12 +12,17 @@ export function useHealthCheck() {
   let reconnectTimer = null;
   let reconnectInterval = null;
   let healthCheckInterval = null; // Fast polling when offline
+  let proactiveCheckInterval = null; // Continuous polling to detect offline quickly
   let offlineTimer = null; // Timer before marking as offline (to ignore rotations)
   let reconnectAttempts = 0;
+  let consecutiveFailures = 0; // Track consecutive fetch failures for fast offline detection
   const maxReconnectAttempts = 10;
   const reconnectIntervalMs = 500; // Check every 500ms when offline for fast detection
   const healthCheckPollInterval = 500; // Poll /healthz every 500ms when offline
-  const rotationGracePeriod = 5000; // Wait 5 seconds before marking offline (ignore rotations)
+  const proactiveCheckIntervalMs = 2000; // Check every 2 seconds when online (proactive detection)
+  const fetchTimeout = 1000; // 1 second timeout for fetch requests
+  const maxConsecutiveFailures = 2; // Mark offline after 2 consecutive failures
+  const rotationGracePeriod = 1000; // Wait 1 second before marking offline (ignore rotations)
 
   const connectSSE = () => {
     // Don't start if already running
@@ -36,6 +41,7 @@ export function useHealthCheck() {
         // Connection opened successfully
         isChecking.value = false;
         reconnectAttempts = 0;
+        consecutiveFailures = 0; // Reset failure counter
 
         // Cancel offline timer - this was likely just a rotation
         clearOfflineTimer();
@@ -46,6 +52,9 @@ export function useHealthCheck() {
           reconnectInterval = null;
         }
         stopHealthCheckPolling();
+
+        // Start proactive checking when online
+        startProactiveChecking();
 
         // If we were offline, we're now online
         if (!isOnline.value) {
@@ -61,7 +70,8 @@ export function useHealthCheck() {
         try {
           const data = JSON.parse(event.data);
           if (data && data.status === "ok") {
-            // Server is online
+            // Server is online - reset failure counter
+            consecutiveFailures = 0;
             if (!isOnline.value) {
               isOnline.value = true;
             }
@@ -114,11 +124,11 @@ export function useHealthCheck() {
     }
   };
 
-  const checkHealthWithFetch = async () => {
+  const checkHealthWithFetch = async (isProactive = false) => {
     try {
       // Use a short timeout to avoid long waits during rotations
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), fetchTimeout);
 
       try {
         const response = await fetch("/healthz", {
@@ -133,39 +143,49 @@ export function useHealthCheck() {
         if (response.ok) {
           const data = await response.json();
           if (data && data.status === "ok") {
-            // Server is back online! Cancel offline timer (was likely rotation)
+            // Server is online - reset failure counter
+            consecutiveFailures = 0;
+
+            // Cancel offline timer (was likely rotation)
             clearOfflineTimer();
 
-            // Server is back online! Reconnect SSE immediately
+            // Server is back online! Reconnect SSE if we were offline
             if (!isOnline.value) {
               isOnline.value = true;
               // Update global status immediately when marked online
               if (typeof window !== "undefined" && window.updateServerStatus) {
                 window.updateServerStatus(true);
               }
-            }
 
-            // Stop polling and reconnect SSE
-            stopHealthCheckPolling();
-            reconnectAttempts = 0; // Reset attempts since server is back
-            connectSSE();
+              // Stop polling and reconnect SSE
+              stopHealthCheckPolling();
+              reconnectAttempts = 0; // Reset attempts since server is back
+              connectSSE();
+            }
             return true;
           }
+        }
+        // Non-OK response - count as failure
+        if (isProactive) {
+          consecutiveFailures++;
+          checkForOffline();
         }
         return false;
       } catch (fetchError) {
         clearTimeout(timeoutId);
-        // Network errors or timeouts - server might be temporarily unavailable
-        // Don't mark as offline immediately, keep trying
-        if (fetchError.name === "AbortError") {
-          // Timeout - server might be slow during rotation, keep trying
-          return false;
+        // Network errors or timeouts
+        if (isProactive) {
+          consecutiveFailures++;
+          checkForOffline();
         }
-        // Other network errors - keep trying
         return false;
       }
     } catch (error) {
-      // Unexpected error - keep trying
+      // Unexpected error - count as failure if proactive
+      if (isProactive) {
+        consecutiveFailures++;
+        checkForOffline();
+      }
       return false;
     }
   };
@@ -174,6 +194,55 @@ export function useHealthCheck() {
     if (offlineTimer) {
       clearTimeout(offlineTimer);
       offlineTimer = null;
+    }
+  };
+
+  const checkForOffline = () => {
+    // If we have multiple consecutive failures, mark as offline quickly
+    if (consecutiveFailures >= maxConsecutiveFailures && isOnline.value) {
+      // Clear any existing offline timer
+      clearOfflineTimer();
+
+      // Mark as offline immediately or after a very short grace period
+      offlineTimer = setTimeout(() => {
+        if (!eventSource || consecutiveFailures >= maxConsecutiveFailures) {
+          if (isOnline.value) {
+            isOnline.value = false;
+            // Update global status immediately when marked offline
+            if (typeof window !== "undefined" && window.updateServerStatus) {
+              window.updateServerStatus(false);
+            }
+            // Close EventSource if it exists (it's not working anyway)
+            if (eventSource) {
+              eventSource.close();
+              eventSource = null;
+            }
+            // Start reconnection attempts
+            startReconnectInterval();
+          }
+        }
+        offlineTimer = null;
+      }, rotationGracePeriod);
+    }
+  };
+
+  const startProactiveChecking = () => {
+    // Clear any existing proactive check interval
+    stopProactiveChecking();
+
+    // Start periodic health checks to detect offline quickly
+    proactiveCheckInterval = setInterval(async () => {
+      // Only check if we think we're online
+      if (isOnline.value && eventSource) {
+        await checkHealthWithFetch(true);
+      }
+    }, proactiveCheckIntervalMs);
+  };
+
+  const stopProactiveChecking = () => {
+    if (proactiveCheckInterval) {
+      clearInterval(proactiveCheckInterval);
+      proactiveCheckInterval = null;
     }
   };
 
@@ -253,6 +322,7 @@ export function useHealthCheck() {
 
     clearOfflineTimer();
     stopHealthCheckPolling();
+    stopProactiveChecking();
 
     if (eventSource) {
       eventSource.close();
@@ -260,6 +330,7 @@ export function useHealthCheck() {
     }
 
     reconnectAttempts = 0;
+    consecutiveFailures = 0;
     isChecking.value = false;
   };
 
@@ -285,6 +356,12 @@ export function useHealthCheck() {
   // Start health check when composable is used
   onMounted(() => {
     connectSSE();
+    // Also start proactive checking after a short delay to allow SSE to connect first
+    setTimeout(() => {
+      if (isOnline.value) {
+        startProactiveChecking();
+      }
+    }, 1000);
   });
 
   // Stop health check when component is unmounted

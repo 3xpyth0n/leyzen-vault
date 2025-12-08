@@ -333,7 +333,6 @@ The Vault application has an extensive service layer covering various functional
 
 - `search_service.py` — Search functionality
 - `search_index_service.py` — Search index management
-- `searchable_encryption.py` — Encrypted search operations
 
 **Quota & Storage:**
 

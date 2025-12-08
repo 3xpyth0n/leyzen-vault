@@ -35,41 +35,46 @@
     >
       <nav class="sidebar-nav">
         <button
-          @click="$router.push('/dashboard')"
+          @click="handleNavigation('/dashboard')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/dashboard' }"
+          :disabled="isServerOffline"
         >
           <span v-html="getIcon('home', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Home</span>
         </button>
         <button
-          @click="$router.push('/starred')"
+          @click="handleNavigation('/starred')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/starred' }"
+          :disabled="isServerOffline"
         >
           <span v-html="getIcon('star', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Starred</span>
         </button>
         <button
-          @click="$router.push('/shared')"
+          @click="handleNavigation('/shared')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/shared' }"
+          :disabled="isServerOffline"
         >
           <span v-html="getIcon('link', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Shared</span>
         </button>
         <button
-          @click="$router.push('/recent')"
+          @click="handleNavigation('/recent')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/recent' }"
+          :disabled="isServerOffline"
         >
           <span v-html="getIcon('clock', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Recent</span>
         </button>
         <button
-          @click="$router.push('/trash')"
+          @click="handleNavigation('/trash')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/trash' }"
+          :disabled="isServerOffline"
         >
           <span v-html="getIcon('trash', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Trash</span>
@@ -105,6 +110,7 @@
                 ),
                 'pinned-item-updating': updatingPinnedItems.has(vaultspace.id),
               }"
+              :disabled="isServerOffline"
             >
               <span
                 class="sidebar-icon pinned-icon"
@@ -152,6 +158,9 @@
       @confirm="performLogout"
       @close="showLogoutModal = false"
     />
+
+    <!-- Offline Modal -->
+    <OfflineModal />
   </div>
 </template>
 
@@ -160,6 +169,7 @@ import ConfirmationModal from "./ConfirmationModal.vue";
 import ServerStatusIndicator from "./ServerStatusIndicator.vue";
 import UserMenuDropdown from "./UserMenuDropdown.vue";
 import BottomNavigation from "./BottomNavigation.vue";
+import OfflineModal from "./OfflineModal.vue";
 import { auth, account, vaultspaces } from "../services/api";
 import { isMobileMode as checkMobileMode } from "../utils/mobileMode";
 
@@ -170,6 +180,7 @@ export default {
     ServerStatusIndicator,
     UserMenuDropdown,
     BottomNavigation,
+    OfflineModal,
   },
   emits: ["logout"],
   data() {
@@ -207,6 +218,13 @@ export default {
         <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     },
+    isServerOffline() {
+      // Check server status via global function
+      if (typeof window !== "undefined" && window.getServerStatus) {
+        return !window.getServerStatus();
+      }
+      return false; // Default to online if status not available
+    },
   },
   methods: {
     getIcon(iconName, size = 24) {
@@ -238,7 +256,18 @@ export default {
       this.loadPinnedVaultSpaces();
     },
     openVaultSpace(vaultspaceId) {
+      // Block navigation if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       this.$router.push(`/vaultspace/${vaultspaceId}`);
+    },
+    handleNavigation(path) {
+      // Block navigation if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
+      this.$router.push(path);
     },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
@@ -960,6 +989,21 @@ export default {
 }
 
 /* Responsive (viewport-based) */
+/* Disabled state for buttons */
+.sidebar-item:disabled,
+.sidebar-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.sidebar-item:disabled:hover,
+.sidebar-item.disabled:hover {
+  background: rgba(255, 255, 255, 0.04);
+  transform: none;
+  box-shadow: none;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     width: 70px;

@@ -6,7 +6,11 @@
       <div class="vaultspaces-section">
         <div class="vaultspaces-section-header">
           <h2>My VaultSpaces</h2>
-          <button @click="createVaultSpaceDirect" class="create-vaultspace-btn">
+          <button
+            @click="createVaultSpaceDirect"
+            class="create-vaultspace-btn"
+            :disabled="isServerOffline"
+          >
             <span v-html="getIcon('plus', 18)"></span>
             <span>Create VaultSpace</span>
           </button>
@@ -22,6 +26,7 @@
             <button
               @click="createVaultSpaceDirect"
               class="create-vaultspace-btn-empty"
+              :disabled="isServerOffline"
             >
               <span v-html="getIcon('plus', 18)"></span>
               <span>Create VaultSpace</span>
@@ -52,8 +57,13 @@
               :data-vaultspace-id="vaultspace.id"
             >
               <div
-                @click="openVaultSpace(vaultspace.id)"
+                @click="!isServerOffline && openVaultSpace(vaultspace.id)"
                 class="vaultspace-card-content"
+                :class="{ 'cursor-not-allowed': isServerOffline }"
+                :style="{
+                  opacity: isServerOffline ? 0.5 : 1,
+                  pointerEvents: isServerOffline ? 'none' : 'auto',
+                }"
               >
                 <div
                   class="vaultspace-icon"
@@ -92,6 +102,7 @@
                   @click.stop="openVaultSpaceMenu(vaultspace, $event)"
                   class="vaultspace-action-btn vaultspace-menu-btn"
                   title="More options"
+                  :disabled="isServerOffline"
                 >
                   <span v-html="getIcon('moreVertical', 18)"></span>
                 </button>
@@ -193,6 +204,15 @@ export default {
       renamingVaultSpaces: new Set(),
     };
   },
+  computed: {
+    isServerOffline() {
+      // Check server status via global function
+      if (typeof window !== "undefined" && window.getServerStatus) {
+        return !window.getServerStatus();
+      }
+      return false; // Default to online if status not available
+    },
+  },
   async mounted() {
     await this.loadVaultSpaces();
     await this.loadPinnedStatus();
@@ -243,6 +263,10 @@ export default {
       return newName;
     },
     async createVaultSpaceDirect() {
+      // Block action if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       try {
         // Generate unique name
         const uniqueName = this.generateUniqueVaultspaceName("New VaultSpace");
@@ -278,6 +302,10 @@ export default {
       }
     },
     openVaultSpace(vaultspaceId) {
+      // Block navigation if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       this.$router.push(`/vaultspace/${vaultspaceId}`);
     },
     formatDate(dateString) {
@@ -1159,5 +1187,27 @@ body.sidebar-collapsed .modal-overlay {
   padding-top: 1.5rem;
   border-top: 0px !important;
   flex-shrink: 0;
+}
+
+/* Disabled state for buttons */
+.create-vaultspace-btn:disabled,
+.create-vaultspace-btn-empty:disabled,
+.vaultspace-action-btn:disabled,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.create-vaultspace-btn:disabled:hover,
+.create-vaultspace-btn-empty:disabled:hover,
+.vaultspace-action-btn:disabled:hover,
+button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed !important;
 }
 </style>

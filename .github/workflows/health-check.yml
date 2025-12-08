@@ -30,22 +30,10 @@ jobs:
 
       - name: Clean up action-specific Docker resources
         run: |
-          echo "Cleaning up action-specific Docker resources (isolated from local machine)..."
-          # Clean up any resources from previous action runs with the project prefix pattern
-          # This ensures a completely clean state without touching local resources
           PROJECT_PREFIX="leyzen-vault-github-action-"
-          echo "Cleaning up resources with prefix pattern: ${PROJECT_PREFIX}*"
-
-          # Remove containers with the project prefix (from any previous action run)
           docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
-
-          # Remove volumes with the project prefix (from any previous action run)
           docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
-
-          # Remove networks with the project prefix (from any previous action run)
           docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
-
-          echo "✅ Cleanup complete - only action-specific resources were cleaned (local machine untouched)"
 
       - name: Install Python dependencies
         run: |
@@ -55,18 +43,9 @@ jobs:
 
       - name: Create .env file with minimal configuration
         run: |
-          # Remove any existing .env file to ensure clean configuration
-          # NOTE: This runs in an isolated container (GitHub Actions VM or act container),
-          # so it does NOT affect your local .env file. The container has its own isolated filesystem.
-          # This simulates a truly clean machine (no pre-existing configuration)
           rm -f .env
-          echo "✅ Removed any existing .env file in container (simulating clean machine - local .env is safe)"
-
-          # Generate secure secrets
           SECRET_KEY=$(openssl rand -hex 32)
           POSTGRES_PASSWORD=$(openssl rand -base64 32)
-
-          # Create .env file with minimal configuration
           cat > .env << EOF
           # Minimal configuration for health check
           LEYZEN_ENVIRONMENT=dev
@@ -85,26 +64,15 @@ jobs:
 
       - name: Generate docker-generated.yml
         run: |
-          # Remove any existing docker-generated.yml to ensure clean generation
-          # NOTE: This runs in an isolated container (GitHub Actions VM or act container),
-          # so it does NOT affect your local docker-generated.yml file. The container has its own isolated filesystem.
-          # This simulates a truly clean machine (no pre-existing files)
           rm -f docker-generated.yml
-          echo "✅ Removed any existing docker-generated.yml in container (simulating clean machine - local file is safe)"
-
-          # Generate fresh docker-generated.yml
           python src/compose/build.py
-
-          # Verify the file was created
           if [ ! -f docker-generated.yml ]; then
             echo "❌ ERROR: docker-generated.yml was not created!"
             exit 1
           fi
-          echo "✅ Generated fresh docker-generated.yml"
 
       - name: Prefix volumes, networks, and containers with project name
         run: |
-          # Prefix all volume, network, and container names with the project name to ensure complete isolation
           python3 << PYEOF
           import re
           import os
@@ -115,14 +83,12 @@ jobs:
           with open(yaml_file, 'r') as f:
               content = f.read()
 
-          # Prefix volume names (pattern: name: "leyzen-...")
           content = re.sub(
               r'(\s+name:\s+)"(leyzen-[^"]+)"',
               lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
               content
           )
 
-          # Prefix container names (pattern: container_name: "...")
           content = re.sub(
               r'(\s+container_name:\s+)"([^"]+)"',
               lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
@@ -144,14 +110,22 @@ jobs:
           max_attempts=60
           attempt=0
 
-          while [ $attempt -lt $max_attempts ]; do
+          echo "Phase 1: Waiting for critical services to become healthy..."
+          attempt=0
+          all_critical_healthy=false
+
+          while [ $attempt -lt $max_attempts ] && [ "$all_critical_healthy" != "true" ]; do
             attempt=$((attempt + 1))
             
             services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
             all_critical_healthy=true
-            has_vault_web_healthy=false
+            current_time=$(date +%s)
             
             for service in $services; do
+              if [ "$service" = "orchestrator" ]; then
+                continue
+              fi
+              
               container_name=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q $service 2>/dev/null | head -n1)
               if [ -z "$container_name" ]; then
                 if [[ ! "$service" =~ ^vault_web ]]; then
@@ -165,16 +139,23 @@ jobs:
               
               if [[ "$service" =~ ^vault_web ]]; then
                 if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
-                  has_vault_web_healthy=true
+                  if [ ! -f "/tmp/${service}_start_time.txt" ]; then
+                    echo "$current_time" > "/tmp/${service}_start_time.txt"
+                  fi
                 fi
               else
                 if [ "$status" != "running" ] || ([ "$health" != "none" ] && [ "$health" != "healthy" ]); then
                   all_critical_healthy=false
+                else
+                  if [ ! -f "/tmp/${service}_start_time.txt" ]; then
+                    echo "$current_time" > "/tmp/${service}_start_time.txt"
+                  fi
                 fi
               fi
             done
             
-            if [ "$all_critical_healthy" = "true" ] && [ "$has_vault_web_healthy" = "true" ]; then
+            if [ "$all_critical_healthy" = "true" ]; then
+              echo "✅ All critical services are healthy"
               break
             fi
             
@@ -183,61 +164,233 @@ jobs:
             fi
           done
 
-          if [ "$all_critical_healthy" != "true" ] || [ "$has_vault_web_healthy" != "true" ]; then
-            echo "❌ Some containers failed to become healthy within the timeout period"
+          if [ "$all_critical_healthy" != "true" ]; then
+            echo "❌ Some critical services failed to become healthy within the timeout period"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=50
             exit 1
           fi
 
-      - name: Verify final container status
-        run: |
-          has_vault_web_healthy=false
-          errors=0
-
-          vault_web_containers=$(docker ps -a --format "{{.ID}}" --filter "name=vault_web" 2>/dev/null || true)
-          if [ -z "$vault_web_containers" ]; then
-            vault_web_containers=$(docker ps -a --format "{{.ID}}" --filter "name=${COMPOSE_PROJECT_NAME}-vault_web" 2>/dev/null || true)
-          fi
-
-          if [ -z "$vault_web_containers" ]; then
-            errors=$((errors + 1))
-          else
-            for container_id in $vault_web_containers; do
-              status=$(docker inspect --format='{{.State.Status}}' $container_id 2>/dev/null || echo "unknown")
-              health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container_id 2>/dev/null || echo "none")
+          echo "Phase 2: Waiting for orchestrator to become healthy..."
+          attempt=0
+          orchestrator_healthy=false
+          while [ $attempt -lt $max_attempts ] && [ "$orchestrator_healthy" != "true" ]; do
+            attempt=$((attempt + 1))
+            
+            orchestrator_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q orchestrator 2>/dev/null | head -n1)
+            if [ -n "$orchestrator_container" ]; then
+              status=$(docker inspect --format='{{.State.Status}}' $orchestrator_container 2>/dev/null || echo "unknown")
+              health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $orchestrator_container 2>/dev/null || echo "none")
               
-              if [ "$status" = "running" ] && ([ "$health" = "healthy" ] || [ "$health" = "none" ]); then
-                has_vault_web_healthy=true
+              if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
+                orchestrator_healthy=true
+                echo "✅ Orchestrator is healthy"
+                echo "$(date +%s)" > /tmp/orchestrator_start_time.txt
+                break
               fi
-            done
-          fi
-
-          services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
-          for service in $services; do
-            if [[ "$service" =~ ^vault_web ]]; then
-              continue
             fi
-            container_name=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q $service 2>/dev/null | head -n1)
-            if [ -z "$container_name" ]; then
-              errors=$((errors + 1))
-              continue
-            fi
-            status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "unknown")
-            if [ "$status" != "running" ]; then
-              errors=$((errors + 1))
+            
+            if [ $attempt -lt $max_attempts ]; then
+              sleep 3
             fi
           done
 
-          if [ "$has_vault_web_healthy" != "true" ]; then
-            errors=$((errors + 1))
-          fi
-
-          if [ $errors -gt 0 ]; then
-            echo "❌ Verification failed"
+          if [ "$orchestrator_healthy" != "true" ]; then
+            echo "❌ Orchestrator failed to become healthy within the timeout period"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs orchestrator --tail=50
             exit 1
           fi
+
+      - name: Stop orchestrator after health check
+        run: |
+          echo "Orchestrator is healthy. Waiting 3 seconds before stopping..."
+          sleep 3
+
+          echo "Stopping orchestrator..."
+          docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" stop orchestrator
+
+          orchestrator_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q orchestrator 2>/dev/null | head -n1)
+          if [ -n "$orchestrator_container" ]; then
+            sleep 1
+            status=$(docker inspect --format='{{.State.Status}}' $orchestrator_container 2>/dev/null || echo "unknown")
+            if [ "$status" != "exited" ] && [ "$status" != "stopped" ]; then
+              echo "❌ Orchestrator failed to stop (status: $status)"
+              exit 1
+            fi
+          fi
+
+          echo "✅ Orchestrator stopped successfully"
+          echo "$(date +%s)" > /tmp/orchestrator_end_time.txt
+
+      - name: Verify vault_web services stability
+        run: |
+          echo "Waiting for vault_web1 and vault_web2 to become healthy..."
+
+          vault_web1_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q vault_web1 2>/dev/null | head -n1)
+          vault_web2_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q vault_web2 2>/dev/null | head -n1)
+
+          if [ -z "$vault_web1_container" ] || [ -z "$vault_web2_container" ]; then
+            echo "❌ vault_web1 or vault_web2 container not found"
+            echo "vault_web1: ${vault_web1_container:-not found}"
+            echo "vault_web2: ${vault_web2_container:-not found}"
+            exit 1
+          fi
+
+          max_attempts=20
+          attempt=0
+          vault_web_healthy=false
+
+          while [ $attempt -lt $max_attempts ] && [ "$vault_web_healthy" != "true" ]; do
+            attempt=$((attempt + 1))
+            
+            vault_web1_status=$(docker inspect --format='{{.State.Status}}' $vault_web1_container 2>/dev/null || echo "unknown")
+            vault_web1_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web1_container 2>/dev/null || echo "none")
+            vault_web2_status=$(docker inspect --format='{{.State.Status}}' $vault_web2_container 2>/dev/null || echo "unknown")
+            vault_web2_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web2_container 2>/dev/null || echo "none")
+            
+            if [ "$vault_web1_status" = "running" ] && ([ "$vault_web1_health" = "none" ] || [ "$vault_web1_health" = "healthy" ]) && \
+               [ "$vault_web2_status" = "running" ] && ([ "$vault_web2_health" = "none" ] || [ "$vault_web2_health" = "healthy" ]); then
+              vault_web_healthy=true
+              echo "✅ vault_web1 and vault_web2 are healthy"
+              current_time=$(date +%s)
+              if [ ! -f "/tmp/vault_web1_start_time.txt" ]; then
+                echo "$current_time" > /tmp/vault_web1_start_time.txt
+              fi
+              if [ ! -f "/tmp/vault_web2_start_time.txt" ]; then
+                echo "$current_time" > /tmp/vault_web2_start_time.txt
+              fi
+              break
+            fi
+            
+            if [ $attempt -lt $max_attempts ]; then
+              sleep 2
+            fi
+          done
+
+          if [ "$vault_web_healthy" != "true" ]; then
+            echo "❌ vault_web1 or vault_web2 failed to become healthy within the timeout period"
+            echo "vault_web1: status=$vault_web1_status, health=$vault_web1_health"
+            echo "vault_web2: status=$vault_web2_status, health=$vault_web2_health"
+            exit 1
+          fi
+
+          echo "Waiting 3 seconds to verify stability..."
+          sleep 3
+
+          vault_web1_status=$(docker inspect --format='{{.State.Status}}' $vault_web1_container 2>/dev/null || echo "unknown")
+          vault_web1_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web1_container 2>/dev/null || echo "none")
+          vault_web2_status=$(docker inspect --format='{{.State.Status}}' $vault_web2_container 2>/dev/null || echo "unknown")
+          vault_web2_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web2_container 2>/dev/null || echo "none")
+
+          if [ "$vault_web1_status" != "running" ] || ([ "$vault_web1_health" != "none" ] && [ "$vault_web1_health" != "healthy" ]); then
+            echo "❌ vault_web1 is no longer healthy after 3 seconds (status: $vault_web1_status, health: $vault_web1_health)"
+            exit 1
+          fi
+
+          if [ "$vault_web2_status" != "running" ] || ([ "$vault_web2_health" != "none" ] && [ "$vault_web2_health" != "healthy" ]); then
+            echo "❌ vault_web2 is no longer healthy after 3 seconds (status: $vault_web2_status, health: $vault_web2_health)"
+            exit 1
+          fi
+
+          echo "✅ vault_web1 and vault_web2 remained healthy for 3 seconds after orchestrator was stopped"
+          end_time=$(date +%s)
+          echo "$end_time" > /tmp/vault_web1_end_time.txt
+          echo "$end_time" > /tmp/vault_web2_end_time.txt
+
+          services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
+          for service in $services; do
+            if [ "$service" != "orchestrator" ] && [[ ! "$service" =~ ^vault_web ]]; then
+              echo "$end_time" > "/tmp/${service}_end_time.txt"
+            fi
+          done
+
+      - name: Health check duration summary
+        if: always()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 HEALTH CHECK DURATION SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          printf "%-20s %-15s\n" "Container" "Duration"
+          echo "────────────────────────────────────────────────────"
+
+          services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services 2>/dev/null || echo "")
+          displayed_services=""
+
+          for service in $services; do
+            start_file="/tmp/${service}_start_time.txt"
+            end_file="/tmp/${service}_end_time.txt"
+            
+            if [ -f "$start_file" ] && [ -f "$end_file" ]; then
+              start_time=$(cat "$start_file")
+              end_time=$(cat "$end_file")
+              duration=$((end_time - start_time))
+              
+              if [ $duration -ge 0 ]; then
+                minutes=$((duration / 60))
+                seconds=$((duration % 60))
+                
+                if [ $minutes -gt 0 ]; then
+                  duration_str="${minutes}m ${seconds}s"
+                else
+                  duration_str="${seconds}s"
+                fi
+                
+                printf "%-20s %-15s\n" "$service" "$duration_str"
+                displayed_services="${displayed_services} ${service}"
+              else
+                printf "%-20s %-15s\n" "$service" "N/A (invalid)"
+                displayed_services="${displayed_services} ${service}"
+              fi
+            elif [ -f "$start_file" ]; then
+              printf "%-20s %-15s\n" "$service" "N/A (no end time)"
+              displayed_services="${displayed_services} ${service}"
+            elif [ -f "$end_file" ]; then
+              printf "%-20s %-15s\n" "$service" "N/A (no start time)"
+              displayed_services="${displayed_services} ${service}"
+            fi
+          done
+
+          for vault_service in vault_web1 vault_web2; do
+            if echo "$displayed_services" | grep -q " ${vault_service} "; then
+              continue
+            fi
+            
+            start_file="/tmp/${vault_service}_start_time.txt"
+            end_file="/tmp/${vault_service}_end_time.txt"
+            
+            if [ -f "$start_file" ] && [ -f "$end_file" ]; then
+              start_time=$(cat "$start_file")
+              end_time=$(cat "$end_file")
+              duration=$((end_time - start_time))
+              
+              if [ $duration -ge 0 ]; then
+                minutes=$((duration / 60))
+                seconds=$((duration % 60))
+                
+                if [ $minutes -gt 0 ]; then
+                  duration_str="${minutes}m ${seconds}s"
+                else
+                  duration_str="${seconds}s"
+                fi
+                
+                printf "%-20s %-15s\n" "$vault_service" "$duration_str"
+              else
+                printf "%-20s %-15s\n" "$vault_service" "N/A (invalid duration)"
+              fi
+            elif [ -f "$start_file" ]; then
+              printf "%-20s %-15s\n" "$vault_service" "N/A (no end time)"
+            elif [ -f "$end_file" ]; then
+              printf "%-20s %-15s\n" "$vault_service" "N/A (no start time)"
+            else
+              printf "%-20s %-15s\n" "$vault_service" "N/A (no timestamps)"
+            fi
+          done
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
 
       - name: Cleanup
         if: always()

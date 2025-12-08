@@ -5,16 +5,28 @@
       class="view-header"
     >
       <div class="header-top">
-        <button @click="$router.push('/dashboard')" class="btn btn-back">
+        <button
+          @click="$router.push('/dashboard')"
+          class="btn btn-back"
+          :disabled="isServerOffline"
+        >
           ← Back
         </button>
         <h1>{{ vaultspace?.name || "Loading..." }}</h1>
       </div>
       <div class="header-actions">
-        <button @click="createFolderDirect" class="btn btn-primary">
+        <button
+          @click="createFolderDirect"
+          class="btn btn-primary"
+          :disabled="isServerOffline"
+        >
           New Folder
         </button>
-        <button @click="handleUploadClick" class="btn btn-primary">
+        <button
+          @click="handleUploadClick"
+          class="btn btn-primary"
+          :disabled="isServerOffline"
+        >
           Upload File
         </button>
       </div>
@@ -39,7 +51,11 @@
         v-if="breadcrumbs.length > 0 || currentParentId"
         class="breadcrumbs glass"
       >
-        <button @click="navigateToFolder(null)" class="breadcrumb-link">
+        <button
+          @click="navigateToFolder(null)"
+          class="breadcrumb-link"
+          :disabled="isServerOffline"
+        >
           {{ vaultspace?.name || "Home" }}
         </button>
         <template v-if="breadcrumbs.length > 0">
@@ -49,6 +65,7 @@
               v-if="index < breadcrumbs.length - 1"
               @click="navigateToFolder(crumb.id)"
               class="breadcrumb-link"
+              :disabled="isServerOffline"
             >
               {{ crumb.name }}
             </button>
@@ -73,10 +90,18 @@
         >
           <p>No files or folders in this location</p>
           <div class="empty-actions">
-            <button @click="createFolderDirect" class="btn btn-primary">
+            <button
+              @click="createFolderDirect"
+              class="btn btn-primary"
+              :disabled="isServerOffline"
+            >
               Create Folder
             </button>
-            <button @click="handleUploadClick" class="btn btn-primary">
+            <button
+              @click="handleUploadClick"
+              class="btn btn-primary"
+              :disabled="isServerOffline"
+            >
               Upload File
             </button>
           </div>
@@ -512,6 +537,15 @@ export default {
       pendingRenameNewName: null,
     };
   },
+  computed: {
+    isServerOffline() {
+      // Check server status via global function
+      if (typeof window !== "undefined" && window.getServerStatus) {
+        return !window.getServerStatus();
+      }
+      return false; // Default to online if status not available
+    },
+  },
   created() {
     // Create debounced version of loadFiles to preserve 'this' context
     this.debouncedLoadFiles = debounce((parentId = null) => {
@@ -679,6 +713,13 @@ export default {
     }
   },
   computed: {
+    isServerOffline() {
+      // Check server status via global function
+      if (typeof window !== "undefined" && window.getServerStatus) {
+        return !window.getServerStatus();
+      }
+      return false; // Default to online if status not available
+    },
     allFolders() {
       // Return all folders for move destination selection
       return this.folders;
@@ -1185,6 +1226,10 @@ export default {
     },
 
     async navigateToFolder(folderId) {
+      // Block navigation if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       // Deselect all items when changing folder
       this.clearSelection();
       if (window.selectionManager) {
@@ -1611,6 +1656,10 @@ export default {
       }
     },
     async createFolderDirect() {
+      // Block action if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       // Check if master key is required
       if (this.isMasterKeyRequired) {
         this.showAlert({
@@ -1833,6 +1882,10 @@ export default {
     },
 
     async handleUpload() {
+      // Block action if server is offline
+      if (this.isServerOffline) {
+        return;
+      }
       this.uploadError = null;
 
       // Check if master key is required
@@ -5483,5 +5536,30 @@ body.sidebar-collapsed .modal-overlay {
     width: 100%;
     max-width: 280px;
   }
+}
+
+/* Disabled state for buttons */
+.btn:disabled,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn:disabled:hover,
+button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+  background: inherit;
+}
+
+.breadcrumb-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.breadcrumb-link:disabled:hover {
+  text-decoration: none;
 }
 </style>

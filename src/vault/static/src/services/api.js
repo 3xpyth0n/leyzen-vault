@@ -477,6 +477,14 @@ export const auth = {
    * @returns {Promise<object>} Authentication configuration object with allow_signup and password_authentication_enabled
    */
   async getAuthConfig() {
+    // Check if server is offline
+    if (typeof window !== "undefined" && window.getServerStatus) {
+      const isServerOnline = window.getServerStatus();
+      if (!isServerOnline) {
+        throw new Error("Network error: Server is offline");
+      }
+    }
+
     try {
       const response = await fetch("/api/auth/config", {
         method: "GET",
@@ -522,6 +530,10 @@ export const auth = {
     if (cached !== null) {
       return cached;
     }
+
+    // Check if server is offline (but allow this check to proceed as it's needed for setup page)
+    // This endpoint is critical for determining if setup is needed, so we allow it even when offline
+    // The timeout will handle the actual network failure
 
     try {
       // Add timeout to prevent hanging on network errors
@@ -1348,6 +1360,20 @@ export const files = {
    * @returns {object} Object with `promise` and `cancel` function
    */
   upload(fileData, onProgress = null) {
+    // Check if server is offline
+    if (typeof window !== "undefined" && window.getServerStatus) {
+      const isServerOnline = window.getServerStatus();
+      if (!isServerOnline) {
+        // Return a rejected promise immediately
+        return {
+          promise: Promise.reject(
+            new Error("Network error: Server is offline"),
+          ),
+          cancel: () => {},
+        };
+      }
+    }
+
     const formData = new FormData();
     // Pass the original filename when appending the blob to FormData
     const fileName = fileData.originalName || "unnamed";
@@ -1646,6 +1672,14 @@ export const files = {
    * @returns {Promise<ArrayBuffer>} Encrypted file data
    */
   async download(fileId, vaultspaceId, onProgress = null) {
+    // Check if server is offline
+    if (typeof window !== "undefined" && window.getServerStatus) {
+      const isServerOnline = window.getServerStatus();
+      if (!isServerOnline) {
+        throw new Error("Network error: Server is offline");
+      }
+    }
+
     const params = new URLSearchParams({ vaultspace_id: vaultspaceId });
     const token = getToken();
     const url = `${API_BASE_URL}/v2/files/${fileId}/download?${params.toString()}`;
@@ -1854,6 +1888,23 @@ export const files = {
     sessionData = null,
     onProgress = null,
   ) {
+    // Check if server is offline
+    if (typeof window !== "undefined" && window.getServerStatus) {
+      const isServerOnline = window.getServerStatus();
+      if (!isServerOnline) {
+        // Return a rejected promise immediately
+        let rejectPromise;
+        const promise = new Promise((resolve, reject) => {
+          rejectPromise = reject;
+        });
+        rejectPromise(new Error("Network error: Server is offline"));
+        return {
+          promise,
+          cancel: () => {},
+        };
+      }
+    }
+
     const formData = new FormData();
     formData.append("session_id", sessionId);
     formData.append("chunk_index", chunkIndex.toString());

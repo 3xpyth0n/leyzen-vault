@@ -254,7 +254,7 @@ If you already have a working installation from a previous version, you can safe
 - **VaultSpaces**: Workspace system with personal spaces. Each VaultSpace has its own encryption keys.
 - **Advanced Sharing**: Enhanced sharing system with link expiration, download limits, and password protection.
 - **Folders & Hierarchy**: Full folder structure support with nested folders and hierarchical organization.
-- **Search**: Encrypted search functionality with searchable encryption for secure, privacy-preserving file search.
+- **Search**: File and folder search functionality with pattern matching across all subfolders.
 - **Trash System**: File deletion with trash/recycle bin functionality for recovery.
 - **Device Management**: Device registration and management for enhanced security.
 - **User Invitations**: Admin-controlled user invitation system with email verification.
@@ -278,7 +278,6 @@ If you already have a working installation from a previous version, you can safe
 - **JWT Authentication**: JWT-based authentication for API endpoints with token refresh and blacklist support.
 - **Master Key Derivation**: PBKDF2-based master key derivation with per-user salts for enhanced security.
 - **VaultSpace Key Management**: Hierarchical key management with VaultSpace keys and file keys, all encrypted with user master keys.
-- **Searchable Encryption**: Privacy-preserving encrypted search without exposing file contents.
 - **Enhanced Rate Limiting**: Improved rate limiting with IP-based tracking and configurable limits.
 - **Trusted Types**: Content Security Policy enhancements with Trusted Types for XSS prevention.
 - **Email Service**: SMTP integration for email notifications, verification, and invitations.

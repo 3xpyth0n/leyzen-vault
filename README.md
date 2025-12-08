@@ -75,7 +75,7 @@ Each service is isolated, documented, reproducible, and observable — offering 
 
 ### 5. Enterprise features without vendor lock-in
 
-SSO, encrypted search, audit logs, admin dashboard, device management, and REST API v2 — without subscriptions or proprietary dependencies.
+SSO, audit logs, admin dashboard, device management, and REST API v2 — without subscriptions or proprietary dependencies.
 
 ## Version 2.3.0 Highlights
 
@@ -103,7 +103,6 @@ Creator of **Leyzen Vault**, exploring real-world implementations of MTD concept
 
 - SSO (SAML, OAuth2, OIDC)
 - REST API v2
-- Encrypted search
 - Admin dashboard
 
 ### Security & Privacy

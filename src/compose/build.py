@@ -135,9 +135,15 @@ def build_postgres_service(env: Mapping[str, str]) -> dict:
             "POSTGRES_HOST_AUTH_METHOD": "scram-sha-256",
         },
         "expose": [f"{postgres_port}"],
-        "volumes": [f"{postgres_data_volume}:/var/lib/postgresql/data"],
+        "volumes": [
+            f"{postgres_data_volume}:/var/lib/postgresql/data",
+            "./infra/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro",
+        ],
         "healthcheck": {
-            "test": ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leyzen} || exit 1"],
+            "test": [
+                "CMD-SHELL",
+                "pg_isready -U ${POSTGRES_USER:-leyzen} -d postgres || exit 1",
+            ],
             "interval": "2s",
             "timeout": "5s",
             "retries": 10,
