@@ -176,6 +176,64 @@ class FilePromotionService:
                             f"[PROMOTION] Successfully promoted file {file_id} to persistent storage at {target_file_path} "
                             f"(size: {target_file_path.stat().st_size} bytes)"
                         )
+
+                        # Hook: Sync to external storage if in hybrid mode
+                        try:
+                            from flask import current_app
+
+                            # Check if external storage is enabled and in hybrid mode
+                            secret_key = current_app.config.get("SECRET_KEY", "")
+                            if secret_key:
+                                from vault.services.external_storage_config_service import (
+                                    ExternalStorageConfigService,
+                                )
+
+                                if ExternalStorageConfigService.is_enabled(
+                                    secret_key, current_app
+                                ):
+                                    storage_mode = (
+                                        ExternalStorageConfigService.get_storage_mode(
+                                            secret_key, current_app
+                                        )
+                                    )
+                                    if storage_mode == "hybrid":
+                                        # Sync to S3 in background (non-blocking)
+                                        try:
+                                            from vault.services.external_storage_service import (
+                                                ExternalStorageService,
+                                            )
+                                            from vault.services.external_storage_sync_service import (
+                                                ExternalStorageSyncService,
+                                            )
+
+                                            external_storage = ExternalStorageService(
+                                                secret_key, current_app
+                                            )
+                                            # Read file data for sync
+                                            file_data = target_file_path.read_bytes()
+                                            # Upload to S3 (non-blocking, log errors but don't fail)
+                                            try:
+                                                external_storage.save_file(
+                                                    file_id, file_data
+                                                )
+                                                self._logger.info(
+                                                    f"[PROMOTION] Synced file {file_id} to external storage"
+                                                )
+                                            except Exception as sync_error:
+                                                self._logger.warning(
+                                                    f"[PROMOTION] Failed to sync file {file_id} to external storage: {sync_error}"
+                                                )
+                                        except Exception as hook_error:
+                                            # Don't fail promotion if sync fails
+                                            self._logger.warning(
+                                                f"[PROMOTION] External storage sync hook failed: {hook_error}"
+                                            )
+                        except Exception as e:
+                            # Don't fail promotion if hook fails
+                            self._logger.warning(
+                                f"[PROMOTION] External storage hook error: {e}"
+                            )
+
                         return True, None
                     else:
                         # File became invalid during promotion - delete it

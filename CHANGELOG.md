@@ -9,6 +9,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **S3-Compatible External Storage Integration**: Leyzen Vault now supports seamless integration with S3-compatible storage services, including AWS S3, MinIO, and other S3-compatible providers.
+  - Choose between local-only, S3-only, or hybrid storage modes to match your infrastructure needs.
+  - Files are automatically synchronized bidirectionally between local storage and S3, ensuring data redundancy and enabling complete cloud-based deployments.
+  - All S3 credentials are securely encrypted and stored in the database, with an intuitive admin interface for easy configuration and monitoring.
+
 - **PostgreSQL Multi-Role Security System**: Implemented a multi-role PostgreSQL security architecture with separate roles for different application components, each with minimal required privileges. Role passwords are dynamically generated at startup, encrypted, and stored securely. Includes automatic password rotation support.
 - **ZIP File Preview**: Preview support for ZIP files.
 - **Mobile Mode**: Complete mobile-optimized interface with bottom navigation bar, responsive layouts, and manual mobile/desktop mode toggle. All screens are now fully adapted for mobile devices with single-column layouts, optimized touch targets, and improved usability on small screens.

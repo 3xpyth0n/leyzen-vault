@@ -57,6 +57,14 @@ function flaskStaticPlugin() {
       ) {
         return { id, external: true };
       }
+      // Mark static icon files as external to prevent bundling
+      if (
+        id.includes("/static/icons/") ||
+        id.includes("s3-logo.png") ||
+        (id.endsWith(".png") && id.includes("/icons/"))
+      ) {
+        return { id, external: true };
+      }
       return null;
     },
   };

@@ -12,7 +12,7 @@
       type="button"
       class="custom-select-trigger"
       :class="triggerClass"
-      @click="toggleDropdown"
+      @click.stop="toggleDropdown"
       @keydown.enter.prevent="toggleDropdown"
       @keydown.space.prevent="toggleDropdown"
       @keydown.escape="closeDropdown"

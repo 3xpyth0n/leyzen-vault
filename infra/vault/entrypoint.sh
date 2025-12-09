@@ -32,12 +32,30 @@ if [ "$(id -u)" = "0" ]; then
   fi
 fi
 
-# Synchronize from source to local storage if source exists
+# Check storage mode early to determine if synchronization is needed
+STORAGE_MODE=""
+if [ -f "/app/infra/vault/check_storage_mode.py" ] && command -v python3 >/dev/null 2>&1; then
+  # Try to get storage mode from database using dedicated script
+  # Capture stdout (mode) and stderr (errors) separately
+  SCRIPT_OUTPUT=$(python3 /app/infra/vault/check_storage_mode.py 2>&1)
+  STORAGE_MODE=$(echo "$SCRIPT_OUTPUT" | grep -v "^\[check_storage_mode\]" | head -n 1 || echo "")
+  # Log any errors from the script
+  SCRIPT_ERRORS=$(echo "$SCRIPT_OUTPUT" | grep "^\[check_storage_mode\]" || true)
+  if [ -n "$SCRIPT_ERRORS" ]; then
+    # Only log if it's not a connection error (database may not be ready yet)
+    if ! echo "$SCRIPT_ERRORS" | grep -q "Failed to check storage mode after"; then
+      log "Storage mode check: $SCRIPT_ERRORS"
+    fi
+  fi
+fi
+
+# Synchronize from source to local storage if source exists and not in S3-only mode
 # Note: This will run as root if we're root, but files will be owned by vault user
 # after the chown above. The sync happens before dropping privileges so we have
 # the necessary permissions.
+# In S3-only mode, skip synchronization as files are stored exclusively in S3.
 if [ -d "/data-source" ]; then
-  if [ "$(ls -A /data-source 2>/dev/null)" ]; then
+  if [ "$STORAGE_MODE" != "s3" ] && [ "$(ls -A /data-source 2>/dev/null)" ]; then
     log "Synchronizing from source to local storage..."
     # Count files before sync for logging
     source_file_count=$(find /data-source -type f 2>/dev/null | wc -l)
@@ -58,7 +76,12 @@ if [ -d "/data-source" ]; then
         log "Warning: Failed to change ownership of synced files"
       }
     fi
-  else
+  elif [ "$STORAGE_MODE" = "s3" ]; then
+    # S3-only mode is enabled: always display message regardless of volume contents
+    log "S3-only mode is enabled. No files will be written to local disk."
+    log "Note: You can modify this setting from the admin interface, Integrations tab."
+  elif [ ! "$(ls -A /data-source 2>/dev/null)" ]; then
+    # Empty directory in local/hybrid mode
     log "Source directory /data-source exists but is empty"
     log "This is normal on first startup or if no files have been promoted yet"
   fi

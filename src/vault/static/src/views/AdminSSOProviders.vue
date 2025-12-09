@@ -2163,6 +2163,10 @@ body.mobile-mode .modal-overlay {
 }
 
 @media (max-width: 768px) {
+  .admin-sso-providers {
+    padding: 0rem;
+  }
+
   .button-group {
     flex-direction: column;
     width: 100%;

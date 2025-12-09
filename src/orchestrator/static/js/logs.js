@@ -1,6 +1,3 @@
-// Debug: Check if script is loaded
-console.log("logs.js: Script loaded");
-
 // Elements - wait for DOM
 let pre,
   refreshBtn,
@@ -32,7 +29,6 @@ function initElements() {
 
 // Initialize elements immediately
 initElements();
-console.log("logs.js: Elements initialized, logArea:", logArea);
 
 // State
 let allLogs = pre && pre.textContent ? pre.textContent : "";
@@ -68,11 +64,9 @@ function updateLogAreaPadding(hasLogs) {
   if (hasLogs) {
     area.style.padding = "0px";
     area.classList.add("has-logs");
-    console.log("Added has-logs class, padding set to 0");
   } else {
     area.style.padding = "3rem";
     area.classList.remove("has-logs");
-    console.log("Removed has-logs class, padding set to 3rem");
   }
 }
 
@@ -146,7 +140,6 @@ function displayLogs(scrollBottom = false) {
     if (area) {
       area.style.setProperty("padding", "3rem", "important");
       area.classList.remove("has-logs");
-      console.log("Applied padding 3rem to log-area");
     } else {
       console.error("Could not find .log-area element!");
     }
@@ -165,7 +158,6 @@ function displayLogs(scrollBottom = false) {
   if (area) {
     area.style.setProperty("padding", "0px", "important");
     area.classList.add("has-logs");
-    console.log("Applied padding 0px to log-area");
   } else {
     console.error("Could not find .log-area element!");
   }
@@ -309,15 +301,10 @@ if (document.readyState === "loading") {
   init();
 }
 
-// Test: Force update padding after a short delay to ensure DOM is ready
 setTimeout(() => {
   const testArea = document.querySelector(".log-area");
   if (testArea) {
-    console.log("Test: Found .log-area element", testArea);
     const hasContent = allLogs && allLogs.trim().length > 0;
-    console.log("Test: Has content?", hasContent);
     updateLogAreaPadding(hasContent);
-  } else {
-    console.error("Test: Could not find .log-area element");
   }
 }, 1000);

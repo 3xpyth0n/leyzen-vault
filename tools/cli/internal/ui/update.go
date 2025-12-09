@@ -19,10 +19,11 @@ type statusMsg struct {
 type statusTickMsg struct{}
 
 type actionProgressMsg struct {
-	Action ActionType
-	Line   string
-	Err    error
-	Done   bool
+	Action  ActionType
+	Line    string
+	LineRaw string // Raw line before cleaning/filtering
+	Err     error
+	Done    bool
 }
 
 type successTimeoutMsg struct{}
@@ -104,7 +105,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case configListMsg:
 		if msg.err != nil {
-			m.appendLog(fmt.Sprintf("❌ failed to load config: %v", msg.err))
+			errMsg := fmt.Sprintf("❌ failed to load config: %v", msg.err)
+			m.appendLog(errMsg, errMsg)
 			return m, nil
 		}
 		m.configPairs = msg.pairs
@@ -124,6 +126,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.viewState == ViewLogs || m.viewState == ViewAction || m.viewState == ViewConfig {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
+		// Save scroll position after viewport update in logs/action views (e.g., mouse wheel)
+		// Skip saving for KeyMsg as it's handled separately in handleKey
+		if (m.viewState == ViewLogs || m.viewState == ViewAction) {
+			_, isKeyMsg := msg.(tea.KeyMsg)
+			if !isKeyMsg {
+				if m.logModeRaw {
+					m.viewportYOffsetRaw = m.viewport.YOffset
+				} else {
+					m.viewportYOffsetNormal = m.viewport.YOffset
+				}
+			}
+		}
 		return m, cmd
 	}
 
@@ -156,8 +170,11 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		if viewportHeight < 6 {
 			viewportHeight = 6
 		}
+	} else if (m.viewState == ViewLogs || m.viewState == ViewAction) && m.logModeRaw {
+		// In raw mode, viewport takes full screen
+		viewportHeight = m.height
 	} else {
-		// For logs and action views, calculate available space
+		// For logs and action views in normal mode, calculate available space
 		// header + footer + padding
 		viewportHeight = m.height - 8
 		if viewportHeight < 6 {
@@ -166,11 +183,17 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if viewportHeight > 0 {
-		m.viewport.Width = m.width - 6
-		if m.viewport.Width < 20 {
-			m.viewport.Width = 20
+		if (m.viewState == ViewLogs || m.viewState == ViewAction) && m.logModeRaw {
+			// In raw mode, viewport takes full width and height
+			m.viewport.Width = m.width
+			m.viewport.Height = viewportHeight
+		} else {
+			m.viewport.Width = m.width - 6
+			if m.viewport.Width < 20 {
+				m.viewport.Width = 20
+			}
+			m.viewport.Height = viewportHeight
 		}
-		m.viewport.Height = viewportHeight
 	}
 
 	// Update container list size if in container selection view
@@ -190,7 +213,8 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleStatus(msg statusMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.appendLog(fmt.Sprintf("❌ status refresh failed: %v", msg.err))
+		errMsg := fmt.Sprintf("❌ status refresh failed: %v", msg.err)
+		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}
 	m.statuses = msg.statuses
@@ -304,11 +328,73 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, fetchComposeServicesCmd(m.envFile, ActionStart)
 		}
 		return m, nil
+	case "v":
+		// Toggle raw log view mode in logs/action views
+		if m.viewState == ViewLogs || m.viewState == ViewAction {
+			// Save current scroll position before switching
+			if m.logModeRaw {
+				m.viewportYOffsetRaw = m.viewport.YOffset
+			} else {
+				m.viewportYOffsetNormal = m.viewport.YOffset
+			}
+			
+			// Toggle mode
+			m.logModeRaw = !m.logModeRaw
+			
+			// Update content and viewport size based on new mode
+			var logsToDisplay []string
+			if m.logModeRaw {
+				logsToDisplay = m.logsRaw
+				// In raw mode, viewport takes full screen
+				m.viewport.Width = m.width
+				m.viewport.Height = m.height
+			} else {
+				logsToDisplay = m.logs
+				// In normal mode, calculate viewport size with header/footer
+				viewportHeight := m.height - 8
+				if viewportHeight < 6 {
+					viewportHeight = 6
+				}
+				m.viewport.Height = viewportHeight
+				m.viewport.Width = m.width - 6
+				if m.viewport.Width < 20 {
+					m.viewport.Width = 20
+				}
+			}
+			
+			m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
+			
+			// Restore saved scroll position for the new mode
+			if m.logModeRaw {
+				if m.viewportYOffsetRaw > 0 {
+					m.viewport.SetYOffset(m.viewportYOffsetRaw)
+				} else {
+					m.viewport.GotoBottom()
+					m.viewportYOffsetRaw = m.viewport.YOffset
+				}
+			} else {
+				if m.viewportYOffsetNormal > 0 {
+					m.viewport.SetYOffset(m.viewportYOffsetNormal)
+				} else {
+					m.viewport.GotoBottom()
+					m.viewportYOffsetNormal = m.viewport.YOffset
+				}
+			}
+		}
+		return m, nil
 	case "up", "down", "pgup", "pgdn", "home", "end":
 		// Navigation in viewport for logs/action/config views
 		if m.viewState == ViewLogs || m.viewState == ViewAction || m.viewState == ViewConfig {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			// Save scroll position after manual navigation in logs/action views
+			if m.viewState == ViewLogs || m.viewState == ViewAction {
+				if m.logModeRaw {
+					m.viewportYOffsetRaw = m.viewport.YOffset
+				} else {
+					m.viewportYOffsetNormal = m.viewport.YOffset
+				}
+			}
 			return m, cmd
 		}
 		return m, nil
@@ -416,7 +502,8 @@ func (m *Model) startActionWithServices(action ActionType, services []string) (t
 		return m, nil
 	}
 	if m.actionRunning {
-		m.appendLog("⚠️ another action is currently running; please wait...")
+		warnMsg := "⚠️ another action is currently running; please wait..."
+		m.appendLog(warnMsg, warnMsg)
 		return m, nil
 	}
 
@@ -428,7 +515,8 @@ func (m *Model) startActionWithServices(action ActionType, services []string) (t
 
 	stream, err := m.runner.RunWithServices(action, services)
 	if err != nil {
-		m.appendLog(fmt.Sprintf("❌ failed to start %s: %v", action, err))
+		errMsg := fmt.Sprintf("❌ failed to start %s: %v", action, err)
+		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}
 
@@ -436,7 +524,8 @@ func (m *Model) startActionWithServices(action ActionType, services []string) (t
 	m.action = action
 	m.actionRunning = true
 	m.switchToAction()
-	m.appendLog(fmt.Sprintf("🚀 starting %s...", action))
+	startMsg := fmt.Sprintf("🚀 starting %s...", action)
+	m.appendLog(startMsg, startMsg)
 
 	return m, tea.Batch(waitForActionProgress(stream), m.spinner.Tick)
 }
@@ -448,12 +537,18 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 	}
 
 	if msg.Line != "" {
-		m.appendLog(msg.Line)
+		// Use raw line if available, otherwise use cleaned line
+		lineRaw := msg.LineRaw
+		if lineRaw == "" {
+			lineRaw = msg.Line
+		}
+		m.appendLog(msg.Line, lineRaw)
 	}
 
 	if msg.Err != nil {
 		actionName := string(msg.Action)
-		m.appendLog(fmt.Sprintf("❌ %s failed: %v", actionName, msg.Err))
+		errMsg := fmt.Sprintf("❌ %s failed: %v", actionName, msg.Err)
+		m.appendLog(errMsg, errMsg)
 		m.actionRunning = false
 		m.action = ActionNone
 		m.actionStream = nil
@@ -467,7 +562,8 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 
 	if msg.Done {
 		actionName := string(msg.Action)
-		m.appendLog(fmt.Sprintf("✅ %s completed", actionName))
+		doneMsg := fmt.Sprintf("✅ %s completed", actionName)
+		m.appendLog(doneMsg, doneMsg)
 		m.actionRunning = false
 		m.action = ActionNone
 		m.actionStream = nil
@@ -694,7 +790,8 @@ func (m *Model) handleWizardSave(msg wizardSaveMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleComposeServices(msg composeServicesMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.appendLog(fmt.Sprintf("❌ failed to load services: %v", msg.err))
+		errMsg := fmt.Sprintf("❌ failed to load services: %v", msg.err)
+		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}
 	m.initContainerSelection(msg.services, msg.action)

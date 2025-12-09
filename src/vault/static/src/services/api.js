@@ -338,11 +338,10 @@ export async function apiRequest(endpoint, options = {}) {
       credentials: "same-origin", // Include cookies (session) in requests
     });
   } catch (networkError) {
-    // Network errors (timeout, connection refused, etc.) during rotations
-    // Don't disconnect user - these are temporary
     if (isNetworkError(networkError)) {
-      // Re-throw as a network error that callers can handle
-      // Don't disconnect user for network errors
+      if (typeof window !== "undefined" && window.notifyServerError) {
+        window.notifyServerError();
+      }
       throw new Error(`Network error: ${networkError.message}`);
     }
     throw networkError;
@@ -457,10 +456,11 @@ export async function apiRequest(endpoint, options = {}) {
     return response;
   }
 
-  // Check for 503 (Service Unavailable) - database or server temporarily unavailable
-  // Don't disconnect user for temporary server issues
-  if (response.status === 503) {
-    // Return response - caller can handle it, but don't disconnect
+  const networkErrorStatusCodes = [500, 502, 503, 504];
+  if (networkErrorStatusCodes.includes(response.status)) {
+    if (typeof window !== "undefined" && window.notifyServerError) {
+      window.notifyServerError();
+    }
     return response;
   }
 
@@ -2695,6 +2695,99 @@ export const admin = {
     }
     const data = await response.json();
     return data.providers || [];
+  },
+
+  /**
+   * Get external storage S3 configuration.
+   *
+   * @returns {Promise<object>} S3 configuration (without sensitive data)
+   */
+  async getExternalStorageConfig() {
+    const response = await apiRequest("/admin/external-storage/config");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to get external storage config",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
+   * Save external storage S3 configuration.
+   *
+   * @param {object} config - S3 configuration
+   * @returns {Promise<object>} Success response
+   */
+  async saveExternalStorageConfig(config) {
+    const response = await apiRequest("/admin/external-storage/config", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to save external storage config",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
+   * Test external storage S3 connection.
+   *
+   * @param {object} config - S3 configuration to test
+   * @returns {Promise<object>} Test result
+   */
+  async testExternalStorageConnection(config) {
+    const response = await apiRequest("/admin/external-storage/test", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to test external storage connection",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
+   * Sync all files to external storage (hybrid or s3-only mode).
+   *
+   * @param {string} syncMode - Sync mode: "bidirectional" (default), "to_s3", or "from_s3"
+   * @returns {Promise<object>} Sync results
+   */
+  async syncExternalStorage(syncMode = "bidirectional") {
+    const response = await apiRequest("/v2/external-storage/sync", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sync_mode: syncMode }),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to sync external storage");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Get external storage status (including sync status).
+   *
+   * @returns {Promise<object>} Status information
+   */
+  async getExternalStorageStatus() {
+    const response = await apiRequest("/v2/external-storage/status");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to get external storage status",
+      );
+    }
+    return await response.json();
   },
 
   /**

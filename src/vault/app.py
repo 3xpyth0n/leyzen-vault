@@ -147,6 +147,9 @@ from .blueprints.sharing_api import sharing_api_bp  # noqa: E402
 from .blueprints.sso_api import sso_api_bp  # noqa: E402
 from .blueprints.thumbnail_api import thumbnail_api_bp  # noqa: E402
 from .blueprints.trash_api import trash_api_bp  # noqa: E402
+from .blueprints.external_storage_api import (
+    external_storage_api_bp,
+)  # noqa: E402
 from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
 from .config import (
     VaultSettings,
@@ -1253,9 +1256,40 @@ def create_app(
     # Note: source_dir should point to the parent directory, FileStorage will handle /files subdirectory
     source_dir = Path("/data-source") if Path("/data-source").exists() else None
 
+    # Check storage mode to determine if local storage is needed
+    storage_mode = "local"
+    secret_key = env_values.get("SECRET_KEY", "")
+    if secret_key:
+        try:
+            from vault.services.external_storage_config_service import (
+                ExternalStorageConfigService,
+            )
+
+            # We need app context to check storage mode, but we can't use current_app here
+            # So we'll check it later after app is created, but we can prepare the check
+            storage_mode = "local"  # Will be updated after app context is available
+        except Exception:
+            pass
+
     # Initialize storage with primary directory (tmpfs) and source directory (persistent)
     # FileStorage will check source_dir/files if file is not found in storage_dir/files
     storage = FileStorage(storage_dir, source_dir=source_dir)
+
+    # Check if S3-only mode is enabled and log appropriate message
+    # This check needs to happen after app is created but before logger is fully initialized
+    # We'll do a preliminary check here and log later after app context is available
+    _check_s3_only_mode = False
+    if secret_key:
+        try:
+            # Try to check storage mode (may fail if DB not ready, that's OK)
+            from vault.services.external_storage_config_service import (
+                ExternalStorageConfigService,
+            )
+
+            # We can't use app here yet, so we'll check later
+            _check_s3_only_mode = True
+        except Exception:
+            pass
 
     # Initialize IP enrichment service (uses free public APIs, no configuration needed)
     from vault.services.ip_enrichment import IPEnrichmentService
@@ -1523,6 +1557,67 @@ def create_app(
     )
     periodic_promotion_thread.start()
 
+    # Initialize external storage worker and metrics
+    try:
+        from vault.services.external_storage_worker import ExternalStorageWorker
+        from vault.services.external_storage_config_service import (
+            ExternalStorageConfigService,
+        )
+        from vault.services.external_storage_metrics import (
+            ExternalStorageMetricsService,
+        )
+
+        secret_key = app.config.get("SECRET_KEY", "")
+        if secret_key:
+            # Initialize metrics service
+            metrics_service = ExternalStorageMetricsService()
+            app.config["EXTERNAL_STORAGE_METRICS"] = metrics_service
+
+            external_storage_worker = ExternalStorageWorker(
+                secret_key=secret_key, app=app, local_storage=storage
+            )
+            app.config["EXTERNAL_STORAGE_WORKER"] = external_storage_worker
+
+            # Start worker if external storage is enabled
+            if ExternalStorageConfigService.is_enabled(secret_key, app):
+                external_storage_worker.start()
+                logger.log("[INIT] External storage worker started")
+
+                # Check storage mode and log appropriate message about empty directories
+                storage_mode = ExternalStorageConfigService.get_storage_mode(
+                    secret_key, app
+                )
+                if storage_mode == "s3":
+                    # Check if source directory is empty (expected in S3-only mode)
+                    if source_dir and source_dir.exists():
+                        source_files_dir = source_dir / "files"
+                        if source_files_dir.exists() and not any(
+                            source_files_dir.iterdir()
+                        ):
+                            logger.log(
+                                "[INIT] S3-only mode is enabled. No files will be written to local disk. "
+                                "You can modify this setting from the admin interface, Integrations tab."
+                            )
+                        elif not source_files_dir.exists() or not any(
+                            source_files_dir.iterdir()
+                        ):
+                            logger.log(
+                                "[INIT] S3-only mode is enabled. No files will be written to local disk. "
+                                "You can modify this setting from the admin interface, Integrations tab."
+                            )
+                    else:
+                        logger.log(
+                            "[INIT] S3-only mode is enabled. No files will be written to local disk. "
+                            "You can modify this setting from the admin interface, Integrations tab."
+                        )
+    except Exception as worker_error:
+        logger.log(
+            f"[WARNING] Failed to initialize external storage worker: {worker_error}"
+        )
+        # Don't fail startup if worker initialization fails
+        app.config["EXTERNAL_STORAGE_WORKER"] = None
+        app.config["EXTERNAL_STORAGE_METRICS"] = None
+
     # Storage cleanup worker runs in orchestrator service
     # Storage cleanup is triggered via internal API endpoint from orchestrator
     # Autonomous cleanup for orphaned files in persistent storage also runs here
@@ -1581,6 +1676,7 @@ def create_app(
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
     app.register_blueprint(config_api_bp)  # Configuration API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
+    app.register_blueprint(external_storage_api_bp)  # External storage API
     if file_events_api_bp is not None:
         try:
             app.register_blueprint(file_events_api_bp)  # File events API (SSE)

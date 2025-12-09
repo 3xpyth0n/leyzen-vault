@@ -1629,6 +1629,67 @@ class ApiKey(db.Model):
         return f"<ApiKey {self.name} (user={self.user_id})>"
 
 
+class ExternalStorageMetadata(db.Model):
+    """External storage metadata model for tracking S3 file synchronization."""
+
+    __tablename__ = "external_storage_metadata"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    file_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("files.id", ondelete="CASCADE"), nullable=False
+    )
+    s3_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sync_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending"
+    )  # 'synced', 'pending', 'failed', 'restored'
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    # Relationships
+    file: Mapped["File"] = relationship("File", foreign_keys=[file_id])
+
+    # Indexes for efficient queries
+    __table_args__ = (
+        Index("ix_external_storage_metadata_file_id", "file_id"),
+        Index("ix_external_storage_metadata_s3_key", "s3_key"),
+        Index("ix_external_storage_metadata_sync_status", "sync_status"),
+        Index("ix_external_storage_metadata_last_synced_at", "last_synced_at"),
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "file_id": self.file_id,
+            "s3_key": self.s3_key,
+            "last_synced_at": (
+                self.last_synced_at.isoformat() if self.last_synced_at else None
+            ),
+            "sync_status": self.sync_status,
+            "file_hash": self.file_hash,
+            "file_size": self.file_size,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    def __repr__(self) -> str:
+        return f"<ExternalStorageMetadata file_id={self.file_id} status={self.sync_status}>"
+
+
 class UploadSession(db.Model):
     """Upload session model for chunked file uploads."""
 
@@ -2797,6 +2858,7 @@ def init_db(app) -> None:
                     DomainRule = globals()["DomainRule"]
                     SystemSettings = globals()["SystemSettings"]
                     ApiKey = globals()["ApiKey"]
+                    ExternalStorageMetadata = globals()["ExternalStorageMetadata"]
 
                     # Map table names to their model classes
                     required_tables = {
@@ -2828,6 +2890,7 @@ def init_db(app) -> None:
                         "domain_rules": DomainRule,
                         "system_settings": SystemSettings,
                         "api_keys": ApiKey,
+                        "external_storage_metadata": ExternalStorageMetadata,
                     }
 
                     missing_tables = [

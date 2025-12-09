@@ -19,7 +19,7 @@
     <!-- Cleanup: Remove any stuck confirmation modal if it exists (respects CSP) -->
     <script src="/static/cleanup-modal.js"></script>
     <!-- Load notifications system before Vue app -->
-    <script src="/static/notifications.js"></script>
+    <script type="module" src="/static/notifications.js"></script>
     <!-- Load Vue app (icon system is now loaded via main.js) -->
     <script type="module" src="/src/main.js"></script>
     <!-- sharing.js can be loaded after Vue app -->

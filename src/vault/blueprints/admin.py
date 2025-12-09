@@ -1579,3 +1579,305 @@ def storage_cleanup():
     results["failed_count"] = len(results["failed"])
 
     return jsonify(results), 200
+
+
+@admin_api_bp.route("/external-storage/config", methods=["GET"])
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def get_external_storage_config():
+    """Get external storage S3 configuration (admin only).
+
+    Returns:
+        JSON with S3 configuration (without sensitive data):
+        {
+            "enabled": bool,
+            "storage_mode": "local" | "s3" | "hybrid",
+            "endpoint_url": str | null,
+            "bucket_name": str | null,
+            "region": str | null,
+            "use_ssl": bool
+        }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    if not secret_key:
+        return jsonify({"error": "SECRET_KEY not configured"}), 500
+
+    from vault.services.external_storage_config_service import (
+        ExternalStorageConfigService,
+    )
+
+    config = ExternalStorageConfigService.get_config(secret_key, current_app)
+
+    if not config:
+        return (
+            jsonify(
+                {
+                    "enabled": False,
+                    "storage_mode": "local",
+                    "endpoint_url": None,
+                    "access_key_id": "",  # Return empty Access Key ID if not configured
+                    "secret_access_key": "",  # Return empty Secret Access Key if not configured
+                    "bucket_name": None,
+                    "region": None,
+                    "use_ssl": True,
+                }
+            ),
+            200,
+        )
+
+    # Return config with both Access Key ID and Secret Access Key (decrypted for display)
+    return (
+        jsonify(
+            {
+                "enabled": config.get("enabled", False),
+                "storage_mode": config.get("storage_mode", "local"),
+                "endpoint_url": config.get("endpoint_url"),
+                "access_key_id": config.get(
+                    "access_key_id", ""
+                ),  # Return Access Key ID (decrypted)
+                "secret_access_key": config.get(
+                    "secret_access_key", ""
+                ),  # Return Secret Access Key (decrypted)
+                "bucket_name": config.get("bucket_name"),
+                "region": config.get("region"),
+                "use_ssl": config.get("use_ssl", True),
+            }
+        ),
+        200,
+    )
+
+
+@admin_api_bp.route("/external-storage/config", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def save_external_storage_config():
+    """Save external storage S3 configuration (admin only).
+
+    Request body:
+        {
+            "enabled": bool,
+            "storage_mode": "local" | "s3" | "hybrid",
+            "endpoint_url": str | null,
+            "access_key_id": str,
+            "secret_access_key": str,
+            "bucket_name": str,
+            "region": str | null,
+            "use_ssl": bool
+        }
+
+    Returns:
+        JSON with success status
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    if not secret_key:
+        return jsonify({"error": "SECRET_KEY not configured"}), 500
+
+    # Validate required fields
+    enabled = data.get("enabled", False)
+    storage_mode = data.get("storage_mode", "local")
+
+    # Get existing config to preserve keys if not provided
+    from vault.services.external_storage_config_service import (
+        ExternalStorageConfigService,
+    )
+
+    existing_config = ExternalStorageConfigService.get_config(secret_key, current_app)
+
+    # Get access keys from request or use existing ones
+    access_key_id = data.get("access_key_id", "")
+    secret_access_key = data.get("secret_access_key", "")
+
+    # If keys are empty but we have existing config, preserve them
+    if not access_key_id and existing_config:
+        access_key_id = existing_config.get("access_key_id", "")
+    if not secret_access_key and existing_config:
+        secret_access_key = existing_config.get("secret_access_key", "")
+
+    # Get bucket_name from request or use existing one
+    bucket_name = data.get("bucket_name", "")
+    if not bucket_name and existing_config:
+        bucket_name = existing_config.get("bucket_name", "")
+
+    if enabled and storage_mode != "local":
+        if not access_key_id:
+            return jsonify({"error": "access_key_id is required"}), 400
+        if not secret_access_key:
+            return jsonify({"error": "secret_access_key is required"}), 400
+        if not bucket_name:
+            return jsonify({"error": "bucket_name is required"}), 400
+
+    # Validate storage_mode
+    if storage_mode not in ["local", "s3", "hybrid"]:
+        return (
+            jsonify({"error": "storage_mode must be 'local', 's3', or 'hybrid'"}),
+            400,
+        )
+
+    # Build config dictionary
+    # Preserve existing values if not provided in request
+    config = {
+        "enabled": enabled,
+        "storage_mode": storage_mode,
+        "endpoint_url": (
+            data.get("endpoint_url")
+            if data.get("endpoint_url") is not None
+            else (existing_config.get("endpoint_url") if existing_config else None)
+        ),
+        "access_key_id": access_key_id,
+        "secret_access_key": secret_access_key,
+        "bucket_name": bucket_name,
+        "region": (
+            data.get("region")
+            if data.get("region") is not None
+            else (existing_config.get("region") if existing_config else None)
+        ),
+        "use_ssl": (
+            data.get("use_ssl")
+            if data.get("use_ssl") is not None
+            else (existing_config.get("use_ssl", True) if existing_config else True)
+        ),
+    }
+
+    try:
+        ExternalStorageConfigService.store_config(secret_key, config, current_app)
+
+        # Audit log
+        audit_service = current_app.config.get("VAULT_AUDIT")
+        if audit_service:
+            user_ip = request.remote_addr or "unknown"
+            audit_service.log_action(
+                action="external_storage_config_updated",
+                user_ip=user_ip,
+                details={
+                    "enabled": enabled,
+                    "storage_mode": storage_mode,
+                    "bucket_name": config.get("bucket_name"),
+                },
+                success=True,
+                user_id=user.id,
+            )
+
+        return (
+            jsonify({"success": True, "message": "Configuration saved successfully"}),
+            200,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error saving external storage config: {e}")
+        return jsonify({"error": f"Failed to save configuration: {str(e)}"}), 500
+
+
+@admin_api_bp.route("/external-storage/test", methods=["POST"])
+@csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
+@jwt_required
+@require_role(GlobalRole.ADMIN)
+def test_external_storage_connection():
+    """Test external storage S3 connection (admin only).
+
+    Request body:
+        {
+            "endpoint_url": str | null,
+            "access_key_id": str,
+            "secret_access_key": str,
+            "bucket_name": str,
+            "region": str | null,
+            "use_ssl": bool
+        }
+
+    Returns:
+        JSON with test result:
+        {
+            "success": bool,
+            "message": str
+        }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    # Validate required fields
+    if not data.get("access_key_id"):
+        return jsonify({"error": "access_key_id is required"}), 400
+    if not data.get("secret_access_key"):
+        return jsonify({"error": "secret_access_key is required"}), 400
+    if not data.get("bucket_name"):
+        return jsonify({"error": "bucket_name is required"}), 400
+
+    secret_key = current_app.config.get("SECRET_KEY", "")
+    if not secret_key:
+        return jsonify({"error": "SECRET_KEY not configured"}), 500
+
+    # Create temporary config for testing
+    test_config = {
+        "enabled": True,
+        "storage_mode": "s3",
+        "endpoint_url": data.get("endpoint_url"),
+        "access_key_id": data.get("access_key_id"),
+        "secret_access_key": data.get("secret_access_key"),
+        "bucket_name": data.get("bucket_name"),
+        "region": data.get("region", "us-east-1"),
+        "use_ssl": data.get("use_ssl", True),
+    }
+
+    # Temporarily store config for testing
+    from vault.services.external_storage_config_service import (
+        ExternalStorageConfigService,
+    )
+
+    # Save temporarily
+    ExternalStorageConfigService.store_config(secret_key, test_config, current_app)
+
+    try:
+        # Test connection
+        from vault.services.external_storage_service import ExternalStorageService
+
+        storage_service = ExternalStorageService(secret_key, current_app)
+        success, error_msg = storage_service.test_connection()
+
+        if success:
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "message": "Connection test successful",
+                    }
+                ),
+                200,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": error_msg or "Connection test failed",
+                    }
+                ),
+                400,
+            )
+    except Exception as e:
+        current_app.logger.error(f"Error testing external storage connection: {e}")
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Connection test failed: {str(e)}",
+                }
+            ),
+            500,
+        )

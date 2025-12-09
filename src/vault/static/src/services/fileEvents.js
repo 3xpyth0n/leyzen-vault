@@ -287,7 +287,6 @@ class FileEventsClient {
 
     this.reconnectTimer = setTimeout(() => {
       if (this.vaultspaceId && !this.isConnected) {
-        console.log("Attempting to reconnect SSE...");
         this._connectSSE();
       }
     }, this.retryDelay);
@@ -318,7 +317,6 @@ class FileEventsClient {
       return;
     }
 
-    console.log("Starting polling fallback for file events");
     this.isPolling = true;
 
     // Poll immediately
@@ -340,7 +338,6 @@ class FileEventsClient {
       return;
     }
 
-    console.log("Stopping polling fallback");
     this.isPolling = false;
     this._clearPolling();
   }

@@ -85,6 +85,22 @@ func (m *Model) renderDashboard() string {
 }
 
 func (m *Model) renderLogsView() string {
+	// In raw mode, display only the raw logs without any UI elements
+	if m.logModeRaw {
+		// Update viewport content to raw logs
+		content := strings.Join(m.logsRaw, "\n")
+		m.viewport.SetContent(content)
+		// Restore saved scroll position or go to bottom
+		if m.viewportYOffsetRaw > 0 {
+			m.viewport.SetYOffset(m.viewportYOffsetRaw)
+		}
+		// Ensure viewport takes full screen
+		m.viewport.Width = m.width
+		m.viewport.Height = m.height
+		return m.viewport.View()
+	}
+
+	// Normal mode: display with header, panel, and footer
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
 
@@ -108,6 +124,22 @@ func (m *Model) renderLogsView() string {
 }
 
 func (m *Model) renderActionView() string {
+	// In raw mode, display only the raw logs without any UI elements
+	if m.logModeRaw {
+		// Update viewport content to raw logs
+		content := strings.Join(m.logsRaw, "\n")
+		m.viewport.SetContent(content)
+		// Restore saved scroll position or go to bottom
+		if m.viewportYOffsetRaw > 0 {
+			m.viewport.SetYOffset(m.viewportYOffsetRaw)
+		}
+		// Ensure viewport takes full screen
+		m.viewport.Width = m.width
+		m.viewport.Height = m.height
+		return m.viewport.View()
+	}
+
+	// Normal mode: display with header, panel, and footer
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
 
@@ -767,12 +799,14 @@ func (m *Model) renderFooter(context string) string {
 			fmt.Sprintf("%s Back", m.theme.HelpKey.Render("Esc")),
 			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
+			fmt.Sprintf("%s Raw view", m.theme.HelpKey.Render("v")),
 		}
 	case "action":
 		hints = []string{
 			fmt.Sprintf("%s Back (wait for completion)", m.theme.HelpKey.Render("Esc")),
 			fmt.Sprintf("%s Quit", m.theme.HelpKey.Render("Ctrl+C")),
 			fmt.Sprintf("%s Scroll", m.theme.HelpKey.Render("↑/↓")),
+			fmt.Sprintf("%s Raw view", m.theme.HelpKey.Render("v")),
 		}
 	case "container-selection":
 		hints = []string{

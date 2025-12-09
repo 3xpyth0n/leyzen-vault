@@ -86,6 +86,7 @@ type Model struct {
 	envFile             string
 	statuses            []ContainerStatus
 	logs                []string
+	logsRaw              []string          // Raw logs without cleaning/filtering
 	logsBuffer          []string          // Buffer to preserve logs when returning to dashboard
 	configPairs         map[string]string // To store configuration pairs
 	configShowPasswords map[string]bool   // To display/hide passwords in the config view
@@ -108,6 +109,9 @@ type Model struct {
 	wizardIndex         int
 	wizardError         string
 	quitConfirm         bool // Quit confirmation
+	logModeRaw          bool // Whether we're in raw log view mode
+	viewportYOffsetNormal int // Saved scroll position for normal mode
+	viewportYOffsetRaw     int // Saved scroll position for raw mode
 	// Container selection fields
 	containerList     list.Model
 	containerItems    []ContainerItem
@@ -161,7 +165,7 @@ func scheduleStatusRefresh() tea.Cmd {
 	})
 }
 
-func (m *Model) appendLog(line string) {
+func (m *Model) appendLog(line string, lineRaw string) {
 	if line == "" {
 		return
 	}
@@ -169,6 +173,15 @@ func (m *Model) appendLog(line string) {
 	// DO NOT add logs if we're on the dashboard (they should not be displayed)
 	if m.viewState == ViewDashboard {
 		return
+	}
+
+	// Store raw line before any cleaning/filtering
+	if lineRaw != "" {
+		m.logsRaw = append(m.logsRaw, lineRaw)
+		if len(m.logsRaw) > logBufferLimit {
+			diff := len(m.logsRaw) - logBufferLimit
+			m.logsRaw = m.logsRaw[diff:]
+		}
 	}
 
 	// Clean the line: remove control characters and leading/trailing spaces
@@ -206,9 +219,61 @@ func (m *Model) appendLog(line string) {
 	}
 	// Only update viewport if we're in a view that displays logs
 	if m.viewState == ViewLogs || m.viewState == ViewAction {
-		m.viewport.SetContent(strings.Join(m.logs, "\n"))
-		m.viewport.GotoBottom()
+		// Determine which logs to display based on mode
+		var content string
+		if m.logModeRaw {
+			content = strings.Join(m.logsRaw, "\n")
+			// In raw mode, viewport takes full screen
+			m.viewport.Width = m.width
+			m.viewport.Height = m.height
+		} else {
+			content = strings.Join(m.logs, "\n")
+		}
+		
+		// Check if user is already at the bottom before updating
+		wasAtBottom := m.isViewportAtBottom()
+		
+		m.viewport.SetContent(content)
+		
+		// Only auto-scroll to bottom if user was already at bottom
+		if wasAtBottom {
+			m.viewport.GotoBottom()
+			// Save the position after auto-scroll
+			if m.logModeRaw {
+				m.viewportYOffsetRaw = m.viewport.YOffset
+			} else {
+				m.viewportYOffsetNormal = m.viewport.YOffset
+			}
+		} else {
+			// Save current position
+			if m.logModeRaw {
+				m.viewportYOffsetRaw = m.viewport.YOffset
+			} else {
+				m.viewportYOffsetNormal = m.viewport.YOffset
+			}
+		}
 	}
+}
+
+// isViewportAtBottom checks if the viewport is currently scrolled to the bottom
+func (m *Model) isViewportAtBottom() bool {
+	// Get the actual content (not the rendered view)
+	var content string
+	if m.logModeRaw {
+		content = strings.Join(m.logsRaw, "\n")
+	} else {
+		content = strings.Join(m.logs, "\n")
+	}
+	
+	if content == "" {
+		return true
+	}
+	
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+	
+	// Check if we're at or near the bottom (within 2 lines to account for rounding)
+	return m.viewport.YOffset+m.viewport.Height >= totalLines-2
 }
 
 func (m *Model) switchToDashboard() {
@@ -216,6 +281,12 @@ func (m *Model) switchToDashboard() {
 	if m.viewState == ViewLogs || m.viewState == ViewAction {
 		m.logsBuffer = make([]string, len(m.logs))
 		copy(m.logsBuffer, m.logs)
+		// Save scroll positions
+		if m.logModeRaw {
+			m.viewportYOffsetRaw = m.viewport.YOffset
+		} else {
+			m.viewportYOffsetNormal = m.viewport.YOffset
+		}
 	}
 
 	// If coming from wizard, completely clean up state
@@ -254,13 +325,34 @@ func (m *Model) switchToLogs() {
 	if len(m.logsBuffer) > 0 {
 		m.logs = make([]string, len(m.logsBuffer))
 		copy(m.logs, m.logsBuffer)
-		m.viewport.SetContent(strings.Join(m.logs, "\n"))
-		m.viewport.GotoBottom()
-	} else if len(m.logs) > 0 {
-		// If no buffer but we have logs, display them
-		m.viewport.SetContent(strings.Join(m.logs, "\n"))
-		m.viewport.GotoBottom()
 	}
+	
+	// Determine which logs to display based on mode
+	var logsToDisplay []string
+	if m.logModeRaw {
+		logsToDisplay = m.logsRaw
+	} else {
+		logsToDisplay = m.logs
+	}
+	
+	if len(logsToDisplay) > 0 {
+		m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
+		// Restore saved scroll position or go to bottom
+		if m.logModeRaw {
+			if m.viewportYOffsetRaw > 0 {
+				m.viewport.SetYOffset(m.viewportYOffsetRaw)
+			} else {
+				m.viewport.GotoBottom()
+			}
+		} else {
+			if m.viewportYOffsetNormal > 0 {
+				m.viewport.SetYOffset(m.viewportYOffsetNormal)
+			} else {
+				m.viewport.GotoBottom()
+			}
+		}
+	}
+	
 	m.viewState = ViewLogs
 	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
@@ -278,6 +370,33 @@ func (m *Model) switchToLogs() {
 
 func (m *Model) switchToAction() {
 	m.viewState = ViewAction
+	
+	// Determine which logs to display based on mode
+	var logsToDisplay []string
+	if m.logModeRaw {
+		logsToDisplay = m.logsRaw
+	} else {
+		logsToDisplay = m.logs
+	}
+	
+	if len(logsToDisplay) > 0 {
+		m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
+		// Restore saved scroll position or go to bottom
+		if m.logModeRaw {
+			if m.viewportYOffsetRaw > 0 {
+				m.viewport.SetYOffset(m.viewportYOffsetRaw)
+			} else {
+				m.viewport.GotoBottom()
+			}
+		} else {
+			if m.viewportYOffsetNormal > 0 {
+				m.viewport.SetYOffset(m.viewportYOffsetNormal)
+			} else {
+				m.viewport.GotoBottom()
+			}
+		}
+	}
+	
 	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 8

@@ -52,8 +52,10 @@ RUN adduser -D -u 1000 vault
 
 # Copy entrypoint and healthcheck script
 COPY infra/vault/entrypoint.sh /usr/local/bin/vault-entrypoint.sh
+COPY infra/vault/check_storage_mode.py /app/infra/vault/check_storage_mode.py
 COPY infra/vault/healthcheck.py /app/infra/vault/healthcheck.py
 RUN chmod +x /usr/local/bin/vault-entrypoint.sh && \
+    chmod +x /app/infra/vault/check_storage_mode.py && \
     chmod +x /app/infra/vault/healthcheck.py
 
 # Create data directories and set ownership

@@ -78,9 +78,11 @@ def render_haproxy_config_vault(
     """
     backend_name = "vault_backend"
     server_lines = _format_backend_servers(containers, port)
-    http_check_line = (
-        "    http-check send meth GET uri /healthz ver HTTP/1.1" " hdr Host localhost"
-    )
+    http_check_lines = [
+        "    http-check send meth GET uri /healthz ver HTTP/1.1 hdr Host localhost",
+        "    http-check expect status 200",
+        '    http-check expect string "ok"',
+    ]
 
     lines = [
         "# ==================================================================================",
@@ -111,7 +113,7 @@ def render_haproxy_config_vault(
         "    timeout connect 5s",
         "    timeout client  50s",
         "    timeout server  50s",
-        "    timeout check 10s",
+        "    timeout check 5s",
         "",
         "http-errors myerrors",
         "    errorfile 503 /usr/local/etc/haproxy/503.http",
@@ -171,11 +173,13 @@ def render_haproxy_config_vault(
             "    balance roundrobin",
             "    option http-server-close",
             "    option forwardfor header X-Forwarded-For if-none",
-            "    default-server resolvers docker init-addr none check inter 2s fall 3 rise 2",
+            "    option redispatch",
+            "    option allbackups",
+            "    default-server resolvers docker init-addr none check inter 2s fall 2 rise 3",
             "    option httpchk",
-            http_check_line,
         ]
     )
+    lines.extend(http_check_lines)
     lines.extend(server_lines)
     lines.extend(
         [

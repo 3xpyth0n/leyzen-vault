@@ -394,17 +394,6 @@ def upload_file_v2():
         # Generate file ID for storage
         file_id = storage.generate_file_id()
 
-        # Store encrypted file (file is already encrypted client-side)
-        try:
-            saved_path = storage.save_file(file_id, file_data)
-            # save_file returns a Path, but we use file_id as storage_ref
-            storage_ref = file_id
-        except IOError as e:
-            current_app.logger.error(
-                f"Failed to save file {file_id}: {type(e).__name__}: {e}"
-            )
-            return jsonify({"error": "Failed to save file"}), 500
-
         # Calculate hash of encrypted data
         import hashlib
 
@@ -417,7 +406,7 @@ def upload_file_v2():
             provided_mime_type=file.content_type,
         )
 
-        # Upload file metadata
+        # Upload file metadata first (creates DB record for whitelist validation)
         file_obj, file_key = file_service.upload_file(
             vaultspace_id=vaultspace_id,
             user_id=user.id,
@@ -432,47 +421,143 @@ def upload_file_v2():
             overwrite=overwrite,
         )
 
-        # Promote file to persistent storage with validation
-        # This ensures the file is persisted even without orchestrator
-        try:
-            from common.services.file_promotion_service import (
-                FilePromotionService,
-            )
-            from common.services.sync_validation_service import (
-                SyncValidationService,
-            )
-            from vault.database.schema import File
-
-            # Initialize validation service with database
-            validation_service = SyncValidationService(
-                db_session=db.session, File_model=File, logger=current_app.logger
-            )
-            promotion_service = FilePromotionService(
-                validation_service=validation_service,
-                logger_instance=current_app.logger,
-            )
-
-            # Get file path in tmpfs
-            source_path = storage.get_file_path(file_id)
-            target_dir = storage.source_dir
-
-            if source_path.exists() and target_dir:
-                success, error_msg = promotion_service.promote_file(
-                    file_id=file_id,
-                    source_path=source_path,
-                    target_dir=target_dir,
-                    base_dir=storage.storage_dir / "files",
+        # Check storage mode and save file accordingly
+        secret_key = current_app.config.get("SECRET_KEY", "")
+        storage_mode = "local"
+        external_storage = None
+        if secret_key:
+            try:
+                from vault.services.external_storage_config_service import (
+                    ExternalStorageConfigService,
                 )
 
-                if not success:
-                    current_app.logger.warning(
-                        f"[PROMOTION] Failed to promote file {file_id}: {error_msg}"
+                if ExternalStorageConfigService.is_enabled(secret_key, current_app):
+                    storage_mode = ExternalStorageConfigService.get_storage_mode(
+                        secret_key, current_app
                     )
+                    # Initialize external storage service if needed
+                    if storage_mode in ["hybrid", "s3"]:
+                        from vault.services.external_storage_service import (
+                            ExternalStorageService,
+                        )
+
+                        external_storage = ExternalStorageService(
+                            secret_key, current_app
+                        )
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to get storage mode: {e}, using local storage"
+                )
+
+        # Store encrypted file based on storage mode
+        try:
+            if storage_mode == "s3":
+                # S3-only mode: upload directly to S3
+                from vault.services.external_storage_service import (
+                    ExternalStorageService,
+                )
+
+                external_storage = ExternalStorageService(secret_key, current_app)
+
+                # Upload to S3 directly - no validation needed for new files
+                # Validation is only used for cleanup of orphaned files, not for new uploads
+                external_storage.save_file(file_id, file_data)
+                storage_ref = file_id
+                current_app.logger.info(
+                    f"Successfully uploaded file {file_id} (storage_ref: {storage_ref}) to S3 in S3-only mode"
+                )
+            elif storage_mode == "hybrid":
+                # Hybrid mode: save to local first, then upload to S3 immediately
+                saved_path = storage.save_file(file_id, file_data)
+                storage_ref = file_id
+
+                # Upload to S3 immediately after saving locally
+                # No validation needed - this is a new file upload
+                try:
+                    from vault.services.external_storage_service import (
+                        ExternalStorageService,
+                    )
+
+                    external_storage = ExternalStorageService(secret_key, current_app)
+                    external_storage.save_file(storage_ref, file_data)
+                    current_app.logger.info(
+                        f"Successfully uploaded file {file_id} (storage_ref: {storage_ref}) to S3 in hybrid mode"
+                    )
+                except Exception as e:
+                    # Log error but don't fail the upload - file is saved locally
+                    current_app.logger.error(
+                        f"Failed to upload file {file_id} to S3 in hybrid mode: {e}",
+                        exc_info=True,
+                    )
+            else:
+                # Local mode: save to local storage
+                saved_path = storage.save_file(file_id, file_data)
+                storage_ref = file_id
+        except IOError as e:
+            current_app.logger.error(
+                f"Failed to save file {file_id}: {type(e).__name__}: {e}"
+            )
+            # Delete file from DB if save failed
+            try:
+                db.session.delete(file_obj)
+                db.session.commit()
+            except Exception:
+                pass
+            return jsonify({"error": "Failed to save file"}), 500
         except Exception as e:
             current_app.logger.error(
-                f"[PROMOTION ERROR] Exception during promotion of {file_id}: {e}",
-                exc_info=True,
+                f"Failed to save file {file_id} to external storage: {type(e).__name__}: {e}"
             )
+            # Delete file from DB if save failed
+            try:
+                db.session.delete(file_obj)
+                db.session.commit()
+            except Exception:
+                pass
+            return jsonify({"error": "Failed to save file to external storage"}), 500
+
+        # Promote file to persistent storage with validation (only in local/hybrid mode)
+        # This ensures the file is persisted even without orchestrator
+        if storage_mode != "s3":
+            try:
+                from common.services.file_promotion_service import (
+                    FilePromotionService,
+                )
+                from common.services.sync_validation_service import (
+                    SyncValidationService,
+                )
+                from vault.database.schema import File
+
+                # Initialize validation service with database
+                validation_service = SyncValidationService(
+                    db_session=db.session, File_model=File, logger=current_app.logger
+                )
+                promotion_service = FilePromotionService(
+                    validation_service=validation_service,
+                    logger_instance=current_app.logger,
+                )
+
+                # Get file path in tmpfs
+                source_path = storage.get_file_path(file_id)
+                target_dir = storage.source_dir
+
+                if source_path.exists() and target_dir:
+                    success, error_msg = promotion_service.promote_file(
+                        file_id=file_id,
+                        source_path=source_path,
+                        target_dir=target_dir,
+                        base_dir=storage.storage_dir / "files",
+                    )
+
+                    if not success:
+                        current_app.logger.warning(
+                            f"[PROMOTION] Failed to promote file {file_id}: {error_msg}"
+                        )
+            except Exception as e:
+                current_app.logger.error(
+                    f"[PROMOTION ERROR] Exception during promotion of {file_id}: {e}",
+                    exc_info=True,
+                )
 
         return (
             jsonify(
@@ -709,9 +794,48 @@ def download_file(file_id: str):
         if not has_permission:
             return jsonify({"error": "Permission denied"}), 403
 
-        # Read encrypted file data from storage
+        # Read encrypted file data from storage (check storage mode)
+        secret_key = current_app.config.get("SECRET_KEY", "")
+        storage_mode = "local"
+        if secret_key:
+            try:
+                from vault.services.external_storage_config_service import (
+                    ExternalStorageConfigService,
+                )
+
+                if ExternalStorageConfigService.is_enabled(secret_key, current_app):
+                    storage_mode = ExternalStorageConfigService.get_storage_mode(
+                        secret_key, current_app
+                    )
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to get storage mode: {e}, using local storage"
+                )
+
         try:
-            encrypted_data = storage.read_file(file_obj.storage_ref)
+            if storage_mode == "s3":
+                # S3-only mode: read from S3
+                from vault.services.external_storage_service import (
+                    ExternalStorageService,
+                )
+
+                external_storage = ExternalStorageService(secret_key, current_app)
+                encrypted_data = external_storage.read_file(file_obj.storage_ref)
+            elif storage_mode == "hybrid":
+                # Hybrid mode: try local first, then S3
+                try:
+                    encrypted_data = storage.read_file(file_obj.storage_ref)
+                except FileNotFoundError:
+                    # Try S3
+                    from vault.services.external_storage_service import (
+                        ExternalStorageService,
+                    )
+
+                    external_storage = ExternalStorageService(secret_key, current_app)
+                    encrypted_data = external_storage.read_file(file_obj.storage_ref)
+            else:
+                # Local mode: read from local storage
+                encrypted_data = storage.read_file(file_obj.storage_ref)
         except FileNotFoundError as e:
             current_app.logger.error(
                 f"File {file_id} not found in storage. storage_ref: {file_obj.storage_ref}, error: {e}"
@@ -1822,48 +1946,110 @@ def complete_upload():
                 encrypted_metadata=session.encrypted_metadata,
             )
 
-            # Promote file to persistent storage with validation
-            # This ensures the file is persisted even without orchestrator
-            storage_ref = session.file_id
-            try:
-                from common.services.file_promotion_service import (
-                    FilePromotionService,
-                )
-                from common.services.sync_validation_service import (
-                    SyncValidationService,
-                )
-                from vault.database.schema import File
-
-                # Initialize validation service with database
-                validation_service = SyncValidationService(
-                    db_session=db.session, File_model=File, logger=current_app.logger
-                )
-                promotion_service = FilePromotionService(
-                    validation_service=validation_service,
-                    logger_instance=current_app.logger,
-                )
-
-                # Get file path in tmpfs
-                source_path = storage.get_file_path(storage_ref)
-                target_dir = storage.source_dir
-
-                if source_path.exists() and target_dir:
-                    success, error_msg = promotion_service.promote_file(
-                        file_id=storage_ref,
-                        source_path=source_path,
-                        target_dir=target_dir,
-                        base_dir=storage.storage_dir / "files",
+            # Check storage mode and handle accordingly
+            secret_key = current_app.config.get("SECRET_KEY", "")
+            storage_mode = "local"
+            external_storage = None
+            if secret_key:
+                try:
+                    from vault.services.external_storage_config_service import (
+                        ExternalStorageConfigService,
                     )
 
-                    if not success:
-                        current_app.logger.warning(
-                            f"[PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                    if ExternalStorageConfigService.is_enabled(secret_key, current_app):
+                        storage_mode = ExternalStorageConfigService.get_storage_mode(
+                            secret_key, current_app
                         )
-            except Exception as e:
-                current_app.logger.error(
-                    f"[PROMOTION ERROR] Exception during promotion of {storage_ref}: {e}",
-                    exc_info=True,
-                )
+                        # Initialize external storage service if needed
+                        if storage_mode in ["hybrid", "s3"]:
+                            from vault.services.external_storage_service import (
+                                ExternalStorageService,
+                            )
+
+                            external_storage = ExternalStorageService(
+                                secret_key, current_app
+                            )
+                except Exception as e:
+                    current_app.logger.warning(
+                        f"Failed to get storage mode: {e}, using local storage"
+                    )
+
+            # Promote file to persistent storage with validation (only in local/hybrid mode)
+            # This ensures the file is persisted even without orchestrator
+            storage_ref = session.file_id
+            if storage_mode != "s3":
+                try:
+                    from common.services.file_promotion_service import (
+                        FilePromotionService,
+                    )
+                    from common.services.sync_validation_service import (
+                        SyncValidationService,
+                    )
+                    from vault.database.schema import File
+
+                    # Initialize validation service with database
+                    validation_service = SyncValidationService(
+                        db_session=db.session,
+                        File_model=File,
+                        logger=current_app.logger,
+                    )
+                    promotion_service = FilePromotionService(
+                        validation_service=validation_service,
+                        logger_instance=current_app.logger,
+                    )
+
+                    # Get file path in tmpfs
+                    source_path = storage.get_file_path(storage_ref)
+                    target_dir = storage.source_dir
+
+                    if source_path.exists() and target_dir:
+                        success, error_msg = promotion_service.promote_file(
+                            file_id=storage_ref,
+                            source_path=source_path,
+                            target_dir=target_dir,
+                            base_dir=storage.storage_dir / "files",
+                        )
+
+                        if not success:
+                            current_app.logger.warning(
+                                f"[PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                            )
+                except Exception as e:
+                    current_app.logger.error(
+                        f"[PROMOTION ERROR] Exception during promotion of {storage_ref}: {e}",
+                        exc_info=True,
+                    )
+
+            # Upload to S3 if in hybrid or S3-only mode
+            if storage_mode in ["hybrid", "s3"] and external_storage:
+                try:
+                    # Upload to S3 directly - no validation needed for new files
+                    # Validation is only used for cleanup of orphaned files, not for new uploads
+                    external_storage.save_file(storage_ref, encrypted_data)
+                    current_app.logger.info(
+                        f"Successfully uploaded file {storage_ref} to S3 in {storage_mode} mode (chunked upload)"
+                    )
+                except Exception as e:
+                    # Log error but don't fail the upload - file is saved locally (hybrid) or validation failed (S3-only)
+                    if storage_mode == "s3":
+                        # In S3-only mode, upload failure is critical
+                        current_app.logger.error(
+                            f"Failed to upload file {storage_ref} to S3 in S3-only mode: {e}",
+                            exc_info=True,
+                        )
+                        # Delete file from DB
+                        try:
+                            db.session.delete(file_obj)
+                            db.session.commit()
+                        except Exception:
+                            pass
+                        return jsonify({"error": "Failed to upload file to S3"}), 500
+                    else:
+                        # In hybrid mode, log but continue
+                        current_app.logger.error(
+                            f"Failed to upload file {storage_ref} to S3 in hybrid mode: {e}",
+                            exc_info=True,
+                        )
 
             # Mark session as completed and delete
             session.status = "completed"

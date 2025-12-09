@@ -220,6 +220,11 @@
         <div v-if="activeTab === 'authentication'">
           <AdminSSOProviders />
         </div>
+
+        <!-- Integrations Tab -->
+        <div v-if="activeTab === 'integrations'">
+          <ExternalStorageConfig />
+        </div>
       </div>
     </main>
   </div>
@@ -235,6 +240,7 @@ import QuotaManagement from "../components/admin/QuotaManagement.vue";
 import AuditLogViewer from "../components/admin/AuditLogViewer.vue";
 import ApiKeyManagement from "../components/admin/ApiKeyManagement.vue";
 import AdminSSOProviders from "./AdminSSOProviders.vue";
+import ExternalStorageConfig from "../components/admin/ExternalStorageConfig.vue";
 import RecentActivityList from "../components/admin/RecentActivityList.vue";
 import TopUsersCard from "../components/admin/TopUsersCard.vue";
 import QuotaAlertsCard from "../components/admin/QuotaAlertsCard.vue";
@@ -248,6 +254,7 @@ export default {
     AuditLogViewer,
     ApiKeyManagement,
     AdminSSOProviders,
+    ExternalStorageConfig,
     RecentActivityList,
     TopUsersCard,
     QuotaAlertsCard,
@@ -272,6 +279,7 @@ export default {
       { id: "quotas", label: "Quotas" },
       { id: "authentication", label: "Authentication" },
       { id: "api-keys", label: "API Keys" },
+      { id: "integrations", label: "Integrations" },
       { id: "audit", label: "Audit Logs" },
     ];
 
@@ -282,6 +290,7 @@ export default {
       quotas: "quotas",
       authentication: "authentication",
       "api-keys": "api-keys",
+      integrations: "integrations",
       audit: "audit",
     };
 

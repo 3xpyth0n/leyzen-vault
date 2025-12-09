@@ -215,7 +215,8 @@ func (w *actionWriter) emit(line string) {
 	if strings.TrimSpace(line) == "" {
 		return
 	}
-	w.stream <- actionProgressMsg{Action: w.action, Line: line}
+	// For emit, the line is already formatted, so use it as both raw and cleaned
+	w.stream <- actionProgressMsg{Action: w.action, Line: line, LineRaw: line}
 }
 
 func (w *actionWriter) Write(p []byte) (int, error) {
@@ -234,9 +235,9 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 			break
 		}
 
-		line := strings.TrimSuffix(data[:idx], "\r")
+		lineRaw := strings.TrimSuffix(data[:idx], "\r")
 		// Clean the line of control characters
-		line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+		line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
 		// Trim whitespace but preserve intentional spaces
 		line = strings.TrimSpace(line)
 
@@ -272,7 +273,7 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 			continue
 		}
 
-		w.stream <- actionProgressMsg{Action: w.action, Line: line}
+		w.stream <- actionProgressMsg{Action: w.action, Line: line, LineRaw: lineRaw}
 		data = data[idx+1:]
 	}
 
@@ -287,9 +288,9 @@ func (w *actionWriter) flush() {
 		return
 	}
 
-	line := w.buf.String()
+	lineRaw := w.buf.String()
 	// Clean the line of control characters
-	line = strings.Trim(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+	line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
 	line = strings.TrimSpace(line)
 	
 	// Filter out isolated single characters
@@ -314,7 +315,7 @@ func (w *actionWriter) flush() {
 			w.buf.Reset()
 			return
 		}
-		w.stream <- actionProgressMsg{Action: w.action, Line: line}
+		w.stream <- actionProgressMsg{Action: w.action, Line: line, LineRaw: lineRaw}
 	}
 	w.buf.Reset()
 }

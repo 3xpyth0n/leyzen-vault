@@ -135,6 +135,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.session_key_salt_migration import (
         SessionKeySaltMigration,
     )
+    from vault.database.migrations.external_storage_metadata_migration import (
+        ExternalStorageMetadataMigration,
+    )
 
     registry = MigrationRegistry()
 
@@ -144,6 +147,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(PinnedVaultSpacesMigration)
     registry.register(AuditLogsEnrichmentMigration)
     registry.register(SessionKeySaltMigration)
+    registry.register(ExternalStorageMetadataMigration)
 
     migrations = registry.get_all_migrations()
 
