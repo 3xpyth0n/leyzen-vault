@@ -1772,7 +1772,6 @@ def create_app(
             return response
         except NotFound:
             # File not found anywhere
-            logger.warning(f"Static file not found: {filename}")
             abort(404)
         except Exception as e:
             logger.error(
@@ -2088,14 +2087,14 @@ def create_app(
                     )
                     return Response(required_content, mimetype="text/plain")
             except (NotFound, Exception) as e:
-                logger.warning(
+                logger.debug(
                     f"Error reading robots.txt file: {e}. Using fallback content."
                 )
 
         # CRITICAL FALLBACK: If file is missing or invalid, generate the required content
         # This ensures robots.txt is ALWAYS served with Disallow: /
         # License requirement: must refuse all indexing
-        logger.warning(
+        logger.debug(
             "robots.txt file not found or invalid, serving generated content. "
             "Please ensure src/vault/static/icons/robots.txt exists with 'Disallow: /'."
         )

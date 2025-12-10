@@ -230,36 +230,30 @@ def build_base_services(
     web_container_string: str,
     *,
     ssl_cert_bundle_path: Path | None = None,
+    orchestrator_enabled: bool = True,
 ) -> OrderedDict[str, dict]:
     """Return the base services for the Leyzen stack.
 
     Service Dependencies:
     - HAProxy: No dependencies (front-end service, starts first)
     - Docker Proxy: No dependencies (must be healthy before orchestrator starts)
+      Only created when orchestrator_enabled=True
     - Orchestrator: Depends on:
       - All vault web containers (service_started condition)
       - Docker proxy (service_healthy condition)
       - The orchestrator coordinates container rotation and needs access to both
         the vault containers and the docker-proxy to manage container lifecycle
+      Only created when orchestrator_enabled=True
 
     Service Startup Order:
     1. HAProxy (starts first, no dependencies)
-    2. Docker Proxy (starts early, must be healthy for orchestrator)
+    2. Docker Proxy (starts early, must be healthy for orchestrator) - only if orchestrator_enabled
     3. Vault web containers (start after HAProxy and PostgreSQL are ready)
-    4. Orchestrator (starts last, depends on vault containers and docker-proxy)
+    4. Orchestrator (starts last, depends on vault containers and docker-proxy) - only if orchestrator_enabled
     """
 
     # Resolve the environment file name to use in docker-generated.yml
     env_file_name = resolve_env_file_name(REPO_ROOT)
-
-    # Orchestrator dependencies:
-    # - All vault web containers must be started (service_started condition)
-    # - Docker proxy must be healthy (service_healthy condition) to enable
-    #   container lifecycle operations (start/stop/restart)
-    orchestrator_depends = OrderedDict(
-        (container, {"condition": "service_started"}) for container in web_containers
-    )
-    orchestrator_depends["docker-proxy"] = {"condition": "service_healthy"}
 
     # Read HTTPS configuration from environment
     enable_https_raw = env.get("ENABLE_HTTPS", "").strip().lower()
@@ -344,69 +338,87 @@ def build_base_services(
             seen_pythonpath.add(entry)
     pythonpath = ":".join(deduped_pythonpath)
 
-    docker_proxy = {
-        "build": {"context": "./infra/docker-proxy"},
-        "container_name": "docker-proxy",
-        "restart": "unless-stopped",
-        "env_file": [env_file_name],
-        "environment": {
-            # DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY if not set
-            # Optional override: "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:-}",
-            "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
-            "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
-            "ORCH_WEB_CONTAINERS": web_container_string,
-            "PYTHONPATH": pythonpath,
-        },
-        "healthcheck": {
-            "test": ["CMD-SHELL", "curl -f http://localhost:2375/healthz || exit 1"],
-            "interval": "2s",
-            "timeout": "10s",
-            "retries": 10,
-            "start_period": "30s",
-        },
-        "volumes": [
-            "/var/run/docker.sock:/var/run/docker.sock:ro",
-            "./src/common:/common:ro",
-        ],
-        "networks": ["control-net"],
-    }
+    services: OrderedDict[str, dict] = OrderedDict()
+    services["haproxy"] = haproxy
 
-    orchestrator = {
-        "build": {"context": "./src/orchestrator"},
-        "container_name": "orchestrator",
-        "image": "leyzen/orchestrator:latest",
-        "restart": "on-failure",
-        "stop_grace_period": "10s",
-        "healthcheck": {
-            "test": ["CMD-SHELL", "curl -f http://localhost/orchestrator || exit 1"],
-            "interval": "2s",
-            "timeout": "5s",
-            "retries": 10,
-            "start_period": "30s",
-        },
-        "env_file": [env_file_name],
-        "environment": {
-            "ORCH_LOG_DIR": "/app/logs",
-            "ORCH_WEB_CONTAINERS": web_container_string,
-            "PYTHONPATH": pythonpath,
-        },
-        "volumes": [
-            "./src/orchestrator:/app:ro",
-            "./src/common:/common:ro",
-            "orchestrator-logs:/app/logs",
-            "vault-data-source:/data-source:rw",  # Read-write for secure file promotion
-        ],
-        "depends_on": orchestrator_depends,
-        "networks": ["vault-net", "control-net"],
-    }
-
-    return OrderedDict(
-        (
-            ("haproxy", haproxy),
-            ("docker-proxy", docker_proxy),
-            ("orchestrator", orchestrator),
+    # Only create docker-proxy and orchestrator if orchestrator is enabled
+    if orchestrator_enabled:
+        # Orchestrator dependencies:
+        # - All vault web containers must be started (service_started condition)
+        # - Docker proxy must be healthy (service_healthy condition) to enable
+        #   container lifecycle operations (start/stop/restart)
+        orchestrator_depends = OrderedDict(
+            (container, {"condition": "service_started"})
+            for container in web_containers
         )
-    )
+        orchestrator_depends["docker-proxy"] = {"condition": "service_healthy"}
+
+        docker_proxy = {
+            "build": {"context": "./infra/docker-proxy"},
+            "container_name": "docker-proxy",
+            "restart": "unless-stopped",
+            "env_file": [env_file_name],
+            "environment": {
+                # DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY if not set
+                # Optional override: "DOCKER_PROXY_TOKEN": "${DOCKER_PROXY_TOKEN:-}",
+                "DOCKER_PROXY_TIMEOUT": "${DOCKER_PROXY_TIMEOUT:-30}",
+                "DOCKER_PROXY_LOG_LEVEL": "${DOCKER_PROXY_LOG_LEVEL:-INFO}",
+                "ORCH_WEB_CONTAINERS": web_container_string,
+                "PYTHONPATH": pythonpath,
+            },
+            "healthcheck": {
+                "test": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:2375/healthz || exit 1",
+                ],
+                "interval": "2s",
+                "timeout": "10s",
+                "retries": 10,
+                "start_period": "30s",
+            },
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock:ro",
+                "./src/common:/common:ro",
+            ],
+            "networks": ["control-net"],
+        }
+
+        orchestrator = {
+            "build": {"context": "./src/orchestrator"},
+            "container_name": "orchestrator",
+            "image": "leyzen/orchestrator:latest",
+            "restart": "on-failure",
+            "stop_grace_period": "10s",
+            "healthcheck": {
+                "test": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost/orchestrator || exit 1",
+                ],
+                "interval": "2s",
+                "timeout": "5s",
+                "retries": 10,
+                "start_period": "30s",
+            },
+            "env_file": [env_file_name],
+            "environment": {
+                "ORCH_LOG_DIR": "/app/logs",
+                "ORCH_WEB_CONTAINERS": web_container_string,
+                "PYTHONPATH": pythonpath,
+            },
+            "volumes": [
+                "./src/orchestrator:/app:ro",
+                "./src/common:/common:ro",
+                "orchestrator-logs:/app/logs",
+                "vault-data-source:/data-source:rw",  # Read-write for secure file promotion
+            ],
+            "depends_on": orchestrator_depends,
+            "networks": ["vault-net", "control-net"],
+        }
+
+        services["docker-proxy"] = docker_proxy
+        services["orchestrator"] = orchestrator
+
+    return services
 
 
 __all__ = [

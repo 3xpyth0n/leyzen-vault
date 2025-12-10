@@ -51,6 +51,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	errors := []string{}
 	warnings := []string{}
 
+	// Check if orchestrator is enabled
+	orchestratorEnabled := true
+	if val, exists := envVars["ORCHESTRATOR_ENABLED"]; exists {
+		val = strings.ToLower(strings.TrimSpace(val))
+		orchestratorEnabled = val == "true" || val == "1" || val == "yes" || val == "on"
+	}
+
+	// Add ORCH_USER and ORCH_PASS to required list only if orchestrator is enabled
+	if orchestratorEnabled {
+		requiredVars = append(requiredVars, "ORCH_USER", "ORCH_PASS")
+	}
+
 	// Check required variables
 	for _, reqVar := range requiredVars {
 		value, exists := envVars[reqVar]
@@ -171,9 +183,8 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 	// When modifying this list, update the Python implementations to match.
 	// We only use this explicit list to avoid false positives from conditional "REQUIRED if ..." comments.
 	// Note: DOCKER_PROXY_TOKEN is no longer required - it's auto-generated from SECRET_KEY
+	// Note: ORCH_USER and ORCH_PASS are only required when ORCHESTRATOR_ENABLED=true
 	required := []string{
-		"ORCH_USER",
-		"ORCH_PASS",
 		"SECRET_KEY",
 	}
 

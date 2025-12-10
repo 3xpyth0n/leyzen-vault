@@ -65,9 +65,7 @@ class FilePromotionService:
             Tuple of (success, error_message). If successful, error_message is None.
         """
         if not source_path.exists():
-            self._logger.warning(
-                f"[PROMOTION] File {file_id} not found at {source_path}"
-            )
+            self._logger.debug(f"[PROMOTION] File {file_id} not found at {source_path}")
             return False, f"File {file_id} not found at {source_path}"
 
         if not target_dir:
@@ -503,7 +501,7 @@ class FilePromotionService:
             if lock_file.exists():
                 lock_file.unlink()
         except Exception as e:
-            self._logger.warning(f"[CLEANUP] Failed to release lock: {e}")
+            self._logger.debug(f"[CLEANUP] Failed to release lock: {e}")
 
 
 __all__ = ["FilePromotionService"]

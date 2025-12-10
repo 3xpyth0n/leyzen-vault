@@ -345,7 +345,7 @@ class ExternalStorageService:
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "Unknown")
             if error_code == "NoSuchKey":
-                logger.warning(f"File {file_id} not found in S3 for deletion")
+                logger.debug(f"File {file_id} not found in S3 for deletion")
                 return False
             error_msg = f"Failed to delete file {file_id} from S3: {e}"
             logger.error(error_msg)
@@ -376,10 +376,10 @@ class ExternalStorageService:
             if error_code == "404" or error_code == "NoSuchKey":
                 return False
             # Other errors - log but return False
-            logger.warning(f"Error checking file existence in S3: {e}")
+            logger.debug(f"Error checking file existence in S3: {e}")
             return False
         except Exception as e:
-            logger.warning(f"Unexpected error checking file existence in S3: {e}")
+            logger.debug(f"Unexpected error checking file existence in S3: {e}")
             return False
 
     def get_file_metadata(
@@ -411,7 +411,7 @@ class ExternalStorageService:
                 )
                 # Also check Metadata (custom metadata) vs native response fields
                 custom_metadata = response.get("Metadata", {})
-                logger.warning(
+                logger.debug(
                     f"get_file_metadata: LastModified not found in response for {s3_key}, "
                     f"response keys: {response_keys}, "
                     f"custom Metadata keys: {list(custom_metadata.keys()) if custom_metadata else 'None'}, "
@@ -438,10 +438,10 @@ class ExternalStorageService:
             if error_code == "404" or error_code == "NoSuchKey":
                 return None
             # Other errors - log and return None
-            logger.warning(f"Error getting file metadata from S3: {e}")
+            logger.debug(f"Error getting file metadata from S3: {e}")
             return None
         except Exception as e:
-            logger.warning(f"Unexpected error getting file metadata from S3: {e}")
+            logger.debug(f"Unexpected error getting file metadata from S3: {e}")
             return None
 
     def list_files(self, prefix: str = "files/", max_keys: int = 1000) -> list[str]:
@@ -503,10 +503,10 @@ class ExternalStorageService:
             error_code = e.response.get("Error", {}).get("Code", "Unknown")
             if error_code == "404" or error_code == "NoSuchKey":
                 return None
-            logger.warning(f"Error getting file metadata from S3: {e}")
+            logger.debug(f"Error getting file metadata from S3: {e}")
             return None
         except Exception as e:
-            logger.warning(f"Unexpected error getting file metadata from S3: {e}")
+            logger.debug(f"Unexpected error getting file metadata from S3: {e}")
             return None
 
     def compute_hash(self, data: bytes) -> str:

@@ -140,9 +140,9 @@ def _validate_container_name(container_name: str) -> bool:
     if len(container_name) > 64:
         return False
 
-    # Strict pattern: vault_web followed by number (1-9, then digits)
-    # This matches the expected format: vault_web1, vault_web2, etc.
-    container_name_pattern = re.compile(r"^vault_web[1-9][0-9]*$")
+    # Strict pattern: vault_web followed by number (1-9, then digits) or vault_app
+    # This matches the expected format: vault_web1, vault_web2, etc., or vault_app
+    container_name_pattern = re.compile(r"^(vault_web[1-9][0-9]*|vault_app)$")
     return bool(container_name_pattern.match(container_name))
 
 
@@ -864,7 +864,7 @@ def prepare_rotation():
                                         pass
                             else:
                                 # File is NOT in whitelist - delete it
-                                current_app.logger.warning(
+                                current_app.logger.debug(
                                     f"[PREPARE ROTATION] File {file_id} not in whitelist - deleting"
                                 )
                                 try:
@@ -938,7 +938,7 @@ def prepare_rotation():
 
                     if not source_path.exists():
                         error_msg = f"File {file_id} not found at {source_path}"
-                        current_app.logger.warning(f"[PREPARE ROTATION] {error_msg}")
+                        current_app.logger.debug(f"[PREPARE ROTATION] {error_msg}")
                         failed_count += 1
                         promotion_errors.append(error_msg)
                         continue
@@ -993,7 +993,7 @@ def prepare_rotation():
                         f"[PREPARE ROTATION] Promotion error: {error}"
                     )
         else:
-            current_app.logger.warning(
+            current_app.logger.debug(
                 f"[PREPARE ROTATION] No files to promote (validated_files is empty, "
                 f"but {stats['validation']['validated']} files were validated). "
                 f"This indicates metadata lookup failed for all validated files."
@@ -1065,14 +1065,14 @@ def prepare_rotation():
             if missing_count > 0:
                 if missing_percentage <= 10.0:
                     stats["verification"]["success"] = True
-                    current_app.logger.warning(
+                    current_app.logger.debug(
                         f"[PREPARE ROTATION] Verification: {missing_count} files missing "
                         f"({missing_percentage:.1f}%) - within tolerance "
                         f"(found in tmpfs: {found_in_tmpfs}, found in source: {found_in_source})"
                     )
                     # Log first few missing files for debugging
                     for file_id in missing_files[:3]:
-                        current_app.logger.warning(
+                        current_app.logger.debug(
                             f"[PREPARE ROTATION] Missing file (within tolerance): {file_id}"
                         )
                 else:

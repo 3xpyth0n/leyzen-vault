@@ -124,7 +124,7 @@ def _validate_origin() -> tuple[bool, str | None]:
                     f"Origin validation failed in dev mode: Origin={origin}, "
                     f"Expected host={expected_host}. Validation is permissive but active."
                 )
-                current_app.logger.warning(
+                current_app.logger.debug(
                     f"Origin validation failed in dev mode (permissive): Origin={origin}, "
                     f"Expected host={expected_host}, Path={request.path}, Method={request.method}"
                 )
@@ -202,7 +202,7 @@ def _validate_origin() -> tuple[bool, str | None]:
                     f"Origin validation failed in dev mode: Origin={origin}, "
                     f"Referer={referer}. Validation is permissive but active."
                 )
-                current_app.logger.warning(
+                current_app.logger.debug(
                     f"Origin validation warning (permissive in dev): Origin={origin}, "
                     f"Referer={referer}, Expected host={expected_host}, "
                     f"Path={request.path}, Method={request.method}"

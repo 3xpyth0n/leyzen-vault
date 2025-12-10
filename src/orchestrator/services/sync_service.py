@@ -48,8 +48,8 @@ class SyncService:
             self._logger.log(f"[SYNC ERROR] Container name too long: {container_name}")
             return False
 
-        # Strict pattern: vault_web followed by number (1-9, then digits)
-        container_name_pattern = re.compile(r"^vault_web[1-9][0-9]*$")
+        # Strict pattern: vault_web followed by number (1-9, then digits) or vault_app
+        container_name_pattern = re.compile(r"^(vault_web[1-9][0-9]*|vault_app)$")
         if not container_name_pattern.match(container_name):
             self._logger.log(
                 f"[SYNC ERROR] Invalid container name format: {container_name}"

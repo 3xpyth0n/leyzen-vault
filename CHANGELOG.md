@@ -14,6 +14,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Files are automatically synchronized bidirectionally between local storage and S3, ensuring data redundancy and enabling complete cloud-based deployments.
   - All S3 credentials are securely encrypted and stored in the database, with an intuitive admin interface for easy configuration and monitoring.
 
+- **Optional MTD Orchestrator**: The Moving Target Defense (MTD) rotation system is now optional via `ORCHESTRATOR_ENABLED`, enabling lightweight deployments on resource-constrained machines while preserving full MTD security capabilities for production environments that require maximum protection.
+
 - **PostgreSQL Multi-Role Security System**: Implemented a multi-role PostgreSQL security architecture with separate roles for different application components, each with minimal required privileges. Role passwords are dynamically generated at startup, encrypted, and stored securely. Includes automatic password rotation support.
 - **ZIP File Preview**: Preview support for ZIP files.
 - **Mobile Mode**: Complete mobile-optimized interface with bottom navigation bar, responsive layouts, and manual mobile/desktop mode toggle. All screens are now fully adapted for mobile devices with single-column layouts, optimized touch targets, and improved usability on small screens.

@@ -329,7 +329,7 @@ class ExternalStorageSyncService:
             logger.info(f"[SYNC] Found {len(all_files)} files in database to sync")
 
             if len(all_files) == 0:
-                logger.warning("[SYNC] No files found in database to sync")
+                logger.debug("[SYNC] No files found in database to sync")
                 return {
                     "synced_to_s3": [],
                     "synced_from_s3": [],
@@ -557,7 +557,7 @@ class ExternalStorageSyncService:
             )
 
             if len(all_files) == 0:
-                logger.warning("[SYNC] No files found in database to sync to S3")
+                logger.debug("[SYNC] No files found in database to sync to S3")
                 return {
                     "synced_to_s3": [],
                     "skipped": [],
@@ -671,7 +671,7 @@ class ExternalStorageSyncService:
             )
 
             if len(all_files) == 0:
-                logger.warning("[SYNC] No files found in database to sync from S3")
+                logger.debug("[SYNC] No files found in database to sync from S3")
                 return {
                     "synced_from_s3": [],
                     "skipped": [],

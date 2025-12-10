@@ -439,7 +439,7 @@ class AuthService:
                         import logging
 
                         logger = logging.getLogger(__name__)
-                        logger.warning(
+                        logger.debug(
                             f"Database temporarily unavailable during jti check - "
                             f"allowing JWT-only authentication: {str(db_error)}"
                         )
@@ -534,7 +534,7 @@ class AuthService:
                     import logging
 
                     logger = logging.getLogger(__name__)
-                    logger.warning(
+                    logger.debug(
                         f"Database temporarily unavailable during user lookup - "
                         f"using JWT-only authentication: {str(db_error)}"
                     )

@@ -343,6 +343,19 @@ def load_settings() -> Settings:
     # Merge with actual os.environ to allow runtime overrides
     env_values.update(os.environ)
 
+    # Check if orchestrator is enabled
+    orchestrator_enabled_raw = (
+        env_values.get("ORCHESTRATOR_ENABLED", "true").strip().lower()
+    )
+    orchestrator_enabled = orchestrator_enabled_raw in ("true", "1", "yes", "on")
+
+    if not orchestrator_enabled:
+        raise ConfigurationError(
+            "Orchestrator is disabled (ORCHESTRATOR_ENABLED=false). "
+            "The orchestrator service should not be started when disabled. "
+            "Remove the orchestrator service from docker-compose configuration."
+        )
+
     # Synchronize with Go validation in tools/cli/cmd/validate.go::parseTemplate()
     # These variables are required at runtime and must be present and non-empty.
     # When modifying this list, update the Go implementation to match.

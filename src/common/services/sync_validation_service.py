@@ -160,7 +160,7 @@ class SyncValidationService:
                                 legitimate_thumbnails.add(normalized_ref)
 
                 except (json.JSONDecodeError, AttributeError) as e:
-                    self._logger.warning(
+                    self._logger.debug(
                         f"Failed to parse thumbnail_refs for file {file_obj.id}: {e}"
                     )
                     continue

@@ -43,31 +43,61 @@ jobs:
 
       - name: Create .env file with minimal configuration
         run: |
+          # Remove any existing .env file completely
           rm -f .env
+          # Also check for .env files in subdirectories that might interfere
+          find . -maxdepth 2 -name ".env" -type f -delete || true
+
+          # Generate secrets
           SECRET_KEY=$(openssl rand -hex 32)
           POSTGRES_PASSWORD=$(openssl rand -base64 32)
-          cat > .env << EOF
-          # Minimal configuration for health check
-          LEYZEN_ENVIRONMENT=dev
-          ORCH_USER=test_user
-          ORCH_PASS=test_pass
-          HTTP_PORT=12345
-          SECRET_KEY=$SECRET_KEY
-          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-          WEB_REPLICAS=2
-          TIMEZONE=UTC
-          PROXY_TRUST_COUNT=1
-          SESSION_COOKIE_SECURE=false
-          POSTGRES_DB=leyzen_vault
-          POSTGRES_USER=leyzen
-          EOF
+
+          # Create new .env file with ORCHESTRATOR_ENABLED=true
+          {
+            echo "# Minimal configuration for health check"
+            echo "ORCHESTRATOR_ENABLED=true"
+            echo "LEYZEN_ENVIRONMENT=dev"
+            echo "ORCH_USER=test_user"
+            echo "ORCH_PASS=test_pass"
+            echo "HTTP_PORT=12345"
+            echo "SECRET_KEY=${SECRET_KEY}"
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "WEB_REPLICAS=2"
+            echo "TIMEZONE=UTC"
+            echo "PROXY_TRUST_COUNT=1"
+            echo "SESSION_COOKIE_SECURE=false"
+            echo "POSTGRES_DB=leyzen_vault"
+            echo "POSTGRES_USER=leyzen"
+          } > .env
 
       - name: Generate docker-generated.yml
         run: |
           rm -f docker-generated.yml
+
+          # Unset any environment variable that might override .env file
+          unset ORCHESTRATOR_ENABLED
+          unset LEYZEN_ENV_FILE
+
           python src/compose/build.py
+
           if [ ! -f docker-generated.yml ]; then
             echo "❌ ERROR: docker-generated.yml was not created!"
+            exit 1
+          fi
+
+          # Verify orchestrator is enabled (vault_app should NOT exist, vault_web1 should exist)
+          if docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^vault_app$"; then
+            echo "❌ ERROR: vault_app found (orchestrator appears to be disabled)"
+            exit 1
+          fi
+
+          if ! docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^vault_web1$"; then
+            echo "❌ ERROR: vault_web containers not found"
+            exit 1
+          fi
+
+          if ! docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^orchestrator$"; then
+            echo "❌ ERROR: orchestrator service not found"
             exit 1
           fi
 

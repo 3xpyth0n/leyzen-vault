@@ -64,6 +64,7 @@ def render_haproxy_config_vault(
     *,
     enable_https: bool = False,
     ssl_cert_path: str | None = None,
+    orchestrator_enabled: bool = True,
 ) -> str:
     """Return the HAProxy configuration for Leyzen Vault.
 
@@ -72,6 +73,7 @@ def render_haproxy_config_vault(
         port: Backend port number.
         enable_https: If True, enable HTTPS frontend on port 443.
         ssl_cert_path: Path to SSL PEM file that contains both certificate and key.
+        orchestrator_enabled: If True, include orchestrator backend and routes.
 
     Returns:
         HAProxy configuration string.
@@ -132,40 +134,56 @@ def render_haproxy_config_vault(
         '    http-response set-header X-XSS-Protection "1; mode=block"',
         '    http-response set-header Referrer-Policy "strict-origin-when-cross-origin"',
         "",
-        "    acl path_orchestrator path_beg /orchestrator",
-        "    use_backend orchestrator_backend if path_orchestrator",
-        "",
-        f"    default_backend {backend_name}",
-        "",
     ]
+
+    # Add orchestrator routes only if orchestrator is enabled
+    if orchestrator_enabled:
+        lines.extend(
+            [
+                "    acl path_orchestrator path_beg /orchestrator",
+                "    use_backend orchestrator_backend if path_orchestrator",
+                "",
+            ]
+        )
+
+    lines.append(f"    default_backend {backend_name}")
+    lines.append("")
 
     # Add HTTPS frontend if enabled
     if enable_https and ssl_cert_path:
         ssl_bind = f"    bind *:443 ssl crt {ssl_cert_path}"
 
-        lines.extend(
-            [
-                "# HTTPS frontend - SSL/TLS termination",
-                "frontend https_front",
-                ssl_bind,
-                "    errorfiles myerrors",
-                "    # Don't intercept 404 for API routes (let Flask handle JSON responses)",
-                "    http-request set-var(txn.is_api) bool(true) if { path_beg /api }",
-                "    http-response return status 404 errorfile /usr/local/etc/haproxy/404.http if { status 404 } !{ var(txn.is_api) -m bool }",
-                "    http-request set-header X-Forwarded-Proto https",
-                '    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"',
-                '    http-response set-header X-Content-Type-Options "nosniff"',
-                '    http-response set-header X-Frame-Options "DENY"',
-                '    http-response set-header X-XSS-Protection "1; mode=block"',
-                '    http-response set-header Referrer-Policy "strict-origin-when-cross-origin"',
-                "",
-                "    acl path_orchestrator path_beg /orchestrator",
-                "    use_backend orchestrator_backend if path_orchestrator",
-                "",
-                f"    default_backend {backend_name}",
-                "",
-            ]
-        )
+        https_frontend_lines = [
+            "# HTTPS frontend - SSL/TLS termination",
+            "frontend https_front",
+            ssl_bind,
+            "    errorfiles myerrors",
+            "    # Don't intercept 404 for API routes (let Flask handle JSON responses)",
+            "    http-request set-var(txn.is_api) bool(true) if { path_beg /api }",
+            "    http-response return status 404 errorfile /usr/local/etc/haproxy/404.http if { status 404 } !{ var(txn.is_api) -m bool }",
+            "    http-request set-header X-Forwarded-Proto https",
+            '    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"',
+            '    http-response set-header X-Content-Type-Options "nosniff"',
+            '    http-response set-header X-Frame-Options "DENY"',
+            '    http-response set-header X-XSS-Protection "1; mode=block"',
+            '    http-response set-header Referrer-Policy "strict-origin-when-cross-origin"',
+            "",
+        ]
+
+        # Add orchestrator routes only if orchestrator is enabled
+        if orchestrator_enabled:
+            https_frontend_lines.extend(
+                [
+                    "    acl path_orchestrator path_beg /orchestrator",
+                    "    use_backend orchestrator_backend if path_orchestrator",
+                    "",
+                ]
+            )
+
+        https_frontend_lines.append(f"    default_backend {backend_name}")
+        https_frontend_lines.append("")
+
+        lines.extend(https_frontend_lines)
 
     lines.extend(
         [
@@ -181,17 +199,21 @@ def render_haproxy_config_vault(
     )
     lines.extend(http_check_lines)
     lines.extend(server_lines)
-    lines.extend(
-        [
-            "",
-            "backend orchestrator_backend",
-            "    option http-server-close",
-            "    option forwardfor header X-Forwarded-For if-none",
-            "    default-server resolvers docker init-addr none check",
-            "    server orchestrator orchestrator:80",
-            "",
-        ]
-    )
+
+    # Add orchestrator backend only if orchestrator is enabled
+    if orchestrator_enabled:
+        lines.extend(
+            [
+                "",
+                "backend orchestrator_backend",
+                "    option http-server-close",
+                "    option forwardfor header X-Forwarded-For if-none",
+                "    default-server resolvers docker init-addr none check",
+                "    server orchestrator orchestrator:80",
+                "",
+            ]
+        )
+
     return "\n".join(lines) + "\n"
 
 

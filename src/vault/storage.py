@@ -600,7 +600,7 @@ class FileStorage:
                 import logging
 
                 logger = logging.getLogger(__name__)
-                logger.warning(
+                logger.debug(
                     f"Failed to delete temporary file for session {session_id}"
                 )
 

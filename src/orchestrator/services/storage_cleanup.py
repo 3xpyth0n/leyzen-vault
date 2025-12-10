@@ -82,7 +82,12 @@ class StorageCleanupService:
 
             # Get vault container URL (use first available container)
             # In production, there should always be at least one container running
-            vault_url = f"http://vault_web1:5000"  # Default to web1
+            # Use first container from settings, or fallback to vault_app if orchestrator is disabled
+            if self.settings.web_containers:
+                container_name = self.settings.web_containers[0]
+            else:
+                container_name = "vault_app"  # Fallback for non-orchestrator mode
+            vault_url = f"http://{container_name}:5000"
 
             # Call internal API endpoint
             response = requests.post(

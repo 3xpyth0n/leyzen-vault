@@ -71,6 +71,14 @@ def _parse_port(
 
 def resolve_web_containers(env: Mapping[str, str]) -> tuple[list[str], str]:
     """Resolve web container names from environment."""
+    # Check if orchestrator is enabled
+    orchestrator_enabled_raw = env.get("ORCHESTRATOR_ENABLED", "true").strip().lower()
+    orchestrator_enabled = orchestrator_enabled_raw in ("true", "1", "yes", "on")
+
+    # If orchestrator is disabled, use single vault_app container
+    if not orchestrator_enabled:
+        return ["vault_app"], "vault_app"
+
     env_value = env.get("ORCH_WEB_CONTAINERS", "").strip()
     if env_value:
         names = parse_container_names(env_value)
@@ -261,11 +269,16 @@ def build_compose_manifest(
     if web_containers is None or web_container_string is None:
         web_containers, web_container_string = resolve_web_containers(env)
 
+    # Check if orchestrator is enabled
+    orchestrator_enabled_raw = env.get("ORCHESTRATOR_ENABLED", "true").strip().lower()
+    orchestrator_enabled = orchestrator_enabled_raw in ("true", "1", "yes", "on")
+
     base_services = build_base_services(
         env,
         web_containers,
         web_container_string,
         ssl_cert_bundle_path=ssl_cert_bundle_path,
+        orchestrator_enabled=orchestrator_enabled,
     )
     vault_services = build_vault_services(env, web_containers)
     vault_volumes = build_vault_volumes(web_containers)
@@ -448,12 +461,17 @@ def main() -> None:
     if enable_https and ssl_cert_path:
         ssl_cert_path_container = "/usr/local/etc/haproxy/ssl/cert.pem"
 
+    # Check if orchestrator is enabled
+    orchestrator_enabled_raw = env.get("ORCHESTRATOR_ENABLED", "true").strip().lower()
+    orchestrator_enabled = orchestrator_enabled_raw in ("true", "1", "yes", "on")
+
     # Generate HAProxy configuration
     haproxy_config = render_haproxy_config_vault(
         web_containers,
         backend_port,
         enable_https=enable_https,
         ssl_cert_path=ssl_cert_path_container,
+        orchestrator_enabled=orchestrator_enabled,
     )
     HAPROXY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     HAPROXY_CONFIG_PATH.write_text(haproxy_config)

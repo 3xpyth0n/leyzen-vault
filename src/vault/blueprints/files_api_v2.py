@@ -445,7 +445,7 @@ def upload_file_v2():
                             secret_key, current_app
                         )
             except Exception as e:
-                current_app.logger.warning(
+                current_app.logger.debug(
                     f"Failed to get storage mode: {e}, using local storage"
                 )
 
@@ -808,7 +808,7 @@ def download_file(file_id: str):
                         secret_key, current_app
                     )
             except Exception as e:
-                current_app.logger.warning(
+                current_app.logger.debug(
                     f"Failed to get storage mode: {e}, using local storage"
                 )
 
@@ -1970,7 +1970,7 @@ def complete_upload():
                                 secret_key, current_app
                             )
                 except Exception as e:
-                    current_app.logger.warning(
+                    current_app.logger.debug(
                         f"Failed to get storage mode: {e}, using local storage"
                     )
 

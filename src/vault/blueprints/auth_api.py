@@ -344,7 +344,7 @@ def signup():
                 )
             except ValueError as e:
                 # Key already exists or error - log but don't fail signup
-                current_app.logger.warning(f"Failed to store VaultSpace key: {e}")
+                current_app.logger.debug(f"Failed to store VaultSpace key: {e}")
 
         # Log signup
         client_ip = get_client_ip() or "unknown"
@@ -828,7 +828,7 @@ def logout():
                 "Invalid token in logout request (already invalid)"
             )
         except Exception as e:
-            current_app.logger.warning(f"Failed to blacklist token: {type(e).__name__}")
+            current_app.logger.debug(f"Failed to blacklist token: {type(e).__name__}")
 
     # Log logout
     user = get_current_user()
@@ -1008,7 +1008,7 @@ def setup():
                     encrypted_key=encrypted_vaultspace_key,
                 )
             except ValueError as e:
-                current_app.logger.warning(f"Failed to store VaultSpace key: {e}")
+                current_app.logger.debug(f"Failed to store VaultSpace key: {e}")
 
         # Note: Superadmin can login without email verification, but other users cannot
         # Return email_verification_required to show verification modal in frontend

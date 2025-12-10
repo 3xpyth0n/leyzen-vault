@@ -160,7 +160,7 @@ class ExternalStorageWorker:
     def start(self) -> None:
         """Start the worker thread."""
         if self._running:
-            logger.warning("[WORKER] Worker is already running")
+            logger.debug("[WORKER] Worker is already running")
             return
 
         self._stop_event.clear()

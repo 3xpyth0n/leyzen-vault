@@ -77,7 +77,7 @@ class AdvancedFileService:
             )
         except Exception as e:
             # Don't fail the operation if event emission fails
-            logger.warning(f"Failed to emit file event: {e}", exc_info=True)
+            logger.debug(f"Failed to emit file event: {e}", exc_info=True)
 
     def _retry_with_backoff(
         self,
@@ -111,7 +111,7 @@ class AdvancedFileService:
                 if attempt < max_retries - 1:
                     # Calculate delay with exponential backoff
                     delay = min(base_delay * (2**attempt), max_delay)
-                    logger.warning(
+                    logger.debug(
                         f"Operation failed (attempt {attempt + 1}/{max_retries}), "
                         f"retrying after {delay}s: {e}"
                     )
@@ -409,7 +409,7 @@ class AdvancedFileService:
                 )
         except Exception as e:
             # Log warning but don't fail the operation if share link revocation fails
-            logger.warning(f"Failed to revoke share links for file {file_id}: {e}")
+            logger.debug(f"Failed to revoke share links for file {file_id}: {e}")
 
         # Remove from search index
         if self.search_service.index_service:
@@ -417,9 +417,7 @@ class AdvancedFileService:
                 self.search_service.index_service.remove_file(file_id)
             except Exception as e:
                 # Log warning but don't fail the operation if search index removal fails
-                logger.warning(
-                    f"Failed to remove file {file_id} from search index: {e}"
-                )
+                logger.debug(f"Failed to remove file {file_id} from search index: {e}")
 
         # Emit file deletion event
         self._emit_file_event(
@@ -575,9 +573,7 @@ class AdvancedFileService:
             try:
                 self.search_service.index_service.remove_file(file_id)
             except Exception as e:
-                logger.warning(
-                    f"Failed to remove file {file_id} from search index: {e}"
-                )
+                logger.debug(f"Failed to remove file {file_id} from search index: {e}")
 
         return True
 
