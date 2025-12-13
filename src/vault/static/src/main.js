@@ -37,11 +37,6 @@ if (typeof window !== "undefined") {
 // Note: The new icon system is imported above and automatically sets window.Icons
 // The old static icons.js is still loaded in index.html for backward compatibility
 // but will be replaced by the new system
-if (!window.Icons) {
-  console.warn(
-    "window.Icons not available - icon system may not be loaded. Some icons may not display.",
-  );
-}
 
 // Patch Element.prototype.innerHTML and insertAdjacentHTML to use Trusted Types policies
 // This ensures Vue's v-html directive and other HTML insertions work with Trusted Types

@@ -612,7 +612,6 @@ export default {
       } catch (err) {
         // If status check fails, don't change syncing state
         // This prevents disabling the button if there's a temporary network issue
-        console.error("Failed to check sync status:", err);
       }
     };
 
@@ -740,6 +739,17 @@ export default {
   cursor: pointer;
   transition: all 0.2s ease;
   border: 1px solid rgba(148, 163, 184, 0.1);
+  min-height: 120px; /* Ensure minimum height for consistency */
+}
+
+@media (min-width: 769px) {
+  .integration-card {
+    box-sizing: border-box;
+  }
+
+  .integration-content {
+    justify-content: center; /* Center content vertically */
+  }
 }
 
 .integration-card:hover {

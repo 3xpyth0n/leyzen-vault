@@ -54,11 +54,25 @@ class ExternalStorageConfigService:
         cipher = ExternalStorageConfigService._get_fernet_cipher(secret_key)
 
         with app.app_context():
-            secret = (
-                db.session.query(SystemSecrets)
-                .filter_by(key=ExternalStorageConfigService.SECRET_KEY)
-                .first()
-            )
+            try:
+                secret = (
+                    db.session.query(SystemSecrets)
+                    .filter_by(key=ExternalStorageConfigService.SECRET_KEY)
+                    .first()
+                )
+            except Exception as db_error:
+                # Handle case where table doesn't exist or has wrong structure
+                # This can happen during initial database setup
+                import logging
+
+                logger = logging.getLogger(__name__)
+                error_str = str(db_error)
+                if "does not exist" in error_str or "UndefinedColumn" in error_str:
+                    # Table or column doesn't exist yet - this is OK during init
+                    logger.debug(f"system_secrets table not ready yet: {db_error}")
+                else:
+                    logger.warning(f"Error querying system_secrets: {db_error}")
+                return None
 
             if not secret:
                 return None
@@ -91,11 +105,25 @@ class ExternalStorageConfigService:
 
         with app.app_context():
             # Check if secret already exists
-            existing = (
-                db.session.query(SystemSecrets)
-                .filter_by(key=ExternalStorageConfigService.SECRET_KEY)
-                .first()
-            )
+            try:
+                existing = (
+                    db.session.query(SystemSecrets)
+                    .filter_by(key=ExternalStorageConfigService.SECRET_KEY)
+                    .first()
+                )
+            except Exception as db_error:
+                # Handle case where table doesn't exist or has wrong structure
+                import logging
+
+                logger = logging.getLogger(__name__)
+                error_str = str(db_error)
+                if "does not exist" in error_str or "UndefinedColumn" in error_str:
+                    # Table or column doesn't exist yet - raise error as this should not happen during normal operation
+                    raise RuntimeError(
+                        "system_secrets table not ready. Database must be initialized first."
+                    ) from db_error
+                else:
+                    raise
 
             if existing:
                 # Update existing secret

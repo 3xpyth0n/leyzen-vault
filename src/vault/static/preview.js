@@ -9,7 +9,6 @@ function setInnerHTML(element, html) {
       return;
     } catch (e) {
       // Fallback if policy fails
-      console.warn("Failed to use vaultHTMLPolicy:", e);
     }
   }
 
@@ -19,9 +18,7 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   // Last resort: direct assignment (will fail if Trusted Types is enforced)
@@ -220,7 +217,6 @@ class PreviewManager {
     try {
       await this.loadPreview(fileId, mimeType, container);
     } catch (error) {
-      console.error("Error loading preview:", error);
       if (container) {
         const errorHtml = `<div class="preview-error">Failed to load preview: ${escapeHtml(error.message)}</div>`;
         setInnerHTML(container, errorHtml);

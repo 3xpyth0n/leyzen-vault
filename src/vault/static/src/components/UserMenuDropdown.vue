@@ -45,7 +45,7 @@
           </router-link>
 
           <a
-            v-if="isSuperAdmin"
+            v-if="isSuperAdmin && orchestratorEnabled"
             href="/orchestrator"
             target="_blank"
             rel="noreferrer noopener"
@@ -106,6 +106,10 @@ export default {
     isSuperAdmin: {
       type: Boolean,
       default: false,
+    },
+    orchestratorEnabled: {
+      type: Boolean,
+      default: true,
     },
   },
   emits: ["logout"],

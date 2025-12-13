@@ -160,7 +160,6 @@ export default {
         this.qrCode = data.qr_code;
         this.step = "scan";
       } catch (error) {
-        console.error("Failed to initialize 2FA setup:", error);
         this.errorMessage = error.message || "Failed to generate QR code";
         this.$emit("cancel");
       }
@@ -182,7 +181,6 @@ export default {
         this.backupCodes = result.backup_codes;
         this.step = "backup";
       } catch (error) {
-        console.error("2FA verification failed:", error);
         this.errorMessage = error.message || "Invalid code. Please try again.";
       } finally {
         this.isLoading = false;

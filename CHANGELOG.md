@@ -14,6 +14,15 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Files are automatically synchronized bidirectionally between local storage and S3, ensuring data redundancy and enabling complete cloud-based deployments.
   - All S3 credentials are securely encrypted and stored in the database, with an intuitive admin interface for easy configuration and monitoring.
 
+- **Database Backup System**: Leyzen Vault now includes a comprehensive database backup solution to protect your critical data and ensure business continuity.
+  - Schedule automated backups with flexible cron-based scheduling (daily, weekly, or custom intervals) to match your operational needs.
+  - Choose where to store your backups: locally, in S3-compatible storage, or both for maximum redundancy and disaster recovery readiness.
+  - All backups are encrypted at rest using Argon2id, the same industry-leading encryption system used for your files, ensuring your backup data remains protected whether stored locally or in S3-compatible storage—because security shouldn't be an afterthought, even for backups.
+  - Configure retention policies to automatically manage backup history, keeping your storage clean while preserving essential recovery points.
+  - Create manual backups on-demand whenever you need an extra safety checkpoint before important operations or changes.
+  - Restore your database from any backup point directly from the setup page, making recovery simple and accessible even when starting fresh.
+  - All backup operations run in the background, allowing you to continue using Leyzen Vault normally while backups are created.
+
 - **Optional MTD Orchestrator**: The Moving Target Defense (MTD) rotation system is now optional via `ORCHESTRATOR_ENABLED`, enabling lightweight deployments on resource-constrained machines while preserving full MTD security capabilities for production environments that require maximum protection.
 
 - **PostgreSQL Multi-Role Security System**: Implemented a multi-role PostgreSQL security architecture with separate roles for different application components, each with minimal required privileges. Role passwords are dynamically generated at startup, encrypted, and stored securely. Includes automatic password rotation support.

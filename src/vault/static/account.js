@@ -6,17 +6,13 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
   element.innerHTML = html;
 }
@@ -99,7 +95,6 @@ async function loadAccountInfo() {
       }
     }
   } catch (error) {
-    console.error("Error loading account info:", error);
     setInnerHTML(
       container,
       '<div class="error-message">Failed to load account information</div>',
@@ -167,7 +162,6 @@ async function handlePasswordChange(e) {
     // Clear form
     document.getElementById("change-password-form").reset();
   } catch (error) {
-    console.error("Error changing password:", error);
     errorDiv.textContent = "An error occurred. Please try again.";
     errorDiv.classList.remove("hidden");
   }
@@ -200,9 +194,7 @@ async function handleDeleteAccount(e) {
         }
       }
     }
-  } catch (error) {
-    console.error("Error checking user role:", error);
-  }
+  } catch (error) {}
 
   const password = document.getElementById("delete-password").value;
 
@@ -274,7 +266,6 @@ async function performDeleteAccount(password) {
       window.location.href = "/login";
     }, 2000);
   } catch (error) {
-    console.error("Error deleting account:", error);
     errorDiv.textContent = "An error occurred. Please try again.";
     errorDiv.classList.remove("hidden");
   }

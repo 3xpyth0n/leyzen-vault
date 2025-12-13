@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, current_app, jsonify, request
 
@@ -894,15 +895,34 @@ def delete_file(file_id: str):
         if not success:
             return jsonify({"error": "File not found"}), 404
 
-        # Delete from storage (only if it's a file, not a folder)
+        # Delete from storage in background (only if it's a file, not a folder)
+        # This prevents blocking the worker uvicorn on slow I/O operations
         if file_obj.storage_ref and file_obj.mime_type != "application/x-directory":
-            try:
-                storage.delete_file(file_obj.storage_ref)
-            except Exception as e:
-                # Storage deletion failure shouldn't block database deletion, but log the error
-                current_app.logger.warning(
-                    f"Failed to delete storage file {file_obj.storage_ref}: {e}"
-                )
+            # Capture Flask app instance, storage, and file info before creating thread
+            flask_app = current_app._get_current_object()
+            storage_ref = file_obj.storage_ref
+            storage_instance = storage
+
+            def _background_delete_storage():
+                """Background storage file deletion."""
+                # Use captured Flask app instance to create app context
+                with flask_app.app_context():
+                    try:
+                        storage_instance.delete_file(storage_ref)
+                    except Exception as e:
+                        # Storage deletion failure shouldn't block database deletion, but log the error
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"Failed to delete storage file {storage_ref}: {e}"
+                        )
+
+            # Execute storage deletion in background thread to avoid blocking the worker
+            cleanup_thread = threading.Thread(
+                target=_background_delete_storage, daemon=True
+            )
+            cleanup_thread.start()
 
         return (
             jsonify(
@@ -2068,7 +2088,6 @@ def complete_upload():
         except FileNotFoundError as e:
             return jsonify({"error": f"Temporary file not found: {str(e)}"}), 404
         except IOError as e:
-            # Mark session as failed for debugging
             session.status = "failed"
             db.session.commit()
             current_app.logger.error(

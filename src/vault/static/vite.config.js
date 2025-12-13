@@ -212,14 +212,9 @@ export default defineConfig({
         return;
       }
       // Use default warn behavior for other warnings
-      console.warn(msg);
     },
-    info(msg) {
-      console.info(msg);
-    },
-    error(msg, options) {
-      console.error(msg);
-    },
+    info(msg) {},
+    error(msg, options) {},
     warnOnce(msg) {
       // Suppress warnings about static scripts that are served by Flask
       if (
@@ -234,7 +229,6 @@ export default defineConfig({
         return;
       }
       // Use default warnOnce behavior for other warnings
-      console.warn(msg);
     },
   },
   base: "/static/",

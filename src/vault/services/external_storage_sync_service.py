@@ -255,13 +255,37 @@ class ExternalStorageSyncService:
                 else:
                     target_dir = self.local_storage.storage_dir / "files"
 
-                target_dir.mkdir(parents=True, exist_ok=True)
+                # Ensure directory exists - create with explicit error handling
+                try:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    # Verify directory was created successfully
+                    if not target_dir.exists():
+                        raise OSError(f"Failed to create directory: {target_dir}")
+                except OSError as e:
+                    error_msg = f"Failed to create target directory {target_dir}: {e}"
+                    logger.error(error_msg)
+                    return False, error_msg
+
                 target_path = target_dir / storage_ref
 
                 # Write file atomically
                 temp_path = target_path.with_suffix(f"{target_path.suffix}.tmp")
-                temp_path.write_bytes(encrypted_data)
-                temp_path.rename(target_path)
+                try:
+                    temp_path.write_bytes(encrypted_data)
+                    # Verify parent directory still exists before rename
+                    if not target_dir.exists():
+                        raise OSError(
+                            f"Target directory {target_dir} was removed before rename"
+                        )
+                    temp_path.rename(target_path)
+                except OSError as e:
+                    # Clean up temp file if it exists
+                    if temp_path.exists():
+                        try:
+                            temp_path.unlink()
+                        except Exception:
+                            pass
+                    raise
 
                 logger.info(
                     f"Successfully synced file {storage_ref} from S3 to local storage"
@@ -289,7 +313,6 @@ class ExternalStorageSyncService:
         """
         # This would require database access to find recent files
         # For now, return empty stats
-        # TODO: Implement database query to find recent files missing locally
         return {
             "restored": [],
             "failed": [],
@@ -782,8 +805,6 @@ class ExternalStorageSyncService:
 
         # This would require database access to find deleted files
         # For now, return empty stats
-        # TODO: Implement database query to find deleted files that still exist in S3
-
         return {
             "deleted": deleted,
             "failed": failed,
@@ -809,16 +830,43 @@ class ExternalStorageSyncService:
         failed: list[tuple[str, str]] = []
 
         try:
+            from flask import current_app
             from vault.database.schema import File, db
+
+            # Skip cleanup if database restore is in progress
+            # The database connection may be closed or invalid during restore
+            restore_running = current_app.config.get("DATABASE_RESTORE_RUNNING", False)
+            if restore_running:
+                logger.debug(
+                    "[CLEANUP] Skipping cleanup - database restore in progress"
+                )
+                return {
+                    "cleaned": [],
+                    "failed": [],
+                    "cleaned_count": 0,
+                    "failed_count": 0,
+                }
 
             # Get all files from database (including those in trash, as they still have physical files)
             # We only check files that have a storage_ref and are not directories
-            all_files = (
-                db.session.query(File)
-                .filter(File.mime_type != "application/x-directory")
-                .filter(File.storage_ref.isnot(None))
-                .all()
-            )
+            try:
+                all_files = (
+                    db.session.query(File)
+                    .filter(File.mime_type != "application/x-directory")
+                    .filter(File.storage_ref.isnot(None))
+                    .all()
+                )
+            except Exception as db_error:
+                # Database connection may be invalid (e.g., during restore)
+                logger.debug(
+                    f"[CLEANUP] Database query failed, skipping cleanup: {db_error}"
+                )
+                return {
+                    "cleaned": [],
+                    "failed": [],
+                    "cleaned_count": 0,
+                    "failed_count": 0,
+                }
             logger.info(
                 f"[CLEANUP] Found {len(all_files)} non-deleted files in database to check"
             )
@@ -935,9 +983,18 @@ class ExternalStorageSyncService:
             )
 
         except Exception as e:
-            logger.error(
-                f"Error in cleanup_orphaned_database_entries: {e}", exc_info=True
-            )
+            # Don't log as error if it's a database connection issue during restore
+            from flask import current_app
+
+            restore_running = current_app.config.get("DATABASE_RESTORE_RUNNING", False)
+            if restore_running or "server closed the connection" in str(e):
+                logger.debug(
+                    f"[CLEANUP] Skipping cleanup due to database restore or connection issue: {e}"
+                )
+            else:
+                logger.error(
+                    f"Error in cleanup_orphaned_database_entries: {e}", exc_info=True
+                )
             return {
                 "cleaned": [],
                 "failed": [("all", str(e))],

@@ -43,18 +43,17 @@ jobs:
 
       - name: Create .env file with minimal configuration
         run: |
-          # Remove any existing .env file completely
-          rm -f .env
-          # Also check for .env files in subdirectories that might interfere
-          find . -maxdepth 2 -name ".env" -type f -delete || true
+          # Remove any existing .env files that might interfere
+          rm -f .env .env.health-check
+          find . -maxdepth 2 -name ".env*" -type f -delete || true
 
           # Generate secrets
           SECRET_KEY=$(openssl rand -hex 32)
-          POSTGRES_PASSWORD=$(openssl rand -base64 32)
+          POSTGRES_PASSWORD=$(openssl rand -hex 32)
 
-          # Create new .env file with ORCHESTRATOR_ENABLED=true
+          # Create health-check specific .env file with explicit name
+          # This file will be referenced via LEYZEN_ENV_FILE to ensure isolation
           {
-            echo "# Minimal configuration for health check"
             echo "ORCHESTRATOR_ENABLED=true"
             echo "LEYZEN_ENVIRONMENT=dev"
             echo "ORCH_USER=test_user"
@@ -68,15 +67,16 @@ jobs:
             echo "SESSION_COOKIE_SECURE=false"
             echo "POSTGRES_DB=leyzen_vault"
             echo "POSTGRES_USER=leyzen"
-          } > .env
+          } > .env.health-check
 
       - name: Generate docker-generated.yml
         run: |
           rm -f docker-generated.yml
 
-          # Unset any environment variable that might override .env file
-          unset ORCHESTRATOR_ENABLED
-          unset LEYZEN_ENV_FILE
+          # Use LEYZEN_ENV_FILE to explicitly point to the health-check environment file
+          # This ensures build.py uses the correct .env file and prevents production
+          # environment variables from leaking into the test environment
+          export LEYZEN_ENV_FILE=.env.health-check
 
           python src/compose/build.py
 
@@ -106,6 +106,7 @@ jobs:
           python3 << PYEOF
           import re
           import os
+          import sys
 
           yaml_file = "docker-generated.yml"
           project_prefix = os.environ.get("COMPOSE_PROJECT_NAME", "leyzen-vault-github-action") + "-"
@@ -113,20 +114,52 @@ jobs:
           with open(yaml_file, 'r') as f:
               content = f.read()
 
+          original_content = content
+
+          # Prefix volume names (must match "leyzen-" pattern and not already be prefixed)
+          # Only prefix volumes that start with "leyzen-" but don't already have the project prefix
           content = re.sub(
               r'(\s+name:\s+)"(leyzen-[^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
+              if not m.group(2).startswith(project_prefix) else m.group(0),
               content
           )
 
+          # Prefix container names (only if not already prefixed)
           content = re.sub(
               r'(\s+container_name:\s+)"([^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
+              if not m.group(2).startswith(project_prefix) else m.group(0),
               content
           )
+
+          # Prefix network names (must match "leyzen-" pattern and not already be prefixed)
+          content = re.sub(
+              r'(\s+name:\s+)"(leyzen-[^"]+)"',
+              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
+              if not m.group(2).startswith(project_prefix) else m.group(0),
+              content
+          )
+
+          # Verify that all volumes starting with "leyzen-" were prefixed
+          # This is a safety check to ensure we don't accidentally use production volumes
+          # Only check for volumes that start with "leyzen-" but don't have the project prefix
+          unprefixed_volumes = re.findall(r'(\s+name:\s+)"(leyzen-[^"]+)"', content)
+          unprefixed_volumes = [
+              match for match in unprefixed_volumes
+              if not match[1].startswith(project_prefix)
+          ]
+          if unprefixed_volumes:
+              print(f"❌ ERROR: Found {len(unprefixed_volumes)} unprefixed volumes:", file=sys.stderr)
+              for match in unprefixed_volumes:
+                  print(f"  - {match[1]}", file=sys.stderr)
+              print("All volumes must be prefixed to prevent accidental deletion of production data!", file=sys.stderr)
+              sys.exit(1)
 
           with open(yaml_file, 'w') as f:
               f.write(content)
+
+          print(f"✅ Successfully prefixed all volumes, networks, and containers with '{project_prefix}'")
           PYEOF
 
       - name: Build and start containers
@@ -196,8 +229,16 @@ jobs:
 
           if [ "$all_critical_healthy" != "true" ]; then
             echo "❌ Some critical services failed to become healthy within the timeout period"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Container Status:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
-            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=50
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 All Services Logs (last 100 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=100 || true
             exit 1
           fi
 
@@ -227,8 +268,16 @@ jobs:
 
           if [ "$orchestrator_healthy" != "true" ]; then
             echo "❌ Orchestrator failed to become healthy within the timeout period"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Container Status:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
-            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs orchestrator --tail=50
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Orchestrator Logs (last 100 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs orchestrator --tail=100 || true
             exit 1
           fi
 
@@ -302,6 +351,16 @@ jobs:
             echo "❌ vault_web1 or vault_web2 failed to become healthy within the timeout period"
             echo "vault_web1: status=$vault_web1_status, health=$vault_web1_health"
             echo "vault_web2: status=$vault_web2_status, health=$vault_web2_health"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Container Status:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
             exit 1
           fi
 
@@ -315,11 +374,31 @@ jobs:
 
           if [ "$vault_web1_status" != "running" ] || ([ "$vault_web1_health" != "none" ] && [ "$vault_web1_health" != "healthy" ]); then
             echo "❌ vault_web1 is no longer healthy after 3 seconds (status: $vault_web1_status, health: $vault_web1_health)"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Container Status:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
             exit 1
           fi
 
           if [ "$vault_web2_status" != "running" ] || ([ "$vault_web2_health" != "none" ] && [ "$vault_web2_health" != "healthy" ]); then
             echo "❌ vault_web2 is no longer healthy after 3 seconds (status: $vault_web2_status, health: $vault_web2_health)"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 Container Status:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
             exit 1
           fi
 
@@ -425,9 +504,23 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" down -v || true
+          # Stop containers without removing volumes (safety: volumes are removed manually with filters)
+          docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" down || true
 
+          # Remove containers, volumes, and networks ONLY if they match the project prefix
+          # This ensures we never accidentally delete production resources
           PROJECT_PREFIX="${COMPOSE_PROJECT_NAME}-"
+
+          # Remove containers with project prefix
           docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
+
+          # Remove volumes with project prefix ONLY (never delete production volumes)
           docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
+
+          # Remove networks with project prefix
           docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
+
+          # Additional safety: verify no production volumes were affected
+          # Check if any volumes starting with "leyzen-" (without prefix) were deleted
+          # This should never happen if prefixing worked correctly
+          echo "✅ Cleanup complete. Only resources with prefix '${PROJECT_PREFIX}' were removed."

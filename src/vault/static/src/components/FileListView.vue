@@ -330,6 +330,7 @@ import * as mm from "music-metadata";
 import FileMenuDropdown from "./FileMenuDropdown.vue";
 import CustomSelect from "./CustomSelect.vue";
 import { isMobileMode } from "../utils/mobileMode";
+import { getThumbnail, setThumbnail } from "../services/thumbnailCache";
 
 export default {
   name: "FileListView",
@@ -501,9 +502,7 @@ export default {
             }
           });
         }
-      } catch (e) {
-        console.warn("Failed to load column widths from localStorage", e);
-      }
+      } catch (e) {}
     };
 
     // Save column widths to localStorage
@@ -513,9 +512,7 @@ export default {
           "fileListView_columnWidths",
           JSON.stringify(columnWidths.value),
         );
-      } catch (e) {
-        console.warn("Failed to save column widths to localStorage", e);
-      }
+      } catch (e) {}
     }, 300);
 
     // Calculate default width in pixels based on container width
@@ -797,7 +794,6 @@ export default {
 
     const getIcon = (iconName) => {
       if (!window.Icons) {
-        console.warn("window.Icons not available");
         return "";
       }
       if (window.Icons[iconName]) {
@@ -805,12 +801,10 @@ export default {
         if (typeof iconFunction === "function") {
           const icon = iconFunction.call(window.Icons, 16, "#ffffff");
           if (!icon || icon.trim() === "") {
-            console.warn(`Icon ${iconName} returned empty string`);
           }
           return icon;
         }
       }
-      console.warn(`Icon ${iconName} not found`);
       return "";
     };
 
@@ -1381,12 +1375,7 @@ export default {
       if (isImageFile(file)) {
         try {
           await loadImageAsThumbnail(file);
-        } catch (imageError) {
-          console.error(
-            `Failed to load image as thumbnail for ${fileId}:`,
-            imageError,
-          );
-        }
+        } catch (imageError) {}
         return;
       }
 
@@ -1396,10 +1385,6 @@ export default {
           await loadAudioCoverAsThumbnail(file);
         } catch (audioError) {
           // Silently fail - no cover art available
-          console.debug(
-            `No cover art available for audio file ${fileId}:`,
-            audioError,
-          );
         }
         return;
       }
@@ -1413,6 +1398,16 @@ export default {
       }
 
       try {
+        // Check cache first
+        const cachedBlob = await getThumbnail(file.id);
+        if (cachedBlob) {
+          const blobUrl = URL.createObjectURL(cachedBlob);
+          window.__leyzenThumbnailUrls.set(file.id, blobUrl);
+          thumbnailUpdateTrigger.value++;
+          await nextTick();
+          return;
+        }
+
         // Get VaultSpace key
         const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
         if (!vaultspaceKey) {
@@ -1446,18 +1441,16 @@ export default {
         const blob = new Blob([decryptedData], { type: file.mime_type });
         const blobUrl = URL.createObjectURL(blob);
 
+        // Store in persistent cache
+        await setThumbnail(file.id, blob, file.mime_type);
+
         // Store in global cache
         window.__leyzenThumbnailUrls.set(file.id, blobUrl);
 
         // Force Vue to update
         thumbnailUpdateTrigger.value++;
         await nextTick();
-      } catch (error) {
-        console.error(
-          `Failed to load image as thumbnail for ${file.id}:`,
-          error,
-        );
-      }
+      } catch (error) {}
     };
 
     // Load audio cover art as thumbnail
@@ -1468,6 +1461,16 @@ export default {
       }
 
       try {
+        // Check cache first
+        const cachedBlob = await getThumbnail(file.id);
+        if (cachedBlob) {
+          const blobUrl = URL.createObjectURL(cachedBlob);
+          window.__leyzenThumbnailUrls.set(file.id, blobUrl);
+          thumbnailUpdateTrigger.value++;
+          await nextTick();
+          return;
+        }
+
         // Get VaultSpace key
         const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
         if (!vaultspaceKey) {
@@ -1559,6 +1562,9 @@ export default {
             });
             const blobUrl = URL.createObjectURL(pictureBlob);
 
+            // Store in persistent cache
+            await setThumbnail(file.id, pictureBlob, pictureFormat);
+
             // Store in global cache
             window.__leyzenThumbnailUrls.set(file.id, blobUrl);
 
@@ -1569,10 +1575,6 @@ export default {
         }
       } catch (error) {
         // Silently fail - no cover art available
-        console.debug(
-          `Failed to load audio cover as thumbnail for ${file.id}:`,
-          error,
-        );
       }
     };
 
@@ -2085,10 +2087,6 @@ export default {
           }
         });
       } catch (err) {
-        console.error(
-          `Failed to generate thumbnail for file ${file.id} (${file.original_name}):`,
-          err,
-        );
         failedThumbnails.value.add(file.id);
       } finally {
         generatingThumbnails.value.delete(file.id);

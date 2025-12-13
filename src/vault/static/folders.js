@@ -26,7 +26,6 @@ async function loadFolders(parentId = null) {
     // For legacy compatibility, try to get vaultspace_id from URL or global state
     const vaultspaceId = window.currentVaultspaceId || getVaultspaceIdFromURL();
     if (!vaultspaceId) {
-      console.warn("vaultspace_id not found, folders may not load correctly");
       return [];
     }
 
@@ -52,7 +51,6 @@ async function loadFolders(parentId = null) {
     );
     return folders;
   } catch (error) {
-    console.error("Error loading folders:", error);
     return [];
   }
 }
@@ -77,12 +75,8 @@ async function getFolderPath(folderId) {
     // Migrate to API v2 - folder path may need to be computed client-side
     // API v2 doesn't have a direct path endpoint, so we'll build it from file hierarchy
     // For now, return empty array and let the calling code handle it
-    console.warn(
-      "getFolderPath: API v2 doesn't have direct path endpoint, returning empty",
-    );
     return [];
   } catch (error) {
-    console.error("Error loading folder path:", error);
     return [];
   }
 }
@@ -146,7 +140,6 @@ async function decryptFolderName(encryptedName, parentId) {
 
     return decryptedName;
   } catch (error) {
-    console.error("Error decrypting folder name:", error);
     return "[Encrypted Folder]";
   }
 }
@@ -347,7 +340,6 @@ async function loadFolderContents(folderId) {
       window.renderFiles(data.files || []);
     }
   } catch (error) {
-    console.error("Error loading folder contents:", error);
     if (window.Notifications) {
       window.Notifications.error("Failed to load folder contents");
     }
@@ -372,7 +364,6 @@ async function generateUniqueFolderName(
             folder.parent_id || parentId,
           );
         } catch (e) {
-          console.warn("Failed to decrypt folder name:", e);
           return null;
         }
       }),
@@ -397,7 +388,6 @@ async function generateUniqueFolderName(
 
     return newName;
   } catch (error) {
-    console.error("Error generating unique folder name:", error);
     // Fallback to base name if there's an error
     return baseName;
   }
@@ -521,7 +511,6 @@ async function createFolder(name, parentId = null) {
     // Reload current folder
     await loadFolderContents(currentFolderId);
   } catch (error) {
-    console.error("Error creating folder:", error);
     if (window.Notifications) {
       window.Notifications.error(`Failed to create folder: ${error.message}`);
     }
@@ -572,7 +561,6 @@ async function performDeleteFolder(folderId) {
     // Reload current folder
     await loadFolderContents(currentFolderId);
   } catch (error) {
-    console.error("Delete error:", error);
     if (window.Notifications) {
       window.Notifications.error(`Delete failed: ${error.message}`);
     }
@@ -585,24 +573,19 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   try {
     element.innerHTML = html;
   } catch (e) {
-    console.error("Failed to set innerHTML:", e);
     throw e;
   }
 }

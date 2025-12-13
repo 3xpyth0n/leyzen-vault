@@ -104,9 +104,7 @@ class ClipboardManager {
     this.listeners.forEach((callback) => {
       try {
         callback(this.items);
-      } catch (error) {
-        console.error("Clipboard listener error:", error);
-      }
+      } catch (error) {}
     });
   }
 }

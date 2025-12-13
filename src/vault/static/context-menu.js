@@ -273,7 +273,6 @@ class ContextMenu {
           const apiModule2 = await import("../src/services/api.js");
           files = apiModule2.files;
         } catch (e2) {
-          console.error("Failed to load files API:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Files API not available. Please refresh the page.",
@@ -305,7 +304,6 @@ class ContextMenu {
         window.location.reload();
       }
     } catch (error) {
-      console.error("Rename error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to rename: ${error.message || "Unknown error"}`,
@@ -379,7 +377,6 @@ class ContextMenu {
         );
       }
     } catch (error) {
-      console.error("Properties error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to show properties: ${error.message || "Unknown error"}`,

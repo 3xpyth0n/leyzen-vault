@@ -45,12 +45,7 @@ export async function getVaultBaseUrl() {
           return cachedVaultUrl;
         }
       }
-    } catch (error) {
-      console.warn(
-        "Failed to fetch vault config, using window.location.origin as fallback:",
-        error,
-      );
-    }
+    } catch (error) {}
 
     // Fallback to window.location.origin if VAULT_URL is not configured or fetch failed
     cachedVaultUrl = window.location.origin;

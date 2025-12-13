@@ -50,9 +50,7 @@ async function downloadFile(fileId, key, linkToken = null) {
       const metadata = await metadataResponse.json();
       originalName = metadata.original_name;
     }
-  } catch (e) {
-    console.warn("Could not fetch file metadata:", e);
-  }
+  } catch (e) {}
 
   if (statusEl) {
     statusEl.className = "status success";
@@ -108,7 +106,6 @@ async function handleShareDownload() {
         return;
       }
     } catch (error) {
-      console.error("Error fetching share info:", error);
       showError("Failed to validate share link.");
       return;
     }
@@ -142,7 +139,6 @@ async function handleShareDownload() {
       downloadStatus.className = "status success";
     }
   } catch (error) {
-    console.error("Download error:", error);
     showError(`Download error: ${error.message}`);
   } finally {
     if (downloadButton) downloadButton.disabled = false;

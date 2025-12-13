@@ -141,9 +141,6 @@ const handleVerifyToken = async (token) => {
     // This ensures master key initialization happens during login
     // Even if response contains a token, ignore it
     if (response.token) {
-      console.warn(
-        "Email verification returned a token! This should not happen. Ignoring it.",
-      );
       // Explicitly remove any token that might exist
       localStorage.removeItem("jwt_token");
     }

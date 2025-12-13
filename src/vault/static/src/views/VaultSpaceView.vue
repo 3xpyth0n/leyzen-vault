@@ -567,12 +567,6 @@ export default {
         // User is authenticated but master key is not available
         // User needs to re-enter password to access encrypted content
         // Don't logout - keep JWT token so user doesn't need to re-authenticate
-        console.warn(
-          "Master key lost from memory but salt exists. This is normal after page refresh.",
-        );
-        console.warn(
-          "User needs to re-enter password to access encrypted content.",
-        );
         // Show error message but don't redirect - user can still navigate
         this.showAlert({
           type: "error",
@@ -614,9 +608,6 @@ export default {
           }
         } catch (err) {
           // User is not authenticated - redirect to login
-          console.warn(
-            "User master key not available and user is not authenticated. Redirecting to login.",
-          );
           this.showAlert({
             type: "error",
             title: "Authentication Required",
@@ -818,13 +809,6 @@ export default {
           // Check if salt exists in sessionStorage - this indicates a lost session
           const storedSalt = getStoredSalt();
           if (storedSalt) {
-            console.warn(
-              "Master key lost from memory but salt exists in sessionStorage. Session may have expired.",
-            );
-          } else {
-            console.warn(
-              "User master key not available, VaultSpace key will be loaded on demand",
-            );
           }
           return;
         }
@@ -908,10 +892,6 @@ export default {
                     "You can now use this VaultSpace normally.",
                 });
               } catch (recreateErr) {
-                console.error(
-                  "Failed to recreate VaultSpace key:",
-                  recreateErr,
-                );
                 this.error =
                   "Unable to decrypt VaultSpace key and failed to create a new key. " +
                   "Please contact support.";
@@ -1444,7 +1424,6 @@ export default {
           }
         }
       } catch (error) {
-        console.error("Error updating breadcrumbs:", error);
         this.breadcrumbs = [];
       }
     },
@@ -1466,15 +1445,8 @@ export default {
                 "Your session has expired. Please log in again.";
 
               if (storedSalt) {
-                console.warn(
-                  "Master key lost from memory but salt exists in sessionStorage. Session expired.",
-                );
                 errorMessage =
                   "Your session has expired. The encryption key has been lost. Please log in again.";
-              } else {
-                console.warn(
-                  "User master key not available, no salt found. User needs to login.",
-                );
               }
 
               // Clear any stale data and redirect to login
@@ -2028,9 +2000,7 @@ export default {
                   // Cancel upload session
                   try {
                     await files.cancelUpload(sessionId);
-                  } catch (e) {
-                    console.warn("Failed to cancel upload session:", e);
-                  }
+                  } catch (e) {}
                   throw new Error("Upload cancelled");
                 }
 
@@ -2065,12 +2035,6 @@ export default {
 
                   // Check if response is valid
                   if (!chunkResponse || typeof chunkResponse !== "object") {
-                    console.error(
-                      "Invalid chunk response:",
-                      chunkResponse,
-                      "Type:",
-                      typeof chunkResponse,
-                    );
                     throw new Error("Invalid response from server");
                   }
 
@@ -2096,19 +2060,10 @@ export default {
                     break;
                   }
                 } catch (chunkError) {
-                  console.error(
-                    `Failed to upload chunk ${chunkIndex}:`,
-                    chunkError,
-                  );
                   // Cancel upload session on error
                   try {
                     await files.cancelUpload(sessionId);
-                  } catch (cancelError) {
-                    console.warn(
-                      "Failed to cancel upload session:",
-                      cancelError,
-                    );
-                  }
+                  } catch (cancelError) {}
                   throw chunkError;
                 }
               }
@@ -2176,9 +2131,6 @@ export default {
                   err.message.includes("CONFLICT")));
 
             // Only log non-conflict errors
-            if (!isConflict) {
-              console.error(`Failed to upload ${file.name}:`, err);
-            }
 
             // Check if error is quota-related and show modal
             if (
@@ -2332,7 +2284,6 @@ export default {
                   uploadedCount++;
                   uploadSucceeded = true;
                 } catch (replaceErr) {
-                  console.error(`Failed to replace ${file.name}:`, replaceErr);
                   this.uploadError = `Failed to replace ${file.name}: ${replaceErr.message}`;
                   if (!applyToAll) {
                     this.conflictResolution = null;
@@ -2399,7 +2350,6 @@ export default {
                   uploadedCount++;
                   uploadSucceeded = true;
                 } catch (keepBothErr) {
-                  console.error(`Failed to upload ${uniqueName}:`, keepBothErr);
                   this.uploadError = `Failed to upload ${uniqueName}: ${keepBothErr.message}`;
                   if (!applyToAll) {
                     this.conflictResolution = null;
@@ -2908,7 +2858,6 @@ export default {
           }
         }, 100);
       } catch (err) {
-        console.error("Error initializing sharing manager:", err);
         this.showAlert({
           type: "error",
           title: "Error",
@@ -4478,9 +4427,7 @@ export default {
         if (item.mime_type !== "application/x-directory") {
           try {
             await this.downloadFile(item);
-          } catch (err) {
-            console.error(`Failed to download ${item.original_name}:`, err);
-          }
+          } catch (err) {}
         }
       }
     },

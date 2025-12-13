@@ -11,12 +11,6 @@
     </div>
 
     <div class="filters">
-      <CustomSelect
-        v-model="filters.action_type"
-        :options="actionTypeFilterOptions"
-        @change="loadLogs"
-        placeholder="All Actions"
-      />
       <input
         v-model="filters.action"
         @input="debouncedLoad"
@@ -67,7 +61,7 @@
           :key="log.id || log.timestamp"
           class="log-entry"
           :class="{
-            'security-event': isSecurityEvent(log.action),
+            'security-event': isSecurityEvent(log.action, log.success),
           }"
         >
           <div class="log-header">
@@ -86,375 +80,327 @@
             <div v-if="log.user_id" class="log-detail">
               <strong>User ID:</strong> {{ log.user_id }}
             </div>
+            <div v-if="log.user_email" class="log-detail">
+              <strong>User Email:</strong> {{ log.user_email }}
+            </div>
             <div v-if="log.file_id" class="log-detail">
               <strong>File ID:</strong> {{ log.file_id }}
             </div>
             <div class="log-detail"><strong>IP:</strong> {{ log.user_ip }}</div>
             <div class="log-detail">
               <strong>IPv4:</strong>
-              <span v-if="log.ipv4" class="ip-display"> {{ log.ipv4 }}</span>
+              <span v-if="log.ipv4">{{ log.ipv4 }}</span>
               <span v-else class="ip-not-found"> not found</span>
             </div>
             <div class="log-detail">
               <strong>Location:</strong>
               <span v-if="log.ip_location" class="ip-location">
-                <template v-if="log.ip_location.country_code">
+                <template v-if="log.ip_location?.country_code">
                   <span class="location-flag">
                     {{ getCountryFlag(log.ip_location.country_code) }}
                   </span>
                 </template>
-                <span v-if="log.ip_location.country" class="location-text">
-                  {{ log.ip_location.country }}
-                  <span v-if="log.ip_location.city"
-                    >, {{ log.ip_location.city }}</span
-                  >
-                </span>
-                <span
-                  v-else-if="log.ip_location.country_code"
-                  class="location-text"
-                >
-                  {{ log.ip_location.country_code }}
-                </span>
-                <span v-else class="location-text">Unknown</span>
               </span>
-              <span v-else class="location-not-found"> not found</span>
             </div>
             <div
-              v-if="log.details && Object.keys(log.details).length > 0"
-              class="log-detail"
+              v-if="log.details && Object.keys(log.details).length"
+              class="log-detail log-details-json"
             >
               <strong>Details:</strong>
-              <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
+              <pre class="details-code">{{
+                stringifyDetails(log.details)
+              }}</pre>
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
   </div>
 </template>
 
-<script>
-import { ref, onMounted } from "vue";
+<script setup>
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { admin } from "../../services/api";
-import AlertModal from "../AlertModal.vue";
 import CustomSelect from "../CustomSelect.vue";
 
-export default {
-  name: "AuditLogViewer",
-  components: {
-    AlertModal,
-    CustomSelect,
-  },
-  setup() {
-    const logs = ref([]);
-    const loading = ref(false);
-    const error = ref(null);
-    const filters = ref({
-      action_type: null,
-      action: "",
-      file_id: "",
-      user_ip: "",
-      success: null,
-      limit: 100,
-    });
+const logs = ref([]);
+const loading = ref(false);
+const error = ref(null);
+const debounceTimer = ref(null);
 
-    const actionTypeFilterOptions = [
-      { value: null, label: "All Actions" },
-      { value: "auth", label: "Authentication" },
-      { value: "rate_limit", label: "Rate Limiting" },
-      { value: "file", label: "File Operations" },
-      { value: "share", label: "Sharing" },
-    ];
+const filters = ref({
+  action: "",
+  file_id: "",
+  user_ip: "",
+  success: null,
+  limit: 100,
+});
 
-    const successFilterOptions = [
-      { value: null, label: "All" },
-      { value: true, label: "Success" },
-      { value: false, label: "Failed" },
-    ];
-    const showAlertModal = ref(false);
-    const alertModalConfig = ref({
-      type: "error",
-      title: "Error",
-      message: "",
-    });
+const successFilterOptions = [
+  { value: null, label: "All" },
+  { value: true, label: "Success" },
+  { value: false, label: "Failed" },
+];
 
-    let loadTimeout = null;
-
-    const loadLogs = async () => {
-      loading.value = true;
-      error.value = null;
-      try {
-        const options = {
-          limit: filters.value.limit,
-        };
-        if (filters.value.action) options.action = filters.value.action;
-        if (filters.value.file_id) options.file_id = filters.value.file_id;
-        if (filters.value.user_ip) options.user_ip = filters.value.user_ip;
-        if (filters.value.success !== null)
-          options.success = filters.value.success;
-
-        const result = await admin.getAuditLogs(options);
-        let filteredLogs = result.logs || [];
-
-        // Filter by action type if selected
-        if (filters.value.action_type) {
-          const actionType = filters.value.action_type;
-          filteredLogs = filteredLogs.filter((log) => {
-            const action = log.action || "";
-            if (actionType === "auth") {
-              return action.startsWith("auth_");
-            } else if (actionType === "rate_limit") {
-              return action.includes("rate_limit");
-            } else if (actionType === "file") {
-              return [
-                "upload",
-                "download",
-                "delete",
-                "rename",
-                "move",
-              ].includes(action);
-            } else if (actionType === "share") {
-              return action.includes("share");
-            }
-            return true;
-          });
-        }
-
-        logs.value = filteredLogs;
-      } catch (err) {
-        error.value = err.message || "Failed to load audit logs";
-      } finally {
-        loading.value = false;
-      }
-    };
-
-    const debouncedLoad = () => {
-      if (loadTimeout) clearTimeout(loadTimeout);
-      loadTimeout = setTimeout(loadLogs, 300);
-    };
-
-    const exportCSV = async () => {
-      try {
-        const blob = await admin.exportAuditLogsCSV(filters.value.limit);
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `audit_logs_${new Date().toISOString().split("T")[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      } catch (err) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Failed to export CSV: " + err.message,
-        });
-      }
-    };
-
-    const exportJSON = async () => {
-      try {
-        const blob = await admin.exportAuditLogsJSON(filters.value.limit);
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `audit_logs_${new Date().toISOString().split("T")[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      } catch (err) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Failed to export JSON: " + err.message,
-        });
-      }
-    };
-
-    const showAlert = (config) => {
-      alertModalConfig.value = {
-        type: config.type || "error",
-        title: config.title || "Alert",
-        message: config.message || "",
-      };
-      showAlertModal.value = true;
-    };
-
-    const handleAlertModalClose = () => {
-      showAlertModal.value = false;
-    };
-
-    const formatDate = (dateString) => {
-      if (!dateString) return "N/A";
-      return new Date(dateString).toLocaleString();
-    };
-
-    const getCountryFlag = (countryCode) => {
-      if (!countryCode || countryCode.length !== 2) return "";
-      try {
-        // Convert country code to flag emoji
-        // Each letter of the country code (e.g., "FR") is converted to a regional indicator symbol
-        // Regional Indicator Symbol Letter A = U+1F1E6 (127462)
-        const codePoints = countryCode
-          .toUpperCase()
-          .split("")
-          .map((char) => 127462 + (char.charCodeAt(0) - 65));
-        const flag = String.fromCodePoint(...codePoints);
-        return flag + " "; // Add space after flag
-      } catch (e) {
-        // Fallback if code point conversion fails
-        console.warn("Failed to generate flag emoji for", countryCode, e);
-        return "";
-      }
-    };
-
-    const isSecurityEvent = (action) => {
-      if (!action) return false;
-      return (
-        action.startsWith("auth_") ||
-        action.includes("rate_limit") ||
-        action === "access_denied"
-      );
-    };
-
-    onMounted(() => {
-      loadLogs();
-    });
-
-    return {
-      logs,
-      loading,
-      error,
-      filters,
-      actionTypeFilterOptions,
-      successFilterOptions,
-      loadLogs,
-      debouncedLoad,
-      exportCSV,
-      exportJSON,
-      showAlertModal,
-      alertModalConfig,
-      handleAlertModalClose,
-      formatDate,
-      getCountryFlag,
-      isSecurityEvent,
-    };
-  },
+const formatDate = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
 };
+
+const getCountryFlag = (countryCode) => {
+  if (!countryCode || countryCode.length !== 2) return "";
+  const base = 127397;
+  return countryCode
+    .toUpperCase()
+    .split("")
+    .map((char) => String.fromCodePoint(base + char.charCodeAt(0)))
+    .join("");
+};
+
+const isSecurityEvent = (action, success) => {
+  if (!action) return false;
+  const normalized = action.toLowerCase();
+  return (
+    normalized.includes("denied") ||
+    normalized.includes("failed") ||
+    normalized.includes("unauthorized") ||
+    success === false
+  );
+};
+
+const stringifyDetails = (details) => {
+  try {
+    return JSON.stringify(details);
+  } catch (e) {
+    return "";
+  }
+};
+
+const buildParams = () => {
+  const params = {};
+  if (filters.value.action) params.action = filters.value.action;
+  if (filters.value.file_id) params.file_id = filters.value.file_id;
+  if (filters.value.user_ip) params.user_ip = filters.value.user_ip;
+  if (filters.value.success !== null) params.success = filters.value.success;
+  params.limit = filters.value.limit || 100;
+  return params;
+};
+
+const loadLogs = async () => {
+  loading.value = true;
+  error.value = null;
+  try {
+    const data = await admin.getAuditLogs(buildParams());
+    logs.value = data.logs || [];
+  } catch (err) {
+    error.value = err?.message || "Failed to load audit logs";
+    logs.value = [];
+  } finally {
+    loading.value = false;
+  }
+};
+
+const debouncedLoad = () => {
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value);
+  }
+  debounceTimer.value = setTimeout(() => {
+    loadLogs();
+  }, 300);
+};
+
+const exportCSV = async () => {
+  error.value = null;
+  try {
+    const blob = await admin.exportAuditLogsCSV(filters.value.limit || 1000);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `audit-logs-${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    error.value = err?.message || "Failed to export CSV";
+  }
+};
+
+const exportJSON = async () => {
+  error.value = null;
+  try {
+    const blob = await admin.exportAuditLogsJSON(filters.value.limit || 1000);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `audit-logs-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    error.value = err?.message || "Failed to export JSON";
+  }
+};
+
+onMounted(() => {
+  loadLogs();
+});
+
+onBeforeUnmount(() => {
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value);
+  }
+});
 </script>
 
 <style scoped>
 .audit-log-viewer {
-  padding: 0;
-  width: 100%;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary, #e6eef6);
+  font-size: 1.75rem;
+  font-weight: 600;
 }
 
 .header-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.btn {
+  padding: 0.625rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.4);
+  color: var(--text-primary, #e6eef6);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.btn-secondary {
+  background: rgba(30, 41, 59, 0.4);
 }
 
 .filters {
   display: flex;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
   flex-wrap: wrap;
-}
-
-.filter-input,
-.filter-select {
-  padding: 0.5rem 1rem;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 6px;
-  background: rgba(30, 41, 59, 0.5);
-  color: #e6eef6;
-  font-size: 0.9rem;
+  border-radius: 0.75rem;
 }
 
 .filter-input {
-  flex: 1;
+  padding: 0.625rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.4);
+  color: var(--text-primary, #e6eef6);
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
   min-width: 150px;
 }
 
+.filter-input:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.filter-input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
 .filter-limit {
-  max-width: 100px;
+  min-width: 80px;
+}
+
+.loading,
+.error {
+  padding: 2rem;
+  text-align: center;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.loading {
+  color: var(--text-secondary, #94a3b8);
+}
+
+.error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .logs-count {
-  color: #cbd5e1;
-  margin-bottom: 1rem;
+  color: var(--text-secondary, #94a3b8);
   font-size: 0.9rem;
+  margin-bottom: 1rem;
 }
 
 .logs-container {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-height: 600px;
-  overflow-y: auto;
 }
 
 .log-entry {
-  background: rgba(30, 41, 59, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 8px;
-  padding: 1rem;
-  overflow-x: visible;
-  max-width: 100%;
-  box-sizing: border-box;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.log-entry:hover {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(148, 163, 184, 0.3);
 }
 
 .log-entry.security-event {
-  border-left: 3px solid #f59e0b;
-}
-
-.log-entry.security-event.log-failed {
-  border-left-color: #ef4444;
-}
-
-.log-entry.security-event.log-success {
-  border-left-color: #10b981;
+  background: rgba(239, 68, 68, 0.05);
 }
 
 .log-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .log-action {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
+  color: var(--text-primary, #e6eef6);
+  text-transform: capitalize;
 }
 
 .log-action.log-success {
-  color: #10b981;
+  color: #86efac;
 }
 
 .log-action.log-failed {
@@ -462,99 +408,206 @@ export default {
 }
 
 .log-timestamp {
-  color: #94a3b8;
-  font-size: 0.85rem;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.9rem;
 }
 
 .log-details {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .log-detail {
-  color: #cbd5e1;
+  display: flex;
+  gap: 0.5rem;
   font-size: 0.9rem;
-  overflow-x: visible;
-  max-width: 100%;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.5;
 }
 
-.log-detail pre {
-  margin: 0.5rem 0 0 0;
-  padding: 0.5rem;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 4px;
-  overflow-x: auto;
-  overflow-y: visible;
-  max-width: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  white-space: pre;
-  word-break: normal;
-  font-size: 0.85rem;
-  -webkit-overflow-scrolling: touch;
+.log-detail strong {
+  color: var(--text-primary, #e6eef6);
+  font-weight: 600;
+  min-width: 100px;
 }
 
-.ip-display {
-  font-weight: 500;
-}
-
-.ip-original {
-  color: #94a3b8;
-  font-size: 0.85em;
-  margin-left: 0.25rem;
-}
-
-.ip-location {
-  margin-left: 0.5rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+.ip-not-found {
+  color: rgba(148, 163, 184, 0.5);
+  font-style: italic;
 }
 
 .location-flag {
-  font-size: 1.1em;
+  font-size: 1.2rem;
 }
 
-.location-text {
-  color: #cbd5e1;
-  font-size: 0.9em;
+.log-details-json {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
 }
 
-.ip-not-found,
-.location-not-found {
-  color: #94a3b8;
-  font-style: italic;
-  font-size: 0.9em;
+.details-code {
+  margin: 0.5rem 0 0 0;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.85rem;
+  color: var(--text-primary, #e6eef6);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
-.btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
+.log-detail {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
-.btn-secondary {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
+.log-detail strong {
+  flex-shrink: 0;
 }
 
-.btn-secondary:hover {
-  background: rgba(148, 163, 184, 0.3);
+.log-action {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
-.loading,
-.error {
-  padding: 2rem;
-  text-align: center;
+@media (max-width: 768px) {
+  .audit-log-viewer {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.5rem;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .filters {
+    flex-direction: column;
+  }
+
+  .filter-input {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .log-entry {
+    padding: 1rem;
+  }
+
+  .log-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .log-action {
+    font-size: 1rem;
+  }
+
+  .log-timestamp {
+    font-size: 0.85rem;
+  }
+
+  .log-detail strong {
+    min-width: 80px;
+  }
 }
 
-.error {
-  color: #f87171;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+@media (max-width: 640px) {
+  .audit-log-viewer {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 0.625rem 1rem;
+  }
+
+  .filters {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .filter-input {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .logs-count {
+    font-size: 0.85rem;
+  }
+
+  .log-entry {
+    padding: 0.75rem;
+  }
+
+  .log-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .log-action {
+    font-size: 0.95rem;
+    width: 100%;
+  }
+
+  .log-timestamp {
+    font-size: 0.8rem;
+  }
+
+  .log-details {
+    gap: 0.5rem;
+  }
+
+  .log-detail {
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+  }
+
+  .log-detail strong {
+    min-width: unset;
+    display: block;
+  }
+
+  .details-code {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
 }
 </style>

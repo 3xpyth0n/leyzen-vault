@@ -5,12 +5,14 @@ WORKDIR /app
 
 # Install system dependencies including Node.js and npm for Vue.js build
 # su-exec is needed for dropping privileges to run as non-root user
+# postgresql-client provides pg_dump and pg_restore for database backups
 RUN apk add --no-cache \
     curl \
     rsync \
     nodejs \
     npm \
-    su-exec
+    su-exec \
+    postgresql-client
 
 # Copy requirements
 COPY infra/vault/requirements.txt ./requirements.txt
@@ -53,9 +55,11 @@ RUN adduser -D -u 1000 vault
 # Copy entrypoint and healthcheck script
 COPY infra/vault/entrypoint.sh /usr/local/bin/vault-entrypoint.sh
 COPY infra/vault/check_storage_mode.py /app/infra/vault/check_storage_mode.py
+COPY infra/vault/sync_backups.py /app/infra/vault/sync_backups.py
 COPY infra/vault/healthcheck.py /app/infra/vault/healthcheck.py
 RUN chmod +x /usr/local/bin/vault-entrypoint.sh && \
     chmod +x /app/infra/vault/check_storage_mode.py && \
+    chmod +x /app/infra/vault/sync_backups.py && \
     chmod +x /app/infra/vault/healthcheck.py
 
 # Create data directories and set ownership
@@ -72,7 +76,7 @@ ENV FLASK_APP=vault.app:create_app
 EXPOSE 80
 
 # Health check
-HEALTHCHECK --interval=1s --timeout=2s --retries=2 --start-period=5s \
+HEALTHCHECK --interval=1s --timeout=2s --retries=1 --start-period=3s \
     CMD python3 /app/infra/vault/healthcheck.py || exit 1
 
 # Entrypoint
@@ -86,4 +90,3 @@ ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 # --log-level error: Only log errors and critical issues
 # --timeout-graceful-shutdown: Reduce graceful shutdown timeout to speed up container stops
 CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error --timeout-graceful-shutdown 2
-

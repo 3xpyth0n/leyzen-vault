@@ -78,7 +78,6 @@ async function handleFileUpload(event) {
       fileInput.value = "";
     }
   } catch (error) {
-    console.error("Upload error:", error);
     showError(`Upload failed: ${error.message}`);
   } finally {
     uploadButton.disabled = false;

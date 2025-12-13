@@ -550,7 +550,6 @@ export default {
         }
         return iconFn.call(window.Icons, size, "currentColor");
       } catch (err) {
-        console.warn("Error getting icon:", iconName, err);
         return "";
       }
     };
@@ -646,7 +645,6 @@ export default {
           totalPages.value = pages && pages > 0 && !isNaN(pages) ? pages : 1;
         }
       } catch (err) {
-        console.error("Error in loadUsers:", err);
         error.value = err.message || "Failed to load users";
         users.value = [];
         totalPages.value = 1;
@@ -689,9 +687,7 @@ export default {
     const loadCurrentUser = async () => {
       try {
         currentUser.value = await auth.getCurrentUser();
-      } catch (err) {
-        console.error("Failed to load current user:", err);
-      }
+      } catch (err) {}
     };
 
     const viewUser = async (userId) => {
@@ -706,7 +702,6 @@ export default {
         }
         userDetails.value = details;
       } catch (err) {
-        console.error("Error loading user details:", err);
         showAlert({
           type: "error",
           title: "Error",
@@ -973,7 +968,6 @@ export default {
         }
         return date.toLocaleString();
       } catch (err) {
-        console.error("Error formatting date:", err, dateString);
         return "Invalid Date";
       }
     };
@@ -997,7 +991,6 @@ export default {
           Math.round((numBytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
         );
       } catch (err) {
-        console.error("Error formatting size:", err, bytes);
         return "0 B";
       }
     };

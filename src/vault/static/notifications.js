@@ -10,7 +10,6 @@ function setInnerHTML(element, html) {
       return;
     } catch (e) {
       // Fallback if policy fails
-      console.warn("Failed to use notificationsHTMLPolicy:", e);
     }
   }
 
@@ -20,9 +19,7 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   // Last resort fallback - this will fail if CSP requires Trusted Types
@@ -30,7 +27,6 @@ function setInnerHTML(element, html) {
   try {
     element.innerHTML = html;
   } catch (e) {
-    console.error("Failed to set innerHTML:", e);
     throw e;
   }
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -11,13 +12,15 @@ from typing import Any
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from sqlalchemy.exc import DisconnectionError, OperationalError
 from sqlalchemy.orm import Session
 
-from vault.database.schema import GlobalRole, JWTBlacklist, User, db
 from vault.blueprints.validators import validate_email
-from vault.utils.password_validator import validate_password_strength_raise
+from vault.database.schema import GlobalRole, JWTBlacklist, User, db
 from vault.utils.constant_time import constant_time_compare
-from sqlalchemy.exc import OperationalError, DisconnectionError
+from vault.utils.password_validator import validate_password_strength_raise
+
+logger = logging.getLogger(__name__)
 
 
 # Cache for jti column existence check (per process)
@@ -152,7 +155,10 @@ def _check_jti_column_exists() -> bool:
                 _jti_column_exists_cache = True
                 return True
         except Exception:
-            # Inspector method failed, try query method
+            # Inspector method failed, try query method - expected fallback
+            logger.debug(
+                "Inspector method failed for jti column check, trying query method"
+            )
             pass
 
         # Method 2: Try a simple query that will fail if column doesn't exist
@@ -393,9 +399,6 @@ class AuthService:
             if is_production:
                 if not jti_column_exists:
                     # In production, jti column must exist - fail securely
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.critical(
                         "JWT replay protection (jti column) not available in production - "
                         "database migration required. Rejecting all tokens for security."
@@ -407,9 +410,6 @@ class AuthService:
 
                 if not jti:
                     # In production, all tokens must have jti - reject tokens without jti
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.warning(
                         "JWT token without jti claim rejected in production mode"
                     )
@@ -436,9 +436,6 @@ class AuthService:
                     if _is_database_error(db_error):
                         # Database is temporarily unavailable - allow JWT-only authentication
                         # The token signature is still valid, so we can trust it temporarily
-                        import logging
-
-                        logger = logging.getLogger(__name__)
                         logger.debug(
                             f"Database temporarily unavailable during jti check - "
                             f"allowing JWT-only authentication: {str(db_error)}"
@@ -446,9 +443,6 @@ class AuthService:
                         # Continue without jti check - token signature is still verified
                     else:
                         # Non-database error - fail securely
-                        import logging
-
-                        logger = logging.getLogger(__name__)
                         logger.critical(
                             "JWT jti verification failed due to non-database error - rejecting token for security"
                         )
@@ -459,9 +453,6 @@ class AuthService:
             elif jti and not jti_column_exists and not is_production:
                 # Column doesn't exist in development: fallback to full token check
                 # But log a warning
-                import logging
-
-                logger = logging.getLogger(__name__)
                 logger.warning(
                     "JWT replay protection (jti) not available - database migration required. "
                     "Falling back to full token blacklist check."
@@ -531,9 +522,6 @@ class AuthService:
                     # Database is temporarily unavailable - create a minimal user object
                     # based on JWT payload since we can't query the database
                     # This allows authentication to continue during database outages
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.debug(
                         f"Database temporarily unavailable during user lookup - "
                         f"using JWT-only authentication: {str(db_error)}"
@@ -557,9 +545,6 @@ class AuthService:
                     return minimal_user
                 else:
                     # Non-database error - fail securely
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.error(
                         f"Non-database error during user lookup: {str(db_error)}"
                     )
@@ -576,9 +561,6 @@ class AuthService:
 
             if not isinstance(e, (ProgrammingError, InternalError)):
                 # Only log non-database errors as JWT verification errors
-                import logging
-
-                logger = logging.getLogger(__name__)
                 logger.warning(f"JWT verification error: {type(e).__name__}")
 
             # Use constant-time comparison to prevent timing attacks
@@ -699,9 +681,6 @@ class AuthService:
             try:
                 thumbnail_service.delete_thumbnails(file_obj.id)
             except Exception as e:
-                import logging
-
-                logger = logging.getLogger(__name__)
                 logger.warning(
                     f"Failed to delete thumbnails for file {file_obj.id}: {e}"
                 )
@@ -846,9 +825,6 @@ class AuthService:
                 db.session.commit()
             except Exception as e2:
                 # If that also fails, log and re-raise
-                import logging
-
-                logger = logging.getLogger(__name__)
                 logger.error(f"Failed to create blacklist entry: {e2}")
                 raise
 
@@ -876,6 +852,31 @@ class AuthService:
             List of superadmin users
         """
         return db.session.query(User).filter_by(global_role=GlobalRole.SUPERADMIN).all()
+
+    def invalidate_all_sessions(self) -> int:
+        """Invalidate all JWT tokens by clearing the blacklist.
+
+        This effectively logs out all users by removing all blacklist entries.
+        New tokens will still be valid, but this ensures a clean state.
+
+        Returns:
+            Number of tokens invalidated (approximate, based on deleted blacklist entries)
+        """
+        try:
+            # Delete all entries from jwt_blacklist table
+            deleted_count = db.session.query(JWTBlacklist).delete()
+            db.session.commit()
+            logger.info(
+                f"[AUTH] Invalidated all sessions: cleared {deleted_count} blacklist entries"
+            )
+            return deleted_count
+        except Exception as e:
+            db.session.rollback()
+            logger.error(
+                f"[AUTH] Failed to invalidate all sessions: {e}", exc_info=True
+            )
+            # Return 0 on error, but don't raise - allow restore to continue
+            return 0
 
     # ========== Two-Factor Authentication (2FA/TOTP) Methods ==========
 

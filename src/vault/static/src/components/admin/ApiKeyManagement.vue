@@ -265,7 +265,6 @@ export default {
         }
         return iconFn.call(window.Icons, size, "currentColor");
       } catch (err) {
-        console.warn("Error getting icon:", iconName, err);
         return "";
       }
     };
@@ -274,9 +273,7 @@ export default {
       try {
         const result = await admin.listUsers({ per_page: 1000 });
         users.value = result.users || [];
-      } catch (err) {
-        console.error("Failed to load users:", err);
-      }
+      } catch (err) {}
     };
 
     const loadApiKeys = async () => {
@@ -292,7 +289,6 @@ export default {
 
         apiKeys.value = keys;
       } catch (err) {
-        console.error("Error in loadApiKeys:", err);
         error.value = err.message || "Failed to load API keys";
         apiKeys.value = [];
       } finally {
@@ -446,9 +442,7 @@ export default {
       if (!currentUser.value) {
         try {
           currentUser.value = await auth.getCurrentUser();
-        } catch (err) {
-          console.error("Failed to load current user:", err);
-        }
+        } catch (err) {}
       }
       // Ensure users are loaded before opening modal
       if (users.value.length === 0) {
@@ -515,7 +509,6 @@ export default {
         }
         return date.toLocaleString();
       } catch (err) {
-        console.error("Error formatting date:", err, dateString);
         return "Invalid Date";
       }
     };
@@ -523,9 +516,7 @@ export default {
     onMounted(async () => {
       try {
         currentUser.value = await auth.getCurrentUser();
-      } catch (err) {
-        console.error("Failed to load current user:", err);
-      }
+      } catch (err) {}
       await loadUsers();
       await loadApiKeys();
     });

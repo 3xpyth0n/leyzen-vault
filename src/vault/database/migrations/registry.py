@@ -138,6 +138,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.external_storage_metadata_migration import (
         ExternalStorageMetadataMigration,
     )
+    from vault.database.migrations.database_backup_migration import (
+        DatabaseBackupMigration,
+    )
 
     registry = MigrationRegistry()
 
@@ -148,14 +151,18 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(AuditLogsEnrichmentMigration)
     registry.register(SessionKeySaltMigration)
     registry.register(ExternalStorageMetadataMigration)
+    registry.register(DatabaseBackupMigration)
 
     migrations = registry.get_all_migrations()
 
-    log_msg = f"[MIGRATIONS] Found {len(migrations)} registered migrations"
-    if app_logger:
-        app_logger.log(log_msg)
-    else:
-        logger.info(log_msg)
+    # Only log if there are migrations to apply
+    migrations_to_apply = [m for m in migrations if registry.should_apply_migration(m)]
+    if migrations_to_apply:
+        log_msg = f"[MIGRATIONS] Found {len(migrations)} registered migrations, {len(migrations_to_apply)} need to be applied"
+        if app_logger:
+            app_logger.log(log_msg)
+        else:
+            logger.info(log_msg)
 
     for migration in migrations:
         try:
@@ -177,12 +184,6 @@ def run_migrations(app_logger: Any | None = None) -> None:
                     app_logger.log(log_msg)
                 else:
                     logger.info(log_msg)
-            else:
-                log_msg = f"[MIGRATIONS] Migration {migration.name} (v{migration.version}) already applied or not needed"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.debug(log_msg)
         except Exception as e:
             log_msg = (
                 f"[MIGRATIONS] ERROR: Failed to apply migration {migration.name}: {e}"

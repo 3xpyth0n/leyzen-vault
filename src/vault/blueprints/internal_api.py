@@ -860,8 +860,10 @@ def prepare_rotation():
                                     try:
                                         file_path.unlink()
                                         stats["validation"]["deleted"] += 1
-                                    except:
-                                        pass
+                                    except Exception as delete_error:
+                                        current_app.logger.warning(
+                                            f"[PREPARE ROTATION] Failed to delete file {file_id}: {delete_error}"
+                                        )
                             else:
                                 # File is NOT in whitelist - delete it
                                 current_app.logger.debug(

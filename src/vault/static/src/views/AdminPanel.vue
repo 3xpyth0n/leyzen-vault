@@ -224,6 +224,7 @@
         <!-- Integrations Tab -->
         <div v-if="activeTab === 'integrations'">
           <ExternalStorageConfig />
+          <DatabaseBackupConfig style="margin-top: 1.5rem" />
         </div>
       </div>
     </main>
@@ -241,6 +242,7 @@ import AuditLogViewer from "../components/admin/AuditLogViewer.vue";
 import ApiKeyManagement from "../components/admin/ApiKeyManagement.vue";
 import AdminSSOProviders from "./AdminSSOProviders.vue";
 import ExternalStorageConfig from "../components/admin/ExternalStorageConfig.vue";
+import DatabaseBackupConfig from "../components/admin/DatabaseBackupConfig.vue";
 import RecentActivityList from "../components/admin/RecentActivityList.vue";
 import TopUsersCard from "../components/admin/TopUsersCard.vue";
 import QuotaAlertsCard from "../components/admin/QuotaAlertsCard.vue";
@@ -255,6 +257,7 @@ export default {
     ApiKeyManagement,
     AdminSSOProviders,
     ExternalStorageConfig,
+    DatabaseBackupConfig,
     RecentActivityList,
     TopUsersCard,
     QuotaAlertsCard,

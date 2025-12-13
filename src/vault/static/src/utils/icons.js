@@ -672,7 +672,6 @@ export function getAllIconNames() {
 
     return uniqueNames;
   } catch (error) {
-    console.warn("Error getting icon names:", error);
     return [];
   }
 }

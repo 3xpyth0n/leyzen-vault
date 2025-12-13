@@ -111,7 +111,6 @@
           retryCount = 0; // Reset retry count on success
         })
         .catch((error) => {
-          console.error("Captcha refresh error:", error);
           // Only fallback if we've exhausted retries
           if (retryCount >= maxRetries) {
             const fallback = image.dataset.baseUrl || image.src;

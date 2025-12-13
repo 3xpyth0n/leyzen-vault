@@ -75,7 +75,8 @@ async function hasMasterKey() {
  * @param {function} next - Next function
  */
 async function requireAuth(to, from, next) {
-  if (!isAuthenticated()) {
+  const authenticated = await isAuthenticated();
+  if (!authenticated) {
     next("/login");
     return;
   }
@@ -95,12 +96,6 @@ async function requireAuth(to, from, next) {
         // User is authenticated (JWT valid) but master key is lost from memory
         // This is normal after page refresh - don't disconnect user
         // The component will handle showing appropriate message
-        console.warn(
-          "Master key lost but salt exists. This is normal after page refresh.",
-        );
-        console.warn(
-          "User will need to re-enter password to access encrypted content.",
-        );
         // Allow navigation - component will handle the missing master key
         next();
         return;
@@ -118,8 +113,9 @@ async function requireAuth(to, from, next) {
  * @param {object} from - Source route
  * @param {function} next - Next function
  */
-function requireGuest(to, from, next) {
-  if (!isAuthenticated()) {
+async function requireGuest(to, from, next) {
+  const authenticated = await isAuthenticated();
+  if (!authenticated) {
     next();
   } else {
     next("/dashboard");
@@ -136,7 +132,8 @@ function requireGuest(to, from, next) {
  */
 async function requireAdmin(to, from, next) {
   // First check authentication
-  if (!isAuthenticated()) {
+  const authenticated = await isAuthenticated();
+  if (!authenticated) {
     next("/login");
     return;
   }
@@ -168,14 +165,12 @@ async function requireAdmin(to, from, next) {
       // Network error during container restart - allow navigation
       // User will see appropriate error message in the component
       // Don't disconnect user for temporary network issues
-      console.warn("Network error while verifying admin role:", err);
       // Allow navigation - component will handle the error gracefully
       next();
       return;
     }
 
     // Actual API/auth error - redirect to dashboard for security
-    console.error("Failed to verify admin role:", err);
     next("/dashboard");
     return;
   }
@@ -254,9 +249,6 @@ const routes = [
         // Final verification: if token still exists, it was recreated - remove it again
         const tokenAfterClear = localStorage.getItem("jwt_token");
         if (tokenAfterClear) {
-          console.warn(
-            "Token detected in login guard after clear! Removing again...",
-          );
           localStorage.removeItem("jwt_token");
           delete localStorage.jwt_token;
           if (localStorage.getItem("jwt_token")) {
@@ -270,7 +262,8 @@ const routes = [
       }
 
       // Check if user is authenticated
-      if (isAuthenticated()) {
+      const authenticated = await isAuthenticated();
+      if (authenticated) {
         next("/dashboard");
         return;
       }
@@ -296,7 +289,8 @@ const routes = [
     component: () => import("../views/Register.vue"),
     beforeEnter: async (to, from, next) => {
       // Check if user is authenticated first
-      if (isAuthenticated()) {
+      const authenticated = await isAuthenticated();
+      if (authenticated) {
         next("/dashboard");
         return;
       }
@@ -309,7 +303,6 @@ const routes = [
           return;
         }
       } catch (err) {
-        console.error("Failed to check signup status:", err);
         // Allow access by default if check fails
       }
 
@@ -391,10 +384,11 @@ const routes = [
   {
     path: "/",
     name: "Root",
-    beforeEnter: (to, from, next) => {
+    beforeEnter: async (to, from, next) => {
       // Setup check is handled by global beforeEach guard
       // If we reach here, setup is complete, redirect based on auth status
-      if (isAuthenticated()) {
+      const authenticated = await isAuthenticated();
+      if (authenticated) {
         next("/dashboard");
       } else {
         next("/login");

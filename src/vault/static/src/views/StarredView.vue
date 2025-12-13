@@ -381,18 +381,10 @@ export default {
               } catch (decryptErr) {
                 // Decryption failed - VaultSpace key was encrypted with a different master key
                 // Silently fail for this vaultspace
-                console.debug(
-                  `Failed to decrypt VaultSpace key for ${vaultspaceId}:`,
-                  decryptErr,
-                );
               }
             }
           } catch (err) {
             // Silently fail for individual vaultspaces
-            console.debug(
-              `Failed to load VaultSpace key for ${vaultspaceId}:`,
-              err,
-            );
           }
         },
       );
@@ -453,7 +445,6 @@ export default {
         }
         editingItemId.value = null;
       } catch (err) {
-        console.error("Rename failed:", err);
         showAlert({
           type: "error",
           title: "Error",
@@ -503,7 +494,6 @@ export default {
           );
         }
       } catch (err) {
-        console.error("Delete failed:", err);
         deleteError.value = err.message || "Failed to move to trash";
         // Don't close modal on error so user can see the error
       } finally {
@@ -525,9 +515,7 @@ export default {
               starredFiles.value.splice(index, 1);
             }
           }
-        } catch (err) {
-          console.error("Failed to toggle star:", err);
-        }
+        } catch (err) {}
       } else if (action === "download") {
         try {
           // Download file
@@ -577,7 +565,6 @@ export default {
           a.click();
           URL.revokeObjectURL(url);
         } catch (err) {
-          console.error("Download failed:", err);
           showAlert({
             type: "error",
             title: "Error",
@@ -601,7 +588,6 @@ export default {
             }
             editingItemId.value = null;
           } catch (err) {
-            console.error("Rename failed:", err);
             showAlert({
               type: "error",
               title: "Error",
@@ -704,7 +690,6 @@ export default {
           (f) => f.mime_type === "application/x-directory",
         );
       } catch (err) {
-        console.error("Failed to load folders:", err);
         return [];
       }
     };
@@ -768,7 +753,6 @@ export default {
           );
         }
       } catch (err) {
-        console.error("Move action error:", err);
         if (err.message === "Cancelled") {
           return; // User cancelled, don't show error
         }
@@ -842,7 +826,6 @@ export default {
           );
         }
       } catch (err) {
-        console.error("Copy action error:", err);
         if (err.message === "Cancelled") {
           return; // User cancelled, don't show error
         }
@@ -916,7 +899,6 @@ export default {
           a.click();
           URL.revokeObjectURL(url);
         } catch (err) {
-          console.error(`Download failed for ${item.original_name}:`, err);
           showAlert({
             type: "error",
             title: "Download Error",

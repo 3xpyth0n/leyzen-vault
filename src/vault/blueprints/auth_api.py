@@ -396,8 +396,11 @@ def login():
     """
     try:
         from flask import session
-        from vault.blueprints.auth import register_failed_attempt
-        from vault.blueprints.utils import _settings, get_client_ip
+        from vault.blueprints.utils import (
+            _settings,
+            get_client_ip,
+            register_failed_attempt,
+        )
         from vault.database.schema import SystemSettings, db
 
         # Check if password authentication is enabled
@@ -751,21 +754,78 @@ def get_me():
     Request headers:
         Authorization: Bearer <token>
 
+    Cookies:
+        jwt_token: JWT token (used for SSO flows with HttpOnly cookies)
+
     Returns:
-        JSON with user info
+        JSON with user info and token (if available from cookie but not in header)
     """
     user = get_current_user()
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    return (
-        jsonify(
-            {
-                "user": user.to_dict(),
-            }
-        ),
-        200,
-    )
+    # For SSO flows: if token is in cookie but not in Authorization header,
+    # include token in response so frontend can store it in localStorage
+    # This allows isAuthenticated() to work correctly
+    response_data = {"user": user.to_dict()}
+
+    # Check if token came from cookie (for SSO) and Authorization header is missing
+    auth_header = request.headers.get("Authorization")
+    has_auth_header = auth_header and auth_header.startswith("Bearer ")
+    has_cookie_token = request.cookies.get("jwt_token")
+
+    # If token is in cookie but not in header, include it in response
+    # This happens during SSO callback flow
+    if has_cookie_token and not has_auth_header:
+        # Token is in cookie - include it in response so frontend can store in localStorage
+        token = getattr(g, "current_token", None) or has_cookie_token
+        response_data["token"] = token
+
+    return jsonify(response_data), 200
+
+
+@auth_api_bp.route("/check", methods=["GET"])
+def check_auth():
+    """Check if user is authenticated via cookie (for SSO flows).
+
+    This endpoint allows the frontend to check authentication status
+    when the token is only in an HttpOnly cookie (not accessible via JavaScript).
+
+    Returns:
+        JSON with authenticated status and token (if authenticated)
+    """
+    # Try to get token from cookie (SSO flow)
+    token = request.cookies.get("jwt_token")
+
+    if not token:
+        return jsonify({"authenticated": False}), 200
+
+    # Verify token is valid
+    try:
+        from vault.middleware import get_current_user
+        from flask import g
+
+        # Manually verify token (simplified check)
+        secret_key = current_app.config.get("SECRET_KEY")
+        if not secret_key:
+            return jsonify({"authenticated": False}), 200
+
+        from vault.services.auth_service import AuthService
+
+        settings = current_app.config.get("VAULT_SETTINGS")
+        jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+        auth_service = AuthService(
+            secret_key, jwt_expiration_hours=jwt_expiration_hours
+        )
+        user = auth_service.verify_token(token)
+
+        if user:
+            # User is authenticated - return token so frontend can store it in localStorage
+            return jsonify({"authenticated": True, "token": token}), 200
+        else:
+            return jsonify({"authenticated": False}), 200
+    except Exception:
+        return jsonify({"authenticated": False}), 200
 
 
 @auth_api_bp.route("/logout", methods=["POST"])
@@ -831,6 +891,8 @@ def logout():
             current_app.logger.debug(f"Failed to blacklist token: {type(e).__name__}")
 
     # Log logout
+    from vault.blueprints.utils import get_client_ip
+
     user = get_current_user()
     client_ip = get_client_ip() or "unknown"
     audit = _get_audit()
@@ -1513,24 +1575,49 @@ def captcha_image():
 
     Returns:
         CAPTCHA image (PNG or SVG)
+        Always includes X-Captcha-Nonce header if a new CAPTCHA was generated
+        (e.g., when renew=1, nonce invalid/expired, or no nonce provided)
     """
     renew = request.args.get("renew") == "1"
     nonce_param = request.args.get("nonce", "").strip()
     text: str | None = None
+    new_captcha_generated = False
 
     if renew:
+        # Force generation of new CAPTCHA
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
         text = _get_captcha_from_store(nonce_param)
+        new_captcha_generated = True
     else:
         # Try to get CAPTCHA from store if nonce provided
         if nonce_param:
             text = _get_captcha_from_store(nonce_param)
+            if not text:
+                # Nonce was provided but CAPTCHA not found (expired or invalid)
+                # Generate a new one and signal to client via header
+                new_captcha_generated = True
+                nonce_param = _refresh_captcha()
+                text = _get_captcha_from_store(nonce_param)
 
         # If no nonce provided or CAPTCHA not found, generate a new one
         if not text:
+            new_captcha_generated = True
             nonce_param = _refresh_captcha()
             text = _get_captcha_from_store(nonce_param)
+
+    # Ensure we have valid text (defensive check)
+    if not text:
+        # Last resort: generate fresh CAPTCHA
+        new_captcha_generated = True
+        nonce_param = _refresh_captcha()
+        text = _get_captcha_from_store(nonce_param)
+        if not text:
+            # This should never happen, but handle gracefully
+            current_app.logger.error("Failed to generate CAPTCHA after retry")
+            from flask import abort
+
+            abort(500, description="Failed to generate CAPTCHA")
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 
@@ -1538,6 +1625,12 @@ def captcha_image():
     response.headers["Content-Type"] = mimetype
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
+
+    # Always include nonce in header if a new CAPTCHA was generated
+    # This allows the frontend to update its nonce reference and avoid expiration issues
+    if new_captcha_generated and nonce_param:
+        response.headers["X-Captcha-Nonce"] = nonce_param
+
     return response
 
 
@@ -1545,6 +1638,9 @@ def captcha_image():
 @csrf.exempt  # Public endpoint
 def captcha_refresh():
     """Refresh CAPTCHA and get new nonce and image URL.
+
+    Always generates a fresh, valid CAPTCHA. Drops any existing CAPTCHA
+    associated with the request to ensure no stale entries.
 
     Request headers (optional):
         X-Login-CSRF: Login CSRF token
@@ -1565,7 +1661,29 @@ def captcha_refresh():
             from flask import abort
 
             abort(400, description="Invalid or expired login session.")
+
+    # Always generate a fresh CAPTCHA (drop any existing one from query params if present)
+    old_nonce = request.args.get("nonce", "").strip()
+    if old_nonce:
+        _drop_captcha_from_store(old_nonce)
+
+    # Generate new CAPTCHA and verify it was stored correctly
     nonce = _refresh_captcha()
+
+    # Verify the CAPTCHA was stored successfully
+    captcha_store = _get_captcha_store()
+    stored_text = captcha_store.get(nonce)
+    if not stored_text:
+        # This should never happen, but handle it gracefully
+        current_app.logger.error("Generated CAPTCHA nonce but store lookup failed")
+        # Retry once
+        nonce = _refresh_captcha()
+        stored_text = captcha_store.get(nonce)
+        if not stored_text:
+            from flask import abort
+
+            abort(500, description="Failed to generate valid CAPTCHA")
+
     image_url = url_for("auth_api.captcha_image", nonce=nonce)
     response = jsonify({"nonce": nonce, "image_url": image_url})
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

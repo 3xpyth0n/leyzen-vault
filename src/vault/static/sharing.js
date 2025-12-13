@@ -6,17 +6,13 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   // Fallback: use DOM API instead of innerHTML for better security on browsers without Trusted Types
@@ -123,9 +119,6 @@ class SharingManager {
     // If Trusted Types is supported but policies aren't available, use fallback
     // (This shouldn't happen if ensureModalCreated() worked correctly, but it's a safety net)
     if (!hasPolicies) {
-      console.warn(
-        "[SharingManager] Trusted Types supported but policies not available, using DOM API fallback",
-      );
       this.createShareModalWithDOM();
       return;
     }
@@ -259,7 +252,6 @@ class SharingManager {
           document.body.insertAdjacentHTML("beforeend", safeHTML);
           inserted = true;
         } catch (e) {
-          console.error("Failed to use vaultHTMLPolicy:", e);
           // Don't try fallback here - Trusted Types is required
         }
       } else if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
@@ -268,9 +260,7 @@ class SharingManager {
             window.trustedTypes.defaultPolicy.createHTML(modalHTML);
           document.body.insertAdjacentHTML("beforeend", safeHTML);
           inserted = true;
-        } catch (e) {
-          console.error("Failed to use defaultPolicy:", e);
-        }
+        } catch (e) {}
       } else {
         // Fallback: use DOM API to create modal
         this.createShareModalWithDOM();
@@ -290,7 +280,6 @@ class SharingManager {
       // Verify modal was created
       const createdModal = document.getElementById("share-modal-advanced");
       if (!createdModal) {
-        console.error("Modal element not found after insertion!");
         throw new Error("Modal element was not created in DOM");
       }
 
@@ -298,7 +287,6 @@ class SharingManager {
       const modalContent = createdModal.querySelector(".modal-content-share");
 
       if (!modalContent) {
-        console.error("Modal content not found!");
         throw new Error("Modal content element not found");
       }
 
@@ -309,15 +297,8 @@ class SharingManager {
         this.setupShareModalListeners();
       }, 50);
     } catch (e) {
-      console.error("Failed to create share modal:", e);
-      console.error("Error details:", e.message);
-      console.error("Stack:", e.stack);
-
       // If all else fails, retry later
       if (!this.modalCreated) {
-        console.warn(
-          "Will retry modal creation after Trusted Types policies are available",
-        );
         setTimeout(() => {
           if (!document.getElementById("share-modal-advanced")) {
             this.createShareModal();
@@ -643,15 +624,12 @@ class SharingManager {
         },
         true,
       );
-    } else {
-      console.error("Close button not found!");
     }
 
     if (createBtn) {
       this.eventHandlers.createBtn = () => {
         // Prevent double-click
         if (this.isCreatingLink) {
-          console.warn("Share link creation already in progress");
           return;
         }
         this.createShareLink();
@@ -826,7 +804,6 @@ class SharingManager {
     }
 
     if (!modalReady) {
-      console.error("Share modal failed to be created");
       if (window.Notifications) {
         window.Notifications.error(
           "Failed to open share dialog. Please refresh the page.",
@@ -847,7 +824,6 @@ class SharingManager {
           fileKey = window.VaultCrypto.base64urlToArray(keyStr);
         } else {
           // Fallback: try to decode base64url manually
-          console.warn("VaultCrypto not available, trying fallback");
           try {
             const binaryString = atob(
               keyStr.replace(/-/g, "+").replace(/_/g, "/"),
@@ -857,13 +833,11 @@ class SharingManager {
               fileKey[i] = binaryString.charCodeAt(i);
             }
           } catch (e) {
-            console.error("Failed to decode key:", e);
             fileKey = null;
           }
         }
       }
     } catch (e) {
-      console.warn("Failed to get file key from localStorage:", e);
       fileKey = null;
     }
 
@@ -882,7 +856,6 @@ class SharingManager {
         const jwtToken = localStorage.getItem("jwt_token");
 
         if (!jwtToken) {
-          console.warn("JWT token not found, cannot fetch file key from API");
           return;
         }
 
@@ -935,22 +908,12 @@ class SharingManager {
                     );
                   }
                   localStorage.setItem("vault_keys", JSON.stringify(keys));
-                } catch (e) {
-                  console.warn("Failed to store key in localStorage:", e);
-                }
-              } else {
-                console.warn(
-                  "decryptFileKey function not available on window object",
-                );
+                } catch (e) {}
               }
-            } catch (e) {
-              console.error("Failed to decrypt file key:", e);
-            }
+            } catch (e) {}
           }
         }
-      } catch (e) {
-        console.error("Error fetching file key from API:", e);
-      }
+      } catch (e) {}
     }
 
     // Store the key
@@ -968,7 +931,6 @@ class SharingManager {
     // Show the modal
     const modalEl = document.getElementById("share-modal-advanced");
     if (!modalEl) {
-      console.error("Share modal element not found after creation");
       if (window.Notifications) {
         window.Notifications.error(
           "Failed to open share dialog. Please refresh the page.",
@@ -1063,9 +1025,6 @@ class SharingManager {
             ) {
               // If modal is visible but aria-hidden is being set to true, prevent it
               if (modal.getAttribute("aria-hidden") === "true") {
-                console.warn(
-                  "Prevented aria-hidden from being set to true on visible modal",
-                );
                 modal.setAttribute("aria-hidden", "false");
               }
             }
@@ -1083,9 +1042,6 @@ class SharingManager {
             ) {
               // If modal is accessible but hidden class is being added, prevent it
               if (modal.classList.contains("hidden")) {
-                console.warn(
-                  "Prevented hidden class from being added to accessible modal",
-                );
                 modal.classList.remove("hidden");
               }
             }
@@ -1116,9 +1072,6 @@ class SharingManager {
         computedStyle.display === "none" ||
         computedStyle.visibility === "hidden"
       ) {
-        console.warn(
-          "Modal is still hidden after show attempt, forcing visibility",
-        );
         modalEl.style.setProperty("display", "flex", "important");
         modalEl.style.setProperty("visibility", "visible", "important");
         modalEl.setAttribute("aria-hidden", "false");
@@ -1240,7 +1193,6 @@ class SharingManager {
           window.modalManager = modalManager;
         } catch (e) {
           // ModalManager not available, continue without it
-          console.warn("ModalManager not available:", e);
         }
       }
 
@@ -1259,7 +1211,6 @@ class SharingManager {
         modalManager.open("share-file", openCallback, closeCallback);
       }
     } catch (e) {
-      console.warn("Error using modal manager:", e);
       // Continue without modal manager - modal is already shown
     }
 
@@ -1286,7 +1237,6 @@ class SharingManager {
 
     // Load active share links (don't block modal display if this fails)
     this.loadActiveLinks(fileId).catch((err) => {
-      console.warn("Failed to load active links (non-critical):", err);
       // Show empty state in links list
       const container = document.getElementById("active-links-list");
       if (container) {
@@ -1380,7 +1330,6 @@ class SharingManager {
       const jwtToken = localStorage.getItem("jwt_token");
 
       if (!jwtToken) {
-        console.warn("JWT token not found, cannot load active links");
         return;
       }
 
@@ -1416,12 +1365,8 @@ class SharingManager {
           has_password: link.has_password || false,
         }));
         await this.renderActiveLinks(mappedLinks, fileId);
-      } else {
-        console.error("API response not OK, status:", response.status);
       }
-    } catch (error) {
-      console.error("Error loading share links:", error);
-    }
+    } catch (error) {}
   }
 
   /**
@@ -1430,7 +1375,6 @@ class SharingManager {
   async createShareLink() {
     // Prevent double-click/double-execution
     if (this.isCreatingLink) {
-      console.warn("Share link creation already in progress");
       return;
     }
 
@@ -1438,7 +1382,6 @@ class SharingManager {
       if (window.Notifications) {
         window.Notifications.error("File ID not found. Please try again.");
       }
-      console.error("Cannot create share link: file ID is missing");
       return;
     }
 
@@ -1448,7 +1391,6 @@ class SharingManager {
           "File decryption key not found. You need to access this file first before sharing it. Please download or open the file once to decrypt it, then try sharing again.",
         );
       }
-      console.error("Cannot create share link: file key is missing");
       return;
     }
 
@@ -1578,10 +1520,6 @@ class SharingManager {
           baseUrl = await getVaultBaseUrl();
         }
       } catch (e) {
-        console.warn(
-          "Failed to get vault base URL, using window.location.origin:",
-          e,
-        );
         baseUrl = window.location.origin;
       }
 
@@ -1611,9 +1549,7 @@ class SharingManager {
         if (window.Notifications) {
           window.Notifications.info("Share link copied to clipboard");
         }
-      } catch (e) {
-        console.warn("Failed to copy to clipboard:", e);
-      }
+      } catch (e) {}
 
       // Reload active links after creation
       await this.loadActiveLinks(this.currentFileId);
@@ -1666,7 +1602,6 @@ class SharingManager {
         passwordToggleReset.setAttribute("aria-label", "Show password");
       }
     } catch (error) {
-      console.error("Error creating share link:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to create share link: ${error.message}`,
@@ -1688,7 +1623,6 @@ class SharingManager {
   async renderActiveLinks(links, fileId) {
     const container = document.getElementById("active-links-list");
     if (!container) {
-      console.error("active-links-list container not found!");
       return;
     }
 
@@ -1725,10 +1659,6 @@ class SharingManager {
         baseUrl = await getVaultBaseUrl();
       }
     } catch (e) {
-      console.warn(
-        "Failed to get vault base URL, using window.location.origin:",
-        e,
-      );
       baseUrl = window.location.origin;
     }
 
@@ -1744,9 +1674,7 @@ class SharingManager {
             fileKey = window.VaultCrypto.base64urlToArray(keyStr);
           }
         }
-      } catch (e) {
-        console.warn("Failed to get file key from localStorage:", e);
-      }
+      } catch (e) {}
     }
 
     const linksHTML = activeLinks
@@ -1769,10 +1697,6 @@ class SharingManager {
             const keyBase64 = btoa(String.fromCharCode.apply(null, keyArray));
             fullUrl = `${linkUrl}#key=${encodeURIComponent(keyBase64)}&file=${fileId}`;
           }
-        } else {
-          console.warn(
-            "File key not available for share link. The link will not work for decryption.",
-          );
         }
 
         const expiresText = link.expires_at
@@ -1824,7 +1748,6 @@ class SharingManager {
 
           const url = copyBtn.dataset.url;
           if (!url) {
-            console.error("No URL found in button dataset");
             return;
           }
 
@@ -1850,7 +1773,6 @@ class SharingManager {
               self.showCopyAnimation(linkUrlElement);
             }
           } catch (err) {
-            console.error("Failed to copy:", err);
             if (window.Notifications) {
               window.Notifications.error("Failed to copy link");
             }
@@ -1923,7 +1845,6 @@ class SharingManager {
         throw new Error(error.error || "Failed to revoke link");
       }
     } catch (error) {
-      console.error("Error revoking link:", error);
       if (window.Notifications) {
         window.Notifications.error(`Failed to revoke link: ${error.message}`);
       }
@@ -2161,10 +2082,6 @@ if (typeof window !== "undefined") {
       initSharingManager.retryCount = retryCount;
       if (retryCount < 50) {
         setTimeout(initSharingManager, 100);
-      } else {
-        console.error(
-          "Failed to initialize SharingManager: policies or DOM not ready after 5 seconds",
-        );
       }
       return;
     }
@@ -2197,7 +2114,6 @@ if (typeof window !== "undefined") {
                 vaultspaceKey,
               );
             } else {
-              console.error("SharingManager failed to initialize");
               if (window.Notifications) {
                 window.Notifications.error(
                   "Share functionality is not available. Please refresh the page.",
@@ -2207,9 +2123,7 @@ if (typeof window !== "undefined") {
           }, 500);
         }
       };
-    } catch (error) {
-      console.error("Error initializing SharingManager:", error);
-    }
+    } catch (error) {}
   }
 
   // Start initialization when DOM is ready

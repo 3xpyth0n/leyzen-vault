@@ -140,7 +140,6 @@ export default {
           };
         }
       } catch (err) {
-        console.error("Load properties error:", err);
         error.value = err.message || "Failed to load properties";
       } finally {
         loading.value = false;

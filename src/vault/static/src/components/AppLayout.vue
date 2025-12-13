@@ -21,6 +21,7 @@
           <UserMenuDropdown
             :is-admin="isAdmin"
             :is-super-admin="isSuperAdmin"
+            :orchestrator-enabled="orchestratorEnabled"
             @logout="handleLogout"
           />
         </div>
@@ -161,6 +162,7 @@
 
     <!-- Offline Modal -->
     <OfflineModal />
+    <MaintenanceModal />
   </div>
 </template>
 
@@ -170,6 +172,7 @@ import ServerStatusIndicator from "./ServerStatusIndicator.vue";
 import UserMenuDropdown from "./UserMenuDropdown.vue";
 import BottomNavigation from "./BottomNavigation.vue";
 import OfflineModal from "./OfflineModal.vue";
+import MaintenanceModal from "./MaintenanceModal.vue";
 import { auth, account, vaultspaces } from "../services/api";
 import { isMobileMode as checkMobileMode } from "../utils/mobileMode";
 
@@ -181,6 +184,7 @@ export default {
     UserMenuDropdown,
     BottomNavigation,
     OfflineModal,
+    MaintenanceModal,
   },
   emits: ["logout"],
   data() {
@@ -189,6 +193,7 @@ export default {
       showLogoutModal: false,
       isAdmin: false,
       isSuperAdmin: false,
+      orchestratorEnabled: true, // Default to true for compatibility
       loading: true,
       pinnedVaultSpaces: [],
       loadingPinned: false,
@@ -245,10 +250,36 @@ export default {
       try {
         this.pinnedVaultSpaces = await vaultspaces.listPinned();
       } catch (err) {
-        console.error("Failed to load pinned VaultSpaces:", err);
         this.pinnedVaultSpaces = [];
       } finally {
         this.loadingPinned = false;
+      }
+    },
+    async loadOrchestratorEnabled() {
+      try {
+        // Use fetch with JWT token from localStorage
+        const token = localStorage.getItem("jwt_token");
+        const headers = {
+          "Content-Type": "application/json",
+        };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const response = await fetch("/api/v2/config", {
+          method: "GET",
+          credentials: "same-origin",
+          headers,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.orchestrator_enabled !== undefined) {
+            this.orchestratorEnabled = data.orchestrator_enabled === true;
+          }
+        }
+      } catch (err) {
+        // If API call fails, keep default value (true for compatibility)
       }
     },
     refreshPinnedVaultSpaces() {
@@ -306,6 +337,12 @@ export default {
       this.showLogoutModal = true;
     },
     async performLogout() {
+      // Close modal first for smooth transition
+      this.showLogoutModal = false;
+
+      // Wait for modal to close before navigating
+      await this.$nextTick();
+
       try {
         // Clear service worker cache if available
         if (
@@ -318,11 +355,12 @@ export default {
         }
 
         await auth.logout();
-        this.$router.push("/login");
+        // Navigate to login page - use push to trigger Vue Router transition
+        await this.$router.push("/login");
         this.$emit("logout");
       } catch (error) {
         // Still redirect even if logout API call fails
-        this.$router.push("/login");
+        await this.$router.push("/login");
         this.$emit("logout");
       }
     },
@@ -364,6 +402,11 @@ export default {
         accountInfo.global_role === "admin" ||
         accountInfo.global_role === "superadmin";
       this.isSuperAdmin = accountInfo.global_role === "superadmin";
+
+      // Load orchestrator_enabled if user is admin/superadmin
+      if (this.isAdmin || this.isSuperAdmin) {
+        await this.loadOrchestratorEnabled();
+      }
     } catch (err) {
       // Check if it's a network error (server offline, etc.)
       // Don't log as error if it's just a network issue
@@ -372,12 +415,7 @@ export default {
         err?.message?.toLowerCase().includes("offline") ||
         err?.isOffline;
       if (isNetworkErr) {
-        console.warn(
-          "Server is offline - cannot load account info:",
-          err.message,
-        );
       } else {
-        console.error("Failed to load account info:", err);
       }
       // Don't disconnect user - just leave isAdmin and isSuperAdmin as false
     } finally {

@@ -78,10 +78,6 @@ function ensureDropdownInBody(dropdown) {
 
   // If dropdown exists but is NOT in body, move it
   if (dropdown.parentNode && dropdown.parentNode !== document.body) {
-    console.warn(
-      "[UserMenu] Dropdown is not in body! Moving it...",
-      dropdown.parentNode,
-    );
     const oldParent = dropdown.parentNode;
     oldParent.removeChild(dropdown);
     document.body.appendChild(dropdown);
@@ -102,7 +98,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const userMenuContainer = document.querySelector(".user-menu-container");
 
   if (!userMenuBtn) {
-    console.warn("[UserMenu] Button not found");
     return;
   }
 
@@ -117,16 +112,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ".user-menu-dropdown",
     );
     if (existingInContainer) {
-      console.warn("[UserMenu] Removing dropdown from container");
       existingInContainer.remove();
     }
     // Remove any with same ID that's not in body
     const existing = document.getElementById("user-menu-dropdown");
     if (existing && existing.parentNode !== document.body) {
-      console.warn(
-        "[UserMenu] Removing dropdown from wrong location:",
-        existing.parentNode,
-      );
       existing.remove();
     }
   }

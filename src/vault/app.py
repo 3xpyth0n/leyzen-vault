@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -123,7 +124,6 @@ def _normalize_origin(origin: str | None) -> str | None:
 
 
 from .blueprints.admin import admin_api_bp  # noqa: E402
-from .blueprints.auth import auth_bp  # noqa: E402
 from .blueprints.auth_api import auth_api_bp  # noqa: E402
 from .blueprints.config_api import config_api_bp  # noqa: E402
 from .blueprints.files_api_v2 import files_api_bp  # noqa: E402
@@ -135,9 +135,8 @@ try:
     from .blueprints.file_events_api import file_events_api_bp  # noqa: E402
 except Exception as e:
     # Log error but don't fail startup
-    import sys
-
-    print(f"[WARNING] Failed to import file_events_api_bp: {e}", file=sys.stderr)
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Failed to import file_events_api_bp: {e}")
     file_events_api_bp = None
 from .blueprints.internal_api import internal_api_bp  # noqa: E402
 from .blueprints.quota_api import quota_api_bp as quota_api_v2_bp  # noqa: E402
@@ -150,6 +149,9 @@ from .blueprints.trash_api import trash_api_bp  # noqa: E402
 from .blueprints.external_storage_api import (
     external_storage_api_bp,
 )  # noqa: E402
+from .blueprints.database_backup_api import (
+    database_backup_api_bp,
+)  # noqa: E402
 from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
 from .config import (
     VaultSettings,
@@ -159,9 +161,6 @@ from .config import (
 )  # noqa: E402
 from .database import db, init_db  # noqa: E402
 from .services.totp_service import init_totp_service  # noqa: E402
-
-# CSRF disabled - using JWT-only authentication
-# from .extensions import csrf  # noqa: E402
 
 from .services.audit import AuditService  # noqa: E402
 from common.services.logging import FileLogger  # noqa: E402
@@ -642,6 +641,69 @@ def _get_or_generate_internal_api_token(
         raise
 
 
+def _calculate_pool_settings(workers: int) -> dict[str, object]:
+    """Calculate optimal SQLAlchemy pool settings based on number of workers.
+
+    Uses adaptive formulas that scale appropriately with the number of workers,
+    matching deployment sizes from env.template:
+    - Small (1-10 users): 2-3 workers
+    - Medium (10-100 users): 3-5 workers
+    - Large (100+ users): 5-10 workers
+
+    The pool size is calculated to provide sufficient connections without wasting
+    resources. With Uvicorn workers, each worker has its own pool, so total
+    connections = (pool_size + max_overflow) × workers.
+
+    Examples:
+        - 2 workers (1-10 users): pool_size=5, max_overflow=10 → 30 total connections
+        - 4 workers (10-100 users): pool_size=8, max_overflow=12 → 80 total connections
+        - 10 workers (100+ users): pool_size=20, max_overflow=30 → 500 total connections
+
+    Args:
+        workers: Number of Uvicorn workers (from VAULT_WORKERS)
+
+    Returns:
+        Dictionary with SQLAlchemy engine options for connection pooling
+    """
+    # Adaptive pool sizing: conservative for small deployments, scaling up for larger ones
+    # Formula: pool_size starts at 5 for small deployments, scales with workers
+    # This provides ~15-30 connections per worker, which is sufficient for concurrent requests
+    pool_size = max(5, workers * 2)
+
+    # max_overflow: additional connections for traffic spikes
+    # Smaller relative overhead for small deployments, more headroom for larger ones
+    max_overflow = max(10, workers * 3)
+
+    # Cap max_overflow to prevent excessive connections (safety limit)
+    max_overflow = min(max_overflow, 100)
+
+    # Warn if configuration seems excessive (rare edge case)
+    if pool_size > 50:
+        import warnings
+
+        warnings.warn(
+            f"Large pool_size ({pool_size}) calculated for {workers} workers. "
+            "Consider if PostgreSQL max_connections is sufficient.",
+            UserWarning,
+        )
+
+    return {
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_timeout": 30,  # Timeout when getting connection from pool
+        "pool_recycle": 3600,  # Recycle connections after 1 hour to prevent stale connections
+        "pool_pre_ping": True,  # Verify connections before using (detects stale connections)
+        "connect_args": {
+            "connect_timeout": 10,  # Connection timeout
+            # PostgreSQL connection options to prevent deadlocks and long-running transactions
+            # - lock_timeout: Maximum time to wait for a lock (5 seconds)
+            # - statement_timeout: Maximum time for a single statement (30 seconds)
+            # - idle_in_transaction_session_timeout: Kill idle transactions (30 seconds, reduced from 60s)
+            "options": "-c lock_timeout=5000 -c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000",
+        },
+    }
+
+
 def create_app(
     storage_dir: Path | None = None,
     *args: object,
@@ -667,24 +729,24 @@ def create_app(
         static_url_path=None,
     )
 
-    # Load environment values first
-    # Import os here (already imported at top level) - this import is redundant but kept for clarity
+    # Load environment values with proper priority: .env file overrides os.environ
+    # This ensures .env file values take precedence for security and isolation
     import os
 
     env_values = {}
     try:
         # Import here to avoid circular dependency with common.env during module initialization
-        from common.env import load_env_with_override
+        from common.env import load_env_with_priority
 
-        env_values = load_env_with_override()
-        env_values.update(os.environ)
+        env_values = load_env_with_priority()
     except Exception:
-        pass
+        # Fallback to os.environ if loading fails
+        env_values = dict(os.environ)
 
     # SECURITY: Detect production environment with strict validation
     # Default to production for security (hide error details by default)
-    leylen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
-    is_production = leylen_env not in ("dev", "development")
+    leyzen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+    is_production = leyzen_env not in ("dev", "development")
 
     # Additional production checks: verify critical production settings
     if is_production:
@@ -697,7 +759,7 @@ def create_app(
             )
 
         # Check for development indicators that should not be present in production
-        if leylen_env in ("dev", "development"):
+        if leyzen_env in ("dev", "development"):
             raise RuntimeError(
                 "SECURITY ERROR: LEYZEN_ENVIRONMENT is set to development mode in production. "
                 "This is a security risk. Remove LEYZEN_ENVIRONMENT or set it to 'production'."
@@ -746,74 +808,75 @@ def create_app(
             app.config["SQLALCHEMY_COMMIT_ON_TEARDOWN"] = (
                 False  # Explicitly disable auto-commit on teardown
             )
+            # Configure connection pool for multiprocessing (Uvicorn workers)
+            # The pool settings are auto-adapted based on the number of workers to ensure
+            # optimal performance for different deployment sizes (small/medium/large).
+            # Each worker has its own connection pool, so total PostgreSQL connections =
+            # (pool_size + max_overflow) × number_of_workers
+            #
+            # Adaptive scaling examples (based on env.template recommendations):
+            # - 2 workers (small, 1-10 users): ~30 total connections
+            # - 4 workers (medium, 10-100 users): ~80 total connections
+            # - 10 workers (large, 100+ users): ~500 total connections
+            #
+            # The pool automatically scales with VAULT_WORKERS, so adjusting workers is sufficient
+            # to optimize for your deployment size. No additional configuration needed.
+            import os
+
+            vault_workers = int(os.environ.get("VAULT_WORKERS", "2"))
+            app.config["SQLALCHEMY_ENGINE_OPTIONS"] = _calculate_pool_settings(
+                vault_workers
+            )
+
+            # Initialize db_initialized_by_this_worker to False before try block
+            # This ensures it's accessible even if the try block fails
+            db_initialized_by_this_worker = False
 
             # Initialize database (this will create roles if needed)
-            init_db(app)
-
-            # Note: We keep using POSTGRES_USER for the default database connection
-            # The application can use the leyzen_app role by reading the password from system_secrets
-            # when needed, but we don't change the default connection after initialization
-            # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
-
-            logger.log("[INIT] PostgreSQL database initialized")
-
-            # Wait a moment to ensure all tables are fully created and visible before generating token
-            import time
-
-            time.sleep(1.0)
-
-            # Final verification that jti column exists after init_db()
-            # This is a safety check to ensure the migration completed successfully
+            # Only log initialization messages if this worker actually performed the initialization
             try:
-                from vault.services.auth_service import (
-                    _check_jti_column_exists,
-                    reset_jti_column_cache,
-                )
+                db_initialized_by_this_worker = init_db(app)
 
-                reset_jti_column_cache()  # Clear cache to force fresh check
-                import time
+                # Note: We keep using POSTGRES_USER for the default database connection
+                # The application can use the leyzen_app role by reading the password from system_secrets
+                # when needed, but we don't change the default connection after initialization
+                # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
 
-                time.sleep(0.3)  # Brief wait for any pending operations
-                with app.app_context():
-                    jti_exists = _check_jti_column_exists()
-                if jti_exists:
-                    logger.log(
-                        "[INIT] jti column verified after database initialization"
-                    )
+                if db_initialized_by_this_worker:
+                    logger.log("[INIT] PostgreSQL database initialized")
+                    logger.flush()
+                    # jti column is already verified in init_db() - no need to check again
+            except Exception as db_exc:
+                # Log the error with full details
+                # Import traceback here to avoid importing it at module level if not needed
+                import traceback
+
+                error_details = f"Failed to initialize PostgreSQL: {db_exc}\n{traceback.format_exc()}"
+                logger.log(f"[ERROR] {error_details}")
+
+                # In production, fail startup if PostgreSQL is unavailable
+                # In development mode, allow fallback for testing
+                if is_production:
+                    raise RuntimeError(
+                        "PostgreSQL database initialization failed. "
+                        "Leyzen Vault requires PostgreSQL to run in production mode. "
+                        "Please ensure PostgreSQL is available and properly configured. "
+                        "Set LEYZEN_ENVIRONMENT=dev only for development/testing."
+                    ) from db_exc
                 else:
+                    # Development mode: log warning but continue
                     logger.log(
-                        "[WARNING] jti column not found after init_db() - this may cause startup issues"
+                        "[WARNING] Continuing without PostgreSQL (development mode only). "
+                        "This is not recommended for production use."
                     )
-            except Exception as verify_error:
-                logger.log(
-                    f"[WARNING] Failed to verify jti column after init_db(): {verify_error}"
-                )
-        except Exception as db_exc:
-            # Log the error with full details
-            # Import traceback here to avoid importing it at module level if not needed
-            import traceback
-
-            error_details = (
-                f"Failed to initialize PostgreSQL: {db_exc}\n{traceback.format_exc()}"
+                    # Continue without PostgreSQL for development/testing only
+        except Exception as db_config_exc:
+            # If database configuration fails completely, log and continue
+            # (this should not happen in normal operation)
+            logger.log(
+                f"[ERROR] Database configuration failed: {db_config_exc}. "
+                "Application may not function correctly."
             )
-            logger.log(f"[ERROR] {error_details}")
-
-            # In production, fail startup if PostgreSQL is unavailable
-            # In development mode, allow fallback for testing
-            if is_production:
-                raise RuntimeError(
-                    "PostgreSQL database initialization failed. "
-                    "Leyzen Vault requires PostgreSQL to run in production mode. "
-                    "Please ensure PostgreSQL is available and properly configured. "
-                    "Set LEYZEN_ENVIRONMENT=dev only for development/testing."
-                ) from db_exc
-            else:
-                # Development mode: log warning but continue
-                logger.log(
-                    "[WARNING] Continuing without PostgreSQL (development mode only). "
-                    "This is not recommended for production use."
-                )
-                # Continue without PostgreSQL for development/testing only
 
         # Internal API token for orchestrator operations
         # Derive deterministically from SECRET_KEY (like DOCKER_PROXY_TOKEN)
@@ -839,13 +902,15 @@ def create_app(
                     from common.token_utils import derive_internal_api_token
 
                     internal_api_token = derive_internal_api_token(settings.secret_key)
-                    logger.log(
-                        f"[INIT] INTERNAL_API_TOKEN derived from SECRET_KEY (deterministic, no database required): {internal_api_token[:16]}..."
-                    )
+                    if db_initialized_by_this_worker:
+                        logger.log(
+                            f"[INIT] INTERNAL_API_TOKEN derived from SECRET_KEY (deterministic, no database required): {internal_api_token[:16]}..."
+                        )
             else:
-                logger.log(
-                    "[INIT] INTERNAL_API_TOKEN set from environment variable (explicit override)"
-                )
+                if db_initialized_by_this_worker:
+                    logger.log(
+                        "[INIT] INTERNAL_API_TOKEN set from environment variable (explicit override)"
+                    )
         except Exception as token_error:
             import traceback
 
@@ -858,29 +923,27 @@ def create_app(
         # Always set the token in config, even if empty
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
         if internal_api_token:
-            logger.log(
-                f"[INIT] INTERNAL_API_TOKEN configured successfully (length: {len(internal_api_token)})"
-            )
+            if db_initialized_by_this_worker:
+                logger.log(
+                    f"[INIT] INTERNAL_API_TOKEN configured successfully (length: {len(internal_api_token)})"
+                )
         else:
+            # Error logs should always be shown
             logger.log(
                 "[ERROR] INTERNAL_API_TOKEN is empty - internal API will be disabled"
             )
 
         # SECURITY: Verify production mode detection at startup
         if is_production:
-            logger.log("[INIT] Running in PRODUCTION mode - security checks enabled")
-            # Double-check that we're not in development mode
-            leylen_env_check = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
-            if leylen_env_check in ("dev", "development"):
-                raise RuntimeError(
-                    "CRITICAL SECURITY ERROR: Production mode detected but LEYZEN_ENVIRONMENT "
-                    "is set to development. This is a security risk. "
-                    "Remove LEYZEN_ENVIRONMENT or set it to 'production'."
+            if db_initialized_by_this_worker:
+                logger.log(
+                    "[INIT] Running in PRODUCTION mode - security checks enabled"
                 )
         else:
-            logger.log(
-                "[INIT] Running in DEVELOPMENT mode - permissive security checks"
-            )
+            if db_initialized_by_this_worker:
+                logger.log(
+                    "[INIT] Running in DEVELOPMENT mode - permissive security checks"
+                )
             import warnings
 
             warnings.warn(
@@ -890,227 +953,26 @@ def create_app(
                 UserWarning,
             )
 
-        # SECURITY: Check if jti column exists for JWT replay protection
-        # In production, this is mandatory - block startup if not available
-        # Wait a bit after init_db() to ensure migration is complete
-        import time
-
-        # Give migration more time to complete (init_db() may still be processing)
-        time.sleep(1.0)  # Increased wait time for migration to complete
-
-        try:
-            from vault.services.auth_service import _check_jti_column_exists
-
-            # Retry check with progressive delays (migration might still be in progress)
-            # Use more retries and longer delays to handle slow database operations
-            jti_available = False
-            max_retries = 5
-            base_delay = 0.5
-
-            for attempt in range(max_retries):
-                try:
-                    # Ensure we're in app context for the check
-                    with app.app_context():
-                        jti_available = _check_jti_column_exists()
-                    if jti_available:
-                        logger.log("[INIT] jti column verified successfully")
-                        break
-                    if attempt < max_retries - 1:
-                        # Progressive delay: longer waits for later retries
-                        delay = base_delay * (attempt + 1)
-                        logger.log(
-                            f"[INFO] jti column not found yet, retrying ({attempt + 1}/{max_retries}) "
-                            f"after {delay}s delay..."
-                        )
-                        time.sleep(delay)
-                except Exception as check_error:
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (attempt + 1)
-                        logger.log(
-                            f"[INFO] jti check failed, retrying ({attempt + 1}/{max_retries}) "
-                            f"after {delay}s delay: {check_error}"
-                        )
-                        time.sleep(delay)
-                    else:
-                        logger.log(
-                            f"[ERROR] jti check failed after {max_retries} attempts: {check_error}"
-                        )
-                        raise
-
-            if not jti_available:
-                # If still not available, try to create it directly
-                logger.log(
-                    "[INFO] jti column not found after retries, attempting to create it directly..."
-                )
-                try:
-                    with app.app_context():
-                        from sqlalchemy import inspect as sql_inspect, text
-                        from vault.database.schema import db
-
-                        logger.log("[INFO] Checking if jwt_blacklist table exists...")
-                        inspector = sql_inspect(db.engine)
-                        table_names = inspector.get_table_names()
-                        logger.log(f"[INFO] Found tables: {', '.join(table_names)}")
-
-                        if "jwt_blacklist" in table_names:
-                            logger.log(
-                                "[INFO] jwt_blacklist table exists, checking columns..."
-                            )
-                            columns = [
-                                col["name"]
-                                for col in inspector.get_columns("jwt_blacklist")
-                            ]
-                            logger.log(
-                                f"[INFO] jwt_blacklist columns: {', '.join(columns)}"
-                            )
-
-                            if "jti" not in columns:
-                                logger.log(
-                                    "[INFO] jti column missing, creating it now..."
-                                )
-                                try:
-                                    db.session.execute(
-                                        text(
-                                            "ALTER TABLE jwt_blacklist ADD COLUMN jti VARCHAR(255)"
-                                        )
-                                    )
-                                    logger.log(
-                                        "[INFO] jti column added, creating index..."
-                                    )
-                                    db.session.execute(
-                                        text(
-                                            "CREATE UNIQUE INDEX IF NOT EXISTS ix_jwt_blacklist_jti ON jwt_blacklist(jti) WHERE jti IS NOT NULL"
-                                        )
-                                    )
-                                    db.session.commit()
-                                    logger.log(
-                                        "[INFO] jti column and index created successfully!"
-                                    )
-
-                                    # Clear cache and recheck
-                                    try:
-                                        from vault.services.auth_service import (
-                                            reset_jti_column_cache,
-                                        )
-
-                                        reset_jti_column_cache()
-                                        logger.log("[INFO] jti cache cleared")
-                                    except Exception as cache_error:
-                                        logger.log(
-                                            f"[WARNING] Failed to clear jti cache: {cache_error}"
-                                        )
-
-                                    # Wait a moment for commit to propagate
-                                    time.sleep(0.3)
-
-                                    # Clear cache and recheck
-                                    try:
-                                        from vault.services.auth_service import (
-                                            reset_jti_column_cache,
-                                        )
-
-                                        reset_jti_column_cache()
-                                    except Exception:
-                                        pass
-
-                                    # Recheck with app context
-                                    with app.app_context():
-                                        jti_available = _check_jti_column_exists()
-                                    logger.log(
-                                        f"[INFO] jti recheck after creation: {jti_available}"
-                                    )
-
-                                    if not jti_available:
-                                        logger.log(
-                                            "[WARNING] jti column creation reported success but verification failed. "
-                                            "Retrying verification..."
-                                        )
-                                        time.sleep(0.5)
-                                        with app.app_context():
-                                            jti_available = _check_jti_column_exists()
-                                        if jti_available:
-                                            logger.log(
-                                                "[INFO] jti column verified on retry"
-                                            )
-                                except Exception as alter_error:
-                                    logger.log(
-                                        f"[ERROR] Failed to execute ALTER TABLE: {alter_error}"
-                                    )
-                                    db.session.rollback()
-                                    raise
-                            else:
-                                logger.log(
-                                    "[INFO] jti column already exists in table, but check returned False - clearing cache..."
-                                )
-                                try:
-                                    from vault.services.auth_service import (
-                                        reset_jti_column_cache,
-                                    )
-
-                                    reset_jti_column_cache()
-                                    time.sleep(0.3)  # Brief wait after cache clear
-                                    with app.app_context():
-                                        jti_available = _check_jti_column_exists()
-                                    logger.log(
-                                        f"[INFO] jti recheck after cache clear: {jti_available}"
-                                    )
-                                except Exception:
-                                    pass
-                        else:
-                            logger.log(
-                                "[WARNING] jwt_blacklist table does not exist yet - will be created by db.create_all()"
-                            )
-                except Exception as create_error:
-                    logger.log(f"[ERROR] Failed to create jti column: {create_error}")
-                    import traceback
-
-                    logger.log(f"[ERROR] Traceback: {traceback.format_exc()}")
-
-            if not jti_available:
-                if is_production:
-                    # In production, jti is mandatory - block startup
-                    raise RuntimeError(
-                        "CRITICAL SECURITY ERROR: JWT replay protection (jti column) not available. "
-                        "The jti column is required in production for security. "
-                        "Please ensure the database migration completed successfully. "
-                        "Check database logs for migration errors."
-                    )
-                else:
-                    logger.log(
-                        "[WARNING] JWT replay protection (jti column) not available - "
-                        "database migration required. JWT tokens may be vulnerable to replay attacks."
-                    )
-            else:
-                logger.log("[INIT] JWT replay protection (jti) available and active")
-        except RuntimeError:
-            # Re-raise RuntimeError (production blocking error)
-            raise
-        except Exception as jti_check_error:
-            if is_production:
-                # In production, any error checking jti is critical
-                raise RuntimeError(
-                    f"CRITICAL SECURITY ERROR: Failed to verify JWT replay protection (jti column): {jti_check_error}. "
-                    "This check is mandatory in production."
-                ) from jti_check_error
-            else:
-                logger.log(
-                    f"[WARNING] Failed to check jti column existence: {jti_check_error}"
-                )
+        # jti column is already verified in init_db() - no need to check again here
+        # This prevents SQLAlchemy errors and duplicate checks across workers
 
         # Initialize TOTP service for 2FA
         init_totp_service(settings.secret_key)
-        logger.log("[INIT] TOTP service initialized")
 
         # Check if setup is complete
         try:
-            if not is_setup_complete(app):
-                logger.log(
-                    "[WARNING] Setup not complete. Visit /setup to create superadmin account."
-                )
+            if not is_setup_complete(app, quiet=True):
+                if db_initialized_by_this_worker:
+                    logger.log(
+                        "[WARNING] Setup not complete. Visit /setup to create superadmin account."
+                    )
             else:
-                logger.log("[INIT] Setup complete - users exist in database")
+                if db_initialized_by_this_worker:
+                    logger.log("[INIT] Setup complete - users exist in database")
+                    logger.flush()
         except Exception as setup_check_error:
             logger.log(f"[WARNING] Failed to check setup status: {setup_check_error}")
+            logger.flush()
     except Exception as exc:
         # Fallback for development/testing only - NOT allowed in production
         # Fallback requires environment variables to be set
@@ -1386,9 +1248,9 @@ def create_app(
                 with app.app_context():
                     deleted_count = audit_service.cleanup_old_logs()
                     if deleted_count > 0:
-                        logger.info(f"Cleaned up {deleted_count} old audit log entries")
+                        logger.log(f"Cleaned up {deleted_count} old audit log entries")
             except Exception as e:
-                logger.error(f"Error during audit log cleanup: {e}", exc_info=True)
+                logger.log(f"Error during audit log cleanup: {e}")
 
     # Import threading here to avoid importing at module level if cleanup thread is not started
     import threading
@@ -1442,13 +1304,10 @@ def create_app(
                                 )
                     except Exception as cleanup_error:
                         logger.error(
-                            f"Error during orphaned files cleanup: {cleanup_error}",
-                            exc_info=True,
+                            f"Error during orphaned files cleanup: {cleanup_error}"
                         )
             except Exception as e:
-                logger.error(
-                    f"Error in orphaned files cleanup worker: {e}", exc_info=True
-                )
+                logger.error(f"Error in orphaned files cleanup worker: {e}")
 
     orphaned_cleanup_thread = threading.Thread(
         target=_orphaned_files_cleanup_worker, daemon=True
@@ -1527,30 +1386,28 @@ def create_app(
                                     )
                                     if success:
                                         promoted_count += 1
-                                        logger.info(
+                                        logger.log(
                                             f"[PERIODIC PROMOTION] Promoted file {storage_ref} to persistent storage"
                                         )
                                     else:
-                                        logger.warning(
+                                        logger.log(
                                             f"[PERIODIC PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
                                         )
                                 except Exception as e:
-                                    logger.error(
-                                        f"[PERIODIC PROMOTION ERROR] Exception promoting {storage_ref}: {e}",
-                                        exc_info=True,
+                                    logger.log(
+                                        f"[PERIODIC PROMOTION ERROR] Exception promoting {storage_ref}: {e}"
                                     )
 
                         if promoted_count > 0:
-                            logger.info(
+                            logger.log(
                                 f"[PERIODIC PROMOTION] Promoted {promoted_count} files to persistent storage"
                             )
                     except Exception as promotion_error:
-                        logger.error(
-                            f"Error during periodic file promotion: {promotion_error}",
-                            exc_info=True,
+                        logger.log(
+                            f"Error during periodic file promotion: {promotion_error}"
                         )
             except Exception as e:
-                logger.error(f"Error in periodic promotion worker: {e}", exc_info=True)
+                logger.log(f"Error in periodic promotion worker: {e}")
 
     periodic_promotion_thread = threading.Thread(
         target=_periodic_promotion_worker, daemon=True
@@ -1581,35 +1438,68 @@ def create_app(
             # Start worker if external storage is enabled
             if ExternalStorageConfigService.is_enabled(secret_key, app):
                 external_storage_worker.start()
-                logger.log("[INIT] External storage worker started")
+                if db_initialized_by_this_worker:
+                    logger.log("[INIT] External storage worker started")
+    except Exception as e:
+        logger.log(f"[INIT] Failed to initialize external storage worker: {e}")
 
-                # Check storage mode and log appropriate message about empty directories
-                storage_mode = ExternalStorageConfigService.get_storage_mode(
-                    secret_key, app
-                )
-                if storage_mode == "s3":
-                    # Check if source directory is empty (expected in S3-only mode)
-                    if source_dir and source_dir.exists():
-                        source_files_dir = source_dir / "files"
-                        if source_files_dir.exists() and not any(
-                            source_files_dir.iterdir()
-                        ):
-                            logger.log(
-                                "[INIT] S3-only mode is enabled. No files will be written to local disk. "
-                                "You can modify this setting from the admin interface, Integrations tab."
-                            )
-                        elif not source_files_dir.exists() or not any(
-                            source_files_dir.iterdir()
-                        ):
-                            logger.log(
-                                "[INIT] S3-only mode is enabled. No files will be written to local disk. "
-                                "You can modify this setting from the admin interface, Integrations tab."
-                            )
-                    else:
+    # Initialize database backup worker
+    try:
+        from vault.services.database_backup_worker import DatabaseBackupWorker
+        from vault.services.database_backup_config_service import (
+            DatabaseBackupConfigService,
+        )
+
+        secret_key = app.config.get("SECRET_KEY", "")
+        if secret_key:
+            database_backup_worker = DatabaseBackupWorker(
+                secret_key=secret_key, app=app
+            )
+            app.config["DATABASE_BACKUP_WORKER"] = database_backup_worker
+
+            # Start worker if database backup is enabled
+            if DatabaseBackupConfigService.is_enabled(secret_key, app):
+                database_backup_worker.start()
+                if db_initialized_by_this_worker:
+                    logger.log("[INIT] Database backup worker started")
+    except Exception as e:
+        logger.log(f"[INIT] Failed to initialize database backup worker: {e}")
+
+    # Continue with external storage worker logging
+    try:
+        from vault.services.external_storage_config_service import (
+            ExternalStorageConfigService,
+        )
+
+        secret_key = app.config.get("SECRET_KEY", "")
+        if secret_key:
+            # Check storage mode and log appropriate message about empty directories
+            storage_mode = ExternalStorageConfigService.get_storage_mode(
+                secret_key, app
+            )
+            if storage_mode == "s3":
+                # Check if source directory is empty (expected in S3-only mode)
+                if source_dir and source_dir.exists():
+                    source_files_dir = source_dir / "files"
+                    if source_files_dir.exists() and not any(
+                        source_files_dir.iterdir()
+                    ):
                         logger.log(
                             "[INIT] S3-only mode is enabled. No files will be written to local disk. "
                             "You can modify this setting from the admin interface, Integrations tab."
                         )
+                    elif not source_files_dir.exists() or not any(
+                        source_files_dir.iterdir()
+                    ):
+                        logger.log(
+                            "[INIT] S3-only mode is enabled. No files will be written to local disk. "
+                            "You can modify this setting from the admin interface, Integrations tab."
+                        )
+                else:
+                    logger.log(
+                        "[INIT] S3-only mode is enabled. No files will be written to local disk. "
+                        "You can modify this setting from the admin interface, Integrations tab."
+                    )
     except Exception as worker_error:
         logger.log(
             f"[WARNING] Failed to initialize external storage worker: {worker_error}"
@@ -1670,32 +1560,19 @@ def create_app(
 
     # Register blueprints
     app.register_blueprint(admin_api_bp)  # Admin API
-    app.register_blueprint(
-        auth_bp
-    )  # Legacy auth (session-based, for CAPTCHA/logout until fully migrated)
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
     app.register_blueprint(config_api_bp)  # Configuration API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
     app.register_blueprint(external_storage_api_bp)  # External storage API
+    app.register_blueprint(database_backup_api_bp)  # Database backup API
     if file_events_api_bp is not None:
         try:
             app.register_blueprint(file_events_api_bp)  # File events API (SSE)
         except Exception as e:
-            import sys
-
-            print(
-                f"[WARNING] Failed to register file_events_api_bp: {e}", file=sys.stderr
-            )
+            logger.log(f"Failed to register file_events_api_bp: {e}")
             # Don't fail startup if file events API fails to register
             # This allows the application to continue running without real-time sync
 
-    # Debug: Log upload routes registration
-    import logging
-
-    logger = logging.getLogger(__name__)
-    upload_routes = [r.rule for r in app.url_map.iter_rules() if "upload" in r.rule]
-    if upload_routes:
-        logger.info(f"Registered upload routes: {upload_routes}")
     app.register_blueprint(internal_api_bp)  # Internal API for orchestrator
     app.register_blueprint(search_api_bp)  # Search API
     app.register_blueprint(sso_api_bp)  # SSO API (SAML, OAuth2, OIDC)
@@ -1705,8 +1582,6 @@ def create_app(
     app.register_blueprint(thumbnail_api_bp)  # Thumbnail API v2
     app.register_blueprint(security_bp)  # Security stats
     app.register_blueprint(vaultspace_api_bp)  # VaultSpaces API
-
-    # Route registration complete - no debug logging in production
 
     # Custom static file handler - check dist/ first, then fallback to static/
     # This must be registered AFTER blueprints to have priority
@@ -1742,7 +1617,7 @@ def create_app(
                     # File doesn't exist in dist/assets/, continue to next check
                     pass
                 except Exception as e:
-                    logger.error(f"Error serving asset {filename}: {e}", exc_info=True)
+                    logger.log(f"Error serving asset {filename}: {e}")
                     abort(500)
 
         # Try dist/ first (for Vue.js build assets and index.html)
@@ -1758,7 +1633,7 @@ def create_app(
             # File doesn't exist in dist/, try static/ fallback
             pass
         except Exception as e:
-            logger.error(f"Error serving file {filename} from dist: {e}", exc_info=True)
+            logger.log(f"Error serving file {filename} from dist: {e}")
             abort(500)
 
         # Fallback to original static/ (for legacy files like vault.css, vault.js, etc.)
@@ -1774,9 +1649,7 @@ def create_app(
             # File not found anywhere
             abort(404)
         except Exception as e:
-            logger.error(
-                f"Error serving file {filename} from static: {e}", exc_info=True
-            )
+            logger.log(f"Error serving file {filename} from static: {e}")
             abort(500)
 
     @app.after_request
@@ -1817,7 +1690,6 @@ def create_app(
         import secrets
         from flask import g
 
-        # Debug: Log API upload requests to see if they reach Flask
         from flask import request
 
         if request.path.startswith("/api/") and "upload" in request.path:
@@ -2080,7 +1952,7 @@ def create_app(
                     )
                 else:
                     # File exists but is invalid - log warning and use safe content
-                    logger.error(
+                    logger.log(
                         "CRITICAL: robots.txt file exists but does not contain 'Disallow: /'. "
                         "Serving correct content to comply with license requirements. "
                         f"File location: {robots_file}"
@@ -2102,11 +1974,16 @@ def create_app(
 
     @app.route("/healthz")
     def healthz():
-        """Health check endpoint - must respond quickly for HAProxy."""
-        # Return immediately without any database checks to ensure fast response
-        # This prevents HAProxy from marking the backend as down
+        """Health check endpoint - must respond quickly for HAProxy.
+
+        Always returns 200 to avoid HAProxy custom error pages.
+        Does not perform blocking operations to ensure fast response.
+        """
         from flask import Response
 
+        # Always return 200 immediately - no blocking operations
+        # If workers are blocked, this endpoint will still respond quickly
+        # HAProxy will detect worker issues through request timeouts, not status codes
         return Response('{"status":"ok"}', mimetype="application/json", status=200)
 
     @app.route("/healthz/stream")
@@ -2116,28 +1993,75 @@ def create_app(
         import time
         from flask import Response, stream_with_context
 
+        def get_restore_status():
+            """Get current restore status from app config."""
+            restore_running = current_app.config.get("DATABASE_RESTORE_RUNNING", False)
+            restore_error = current_app.config.get("DATABASE_RESTORE_ERROR", None)
+            maintenance_mode = current_app.config.get("MAINTENANCE_MODE", False)
+            return {
+                "running": restore_running,
+                "error": restore_error,
+                "maintenance_mode": maintenance_mode,
+            }
+
         @stream_with_context
         def generate_health_events():
             """Generate SSE health status events."""
             try:
-                # Send initial status event
-                yield f"data: {json.dumps({'status': 'ok'})}\n\n"
+                # Get initial restore status
+                last_restore_status = get_restore_status()
+
+                # Send initial status event with restore status
+                initial_data = {
+                    "status": "ok",
+                    "restore_status": last_restore_status,
+                }
+                yield f"data: {json.dumps(initial_data)}\n\n"
 
                 # Send heartbeats every 25 seconds to keep connection alive
                 heartbeat_interval = 25.0
                 last_heartbeat = time.time()
+                # Check for restore status changes more frequently (every 1 second)
+                status_check_interval = 1.0
+                last_status_check = time.time()
 
                 while True:
                     current_time = time.time()
                     elapsed = current_time - last_heartbeat
+                    status_elapsed = current_time - last_status_check
+
+                    # Check for restore status changes
+                    if status_elapsed >= status_check_interval:
+                        current_restore_status = get_restore_status()
+                        # Send event if restore status changed
+                        if current_restore_status != last_restore_status:
+                            status_data = {
+                                "status": "ok",
+                                "restore_status": current_restore_status,
+                            }
+                            yield f"data: {json.dumps(status_data)}\n\n"
+                            last_restore_status = current_restore_status
+                        last_status_check = current_time
 
                     if elapsed >= heartbeat_interval:
-                        # Send heartbeat comment to keep connection alive
-                        yield ": heartbeat\n\n"
+                        # Send heartbeat with current restore status
+                        current_restore_status = get_restore_status()
+                        heartbeat_data = {
+                            "status": "ok",
+                            "restore_status": current_restore_status,
+                        }
+                        yield f"data: {json.dumps(heartbeat_data)}\n\n"
+                        last_restore_status = current_restore_status
                         last_heartbeat = current_time
                     else:
-                        # Sleep for remaining time until next heartbeat
-                        time.sleep(min(heartbeat_interval - elapsed, 1.0))
+                        # Sleep for remaining time until next check (min of heartbeat or status check)
+                        sleep_time = min(
+                            heartbeat_interval - elapsed,
+                            status_check_interval - status_elapsed,
+                            1.0,
+                        )
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
 
             except (GeneratorExit, StopIteration):
                 # Client disconnected
@@ -2167,7 +2091,21 @@ def create_app(
         from flask import make_response, redirect, request, send_file
         import re
 
-        if not is_setup_complete(app):
+        # Check setup status within app context
+        # is_setup_complete() already uses app.app_context() internally,
+        # but we ensure we're in the request context here
+        try:
+            setup_complete = is_setup_complete(app)
+            if not setup_complete:
+                return redirect("/setup", code=302)
+        except Exception as setup_error:
+            # If setup check fails, log error but allow access to setup page
+            logger = app.config.get("LOGGER", None)
+            if logger:
+                logger.log(
+                    f"[WARNING] Failed to check setup status in root route: {setup_error}"
+                )
+            # On error, redirect to setup to be safe
             return redirect("/setup", code=302)
 
         dist_index = static_dir / "index.html"
@@ -2277,12 +2215,8 @@ def create_app(
         """Serve Vue.js SPA for 404 errors (Vue Router will handle client-side routing)."""
         from flask import request, send_file, jsonify, make_response, current_app
 
-        # Import sys here (already imported at top level) - this import is redundant but kept for clarity
-        import sys
-
         # Return JSON for API endpoints
         if request.path.startswith("/api/"):
-            # Log 404 for API endpoints to help debug
             current_app.logger.error(
                 f"404 for API endpoint: {request.path} {request.method}",
                 extra={
@@ -2385,17 +2319,62 @@ def create_app(
                 return jsonify({"error": e.description or str(e)}), e.code
             return e
 
+        # Check for database-related errors that indicate race conditions
+        error_str = str(e).lower()
+        error_type = type(e).__name__.lower()
+
+        is_db_error = False
+        is_retryable = False
+
+        # Check for PostgreSQL deadlock errors
+        if "deadlock" in error_str or "deadlock_detected" in error_str:
+            is_db_error = True
+            is_retryable = True
+            current_app.logger.warning(
+                f"[DB DEADLOCK] Deadlock detected in {request.path}: {e}. "
+                "Consider using db_transaction() with retry for this operation."
+            )
+
+        # Check for concurrent update errors
+        if (
+            "tuple concurrently updated" in error_str
+            or "could not serialize access" in error_str
+            or "serialization failure" in error_str
+        ):
+            is_db_error = True
+            is_retryable = True
+            current_app.logger.warning(
+                f"[DB CONCURRENCY] Concurrent update error in {request.path}: {e}. "
+                "Consider using db_transaction() with retry for this operation."
+            )
+
+        # Check for transaction aborted errors
+        if (
+            "infailedsqltransaction" in error_type
+            or "transaction is aborted" in error_str
+        ):
+            is_db_error = True
+            is_retryable = True
+            current_app.logger.warning(
+                f"[DB TRANSACTION] Transaction aborted in {request.path}: {e}. "
+                "This may indicate a race condition between workers."
+            )
+
         # Determine if we're in production mode
         is_production = current_app.config.get("IS_PRODUCTION", True)
 
         # Log the error with full details (always log details server-side)
-        error_details = f"Unhandled exception: {e}\n{traceback.format_exc()}"
-        current_app.logger.error(error_details)
+        if is_db_error and is_retryable:
+            # For retryable DB errors, log as warning (they should be handled by db_transaction)
+            error_details = f"Database error (retryable): {e}\n{traceback.format_exc()}"
+            current_app.logger.warning(error_details)
+        else:
+            error_details = f"Unhandled exception: {e}\n{traceback.format_exc()}"
+            current_app.logger.error(error_details)
 
         # If this is an API route, return JSON error
         if request.path.startswith("/api/"):
             # In production, return generic error message to avoid information disclosure
-            # In development, return detailed error message for debugging
             if is_production:
                 error_message = "An internal error occurred"
             else:
@@ -2439,9 +2418,10 @@ def create_app(
                     "The route will serve correct content, but please fix the file."
                 )
             else:
-                validation_logger.log(
-                    "[INIT] robots.txt validated: properly configured to disallow all indexing"
-                )
+                if db_initialized_by_this_worker:
+                    validation_logger.log(
+                        "[INIT] robots.txt validated: properly configured to disallow all indexing"
+                    )
         else:
             validation_logger.log(
                 "[WARNING] robots.txt file not found at expected location. "

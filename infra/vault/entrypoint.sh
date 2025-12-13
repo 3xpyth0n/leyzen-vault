@@ -17,6 +17,11 @@ log() {
   printf '%s\n' "[vault-entrypoint] $*" >&2
 }
 
+# Create /data-source directory structure if it doesn't exist
+# This ensures the directory exists even if the volume is not mounted
+mkdir -p /data-source/files
+mkdir -p /data-source/backups/database
+
 # If running as root, ensure vault user owns data directories
 # This handles cases where volumes are mounted with root ownership
 if [ "$(id -u)" = "0" ]; then
@@ -28,6 +33,9 @@ if [ "$(id -u)" = "0" ]; then
   if [ -d "/data-source" ]; then
     chown -R "${VAULT_USER}:${VAULT_USER}" /data-source 2>/dev/null || {
       log "Warning: Failed to change ownership of /data-source"
+    }
+    chown -R "${VAULT_USER}:${VAULT_USER}" /data-source/backups 2>/dev/null || {
+      log "Warning: Failed to change ownership of /data-source/backups"
     }
   fi
 fi
@@ -88,6 +96,16 @@ if [ -d "/data-source" ]; then
 else
   log "Warning: /data-source directory does not exist"
   log "Persistent storage volume may not be mounted correctly"
+fi
+
+# Synchronize database backups on startup
+if [ -f "/app/infra/vault/sync_backups.py" ] && command -v python3 >/dev/null 2>&1; then
+  log "Running backup synchronization..."
+  # Capture output and log it
+  SYNC_OUTPUT=$(python3 /app/infra/vault/sync_backups.py 2>&1)
+  if [ -n "$SYNC_OUTPUT" ]; then
+    log "$SYNC_OUTPUT"
+  fi
 fi
 
 # Drop privileges to vault user if running as root

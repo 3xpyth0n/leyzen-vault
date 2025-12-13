@@ -71,6 +71,7 @@ from vault.database.schema import (
     SystemSecrets,
     ApiKey,
     SchemaMigration,
+    DatabaseBackup,
 )
 
 # Expected tables (from __tablename__ attributes)
@@ -176,6 +177,7 @@ def validate_schema() -> tuple[bool, list[str], list[str], str | None]:
 
 def main() -> int:
     """Main entry point."""
+    # CLI script output - using print() for direct console output
     print("Validating database schema...")
     print(f"Expected tables: {len(EXPECTED_TABLES)}")
     print()
@@ -183,6 +185,7 @@ def main() -> int:
     is_valid, missing_tables, extra_tables, error_msg = validate_schema()
 
     # Check for connection/initialization errors
+    # CLI script output - using print() for direct console output
     if error_msg:
         print("ERROR: Database connection or initialization failed", file=sys.stderr)
         print(error_msg, file=sys.stderr)

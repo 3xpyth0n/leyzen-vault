@@ -302,7 +302,6 @@ export default {
 
         emit("search-complete", response);
       } catch (error) {
-        console.error("Search error:", error);
         results.value = [];
         hasMore.value = false;
       } finally {
@@ -347,7 +346,6 @@ export default {
         results.value = [...results.value, ...(response.results || [])];
         hasMore.value = response.has_more || false;
       } catch (error) {
-        console.error("Load more error:", error);
       } finally {
         searching.value = false;
       }

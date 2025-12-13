@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -350,11 +351,6 @@ class AdvancedFileService:
                 # Already deleted
                 return True
 
-            # Delete all FileKeys (cascade will handle)
-            file_keys = self.encryption_service.get_all_file_keys(file_id)
-            for fk in file_keys:
-                db.session.delete(fk)
-
             # Soft delete: set deleted_at timestamp instead of hard delete
             file_obj.deleted_at = datetime.now(timezone.utc)
             db.session.flush()  # Flush to ensure state is saved
@@ -411,13 +407,33 @@ class AdvancedFileService:
             # Log warning but don't fail the operation if share link revocation fails
             logger.debug(f"Failed to revoke share links for file {file_id}: {e}")
 
-        # Remove from search index
-        if self.search_service.index_service:
-            try:
-                self.search_service.index_service.remove_file(file_id)
-            except Exception as e:
-                # Log warning but don't fail the operation if search index removal fails
-                logger.debug(f"Failed to remove file {file_id} from search index: {e}")
+        # Remove from search index in background
+        # This prevents blocking the worker uvicorn on slow I/O operations
+        from flask import current_app
+
+        # Capture Flask app instance and search index service before creating thread
+        flask_app = current_app._get_current_object()
+        search_index_service = self.search_service.index_service
+
+        def _background_remove_from_index():
+            """Background removal from search index."""
+            # Use captured Flask app instance to create app context
+            with flask_app.app_context():
+                if search_index_service:
+                    try:
+                        search_index_service.remove_file(file_id)
+                    except Exception as e:
+                        # Log warning but don't fail the operation if search index removal fails
+                        logger.debug(
+                            f"Failed to remove file {file_id} from search index: {e}"
+                        )
+
+        # Execute index removal in background thread to avoid blocking the worker
+        if search_index_service:
+            cleanup_thread = threading.Thread(
+                target=_background_remove_from_index, daemon=True
+            )
+            cleanup_thread.start()
 
         # Emit file deletion event
         self._emit_file_event(
@@ -468,8 +484,32 @@ class AdvancedFileService:
         file_obj.deleted_at = None
         db.session.commit()
 
-        # Re-index file after restore
-        self.search_service.index_file(file_obj)
+        # Re-index file after restore in background
+        # This prevents blocking the worker uvicorn on slow I/O operations
+        from flask import current_app
+
+        # Capture Flask app instance and search index service before creating thread
+        flask_app = current_app._get_current_object()
+        search_index_service = self.search_service.index_service
+        file_obj_copy = file_obj  # Capture file object for background thread
+
+        def _background_index_file():
+            """Background file indexing."""
+            # Use captured Flask app instance to create app context
+            with flask_app.app_context():
+                if search_index_service:
+                    try:
+                        search_index_service.index_file(file_obj_copy)
+                    except Exception as e:
+                        # Log warning but don't fail the operation if indexing fails
+                        logger.debug(
+                            f"Failed to index file {file_id} after restore: {e}"
+                        )
+
+        # Execute indexing in background thread to avoid blocking the worker
+        if search_index_service:
+            index_thread = threading.Thread(target=_background_index_file, daemon=True)
+            index_thread.start()
 
         # Emit file restore event
         self._emit_file_event(
@@ -545,35 +585,50 @@ class AdvancedFileService:
             )
             raise
 
-        # Delete physical file from storage AFTER database commit
-        # This ensures we only delete files that were successfully removed from DB
+        # Delete physical file from storage and remove from search index in background
+        # This prevents blocking the worker uvicorn on slow I/O operations
+        # The database deletion is already committed, so we can safely do cleanup async
         from flask import current_app
 
-        storage = current_app.config.get("VAULT_STORAGE")
-        if storage and storage_ref and mime_type != "application/x-directory":
-            try:
-                # Delete from both primary and source storage
-                deleted = storage.delete_file(storage_ref)
+        # Capture Flask app instance and required objects before creating thread
+        flask_app = current_app._get_current_object()
+        storage = flask_app.config.get("VAULT_STORAGE")
+        search_index_service = self.search_service.index_service
 
-                # Only log if a file was actually deleted
-                if deleted:
-                    logger.info(
-                        f"Deleted physical file {storage_ref} during permanent delete"
-                    )
+        def _background_cleanup():
+            """Background cleanup of physical file and search index."""
+            # Use captured Flask app instance to create app context
+            with flask_app.app_context():
+                if storage and storage_ref and mime_type != "application/x-directory":
+                    try:
+                        # Delete from both primary and source storage
+                        deleted = storage.delete_file(storage_ref)
 
-                # If not deleted (already missing), silently ignore
-            except Exception as e:
-                # Log warning - physical deletion failed for a reason other than "not found"
-                logger.warning(
-                    f"Failed to delete physical file {storage_ref} during permanent delete: {e}"
-                )
+                        # Only log if a file was actually deleted
+                        if deleted:
+                            logger.info(
+                                f"Deleted physical file {storage_ref} during permanent delete"
+                            )
 
-        # Remove from search index
-        if self.search_service.index_service:
-            try:
-                self.search_service.index_service.remove_file(file_id)
-            except Exception as e:
-                logger.debug(f"Failed to remove file {file_id} from search index: {e}")
+                        # If not deleted (already missing), silently ignore
+                    except Exception as e:
+                        # Log warning - physical deletion failed for a reason other than "not found"
+                        logger.warning(
+                            f"Failed to delete physical file {storage_ref} during permanent delete: {e}"
+                        )
+
+                # Remove from search index
+                if search_index_service:
+                    try:
+                        search_index_service.remove_file(file_id)
+                    except Exception as e:
+                        logger.debug(
+                            f"Failed to remove file {file_id} from search index: {e}"
+                        )
+
+        # Execute cleanup in background thread to avoid blocking the worker
+        cleanup_thread = threading.Thread(target=_background_cleanup, daemon=True)
+        cleanup_thread.start()
 
         return True
 
@@ -1570,10 +1625,14 @@ class AdvancedFileService:
                 file_dict["permission_level"] = "owner"
 
                 # Calculate folder size if it's a directory
+                # OPTIMIZATION: Skip recursive calculation for now to prevent blocking
+                # This is expensive and can cause timeouts. Consider caching or async calculation.
+                # For now, use the stored size or 0 for directories
                 if file_obj.mime_type == "application/x-directory":
-                    folder_size = self.calculate_folder_size(file_obj.id)
+                    # Use stored size if available, otherwise 0 (will be calculated on demand)
+                    folder_size = file_obj.size if file_obj.size else 0
                     file_dict["total_size"] = folder_size
-                    file_dict["size"] = folder_size  # Override size for display
+                    file_dict["size"] = folder_size
 
                 result_files.append(file_dict)
 

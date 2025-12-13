@@ -131,8 +131,8 @@ def validate_default_credentials(
         >>> validate_default_credentials("admin", "admin", env)
         ConfigurationError: Default credentials are not allowed in production
     """
-    leylen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
-    is_dev_mode = leylen_env in ("dev", "development")
+    leyzen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+    is_dev_mode = leyzen_env in ("dev", "development")
 
     DEFAULT_USERNAME = "admin"
     DEFAULT_PASSWORD = "admin"

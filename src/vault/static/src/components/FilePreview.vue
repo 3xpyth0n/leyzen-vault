@@ -1357,7 +1357,6 @@ export default {
         return null;
       } catch (err) {
         // Log error for debugging but don't show to user
-        console.warn("Failed to extract audio cover:", err);
         return null;
       }
     };
@@ -1533,9 +1532,7 @@ export default {
             await document.msExitFullscreen();
           }
         }
-      } catch (error) {
-        console.error("Error toggling fullscreen:", error);
-      }
+      } catch (error) {}
     };
 
     const handleFullscreenChange = () => {
@@ -1676,9 +1673,7 @@ export default {
                 } else if (document.msExitFullscreen) {
                   await document.msExitFullscreen();
                 }
-              } catch (error) {
-                console.error("Error exiting fullscreen:", error);
-              }
+              } catch (error) {}
             })();
           }
           if (previewUrl.value) {

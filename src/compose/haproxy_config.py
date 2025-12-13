@@ -81,9 +81,8 @@ def render_haproxy_config_vault(
     backend_name = "vault_backend"
     server_lines = _format_backend_servers(containers, port)
     http_check_lines = [
-        "    http-check send meth GET uri /healthz ver HTTP/1.1 hdr Host localhost",
+        "    http-check send meth GET uri /healthz ver HTTP/1.1",
         "    http-check expect status 200",
-        '    http-check expect string "ok"',
     ]
 
     lines = [
@@ -193,7 +192,7 @@ def render_haproxy_config_vault(
             "    option forwardfor header X-Forwarded-For if-none",
             "    option redispatch",
             "    option allbackups",
-            "    default-server resolvers docker init-addr none check inter 2s fall 2 rise 3",
+            "    default-server resolvers docker init-addr last,libc,none check inter 3s fall 3 rise 2",
             "    option httpchk",
         ]
     )

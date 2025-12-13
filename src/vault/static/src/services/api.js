@@ -300,15 +300,6 @@ export async function apiRequest(endpoint, options = {}) {
     }
 
     if (!isServerOnline) {
-      // Server is offline - show notification and reject request
-      // Don't disconnect user - just block the request
-      if (typeof window !== "undefined" && window.Notifications) {
-        window.Notifications.error(
-          "Server is offline. Please wait for the server to come back online.",
-          5000,
-        );
-      }
-
       // Return a rejected promise with a network error
       // This error will be caught by callers and should NOT cause disconnection
       const error = new Error("Network error: Server is offline");
@@ -497,7 +488,6 @@ export const auth = {
       }
       return await response.json();
     } catch (err) {
-      console.error("Failed to get auth config:", err);
       return {
         allow_signup: true,
         password_authentication_enabled: true,
@@ -515,7 +505,6 @@ export const auth = {
       const config = await this.getAuthConfig();
       return config.allow_signup === true;
     } catch (err) {
-      console.error("Failed to check signup status:", err);
       return true; // Default to enabled if check fails
     }
   },
@@ -597,9 +586,6 @@ export const auth = {
     // CRITICAL: Ensure no token is in the response data
     // Even if backend accidentally sends one, delete it
     if (data.token) {
-      console.warn(
-        "Setup endpoint returned a token! This should not happen. Removing it.",
-      );
       delete data.token;
     }
 
@@ -610,9 +596,6 @@ export const auth = {
     // IMMEDIATE verification: check for token right after purge
     const tokenAfterPurge = localStorage.getItem("jwt_token");
     if (tokenAfterPurge) {
-      console.error(
-        "Token still exists after purgeBrowserState()! This indicates a bug.",
-      );
       // Force clear everything if token still exists
       localStorage.clear();
       sessionStorage.clear();
@@ -621,7 +604,6 @@ export const auth = {
     // Additional check: verify token is really gone
     const finalTokenCheck = localStorage.getItem("jwt_token");
     if (finalTokenCheck) {
-      console.error("CRITICAL: Token persists after multiple clear attempts!");
       // Last resort: clear and throw error
       localStorage.clear();
       sessionStorage.clear();
@@ -765,6 +747,13 @@ export const auth = {
       throw new Error(errorData.error || "Failed to get current user");
     }
     const data = await response.json();
+
+    // If token is provided in response (from SSO cookie), store it in localStorage
+    // This allows isAuthenticated() to work correctly with SSO flows
+    if (data.token) {
+      setToken(data.token);
+    }
+
     return data.user;
   },
 
@@ -849,9 +838,6 @@ export const auth = {
     // This ensures master key initialization happens during login
     // Even if backend accidentally returns a token, ignore it
     if (data.token) {
-      console.warn(
-        "Email verification returned a token! This should not happen. Ignoring it.",
-      );
       delete data.token;
     }
     return data;
@@ -1030,6 +1016,13 @@ export const account = {
       throw new Error(errorData.error || "Failed to get account information");
     }
     const data = await response.json();
+
+    // If token is provided in response (from SSO cookie), store it in localStorage
+    // This allows isAuthenticated() to work correctly with SSO flows
+    if (data.token) {
+      setToken(data.token);
+    }
+
     return data.user;
   },
 
@@ -1941,7 +1934,6 @@ export const files = {
       if (xhr.status >= 200 && xhr.status < 300) {
         // Check if response is empty
         if (!xhr.responseText || xhr.responseText.trim() === "") {
-          console.error("Empty response from server for chunk upload");
           if (rejectPromise)
             rejectPromise(new Error("Empty response from server"));
           return;
@@ -1951,12 +1943,6 @@ export const files = {
           const data = JSON.parse(xhr.responseText);
           // Validate response structure
           if (!data || typeof data !== "object") {
-            console.error(
-              "Invalid chunk upload response:",
-              data,
-              "Raw:",
-              xhr.responseText,
-            );
             if (rejectPromise)
               rejectPromise(new Error("Invalid response format from server"));
             return;
@@ -1968,12 +1954,6 @@ export const files = {
             rejectPromise = null;
           }
         } catch (e) {
-          console.error(
-            "Failed to parse chunk upload response:",
-            e,
-            "Raw response:",
-            xhr.responseText,
-          );
           if (rejectPromise)
             rejectPromise(new Error(`Invalid response format: ${e.message}`));
         }
@@ -1996,14 +1976,6 @@ export const files = {
             }
           }
         } catch (e) {
-          console.error(
-            "Failed to parse error response:",
-            e,
-            "Status:",
-            xhr.status,
-            "Response:",
-            xhr.responseText,
-          );
           if (rejectPromise) {
             rejectPromise(
               new Error(
@@ -2017,7 +1989,6 @@ export const files = {
 
     xhr.addEventListener("error", (event) => {
       if (!isCancelled) {
-        console.error("Network error during chunk upload:", event);
         if (rejectPromise)
           rejectPromise(new Error("Network error during chunk upload"));
       }
@@ -2025,7 +1996,6 @@ export const files = {
 
     xhr.addEventListener("timeout", () => {
       if (!isCancelled) {
-        console.error("Timeout during chunk upload");
         if (rejectPromise) rejectPromise(new Error("Upload timeout"));
       }
     });
@@ -2791,6 +2761,181 @@ export const admin = {
   },
 
   /**
+   * Get database backup configuration.
+   *
+   * @returns {Promise<object>} Backup configuration
+   */
+  async getDatabaseBackupConfig() {
+    const response = await apiRequest("/v2/database-backup/config");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to get database backup config",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
+   * Save database backup configuration.
+   *
+   * @param {object} config - Backup configuration
+   * @returns {Promise<object>} Success response
+   */
+  async saveDatabaseBackupConfig(config) {
+    const response = await apiRequest("/v2/database-backup/config", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to save database backup config",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
+   * List all database backups.
+   *
+   * @returns {Promise<object>} List of backups
+   */
+  async listDatabaseBackups() {
+    const response = await apiRequest("/v2/database-backup/backups");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to list database backups");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Create a manual database backup.
+   *
+   * @param {object} options - Backup options (optional)
+   * @returns {Promise<object>} Backup status
+   */
+  async createDatabaseBackup(options = {}) {
+    const response = await apiRequest("/v2/database-backup/backup", {
+      method: "POST",
+      body: JSON.stringify(options),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to create database backup");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Restore database from a backup.
+   *
+   * @param {string} backupId - Backup ID to restore from
+   * @param {object} options - Restore options (optional)
+   * @returns {Promise<object>} Restore status
+   */
+  async restoreDatabaseBackup(backupId, options = {}) {
+    const response = await apiRequest("/v2/database-backup/restore", {
+      method: "POST",
+      body: JSON.stringify({ backup_id: backupId, ...options }),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to restore database backup");
+    }
+    return await response.json();
+  },
+
+  /**
+   * List database backups (public endpoint for setup).
+   *
+   * @returns {Promise<object>} List of backups
+   */
+  async listDatabaseBackupsPublic() {
+    const response = await apiRequest("/v2/database-backup/list-public", {
+      skipAutoRefresh: true,
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to list database backups");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Restore database from a backup (public endpoint for setup).
+   *
+   * @param {string} backupId - Backup ID to restore from
+   * @returns {Promise<object>} Restore status
+   */
+  async restoreDatabaseBackupPublic(backupId) {
+    const response = await apiRequest("/v2/database-backup/restore-public", {
+      method: "POST",
+      body: JSON.stringify({ backup_id: backupId }),
+      skipAutoRefresh: true,
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to restore database backup");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Get restore status (public endpoint for setup).
+   *
+   * @returns {Promise<object>} Restore status with running flag and error if any
+   */
+  async getRestoreStatus() {
+    const response = await apiRequest("/v2/database-backup/restore-status", {
+      method: "GET",
+      skipAutoRefresh: true,
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to get restore status");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Delete a database backup.
+   *
+   * @param {string} backupId - Backup ID to delete
+   * @returns {Promise<object>} Deletion status
+   */
+  async deleteDatabaseBackup(backupId) {
+    const response = await apiRequest(
+      `/v2/database-backup/backups/${backupId}`,
+      {
+        method: "DELETE",
+      },
+    );
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to delete database backup");
+    }
+    return await response.json();
+  },
+
+  /**
+   * Get database backup status.
+   *
+   * @returns {Promise<object>} Status information
+   */
+  async getDatabaseBackupStatus() {
+    const response = await apiRequest("/v2/database-backup/status");
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(
+        errorData.error || "Failed to get database backup status",
+      );
+    }
+    return await response.json();
+  },
+
+  /**
    * Get a specific SSO provider.
    *
    * @param {string} providerId - Provider ID
@@ -3003,11 +3148,44 @@ export const sso = {
   },
 };
 
+/**
+ * Configuration API methods
+ */
+export const config = {
+  /**
+   * Get configuration values from the server.
+   *
+   * @returns {Promise<object>} Configuration object with vault_url, timezone, etc.
+   */
+  async getConfig() {
+    try {
+      const response = await fetch("/api/v2/config", {
+        method: "GET",
+        credentials: "same-origin",
+      });
+
+      if (!response.ok) {
+        return { vault_url: null, timezone: "UTC" };
+      }
+
+      const data = await response.json();
+      return {
+        vault_url: data.vault_url || null,
+        timezone: data.timezone || "UTC",
+        orchestrator_enabled: data.orchestrator_enabled,
+      };
+    } catch (err) {
+      return { vault_url: null, timezone: "UTC" };
+    }
+  },
+};
+
 export default {
   auth,
   account,
   vaultspaces,
   files,
+  config,
   admin,
   sso,
 };

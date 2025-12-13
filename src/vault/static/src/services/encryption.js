@@ -644,10 +644,6 @@ export async function createShareUrl(fileId, key) {
     const { getVaultBaseUrl } = await import("./vault-config.js");
     baseUrl = await getVaultBaseUrl();
   } catch (e) {
-    console.warn(
-      "Failed to get vault base URL, using window.location.origin:",
-      e,
-    );
     baseUrl = window.location.origin;
   }
 

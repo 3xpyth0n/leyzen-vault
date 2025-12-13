@@ -9,24 +9,6 @@
   // Intercept and suppress TrustedHTML errors from third-party scripts
   // This must be done FIRST, before any third-party code runs
 
-  // Also intercept console.error to filter out TrustedHTML errors
-  const originalConsoleError = console.error;
-  console.error = function (...args) {
-    const message = args
-      .map((arg) => {
-        if (typeof arg === "string") return arg;
-        if (arg && arg.message) return arg.message;
-        return String(arg);
-      })
-      .join(" ");
-    if (message.includes("TrustedHTML") || message.includes("Trusted Types")) {
-      // Silently ignore TrustedHTML console errors from third-party code
-      return;
-    }
-    // Call original console.error for other messages
-    originalConsoleError.apply(console, args);
-  };
-
   const originalError = window.onerror;
   window.onerror = function (message, source, lineno, colno, error) {
     // Suppress TrustedHTML errors from third-party scripts
@@ -299,9 +281,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
       },
       "vaultHTMLPolicy",
     );
-  } catch (error) {
-    console.error("Failed to initialize vaultHTMLPolicy:", error);
-  }
+  } catch (error) {}
 
   try {
     window.notificationsHTMLPolicy = getOrCreatePolicy(
@@ -313,9 +293,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
       },
       "notificationsHTMLPolicy",
     );
-  } catch (error) {
-    console.error("Failed to initialize notificationsHTMLPolicy:", error);
-  }
+  } catch (error) {}
 
   try {
     window.vaultScriptURLPolicy = getOrCreatePolicy(
@@ -327,9 +305,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
       },
       "vaultScriptURLPolicy",
     );
-  } catch (error) {
-    console.error("Failed to initialize vaultScriptURLPolicy:", error);
-  }
+  } catch (error) {}
 } else {
   // Try to wait for Trusted Types to become available (in case it's loaded asynchronously)
   let retryCount = 0;
@@ -387,12 +363,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
             },
             "vaultScriptURLPolicy",
           );
-        } catch (error) {
-          console.error(
-            "Failed to initialize Trusted Types policies (delayed):",
-            error,
-          );
-        }
+        } catch (error) {}
       })();
     } else if (retryCount >= maxRetries) {
       clearInterval(checkInterval);

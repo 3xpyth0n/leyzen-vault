@@ -16,7 +16,11 @@ from common.constants import (
     PROXY_TRUST_COUNT_DEFAULT,
     TIMEZONE_DEFAULT,
 )
-from common.env import load_env_with_override, parse_timezone
+from common.env import (
+    load_env_with_override,
+    load_env_with_priority,
+    parse_timezone,
+)
 from common.exceptions import ConfigurationError
 
 
@@ -120,9 +124,9 @@ def load_settings() -> VaultSettings:
 
     Use /setup on first run to create the superadmin account.
     """
-    env_values = load_env_with_override()
-    # Merge with actual os.environ to allow runtime overrides
-    env_values.update(os.environ)
+    # Load environment with proper priority: .env file overrides os.environ
+    # This ensures .env file values take precedence for security and isolation
+    env_values = load_env_with_priority()
 
     # Secret key (required)
     secret_key = env_values.get("SECRET_KEY", "").strip()
@@ -277,23 +281,106 @@ def load_settings() -> VaultSettings:
     )
 
 
-def is_setup_complete(app) -> bool:
+def is_setup_complete(app, quiet: bool = False) -> bool:
     """Check if setup is complete by verifying if at least one user exists in database.
 
     Args:
         app: Flask application with database initialized
+        quiet: If True, suppress log messages (useful during startup to avoid duplicate logs)
 
     Returns:
         True if at least one user exists, False otherwise
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     try:
         from vault.database.schema import User, db
+        from flask import has_app_context
 
-        with app.app_context():
-            user_count = db.session.query(User).count()
-            return user_count > 0
-    except Exception:
-        # If database is not initialized or error occurs, assume setup is not complete
+        app_logger = None
+        try:
+            app_logger = app.config.get("LOGGER", None)
+        except Exception:
+            pass
+
+        # Check if we're already in an app context (e.g., from a Flask route)
+        # If so, use the existing context instead of creating a new one
+        if has_app_context():
+            # Already in app context - use it directly
+            try:
+                # Ensure database connection is active
+                from sqlalchemy import text
+
+                db.session.execute(text("SELECT 1"))
+
+                # Query user count
+                user_count = db.session.query(User).count()
+                result = user_count > 0
+                if not quiet:
+                    log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
+                    if app_logger:
+                        app_logger.log(log_msg)
+                    else:
+                        logger.info(log_msg)
+                return result
+            except Exception as db_error:
+                error_msg = f"[SETUP CHECK] Database query failed: {db_error}"
+                if app_logger:
+                    app_logger.log(error_msg)
+                else:
+                    logger.error(error_msg, exc_info=True)
+                # Try to rollback any failed transaction
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
+                return False
+        else:
+            # Not in app context - create one
+            with app.app_context():
+                try:
+                    # Ensure database connection is active
+                    from sqlalchemy import text
+
+                    db.session.execute(text("SELECT 1"))
+
+                    # Query user count
+                    user_count = db.session.query(User).count()
+                    result = user_count > 0
+                    if not quiet:
+                        log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
+                        if app_logger:
+                            app_logger.log(log_msg)
+                        else:
+                            logger.info(log_msg)
+                    return result
+                except Exception as db_error:
+                    error_msg = f"[SETUP CHECK] Database query failed: {db_error}"
+                    if app_logger:
+                        app_logger.log(error_msg)
+                    else:
+                        logger.error(error_msg, exc_info=True)
+                    # Try to rollback any failed transaction
+                    try:
+                        db.session.rollback()
+                    except Exception:
+                        pass
+                    return False
+    except Exception as e:
+        error_msg = f"[SETUP CHECK] Failed to check setup status: {e}"
+
+        app_logger = None
+        try:
+            app_logger = app.config.get("LOGGER", None)
+        except Exception:
+            pass
+
+        if app_logger:
+            app_logger.log(error_msg)
+        else:
+            logger.error(error_msg, exc_info=True)
         return False
 
 

@@ -171,6 +171,43 @@ def load_env_with_override(root_dir: Path | None = None) -> dict[str, str]:
     return read_env_file(env_path)
 
 
+def load_env_with_priority(root_dir: Path | None = None) -> dict[str, str]:
+    """Load environment variables with proper priority: .env file overrides os.environ.
+
+    This function ensures that values from the .env file (or LEYZEN_ENV_FILE) always
+    take precedence over os.environ. This is critical for security and isolation:
+    - Prevents production environment variables from leaking into test/CI environments
+    - Ensures explicit configuration in .env files is respected
+    - Allows os.environ to provide defaults for variables not in .env file
+
+    Priority order (highest to lowest):
+    1. Values from .env file (or LEYZEN_ENV_FILE)
+    2. Values from os.environ (as fallback/defaults)
+
+    Args:
+        root_dir: Root directory for resolving relative paths.
+                  If None, uses current working directory.
+
+    Returns:
+        Dictionary of environment variables with .env file values taking precedence.
+
+    Example:
+        # If .env contains POSTGRES_PASSWORD=secret123
+        # and os.environ contains POSTGRES_PASSWORD=production_password
+        # The returned dict will have POSTGRES_PASSWORD=secret123
+    """
+    # Load .env file first
+    env_file_values = load_env_with_override(root_dir)
+
+    # Start with os.environ (provides defaults)
+    env_values = dict(os.environ)
+
+    # Override with .env file values (ensures .env takes precedence)
+    env_values.update(env_file_values)
+
+    return env_values
+
+
 def parse_timezone(
     env: dict[str, str] | None = None, *, allow_fallback: bool = False
 ) -> ZoneInfo:
@@ -193,11 +230,14 @@ def parse_timezone(
         ConfigurationError: If timezone is invalid and allow_fallback is False.
     """
     if env is None:
-        env = load_env_with_override()
-
-    # Merge with os.environ to allow runtime overrides
-    env_values = env.copy()
-    env_values.update(os.environ)
+        # Load environment with proper priority: .env file overrides os.environ
+        env_values = load_env_with_priority()
+    else:
+        # Use provided env dict, but ensure .env file values take precedence
+        env_file_values = load_env_with_override()
+        env_values = dict(os.environ)
+        env_values.update(env_file_values)
+        env_values.update(env)  # Provided env can override both
 
     timezone_name = env_values.get("TIMEZONE", TIMEZONE_DEFAULT).strip()
 

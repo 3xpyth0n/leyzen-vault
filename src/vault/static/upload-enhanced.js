@@ -997,9 +997,7 @@ class UploadManager {
     try {
       const data = Array.from(this.uploadResumeData.entries());
       localStorage.setItem("leyzen-upload-resume", JSON.stringify(data));
-    } catch (e) {
-      console.warn("Failed to save resume data:", e);
-    }
+    } catch (e) {}
   }
 
   /**
@@ -1012,9 +1010,7 @@ class UploadManager {
         const entries = JSON.parse(data);
         this.uploadResumeData = new Map(entries);
       }
-    } catch (e) {
-      console.warn("Failed to load resume data:", e);
-    }
+    } catch (e) {}
   }
 }
 

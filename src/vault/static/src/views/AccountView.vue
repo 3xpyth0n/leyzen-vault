@@ -1111,7 +1111,6 @@ export default {
         this.twoFactorEnabled = status.enabled;
         this.twoFactorEnabledAt = status.enabled_at;
       } catch (err) {
-        console.error("Failed to load 2FA status:", err);
         // Don't show error for 2FA status check failure
       } finally {
         this.twoFactorLoading = false;

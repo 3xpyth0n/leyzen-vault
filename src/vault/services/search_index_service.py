@@ -65,46 +65,73 @@ class SearchIndexService:
         return self._index
 
     def index_file(self, file_obj: File) -> None:
-        """Index a file.
+        """Index a file (non-blocking, handles lock errors gracefully).
 
         Args:
             file_obj: File object to index
         """
-        idx = self._get_index()
-        writer = idx.writer()
-
         try:
-            writer.update_document(
-                file_id=file_obj.id,
-                name=file_obj.original_name or "",
-                mime_type=file_obj.mime_type or "",
-                vaultspace_id=file_obj.vaultspace_id,
-                size=file_obj.size or 0,
-                created_at=(
-                    file_obj.created_at.isoformat() if file_obj.created_at else ""
-                ),
-                updated_at=(
-                    file_obj.updated_at.isoformat() if file_obj.updated_at else ""
-                ),
-            )
-            writer.commit()
-        except Exception:
-            writer.cancel()
-            raise
+            idx = self._get_index()
+            # Use delaycommit to reduce lock contention
+            writer = idx.writer(delaycommit=True)
+
+            try:
+                writer.update_document(
+                    file_id=file_obj.id,
+                    name=file_obj.original_name or "",
+                    mime_type=file_obj.mime_type or "",
+                    vaultspace_id=file_obj.vaultspace_id,
+                    size=file_obj.size or 0,
+                    created_at=(
+                        file_obj.created_at.isoformat() if file_obj.created_at else ""
+                    ),
+                    updated_at=(
+                        file_obj.updated_at.isoformat() if file_obj.updated_at else ""
+                    ),
+                )
+                writer.commit()
+            except Exception as e:
+                writer.cancel()
+                # Log but don't raise - indexing failures shouldn't block operations
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to index file {file_obj.id}: {e}")
+        except Exception as e:
+            # If index is locked or unavailable, silently fail
+            # This prevents blocking workers when index operations conflict
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Index unavailable for file {file_obj.id}: {e}")
 
     def remove_file(self, file_id: str) -> None:
-        """Remove a file from index.
+        """Remove a file from index (non-blocking, handles lock errors gracefully).
 
         Args:
             file_id: File ID to remove
         """
-        idx = self._get_index()
-        writer = idx.writer()
         try:
-            writer.delete_by_term("file_id", file_id)
-            writer.commit()
-        except Exception:
-            writer.cancel()
+            idx = self._get_index()
+            # Use delaycommit to reduce lock contention
+            writer = idx.writer(delaycommit=True)
+            try:
+                writer.delete_by_term("file_id", file_id)
+                writer.commit()
+            except Exception as e:
+                writer.cancel()
+                # Log but don't raise - removal failures shouldn't block operations
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to remove file {file_id} from index: {e}")
+        except Exception as e:
+            # If index is locked or unavailable, silently fail
+            # This prevents blocking workers when index operations conflict
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Index unavailable for removing file {file_id}: {e}")
 
     def search(
         self,
@@ -133,43 +160,52 @@ class SearchIndexService:
             if time.time() - timestamp < self._cache_ttl:
                 return results
 
-        idx = self._get_index()
-        results = []
+        try:
+            idx = self._get_index()
+            results = []
 
-        with idx.searcher() as searcher:
-            # Build query
-            if fuzzy:
-                parser = MultifieldParser(["name", "mime_type"], schema=idx.schema)
-                parser.add_plugin(FuzzyTermPlugin())
-                query = parser.parse(query_str)
-            else:
-                parser = QueryParser("name", schema=idx.schema)
-                query = parser.parse(query_str)
+            with idx.searcher() as searcher:
+                # Build query
+                if fuzzy:
+                    parser = MultifieldParser(["name", "mime_type"], schema=idx.schema)
+                    parser.add_plugin(FuzzyTermPlugin())
+                    query = parser.parse(query_str)
+                else:
+                    parser = QueryParser("name", schema=idx.schema)
+                    query = parser.parse(query_str)
 
-            # Add filters
-            filters = []
-            if vaultspace_id:
-                filters.append(Term("vaultspace_id", vaultspace_id))
-            if mime_type:
-                filters.append(Term("mime_type", mime_type))
+                # Add filters
+                filters = []
+                if vaultspace_id:
+                    filters.append(Term("vaultspace_id", vaultspace_id))
+                if mime_type:
+                    filters.append(Term("mime_type", mime_type))
 
-            if filters:
-                query = And([query] + filters)
+                if filters:
+                    query = And([query] + filters)
 
-            # Execute search
-            hits = searcher.search(query, limit=limit)
+                # Execute search
+                hits = searcher.search(query, limit=limit)
 
-            for hit in hits:
-                results.append(
-                    {
-                        "file_id": hit["file_id"],
-                        "name": hit["name"],
-                        "mime_type": hit.get("mime_type", ""),
-                        "vaultspace_id": hit.get("vaultspace_id", ""),
-                        "size": hit.get("size", 0),
-                        "match_score": hit.score,
-                    }
-                )
+                for hit in hits:
+                    results.append(
+                        {
+                            "file_id": hit["file_id"],
+                            "name": hit["name"],
+                            "mime_type": hit.get("mime_type", ""),
+                            "vaultspace_id": hit.get("vaultspace_id", ""),
+                            "size": hit.get("size", 0),
+                            "match_score": hit.score,
+                        }
+                    )
+        except Exception as e:
+            # If index is locked or unavailable, return empty results
+            # This prevents blocking workers when index operations conflict
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Index unavailable for search '{query_str}': {e}")
+            results = []
 
         # Cache results
         self._cache[cache_key] = (results, time.time())
@@ -191,37 +227,55 @@ class SearchIndexService:
             del self._cache[key]
 
     def rebuild_index(self) -> int:
-        """Rebuild entire index from database.
+        """Rebuild entire index from database (non-blocking, handles errors gracefully).
 
         Returns:
             Number of files indexed
         """
-        idx = self._get_index()
-        writer = idx.writer()
-
-        count = 0
         try:
-            # Get all non-deleted files
-            files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
+            idx = self._get_index()
+            # Use delaycommit to reduce lock contention
+            writer = idx.writer(delaycommit=True)
 
-            for file_obj in files:
-                writer.update_document(
-                    file_id=file_obj.id,
-                    name=file_obj.original_name or "",
-                    mime_type=file_obj.mime_type or "",
-                    vaultspace_id=file_obj.vaultspace_id,
-                    size=file_obj.size or 0,
-                    created_at=(
-                        file_obj.created_at.isoformat() if file_obj.created_at else ""
-                    ),
-                    updated_at=(
-                        file_obj.updated_at.isoformat() if file_obj.updated_at else ""
-                    ),
-                )
-                count += 1
+            count = 0
+            try:
+                # Get all non-deleted files
+                files = db.session.query(File).filter(File.deleted_at.is_(None)).all()
 
-            writer.commit()
-            return count
-        except Exception:
-            writer.cancel()
-            raise
+                for file_obj in files:
+                    writer.update_document(
+                        file_id=file_obj.id,
+                        name=file_obj.original_name or "",
+                        mime_type=file_obj.mime_type or "",
+                        vaultspace_id=file_obj.vaultspace_id,
+                        size=file_obj.size or 0,
+                        created_at=(
+                            file_obj.created_at.isoformat()
+                            if file_obj.created_at
+                            else ""
+                        ),
+                        updated_at=(
+                            file_obj.updated_at.isoformat()
+                            if file_obj.updated_at
+                            else ""
+                        ),
+                    )
+                    count += 1
+
+                writer.commit()
+                return count
+            except Exception as e:
+                writer.cancel()
+                # Log but don't raise - rebuild failures shouldn't block operations
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to rebuild search index: {e}")
+                return count  # Return count of files processed before error
+        except Exception as e:
+            # If index is locked or unavailable, return 0
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Index unavailable for rebuild: {e}")
+            return 0

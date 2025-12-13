@@ -16,5 +16,6 @@ cryptography==44.0.1
 pyotp==2.9.0
 qrcode==7.4.2
 boto3==1.35.0
+croniter==2.0.1
 # python-saml is optional - requires xmlsec which has compatibility issues
 # Install manually if SAML support is needed: pip install python3-saml

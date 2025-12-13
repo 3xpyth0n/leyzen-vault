@@ -100,7 +100,6 @@ export default {
         emit("delete", result);
         emit("clear");
       } catch (err) {
-        console.error("Batch delete error:", err);
         showAlert({
           type: "error",
           title: "Error",
@@ -119,7 +118,6 @@ export default {
         emit("download", props.selectedItems);
         emit("clear");
       } catch (err) {
-        console.error("Batch download error:", err);
         showAlert({
           type: "error",
           title: "Error",

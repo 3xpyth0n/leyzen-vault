@@ -229,6 +229,7 @@ import {
   storeFileKey,
 } from "../services/fileKeyStorage.js";
 import * as mm from "music-metadata";
+import { getThumbnail, setThumbnail } from "../services/thumbnailCache";
 
 export default {
   name: "SharedView",
@@ -399,7 +400,6 @@ export default {
         linkUrlElement.nodeType !== Node.ELEMENT_NODE ||
         typeof linkUrlElement.appendChild !== "function"
       ) {
-        console.warn("showCopyAnimation: Invalid element", linkUrlElement);
         return;
       }
 
@@ -488,7 +488,6 @@ export default {
           window.Notifications.success("Link copied to clipboard");
         }
       } catch (err) {
-        console.error("Failed to copy link:", err);
         if (window.Notifications) {
           window.Notifications.error("Failed to copy link");
         }
@@ -534,7 +533,6 @@ export default {
         // Reload shared files
         await this.loadSharedFiles();
       } catch (err) {
-        console.error("Failed to revoke link:", err);
         if (window.Notifications) {
           window.Notifications.error(`Failed to revoke link: ${err.message}`);
         }
@@ -564,7 +562,6 @@ export default {
         this.shareUrlKeyStatus.set(cacheKey, result.hasKey);
         this.$forceUpdate(); // Force Vue to re-render
       } catch (e) {
-        console.error("Failed to load share URL:", e);
         this.shareUrlCache.set(cacheKey, "Error loading URL");
         this.shareUrlKeyStatus.set(cacheKey, false);
         this.$forceUpdate();
@@ -591,13 +588,9 @@ export default {
           try {
             fileKey = base64urlToArray(keyStr);
             hasKey = true;
-          } catch (e) {
-            console.warn("Failed to decode key from IndexedDB:", e);
-          }
+          } catch (e) {}
         }
-      } catch (e) {
-        console.warn("Failed to get file key from IndexedDB:", e);
-      }
+      } catch (e) {}
 
       // Fallback to localStorage if not found in IndexedDB
       if (!fileKey) {
@@ -611,9 +604,7 @@ export default {
               // Store in IndexedDB for future use
               try {
                 await storeFileKey(fileId, keyStr);
-              } catch (e) {
-                console.warn("Failed to store key in IndexedDB:", e);
-              }
+              } catch (e) {}
             } else if (
               window.VaultCrypto &&
               window.VaultCrypto.base64urlToArray
@@ -622,9 +613,7 @@ export default {
               hasKey = true;
             }
           }
-        } catch (e) {
-          console.warn("Failed to get file key from localStorage:", e);
-        }
+        } catch (e) {}
       }
 
       // Try global functions as fallback
@@ -650,7 +639,6 @@ export default {
           const keyBase64 = arrayToBase64url(fileKey);
           url += `#key=${keyBase64}&file=${fileId}`;
         } catch (e) {
-          console.warn("Failed to encode key for share URL:", e);
           hasKey = false;
         }
       }
@@ -709,9 +697,7 @@ export default {
           const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
           keys[fileId] = keyBase64;
           localStorage.setItem("vault_keys", JSON.stringify(keys));
-        } catch (e) {
-          console.warn("Failed to store key in localStorage:", e);
-        }
+        } catch (e) {}
 
         // Reload share URLs for this file
         const file = this.files.find((f) => f.id === fileId);
@@ -725,9 +711,7 @@ export default {
         if (file && (this.isImageFile(file) || this.isAudioFile(file))) {
           this.loadThumbnailUrl(file.id, file);
         }
-      } catch (error) {
-        console.warn(`Failed to recover file key for ${fileId}:`, error);
-      }
+      } catch (error) {}
     },
     isLinkExpired(link) {
       if (typeof link.is_expired === "boolean") {
@@ -927,7 +911,6 @@ export default {
           );
         }
       } catch (err) {
-        console.error("Failed to send email:", err);
         this.emailForm.loading = false;
         this.emailForm.error = err.message || "Failed to send email";
         this.showAlert(
@@ -1034,10 +1017,6 @@ export default {
         cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
         return vaultspaceKey;
       } catch (error) {
-        console.warn(
-          `Failed to load VaultSpace key for ${vaultspaceId}:`,
-          error,
-        );
         return null;
       }
     },
@@ -1049,6 +1028,19 @@ export default {
       }
 
       try {
+        // Check cache first
+        const cachedBlob = await getThumbnail(file.id);
+        if (cachedBlob) {
+          const blobUrl = URL.createObjectURL(cachedBlob);
+          this.thumbnailUrls = {
+            ...this.thumbnailUrls,
+            [file.id]: blobUrl,
+          };
+          this.thumbnailUpdateTrigger++;
+          await this.$nextTick();
+          return;
+        }
+
         // Get VaultSpace key (load from server if not cached)
         const vaultspaceKey =
           await this.loadVaultSpaceKeyIfNeeded(vaultspaceId);
@@ -1095,9 +1087,7 @@ export default {
             const keyArray = new Uint8Array(exportedKey);
             const keyBase64 = arrayToBase64url(keyArray);
             await storeFileKey(file.id, keyBase64);
-          } catch (e) {
-            console.warn("Failed to store file key:", e);
-          }
+          } catch (e) {}
         }
 
         // Download encrypted file
@@ -1115,6 +1105,9 @@ export default {
         const blob = new Blob([decryptedData], { type: file.mime_type });
         const blobUrl = URL.createObjectURL(blob);
 
+        // Store in persistent cache
+        await setThumbnail(file.id, blob, file.mime_type);
+
         // Store in cache (create new object to ensure reactivity)
         this.thumbnailUrls = {
           ...this.thumbnailUrls,
@@ -1124,12 +1117,7 @@ export default {
         // Force Vue to update
         this.thumbnailUpdateTrigger++;
         await this.$nextTick();
-      } catch (error) {
-        console.debug(
-          `Failed to load image as thumbnail for ${file.id}:`,
-          error,
-        );
-      }
+      } catch (error) {}
     },
     // Load audio cover art as thumbnail
     async loadAudioCoverAsThumbnail(file) {
@@ -1139,6 +1127,19 @@ export default {
       }
 
       try {
+        // Check cache first
+        const cachedBlob = await getThumbnail(file.id);
+        if (cachedBlob) {
+          const blobUrl = URL.createObjectURL(cachedBlob);
+          this.thumbnailUrls = {
+            ...this.thumbnailUrls,
+            [file.id]: blobUrl,
+          };
+          this.thumbnailUpdateTrigger++;
+          await this.$nextTick();
+          return;
+        }
+
         // Get VaultSpace key (load from server if not cached)
         const vaultspaceKey =
           await this.loadVaultSpaceKeyIfNeeded(vaultspaceId);
@@ -1185,9 +1186,7 @@ export default {
             const keyArray = new Uint8Array(exportedKey);
             const keyBase64 = arrayToBase64url(keyArray);
             await storeFileKey(file.id, keyBase64);
-          } catch (e) {
-            console.warn("Failed to store file key:", e);
-          }
+          } catch (e) {}
         }
 
         // Download encrypted file
@@ -1263,6 +1262,9 @@ export default {
             });
             const blobUrl = URL.createObjectURL(pictureBlob);
 
+            // Store in persistent cache
+            await setThumbnail(file.id, pictureBlob, pictureFormat);
+
             // Store in cache (create new object to ensure reactivity)
             this.thumbnailUrls = {
               ...this.thumbnailUrls,
@@ -1276,10 +1278,6 @@ export default {
         }
       } catch (error) {
         // Silently fail - no cover art available
-        console.debug(
-          `Failed to load audio cover as thumbnail for ${file.id}:`,
-          error,
-        );
       }
     },
     // Load thumbnail URL - for images, load the image directly without checking for thumbnail
@@ -1302,12 +1300,7 @@ export default {
       if (this.isImageFile(file)) {
         try {
           await this.loadImageAsThumbnail(file);
-        } catch (imageError) {
-          console.debug(
-            `Failed to load image as thumbnail for ${fileId}:`,
-            imageError,
-          );
-        }
+        } catch (imageError) {}
         return;
       }
 
@@ -1317,10 +1310,6 @@ export default {
           await this.loadAudioCoverAsThumbnail(file);
         } catch (audioError) {
           // Silently fail - no cover art available
-          console.debug(
-            `No cover art available for audio file ${fileId}:`,
-            audioError,
-          );
         }
         return;
       }

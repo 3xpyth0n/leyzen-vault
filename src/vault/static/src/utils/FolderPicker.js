@@ -9,17 +9,13 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
   element.innerHTML = html;
 }
@@ -200,7 +196,6 @@ class FolderPicker {
       try {
         this.allFolders = await this.fetchAllFolders(vaultspaceId, null);
       } catch (error) {
-        console.error("Failed to fetch all folders:", error);
         this.allFolders = folders || [];
       }
     } else {
@@ -219,12 +214,7 @@ class FolderPicker {
             this.allFolders.push(f);
           }
         });
-      } catch (error) {
-        console.warn(
-          "Failed to fetch all folders, using provided list:",
-          error,
-        );
-      }
+      } catch (error) {}
     }
 
     // Filter out excluded folder

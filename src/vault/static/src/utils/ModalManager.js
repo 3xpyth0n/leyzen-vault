@@ -89,9 +89,7 @@ class ModalManager {
     this.listeners.forEach((callback) => {
       try {
         callback(event, modalId);
-      } catch (error) {
-        console.error("ModalManager listener error:", error);
-      }
+      } catch (error) {}
     });
   }
 

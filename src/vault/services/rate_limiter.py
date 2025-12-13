@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import traceback
 from datetime import datetime, timedelta
 from threading import Lock
 
 from ..config import VaultSettings
 from ..database.schema import RateLimitTracking, db
+
+logger = logging.getLogger(__name__)
 
 # Conservative default rate limit for unknown IPs (uploads per hour)
 DEFAULT_UNKNOWN_IP_RATE_LIMIT = 10
@@ -40,9 +44,6 @@ class RateLimiter:
                 self._unknown_ip_count += 1
                 # Log every 10th occurrence to avoid spam
                 if self._unknown_ip_count % 10 == 1:
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.warning(
                         f"Rate limiting: Client IP cannot be determined (unknown IP). "
                         f"Applying conservative default limit of {DEFAULT_UNKNOWN_IP_RATE_LIMIT} uploads/hour. "
@@ -352,11 +353,6 @@ class RateLimiter:
         except Exception as e:
             # SECURITY: Always fail-closed (deny request) if rate limiting fails
             # This prevents bypassing rate limits due to errors
-            import logging
-            import traceback
-
-            logger = logging.getLogger(__name__)
-
             # Log detailed error for debugging
             logger.error(
                 f"Rate limiting error in check_rate_limit_custom (fail-closed): {e}\n{traceback.format_exc()}"
@@ -400,9 +396,6 @@ class RateLimiter:
 
         except Exception as e:
             # Fail closed: return 0 remaining uploads if rate limiting fails
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Rate limiting error in get_remaining_uploads: {e}")
             db.session.rollback()
             # Fail closed: return 0 to be conservative
@@ -414,9 +407,6 @@ class RateLimiter:
             db.session.query(RateLimitTracking).filter_by(ip_address=ip).delete()
             db.session.commit()
         except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Error resetting rate limit for IP {ip}: {e}")
             db.session.rollback()
 

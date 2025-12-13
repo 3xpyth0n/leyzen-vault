@@ -364,7 +364,6 @@ class KeyboardShortcuts {
           const clipboardModule2 = await import("../src/utils/clipboard.js");
           clipboardManager = clipboardModule2.clipboardManager;
         } catch (e2) {
-          console.error("Failed to load clipboard manager:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Clipboard manager not available. Please refresh the page.",
@@ -383,7 +382,6 @@ class KeyboardShortcuts {
         );
       }
     } catch (error) {
-      console.error("Copy error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to copy: ${error.message || "Unknown error"}`,
@@ -430,7 +428,6 @@ class KeyboardShortcuts {
           const clipboardModule2 = await import("../src/utils/clipboard.js");
           clipboardManager = clipboardModule2.clipboardManager;
         } catch (e2) {
-          console.error("Failed to load clipboard manager:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Clipboard manager not available. Please refresh the page.",
@@ -449,7 +446,6 @@ class KeyboardShortcuts {
         );
       }
     } catch (error) {
-      console.error("Cut error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to cut: ${error.message || "Unknown error"}`,
@@ -475,7 +471,6 @@ class KeyboardShortcuts {
           const clipboardModule2 = await import("../src/utils/clipboard.js");
           clipboardManager = clipboardModule2.clipboardManager;
         } catch (e2) {
-          console.error("Failed to load clipboard manager:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Clipboard manager not available. Please refresh the page.",
@@ -531,7 +526,6 @@ class KeyboardShortcuts {
           const apiModule2 = await import("../src/services/api.js");
           files = apiModule2.files;
         } catch (e2) {
-          console.error("Failed to load files API:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Files API not available. Please refresh the page.",
@@ -559,7 +553,6 @@ class KeyboardShortcuts {
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
-            console.error("Failed to load folder picker:", e1, e2);
             if (window.Notifications) {
               window.Notifications.error(
                 "Folder picker not available. Please refresh the page.",
@@ -626,7 +619,6 @@ class KeyboardShortcuts {
         window.location.reload();
       }
     } catch (error) {
-      console.error("Paste error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to paste: ${error.message || "Unknown error"}`,

@@ -71,10 +71,110 @@
                     : "Create Administrator Account"
                 }}
               </button>
+
+              <p>
+                or
+                <a href="#" @click.prevent="goToRestore">Restore from backup</a>
+              </p>
             </form>
           </div>
 
-          <!-- Slide 2: Verification Message -->
+          <!-- Slide 2: Backup Selection -->
+          <div
+            v-else-if="currentSlide === 2"
+            key="restore"
+            class="slide slide-restore"
+          >
+            <div class="setup-header">
+              <h1>Restore from Backup</h1>
+              <p class="setup-subtitle">
+                Select a backup to restore your database
+              </p>
+            </div>
+
+            <div class="restore-content">
+              <div v-if="loadingBackups" class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading backups...</p>
+              </div>
+
+              <div v-else-if="backupsError" class="error-message glass">
+                {{ backupsError }}
+              </div>
+
+              <div v-else-if="backups.length === 0" class="empty-state">
+                <p>No backups available</p>
+                <p class="empty-hint">
+                  No local backups found. Please create a backup first or use
+                  the setup form to create a new account.
+                </p>
+              </div>
+
+              <div v-else class="backups-list">
+                <div
+                  v-for="backup in backups"
+                  :key="backup.id"
+                  class="backup-item"
+                  :class="{ selected: selectedBackupId === backup.id }"
+                  @click="selectBackup(backup.id)"
+                >
+                  <div class="backup-info">
+                    <div class="backup-header">
+                      <span class="backup-type">{{ backup.backup_type }}</span>
+                      <span class="backup-status status-completed">
+                        {{ backup.status }}
+                      </span>
+                    </div>
+                    <div class="backup-details">
+                      <div>Date: {{ formatDate(backup.created_at) }}</div>
+                      <div>Size: {{ formatSize(backup.size_bytes) }}</div>
+                    </div>
+                  </div>
+                  <div class="backup-check">
+                    <span v-if="selectedBackupId === backup.id">✓</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="restore-actions">
+                <button
+                  class="btn btn-secondary btn-back"
+                  @click="goBackToSetup"
+                  :disabled="restoring"
+                >
+                  Back
+                </button>
+                <button
+                  class="btn btn-primary btn-restore-confirm"
+                  @click="handleRestore"
+                  :disabled="!selectedBackupId || restoring"
+                >
+                  {{ restoring ? "Restoring..." : "Restore" }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 3: Restore Loading -->
+          <div
+            v-else-if="currentSlide === 3"
+            key="restore-loading"
+            class="slide slide-restore-loading"
+          >
+            <div class="setup-header">
+              <h1>Restoring Database</h1>
+              <p class="setup-subtitle">
+                Please wait while we restore your database...
+              </p>
+            </div>
+
+            <div class="restore-loading-content">
+              <div class="spinner-large"></div>
+              <p class="loading-message">{{ restoreMessage }}</p>
+            </div>
+          </div>
+
+          <!-- Slide 1: Verification Message -->
           <div
             v-else-if="currentSlide === 1"
             key="verification"
@@ -125,9 +225,9 @@
 </template>
 
 <script>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { auth, removeToken } from "../services/api";
+import { auth, removeToken, admin, config as configApi } from "../services/api";
 import PasswordInput from "../components/PasswordInput.vue";
 import { logger } from "../utils/logger";
 
@@ -143,8 +243,14 @@ export default {
     const confirmPassword = ref("");
     const error = ref("");
     const loading = ref(false);
-    const currentSlide = ref(0); // 0 = form, 1 = verification
+    const currentSlide = ref(0); // 0 = form, 1 = verification, 2 = restore, 3 = restore-loading
     const createdUserId = ref(null);
+    const backups = ref([]);
+    const loadingBackups = ref(false);
+    const backupsError = ref(null);
+    const selectedBackupId = ref(null);
+    const restoring = ref(false);
+    const restoreMessage = ref("Preparing restore...");
 
     const clearAllStorage = () => {
       // Clear all localStorage items
@@ -180,6 +286,30 @@ export default {
     };
 
     onMounted(async () => {
+      // Load timezone from config
+      try {
+        if (configApi && typeof configApi.getConfig === "function") {
+          const configData = await configApi.getConfig();
+          if (configData.timezone) {
+            timezone.value = configData.timezone;
+          }
+        } else {
+          // Fallback to direct fetch if configApi is not available
+          const response = await fetch("/api/v2/config", {
+            method: "GET",
+            credentials: "same-origin",
+          });
+          if (response.ok) {
+            const configData = await response.json();
+            if (configData.timezone) {
+              timezone.value = configData.timezone;
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn("Failed to load timezone, using UTC:", err);
+      }
+
       // Clear all browser storage (cookies, localStorage, sessionStorage)
       // This ensures a clean state when accessing setup page
       // Important: This simulates a "fresh install" from browser perspective
@@ -413,6 +543,190 @@ export default {
       });
     };
 
+    const goToRestore = () => {
+      currentSlide.value = 2;
+      loadBackups();
+    };
+
+    const goBackToSetup = () => {
+      currentSlide.value = 0;
+      selectedBackupId.value = null;
+      backupsError.value = null;
+    };
+
+    const loadBackups = async () => {
+      loadingBackups.value = true;
+      backupsError.value = null;
+      try {
+        // Ensure timezone is loaded before formatting dates
+        if (timezone.value === "UTC") {
+          try {
+            if (configApi && typeof configApi.getConfig === "function") {
+              const configData = await configApi.getConfig();
+              if (configData.timezone) {
+                timezone.value = configData.timezone;
+              }
+            } else {
+              // Fallback to direct fetch if configApi is not available
+              const response = await fetch("/api/v2/config", {
+                method: "GET",
+                credentials: "same-origin",
+              });
+              if (response.ok) {
+                const configData = await response.json();
+                if (configData.timezone) {
+                  timezone.value = configData.timezone;
+                }
+              }
+            }
+          } catch (err) {
+            // Use UTC as default if config fails
+          }
+        }
+        const response = await admin.listDatabaseBackupsPublic();
+        backups.value = response.backups || [];
+      } catch (err) {
+        backupsError.value = err.message || "Failed to load backups";
+        backups.value = [];
+      } finally {
+        loadingBackups.value = false;
+      }
+    };
+
+    const selectBackup = (backupId) => {
+      selectedBackupId.value = backupId;
+    };
+
+    const timezone = ref("UTC");
+
+    const formatDate = (dateString) => {
+      if (!dateString) return "Unknown";
+      try {
+        // Normalize the date string to ensure UTC interpretation
+        let dateStr = String(dateString).trim();
+        // Replace +00:00 with Z for better compatibility
+        dateStr = dateStr.replace(/\+00:00$/, "Z");
+        // If no timezone info, assume UTC
+        if (!dateStr.endsWith("Z") && !dateStr.match(/[+-]\d{2}:\d{2}$/)) {
+          dateStr = dateStr + "Z";
+        }
+        const date = new Date(dateStr);
+        // Verify the date is valid
+        if (isNaN(date.getTime())) {
+          return "Invalid date";
+        }
+        // Format with the specified timezone
+        return new Intl.DateTimeFormat("en-GB", {
+          timeZone: timezone.value || "UTC",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(date);
+      } catch (err) {
+        return "Invalid date";
+      }
+    };
+
+    const formatSize = (bytes) => {
+      if (!bytes) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+    };
+
+    const handleRestore = async () => {
+      if (!selectedBackupId.value || restoring.value) return;
+
+      restoring.value = true;
+      restoreMessage.value = "Starting restore...";
+      currentSlide.value = 3;
+
+      try {
+        await admin.restoreDatabaseBackupPublic(selectedBackupId.value);
+
+        // Poll for restore completion
+        restoreMessage.value = "Restoring database...";
+        let attempts = 0;
+        const maxAttempts = 120; // 2 minutes max
+
+        const checkRestore = async () => {
+          try {
+            // First check restore status for errors
+            try {
+              const restoreStatus = await admin.getRestoreStatus();
+              if (restoreStatus.error) {
+                // Generic error message (backend error details are not exposed for security)
+                throw new Error("Restore failed");
+              }
+              if (!restoreStatus.running) {
+                // Restore finished, check if setup is complete
+                const setupComplete = await auth.isSetupComplete();
+                if (setupComplete) {
+                  restoreMessage.value = "Restore completed successfully!";
+                  setTimeout(() => {
+                    window.location.replace("/login?restore=success");
+                  }, 1500);
+                  return;
+                } else {
+                  // Restore finished but setup not complete - likely failed
+                  throw new Error("Restore failed");
+                }
+              }
+            } catch (statusErr) {
+              // If status check fails, it might be because restore is still running
+              // Continue to check setup status as fallback
+              if (statusErr.message && statusErr.message === "Restore failed") {
+                throw statusErr;
+              }
+            }
+
+            // Check if setup is complete (restore finished)
+            const setupComplete = await auth.isSetupComplete();
+            if (setupComplete) {
+              restoreMessage.value = "Restore completed successfully!";
+              setTimeout(() => {
+                window.location.replace("/login?restore=success");
+              }, 1500);
+              return;
+            }
+
+            attempts++;
+            if (attempts >= maxAttempts) {
+              throw new Error("Restore timeout");
+            }
+
+            // Check again in 2 seconds
+            setTimeout(checkRestore, 2000);
+          } catch (err) {
+            // Display generic error message (security: don't expose backend details)
+            restoreMessage.value =
+              "Restore failed. Please try again or select another backup.";
+            setTimeout(() => {
+              currentSlide.value = 2;
+              restoring.value = false;
+              restoreMessage.value = "Preparing restore...";
+            }, 3000);
+          }
+        };
+
+        // Start checking after a short delay
+        setTimeout(checkRestore, 3000);
+      } catch (err) {
+        // Display generic error message (security: don't expose backend details)
+        restoreMessage.value = "Failed to start restore. Please try again.";
+        setTimeout(() => {
+          currentSlide.value = 2;
+          restoring.value = false;
+          restoreMessage.value = "Preparing restore...";
+        }, 3000);
+      }
+    };
+
     return {
       email,
       password,
@@ -420,9 +734,23 @@ export default {
       error,
       loading,
       currentSlide,
+      backups,
+      loadingBackups,
+      backupsError,
+      selectedBackupId,
+      restoring,
+      restoreMessage,
       handleSetup,
       continueToLogin,
       goToVerificationPage,
+      goToRestore,
+      goBackToSetup,
+      loadBackups,
+      selectBackup,
+      handleRestore,
+      formatDate,
+      formatSize,
+      timezone,
     };
   },
 };
@@ -707,5 +1035,213 @@ export default {
 .btn-verify:hover {
   background: rgba(148, 163, 184, 0.3);
   color: #e6eef6;
+}
+
+/* Restore Section Styles */
+p {
+  margin-top: 0rem;
+  text-align: center;
+  color: #94a3b8;
+}
+
+p a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+p a:hover {
+  text-decoration: underline;
+}
+
+.restore-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: #94a3b8;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: #94a3b8;
+}
+
+.empty-hint {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.backups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.backup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.backup-item:hover {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.backup-item.selected {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.backup-info {
+  flex: 1;
+}
+
+.backup-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.backup-type {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #cbd5e1;
+  text-transform: capitalize;
+}
+
+.backup-status {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.backup-details {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.backup-details div {
+  margin: 0.25rem 0;
+}
+
+.backup-check {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.restore-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.btn-back,
+.btn-restore-confirm {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  font-size: 1rem;
+}
+
+.btn-back {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+}
+
+.btn-back:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.3);
+  color: #e6eef6;
+}
+
+.btn-restore-confirm {
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  color: white;
+}
+
+.btn-restore-confirm:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+}
+
+.btn-back:disabled,
+.btn-restore-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Restore Loading Styles */
+.restore-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 3rem 2rem;
+}
+
+.spinner-large {
+  width: 64px;
+  height: 64px;
+  border: 4px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-message {
+  color: #cbd5e1;
+  font-size: 1.1rem;
+  text-align: center;
 }
 </style>

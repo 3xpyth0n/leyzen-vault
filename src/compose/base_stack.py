@@ -310,6 +310,9 @@ def build_base_services(
         "healthcheck": {
             "test": [
                 "CMD-SHELL",
+                "test -f /usr/local/etc/haproxy/haproxy.cfg && "
+                "test -f /usr/local/etc/haproxy/503.http && "
+                "test -f /usr/local/etc/haproxy/404.http && "
                 "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg || exit 1",
             ],
             "interval": "2s",

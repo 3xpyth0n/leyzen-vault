@@ -5,7 +5,6 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import json
-import os
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -36,7 +35,7 @@ from compose.base_stack import (
 from compose.haproxy_config import render_haproxy_config_vault
 from common.constants import HAPROXY_CONFIG_PATH, REPO_ROOT
 from common.env import (
-    load_env_with_override,
+    load_env_with_priority,
     parse_container_names,
     resolve_env_file_name,
 )
@@ -124,10 +123,8 @@ def build_postgres_service(env: Mapping[str, str]) -> dict:
     postgres_password = env.get("POSTGRES_PASSWORD", "").strip()
     postgres_port = _parse_port(env, "POSTGRES_PORT", default=5432)
 
-    # Use environment variable reference for password
-    # This provides Docker Compose-level validation (secondary validation)
-    # Primary validation happens in src/vault/config.py::get_postgres_url()
-    postgres_password_ref = "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    if not postgres_password:
+        raise ValueError("POSTGRES_PASSWORD is required in environment")
 
     postgres_data_volume = env.get("POSTGRES_DATA_VOLUME", "postgres-data").strip()
 
@@ -135,11 +132,10 @@ def build_postgres_service(env: Mapping[str, str]) -> dict:
         "image": "postgres:16-alpine",
         "container_name": "postgres",
         "restart": "on-failure",
-        "env_file": [env_file_name],
         "environment": {
             "POSTGRES_DB": postgres_db,
             "POSTGRES_USER": postgres_user,
-            "POSTGRES_PASSWORD": postgres_password_ref,
+            "POSTGRES_PASSWORD": postgres_password,
             "POSTGRES_HOST_AUTH_METHOD": "scram-sha-256",
         },
         "expose": [f"{postgres_port}"],
@@ -207,8 +203,8 @@ def build_vault_services(
                 ],
                 "interval": "1s",
                 "timeout": "2s",
-                "retries": 2,
-                "start_period": "5s",
+                "retries": 1,
+                "start_period": "3s",
             },
             "tmpfs": [
                 f"/data:size={tmpfs_size_mb}M,noexec,nosuid,nodev",
@@ -397,8 +393,10 @@ def write_manifest(manifest: Mapping[str, object], path: Path = OUTPUT_FILE) -> 
 
 
 def main() -> None:
-    env: dict[str, str] = load_env_with_override(REPO_ROOT)
-    env.update(os.environ)
+    # Load environment with proper priority: .env file (or LEYZEN_ENV_FILE) overrides os.environ
+    # This ensures .env file values take precedence for security and isolation
+    # Critical: prevents production environment variables from leaking into test/CI environments
+    env: dict[str, str] = load_env_with_priority(REPO_ROOT)
 
     web_containers, web_container_string = resolve_web_containers(env)
     backend_port = VAULT_WEB_PORT
@@ -423,6 +421,7 @@ def main() -> None:
     except ValueError:
         https_port = 8443
 
+    # CLI script output - using print() for direct console output
     print(f"[compose] Leyzen Vault service")
     print(f"[compose] Number of replicas: {len(web_containers)}")
     print(f"[haproxy] HTTP port: {http_port}:80")
@@ -435,6 +434,7 @@ def main() -> None:
             enable_https, ssl_cert_path, ssl_key_path, REPO_ROOT
         )
         if not is_valid:
+            # CLI script output - using print() for direct console output
             print("\n[warning] HTTPS is enabled but certificate validation failed:")
             for warning in warnings:
                 print(f"         {warning}")
@@ -451,6 +451,7 @@ def main() -> None:
         ssl_cert_bundle_path, bundle_warnings = prepare_ssl_certificate_bundle(
             enable_https, ssl_cert_path, ssl_key_path, root_dir=REPO_ROOT
         )
+        # CLI script output - using print() for direct console output
         for warning in bundle_warnings:
             print(f"[warning] {warning}")
         if ssl_cert_bundle_path:
@@ -476,6 +477,7 @@ def main() -> None:
     HAPROXY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     HAPROXY_CONFIG_PATH.write_text(haproxy_config)
     backend_summary = ", ".join(f"{name}:{backend_port}" for name in web_containers)
+    # CLI script output - using print() for direct console output
     print(
         f"[haproxy] Generated config for Leyzen Vault "
         f"({len(web_containers)} replica{'s' if len(web_containers) != 1 else ''})"

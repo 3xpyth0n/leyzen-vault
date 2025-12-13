@@ -30,7 +30,6 @@ function setInnerHTML(element, html) {
       return;
     } catch (e) {
       // Fallback if policy fails
-      console.warn("Failed to use vaultHTMLPolicy:", e);
     }
   }
 
@@ -40,9 +39,7 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   // Last resort fallback - this will fail if CSP requires Trusted Types
@@ -50,7 +47,6 @@ function setInnerHTML(element, html) {
   try {
     element.innerHTML = html;
   } catch (e) {
-    console.error("Failed to set innerHTML:", e);
     throw e;
   }
 }
@@ -606,7 +602,6 @@ async function loadFiles(cacheBust = false) {
     // Apply filters and render
     renderFilteredFiles();
   } catch (error) {
-    console.error("Error loading files:", error);
     const container = document.getElementById("files-list");
     if (container) {
       setInnerHTML(
@@ -812,7 +807,6 @@ async function uploadFile(file) {
       fileInput.value = "";
     }
   } catch (error) {
-    console.error("Upload error:", error);
     if (progressEl) {
       progressEl.classList.add("hidden");
     }
@@ -833,12 +827,7 @@ let fileKeyStorage = null;
   try {
     const module = await import("/static/src/services/fileKeyStorage.js");
     fileKeyStorage = module;
-  } catch (e) {
-    console.warn(
-      "Failed to load IndexedDB file key storage, using localStorage fallback:",
-      e,
-    );
-  }
+  } catch (e) {}
 })();
 
 async function storeFileKey(fileId, key) {
@@ -847,21 +836,14 @@ async function storeFileKey(fileId, key) {
     try {
       await fileKeyStorage.storeFileKey(fileId, keyStr);
       return;
-    } catch (e) {
-      console.warn(
-        "Failed to store file key in IndexedDB, using localStorage:",
-        e,
-      );
-    }
+    } catch (e) {}
   }
   // Fallback to localStorage
   try {
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     keys[fileId] = keyStr;
     localStorage.setItem("vault_keys", JSON.stringify(keys));
-  } catch (e) {
-    console.warn("Failed to store key:", e);
-  }
+  } catch (e) {}
 }
 
 // Get key from IndexedDB or localStorage
@@ -872,12 +854,7 @@ async function getFileKey(fileId) {
       if (keyStr) {
         return VaultCrypto.base64urlToArray(keyStr);
       }
-    } catch (e) {
-      console.warn(
-        "Failed to get file key from IndexedDB, using localStorage:",
-        e,
-      );
-    }
+    } catch (e) {}
   }
   // Fallback to localStorage
   try {
@@ -886,7 +863,6 @@ async function getFileKey(fileId) {
     if (!keyStr) return null;
     return VaultCrypto.base64urlToArray(keyStr);
   } catch (e) {
-    console.warn("Failed to get key:", e);
     return null;
   }
 }
@@ -965,7 +941,6 @@ async function downloadFile(fileId) {
       );
     }
   } catch (error) {
-    console.error("Download error:", error);
     if (window.Notifications) {
       window.Notifications.error(`Download failed: ${error.message}`);
     }
@@ -991,10 +966,6 @@ async function generateExistingLinksHTML(activeLinks, fileId, key) {
       baseUrl = await getVaultBaseUrl();
     }
   } catch (e) {
-    console.warn(
-      "Failed to get vault base URL, using window.location.origin:",
-      e,
-    );
     baseUrl = window.location.origin;
   }
 
@@ -1064,7 +1035,6 @@ async function shareFile(fileId, key = null) {
     // Using JWT authentication - no CSRF token needed
     const jwtToken = localStorage.getItem("jwt_token");
     if (!jwtToken) {
-      console.error("JWT token not found, cannot load share links");
       return;
     }
 
@@ -1119,7 +1089,6 @@ async function shareFile(fileId, key = null) {
       }
     }
   } catch (error) {
-    console.error("Error loading existing links:", error);
     if (existingLinksContainer) {
       setInnerHTML(existingLinksContainer, "");
     }
@@ -1171,10 +1140,6 @@ async function shareFile(fileId, key = null) {
         baseUrl = await getVaultBaseUrl();
       }
     } catch (e) {
-      console.warn(
-        "Failed to get vault base URL, using window.location.origin:",
-        e,
-      );
       baseUrl = window.location.origin;
     }
     const shareUrl = `${baseUrl}/share/${linkToken}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
@@ -1239,13 +1204,11 @@ async function shareFile(fileId, key = null) {
       }
     }
   } catch (error) {
-    console.error("Error creating share link:", error);
     // Fallback to alternative URL format
     try {
       const shareUrl = await VaultCrypto.createShareUrl(fileId, key);
       if (shareUrlInput) shareUrlInput.value = shareUrl;
     } catch (urlError) {
-      console.error("Failed to create share URL:", urlError);
       if (shareUrlInput) {
         shareUrlInput.value = "Error creating share URL";
       }
@@ -1301,7 +1264,6 @@ async function revokeShareLink(fileId, linkToken) {
         // Use JWT authentication - no CSRF needed
         const jwtToken = localStorage.getItem("jwt_token");
         if (!jwtToken) {
-          console.error("JWT token not found");
           return;
         }
 
@@ -1348,7 +1310,6 @@ async function revokeShareLink(fileId, linkToken) {
       }
     }
   } catch (error) {
-    console.error("Error revoking share link:", error);
     if (window.Notifications) {
       window.Notifications.error(
         `Failed to revoke share link: ${error.message}`,
@@ -1405,7 +1366,6 @@ async function deleteFile(fileId) {
             );
           }
         } catch (error) {
-          console.error("Delete error:", error);
           if (window.Notifications) {
             window.Notifications.error(`Delete failed: ${error.message}`);
           }

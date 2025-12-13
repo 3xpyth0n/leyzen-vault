@@ -244,7 +244,6 @@ class SearchManager {
           callback(fileIds);
         }
       } catch (error) {
-        console.error("Search error:", error);
         if (callback) {
           callback([]);
         }

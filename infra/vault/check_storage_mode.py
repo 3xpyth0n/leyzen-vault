@@ -29,15 +29,17 @@ try:
 
     app = Flask(__name__)
 
-    # Load environment values (same as in app.py)
+    # Load environment values with proper priority: .env file overrides os.environ
+    # This ensures .env file values take precedence for security and isolation
     try:
-        from common.env import load_env_with_override
+        from common.env import load_env_with_priority
 
-        env_values = load_env_with_override()
-        env_values.update(os.environ)
+        env_values = load_env_with_priority()
     except Exception as e:
         print(f"[check_storage_mode] Failed to load env: {e}", file=sys.stderr)
-        env_values = os.environ.copy()
+        import os
+
+        env_values = dict(os.environ)
 
     app.config["SECRET_KEY"] = env_values.get("SECRET_KEY", "")
 
@@ -89,8 +91,12 @@ try:
                     continue
                 else:
                     # All retries failed, return empty (will default to normal message)
+                    error_msg = f"[check_storage_mode] Failed to check storage mode after {max_retries} attempts: {e}"
+                    print(error_msg, file=sys.stderr)
+                    import traceback
+
                     print(
-                        f"[check_storage_mode] Failed to check storage mode after {max_retries} attempts: {e}",
+                        f"[check_storage_mode] Traceback: {traceback.format_exc()}",
                         file=sys.stderr,
                     )
                     pass

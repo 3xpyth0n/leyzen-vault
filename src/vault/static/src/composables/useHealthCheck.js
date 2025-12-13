@@ -8,6 +8,9 @@ import { ref, watch, onMounted, onUnmounted } from "vue";
 export function useHealthCheck() {
   const isOnline = ref(true);
   const isChecking = ref(false);
+  const restoreRunning = ref(false);
+  const restoreError = ref(null);
+  const maintenanceMode = ref(false);
   let eventSource = null;
   let reconnectTimer = null;
   let reconnectInterval = null;
@@ -19,6 +22,13 @@ export function useHealthCheck() {
     }
     if (window._serverStatus.consecutiveErrors === undefined) {
       window._serverStatus.consecutiveErrors = 0;
+    }
+    if (!window._restoreStatus) {
+      window._restoreStatus = {
+        running: false,
+        error: null,
+        maintenance_mode: false,
+      };
     }
   }
   let reconnectAttempts = 0;
@@ -88,10 +98,26 @@ export function useHealthCheck() {
                 window.updateServerStatus(true);
               }
             }
+
+            // Parse and update restore status if present
+            if (data.restore_status) {
+              const restoreStatus = data.restore_status;
+              restoreRunning.value = restoreStatus.running || false;
+              restoreError.value = restoreStatus.error || null;
+              maintenanceMode.value = restoreStatus.maintenance_mode || false;
+
+              // Update global restore status
+              if (typeof window !== "undefined") {
+                if (!window._restoreStatus) {
+                  window._restoreStatus = {};
+                }
+                window._restoreStatus.running = restoreRunning.value;
+                window._restoreStatus.error = restoreError.value;
+                window._restoreStatus.maintenance_mode = maintenanceMode.value;
+              }
+            }
           }
-        } catch (error) {
-          console.warn("Invalid health check data:", error);
-        }
+        } catch (error) {}
       };
 
       eventSource.onerror = (error) => {
@@ -356,6 +382,9 @@ export function useHealthCheck() {
   return {
     isOnline,
     isChecking,
+    restoreRunning,
+    restoreError,
+    maintenanceMode,
     connectSSE,
     disconnectSSE,
   };
@@ -372,8 +401,26 @@ if (typeof window !== "undefined") {
     window._serverStatus.consecutiveErrors = 0;
   }
 
+  if (!window._restoreStatus) {
+    window._restoreStatus = {
+      running: false,
+      error: null,
+      maintenance_mode: false,
+    };
+  }
+
   window.getServerStatus = () => {
     return window._serverStatus ? window._serverStatus.isOnline : true;
+  };
+
+  window.getRestoreStatus = () => {
+    return (
+      window._restoreStatus || {
+        running: false,
+        error: null,
+        maintenance_mode: false,
+      }
+    );
   };
 
   window.updateServerStatus = (status) => {

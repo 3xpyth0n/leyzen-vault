@@ -89,9 +89,7 @@ async function migrateFromLocalStorage() {
 
     // Optionally clear localStorage after migration
     // localStorage.removeItem("vault_keys");
-  } catch (error) {
-    console.warn("Failed to migrate file keys from localStorage:", error);
-  }
+  } catch (error) {}
 }
 
 /**
@@ -112,7 +110,6 @@ export async function storeFileKey(fileId, key) {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    console.error("Failed to store file key in IndexedDB:", error);
     // Fallback to localStorage if IndexedDB fails
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     keys[fileId] = key;
@@ -147,7 +144,6 @@ export async function getFileKey(fileId) {
       };
     });
   } catch (error) {
-    console.error("Failed to get file key from IndexedDB:", error);
     // Fallback to localStorage
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     return keys[fileId] || null;
@@ -171,7 +167,6 @@ export async function removeFileKey(fileId) {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    console.error("Failed to remove file key from IndexedDB:", error);
     // Fallback to localStorage
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     delete keys[fileId];
@@ -195,7 +190,6 @@ export async function clearAllFileKeys() {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    console.error("Failed to clear file keys from IndexedDB:", error);
     // Fallback to localStorage
     localStorage.removeItem("vault_keys");
   }

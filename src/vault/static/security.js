@@ -13,7 +13,6 @@ function escapeHtml(text) {
 // Uses policies created in base.html before CSP enforcement
 function setInnerHTML(element, html) {
   if (!element) {
-    console.error("setInnerHTML: element is null or undefined");
     return;
   }
 
@@ -25,7 +24,6 @@ function setInnerHTML(element, html) {
       return;
     } catch (e) {
       // Fallback if policy fails
-      console.warn("Failed to use vaultHTMLPolicy:", e);
     }
   }
 
@@ -36,9 +34,7 @@ function setInnerHTML(element, html) {
       const trustedHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       element.innerHTML = trustedHTML;
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
 
   // Last resort fallback - this will fail if CSP requires Trusted Types
@@ -46,9 +42,6 @@ function setInnerHTML(element, html) {
   try {
     element.innerHTML = html;
   } catch (e) {
-    console.error("Failed to set innerHTML:", e);
-    console.error("vaultHTMLPolicy available:", !!window.vaultHTMLPolicy);
-    console.error("trustedTypes available:", !!window.trustedTypes);
     throw e;
   }
 }
@@ -111,7 +104,6 @@ async function loadStats() {
     // Update audit logs
     renderAuditLogs(data.recent_logs);
   } catch (error) {
-    console.error("Error loading stats:", error);
     if (window.Notifications) {
       window.Notifications.error("Failed to load security statistics");
     }

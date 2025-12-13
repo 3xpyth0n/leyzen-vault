@@ -84,6 +84,7 @@ class AuditLog:
     ipv4: str | None = None
     ip_location: dict[str, Any] | None = None
     user_id: str | None = None
+    user_email: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -94,6 +95,7 @@ class AuditLog:
             "ipv4": self.ipv4,
             "ip_location": self.ip_location,
             "user_id": self.user_id,
+            "user_email": self.user_email,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "details": self.details or {},
             "success": self.success,
@@ -198,5 +200,4 @@ __all__ = [
     "AuditLog",
     "ShareLink",
     "Folder",
-    "User",
 ]

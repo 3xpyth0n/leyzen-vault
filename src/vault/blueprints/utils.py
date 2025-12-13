@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Callable, TypeVar
 
 from flask import current_app, request, session, url_for
 
+from common.constants import LOGIN_BLOCK_WINDOW_MINUTES, MAX_LOGIN_ATTEMPTS
 from common.utils import get_client_ip as _get_client_ip_base
 from ..config import VaultSettings
 
 F = TypeVar("F", bound=Callable[..., object])
+
+# Login attempt tracking for rate limiting
+login_attempts: defaultdict[str | None, deque] = defaultdict(
+    lambda: deque(maxlen=MAX_LOGIN_ATTEMPTS)
+)
+BLOCK_WINDOW = timedelta(minutes=LOGIN_BLOCK_WINDOW_MINUTES)
 
 
 def _settings() -> VaultSettings:
@@ -192,6 +201,18 @@ def safe_error_response(
     return {"error": message, "error_code": code}, status_code
 
 
+def register_failed_attempt(
+    ip: str | None, attempt_time: datetime | None = None
+) -> None:
+    """Register a failed login attempt for rate limiting.
+
+    Args:
+        ip: Client IP address (or None for unknown IPs)
+        attempt_time: Time of the attempt (defaults to current time)
+    """
+    login_attempts[ip].append(attempt_time or datetime.now(timezone.utc))
+
+
 __all__ = [
     "_settings",
     "get_client_ip",
@@ -199,4 +220,5 @@ __all__ = [
     "login_required",
     "get_current_user_id",
     "safe_error_response",
+    "register_failed_attempt",
 ]

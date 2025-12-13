@@ -381,9 +381,7 @@ export default {
         for (const item of selectedItems.value) {
           try {
             await trash.restore(item.id);
-          } catch (err) {
-            console.error(`Failed to restore ${item.original_name}:`, err);
-          }
+          } catch (err) {}
         }
         await loadTrash();
         clearSelection();
@@ -402,9 +400,7 @@ export default {
         for (const item of selectedItems.value) {
           try {
             await trash.permanentlyDelete(item.id);
-          } catch (err) {
-            console.error(`Failed to delete ${item.original_name}:`, err);
-          }
+          } catch (err) {}
         }
         await loadTrash();
         clearSelection();
@@ -427,9 +423,7 @@ export default {
         for (const file of trashFiles.value) {
           try {
             await trash.permanentlyDelete(file.id);
-          } catch (err) {
-            console.error(`Failed to delete ${file.original_name}:`, err);
-          }
+          } catch (err) {}
         }
         await loadTrash();
         showEmptyTrashConfirm.value = false;

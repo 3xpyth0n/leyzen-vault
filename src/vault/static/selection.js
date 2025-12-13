@@ -375,7 +375,6 @@ class SelectionManager {
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
-            console.error("Failed to load folder picker:", e1, e2);
             if (window.Notifications) {
               window.Notifications.error(
                 "Folder picker not available. Please refresh the page.",
@@ -400,7 +399,6 @@ class SelectionManager {
           const apiModule2 = await import("../src/services/api.js");
           files = apiModule2.files;
         } catch (e2) {
-          console.error("Failed to load files API:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Files API not available. Please refresh the page.",
@@ -458,7 +456,6 @@ class SelectionManager {
 
       this.deselectAll();
     } catch (error) {
-      console.error("Move error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to move: ${error.message || "Unknown error"}`,
@@ -488,7 +485,6 @@ class SelectionManager {
           const apiModule2 = await import("../src/services/api.js");
           files = apiModule2.files;
         } catch (e2) {
-          console.error("Failed to load files API:", e1, e2);
           if (window.Notifications) {
             window.Notifications.error(
               "Files API not available. Please refresh the page.",
@@ -520,7 +516,6 @@ class SelectionManager {
 
       this.deselectAll();
     } catch (error) {
-      console.error("Star error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to update star status: ${error.message || "Unknown error"}`,

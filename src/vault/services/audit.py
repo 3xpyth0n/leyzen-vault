@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_
 
-from ..database.schema import AuditLogEntry, db
+from ..database.schema import AuditLogEntry, User, db
 from ..models import AuditLog
 from ..utils.safe_json import safe_json_loads
+
+logger = logging.getLogger(__name__)
 
 
 class AuditService:
@@ -73,18 +76,12 @@ class AuditService:
                     ipv4 = enrichment.get("ipv4")
                     ip_location = enrichment.get("ip_location")
                     # Log enrichment result for debugging
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.debug(
                         f"IP enrichment for {user_ip}: ipv4={ipv4}, "
                         f"location={'present' if ip_location else 'none'}"
                     )
                 except Exception as e:
                     # Don't fail audit logging if enrichment fails
-                    import logging
-
-                    logger = logging.getLogger(__name__)
                     logger.warning(
                         f"IP enrichment failed for audit log: {e}", exc_info=True
                     )
@@ -105,10 +102,6 @@ class AuditService:
             db.session.commit()
         except Exception as e:
             # Log error but don't fail the request
-            # Use Python logging instead of FileLogger to avoid circular dependency
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Failed to log audit action: {e}")
             db.session.rollback()
 
@@ -122,8 +115,10 @@ class AuditService:
     ) -> list[AuditLog]:
         """Retrieve audit logs with optional filters from PostgreSQL."""
         try:
-            # Build query using SQLAlchemy
-            query = db.session.query(AuditLogEntry)
+            # Build query using SQLAlchemy with outer join to User table to get user email
+            query = db.session.query(AuditLogEntry, User.email).outerjoin(
+                User, AuditLogEntry.user_id == User.id
+            )
 
             if action:
                 # Use ILIKE for case-insensitive partial matching
@@ -155,7 +150,7 @@ class AuditService:
             backfill_count = 0
             max_backfill = 10  # Limit backfill to avoid performance issues
 
-            for entry in query.all():
+            for entry, user_email in query.all():
                 # If entry doesn't have location data, try to enrich it (limited backfill)
                 if (
                     backfill_count < max_backfill
@@ -175,9 +170,6 @@ class AuditService:
                             backfill_count += 1
                     except Exception as e:
                         # Don't fail if enrichment fails
-                        import logging
-
-                        logger = logging.getLogger(__name__)
                         logger.debug(
                             f"Backfill enrichment failed for {entry.user_ip}: {e}"
                         )
@@ -200,6 +192,7 @@ class AuditService:
                             else None
                         ),
                         user_id=entry.user_id,
+                        user_email=user_email,
                         timestamp=entry.timestamp,
                         details=(
                             safe_json_loads(
@@ -217,9 +210,6 @@ class AuditService:
             return results
         except Exception as e:
             # Log error and return empty list
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Failed to retrieve audit logs: {e}")
             return []
 
@@ -291,6 +281,12 @@ class AuditService:
                 # Ignore rollback errors (might be outside application context)
                 pass
             return 0
+
+
+__all__ = ["AuditService"]
+
+
+__all__ = ["AuditService"]
 
 
 __all__ = ["AuditService"]

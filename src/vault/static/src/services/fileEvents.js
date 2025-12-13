@@ -108,7 +108,6 @@ class FileEventsClient {
       const data = await response.json();
       return data.events || [];
     } catch (error) {
-      console.error("Failed to get recent events:", error);
       return [];
     }
   }
@@ -126,7 +125,6 @@ class FileEventsClient {
     try {
       const token = localStorage.getItem("jwt_token");
       if (!token) {
-        console.warn("No JWT token available for SSE connection");
         this._startPolling();
         return;
       }
@@ -153,7 +151,6 @@ class FileEventsClient {
       // Set connection timeout
       this.connectionTimeout = setTimeout(() => {
         if (!this.isConnected) {
-          console.warn("SSE connection timeout, falling back to polling");
           this._closeSSE();
           this._startPolling();
         }
@@ -171,22 +168,17 @@ class FileEventsClient {
         try {
           const data = JSON.parse(event.data);
           this._handleMessage(data);
-        } catch (error) {
-          console.error("Failed to parse SSE message:", error);
-        }
+        } catch (error) {}
       };
 
       this.eventSource.addEventListener("file_event", (event) => {
         try {
           const data = JSON.parse(event.data);
           this._handleFileEvent(data);
-        } catch (error) {
-          console.error("Failed to parse file event:", error);
-        }
+        } catch (error) {}
       });
 
       this.eventSource.onerror = (error) => {
-        console.error("SSE connection error:", error);
         this._clearConnectionTimeout();
         this.isConnected = false;
         this._closeSSE();
@@ -200,7 +192,6 @@ class FileEventsClient {
         this._scheduleReconnect();
       };
     } catch (error) {
-      console.error("Failed to create SSE connection:", error);
       this._startPolling();
     }
   }
@@ -216,7 +207,6 @@ class FileEventsClient {
     } else if (data.type === "file_event") {
       this._handleFileEvent(data.event);
     } else if (data.type === "error") {
-      console.error("SSE error:", data.message);
       this._notifyListeners("error", data);
     }
   }
@@ -242,9 +232,7 @@ class FileEventsClient {
     this.listeners.forEach((callback) => {
       try {
         callback({ type, data });
-      } catch (error) {
-        console.error("Error in file event listener:", error);
-      }
+      } catch (error) {}
     });
   }
 
@@ -375,9 +363,7 @@ class FileEventsClient {
           this._handleFileEvent(event);
         }
       }
-    } catch (error) {
-      console.error("Polling error:", error);
-    }
+    } catch (error) {}
   }
 }
 

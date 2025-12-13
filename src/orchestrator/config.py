@@ -35,7 +35,11 @@ from common.constants import (
     SSE_INTERVAL_MS_DEFAULT,
     SSE_INTERVAL_MS_MINIMUM,
 )
-from common.env import load_env_with_override, parse_container_names, parse_timezone
+from common.env import (
+    load_env_with_priority,
+    parse_container_names,
+    parse_timezone,
+)
 from common.exceptions import ConfigurationError
 from common.token_utils import (
     derive_docker_proxy_token,
@@ -331,17 +335,18 @@ def load_settings() -> Settings:
     """Load orchestrator settings from environment variables.
 
     All environment variables are loaded from the .env file (or LEYZEN_ENV_FILE override)
-    via load_env_with_override() and accessed through the env_values dictionary for
-    consistency. The dictionary is used directly instead of os.environ to avoid side effects.
+    via load_env_with_priority() which ensures .env file values take precedence over
+    os.environ. This is critical for security and isolation, preventing production
+    environment variables from leaking into test/CI environments.
     """
 
     # Use the shared ORCHESTRATOR_DIR constant from common.constants
     base_dir = ORCHESTRATOR_DIR
     root_dir = base_dir.parent
 
-    env_values = load_env_with_override(root_dir)
-    # Merge with actual os.environ to allow runtime overrides
-    env_values.update(os.environ)
+    # Load environment with proper priority: .env file overrides os.environ
+    # This ensures .env file values take precedence for security and isolation
+    env_values = load_env_with_priority(root_dir)
 
     # Check if orchestrator is enabled
     orchestrator_enabled_raw = (
@@ -536,13 +541,11 @@ def reload_internal_api_token_from_db(settings: Settings) -> str:
     Returns:
         The internal API token string, or empty string if not available
     """
-    import os
-    from common.env import load_env_with_override
+    from common.env import load_env_with_priority
 
-    # Load environment values
+    # Load environment values with proper priority: .env file overrides os.environ
     root_dir = settings.html_dir.parent.parent
-    env_values = load_env_with_override(root_dir)
-    env_values.update(os.environ)
+    env_values = load_env_with_priority(root_dir)
 
     # Get token from database
     return _get_internal_api_token_from_db(env_values, settings.secret_key)

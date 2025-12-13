@@ -27,17 +27,13 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
   element.innerHTML = html;
 }

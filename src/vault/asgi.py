@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import signal
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 
@@ -34,11 +35,14 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
+from flask import Flask, Response  # noqa: E402
 from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
 
 # Global reference to the Flask app for signal handlers
 _flask_app = None
 _logger = None
+_full_app_ready = threading.Event()
+_full_app_middleware = None
 
 
 def _load_vault_module() -> ModuleType:
@@ -88,19 +92,76 @@ flask_app = vault_module.application
 create_app = vault_module.create_app
 
 
-def create_asgi_app() -> WSGIMiddleware:
-    """Return the vault Flask app wrapped for ASGI servers."""
+def _create_minimal_app() -> Flask:
+    """Create a minimal Flask app that responds to /healthz immediately."""
+    minimal_app = Flask(__name__)
 
-    global _flask_app, _logger
+    @minimal_app.route("/healthz")
+    def healthz():
+        """Health check endpoint - responds immediately for fast container startup."""
+        return Response('{"status":"ok"}', mimetype="application/json", status=200)
+
+    @minimal_app.route("/<path:path>", defaults={"path": ""})
+    @minimal_app.route("/")
+    def catch_all(path: str = ""):
+        """Catch-all route that returns 503 while full app is initializing."""
+        return Response(
+            '{"status":"initializing"}', mimetype="application/json", status=503
+        )
+
+    return minimal_app
+
+
+def _load_full_app_in_background() -> None:
+    """Load the full Flask application in a background thread."""
+    global _flask_app, _logger, _full_app_middleware
 
     try:
         _flask_app = create_app()
-        # Try to get logger from app config if available
         _logger = _flask_app.config.get("LOGGER")
+        _full_app_middleware = WSGIMiddleware(_flask_app)
+        _full_app_ready.set()
+        if _logger:
+            _logger.log("[INIT] Full application loaded and ready")
     except Exception as e:
-        # If create_app fails, use the default application
-        print(f"[WARNING] Failed to create configured app: {e}", file=sys.stderr)
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to create configured app: {e}", exc_info=True)
         _flask_app = flask_app
+        _full_app_middleware = WSGIMiddleware(_flask_app)
+        _full_app_ready.set()
+
+
+class LazyWSGIMiddleware:
+    """ASGI middleware that starts with a minimal app and switches to full app when ready."""
+
+    def __init__(self, minimal_app: Flask):
+        self.minimal_middleware = WSGIMiddleware(minimal_app)
+
+    async def __call__(self, scope, receive, send):
+        """Handle ASGI requests, routing to minimal or full app."""
+        if _full_app_ready.is_set() and _full_app_middleware is not None:
+            # Full app is ready, use it
+            await _full_app_middleware(scope, receive, send)
+        else:
+            # Use minimal app (responds to /healthz immediately)
+            await self.minimal_middleware(scope, receive, send)
+
+
+def create_asgi_app() -> LazyWSGIMiddleware:
+    """Return a lazy-loading ASGI app that responds to /healthz immediately."""
+
+    global _flask_app, _logger
+
+    # Create minimal app that responds to /healthz immediately
+    minimal_app = _create_minimal_app()
+
+    # Start loading full app in background thread
+    background_thread = threading.Thread(
+        target=_load_full_app_in_background, daemon=True
+    )
+    background_thread.start()
 
     def log_shutdown(sig: int | None = None) -> None:
         """Log shutdown message and flush logger."""
@@ -111,11 +172,14 @@ def create_asgi_app() -> WSGIMiddleware:
                 _logger.log("=== Vault stopped ===")
             _logger.flush()
         else:
-            # Fallback to print if logger is not available
+            # Fallback to logging if logger is not available
+            import logging
+
+            logger = logging.getLogger(__name__)
             if sig is not None:
-                print(f"[INFO] Vault stopped (signal {sig})", file=sys.stderr)
+                logger.info(f"Vault stopped (signal {sig})")
             else:
-                print("[INFO] Vault stopped", file=sys.stderr)
+                logger.info("Vault stopped")
 
     def handle_shutdown(
         sig: int, frame: object
@@ -141,7 +205,7 @@ def create_asgi_app() -> WSGIMiddleware:
     # even if signal handler doesn't execute properly
     atexit.register(log_shutdown)
 
-    return WSGIMiddleware(_flask_app)
+    return LazyWSGIMiddleware(minimal_app)
 
 
 app = create_asgi_app()

@@ -250,9 +250,7 @@ export default {
                   if (userDetails && userDetails.user) {
                     quota.user_email = userDetails.user.email;
                   }
-                } catch (err) {
-                  console.warn("Failed to load user email for quota:", err);
-                }
+                } catch (err) {}
               }
               return quota;
             }),
@@ -261,7 +259,6 @@ export default {
           quotas.value = [];
         }
       } catch (err) {
-        console.error("Error loading quotas:", err);
         error.value = err.message || "Failed to load quotas";
         quotas.value = [];
       } finally {
@@ -288,7 +285,6 @@ export default {
           Math.round((numBytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
         );
       } catch (err) {
-        console.error("Error formatting size:", err, bytes);
         return "0 B";
       }
     };
@@ -434,7 +430,6 @@ export default {
         await loadQuotas();
         closeModal();
       } catch (err) {
-        console.error("Error saving quota:", err);
         error.value = err.message || "Failed to save quota";
       }
     };
@@ -451,7 +446,6 @@ export default {
         await loadQuotas();
         closeModal();
       } catch (err) {
-        console.error("Error removing quota:", err);
         error.value = err.message || "Failed to remove quota";
       }
     };

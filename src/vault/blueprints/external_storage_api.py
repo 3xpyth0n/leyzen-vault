@@ -60,8 +60,8 @@ def get_external_storage_status():
                 "storage_mode": storage_mode,
                 "worker_running": worker_running,
                 "sync_running": sync_running,
-                "last_sync": None,  # TODO: Store and retrieve last sync time
-                "last_cleanup": None,  # TODO: Store and retrieve last cleanup time
+                "last_sync": None,
+                "last_cleanup": None,
             }
         ),
         200,

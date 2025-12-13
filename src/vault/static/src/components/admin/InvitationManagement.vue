@@ -124,7 +124,6 @@ export default {
         }
         return iconFn.call(window.Icons, size, "currentColor");
       } catch (err) {
-        console.warn("Error getting icon:", iconName, err);
         return "";
       }
     };
@@ -140,7 +139,6 @@ export default {
         });
         invitations.value = result.invitations || [];
       } catch (err) {
-        console.error("Failed to load invitations:", err);
         error.value = err.message || "Failed to load invitations";
         invitations.value = [];
       } finally {

@@ -6,17 +6,13 @@ function setInnerHTML(element, html) {
     try {
       element.innerHTML = window.vaultHTMLPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use vaultHTMLPolicy:", e);
-    }
+    } catch (e) {}
   }
   if (window.trustedTypes && window.trustedTypes.defaultPolicy) {
     try {
       element.innerHTML = window.trustedTypes.defaultPolicy.createHTML(html);
       return;
-    } catch (e) {
-      console.warn("Failed to use defaultPolicy:", e);
-    }
+    } catch (e) {}
   }
   element.innerHTML = html;
 }
@@ -340,7 +336,6 @@ class FileMenuManager {
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
-            console.error("Failed to load folder picker:", e1, e2);
             if (window.Notifications) {
               window.Notifications.error(
                 "Folder picker not available. Please refresh the page.",
@@ -402,7 +397,6 @@ class FileMenuManager {
         await window.Folders.loadFolderContents(currentFolderId);
       }
     } catch (error) {
-      console.error("Copy error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to copy: ${error.message || "Unknown error"}`,
@@ -447,7 +441,6 @@ class FileMenuManager {
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
-            console.error("Failed to load folder picker:", e1, e2);
             if (window.Notifications) {
               window.Notifications.error(
                 "Folder picker not available. Please refresh the page.",
@@ -525,7 +518,6 @@ class FileMenuManager {
         await window.Folders.loadFolderContents(currentFolderId);
       }
     } catch (error) {
-      console.error("Move error:", error);
       if (window.Notifications) {
         window.Notifications.error(
           `Failed to move: ${error.message || "Unknown error"}`,

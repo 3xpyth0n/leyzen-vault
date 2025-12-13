@@ -875,6 +875,61 @@ class BackupJob(db.Model):
         }
 
 
+class DatabaseBackup(db.Model):
+    """Database backup record."""
+
+    __tablename__ = "database_backups"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    backup_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # manual, scheduled
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # pending, running, completed, failed
+    storage_location: Mapped[str] = mapped_column(String(500), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backup_metadata: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # JSON metadata
+
+    __table_args__ = (Index("ix_database_backups_created_at", "created_at"),)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        metadata_dict = None
+        if self.backup_metadata:
+            try:
+                metadata_dict = safe_json_loads(
+                    self.backup_metadata,
+                    max_size=10240,
+                    max_depth=10,
+                    context="backup metadata",
+                )
+            except Exception:
+                metadata_dict = None
+
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "backup_type": self.backup_type,
+            "status": self.status,
+            "storage_location": self.storage_location,
+            "size_bytes": self.size_bytes,
+            "checksum": self.checksum,
+            "metadata": metadata_dict,
+        }
+
+    def __repr__(self) -> str:
+        return f"<DatabaseBackup {self.id} ({self.backup_type}, {self.status})>"
+
+
 class ReplicationTarget(db.Model):
     """Replication target configuration."""
 
@@ -1127,6 +1182,7 @@ class AuditLogEntry(db.Model):
                 else None
             ),
             "user_id": self.user_id,
+            "user_email": None,  # Email is retrieved via join in AuditService.get_logs()
             "timestamp": self.timestamp.isoformat(),
             "details": (
                 safe_json_loads(
@@ -1826,21 +1882,42 @@ def init_db_roles(app: Any, secret_key: str) -> None:
     try:
         app_logger = app.config.get("LOGGER")
     except Exception:
+        # Logger may not be available during initialization - expected
         pass
 
     import logging
 
     logger = logging.getLogger(__name__)
 
-    # Log that we're starting role initialization
-    log_msg = "[INIT] Starting PostgreSQL roles initialization"
-    if app_logger:
-        app_logger.log(log_msg)
-    else:
-        logger.info(log_msg)
+    # Use advisory lock to ensure only one worker initializes roles
+    # Lock ID: Use two 32-bit integers (high, low) for "LEYZENROLES"
+    ADVISORY_LOCK_HIGH = 0x4C45595A  # "LEYZ"
+    ADVISORY_LOCK_LOW = 0x524F4C45  # "ROLE" (different from init_db lock)
 
     # Store passwords_to_store outside try block so it's accessible in finally
     passwords_to_store = {}
+
+    # Try to acquire advisory lock (non-blocking, two-integer version)
+    lock_acquired = False
+    try:
+        with engine.begin() as lock_conn:
+            result = lock_conn.execute(
+                text("SELECT pg_try_advisory_lock(:lock_high, :lock_low)"),
+                {"lock_high": ADVISORY_LOCK_HIGH, "lock_low": ADVISORY_LOCK_LOW},
+            )
+            lock_acquired = result.scalar() is True
+    except Exception:
+        # If we can't acquire lock, assume another worker is handling it
+        lock_acquired = False
+
+    # If lock not acquired, another worker is initializing roles
+    if not lock_acquired:
+        # Wait a bit for the other worker to finish
+        import time
+
+        time.sleep(1)
+        engine.dispose()
+        return
 
     try:
         # Use engine.begin() for automatic transaction management
@@ -1856,11 +1933,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 )
             )
             existing_roles = {row[0] for row in role_check.fetchall()}
-            log_msg = f"[INIT] Existing roles: {existing_roles}"
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
 
             # Check which passwords already exist in SystemSecrets (direct SQL check)
             # This is more reliable than using get_password which might fail
@@ -1880,19 +1952,10 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     },
                 )
                 existing_secret_keys = {row[0] for row in secrets_check.fetchall()}
-                log_msg = f"[INIT] Existing secret keys in system_secrets: {existing_secret_keys}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
             except Exception as e:
                 # If system_secrets table doesn't exist yet, assume no passwords exist
                 existing_secret_keys = set()
-                log_msg = f"[INIT] Could not check system_secrets (table may not exist): {e}. Assuming no passwords exist."
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
 
             # Generate passwords for roles that don't exist or passwords not in SystemSecrets
             # (passwords_to_store is already initialized outside the try block)
@@ -1907,11 +1970,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     {"password": app_password},
                 )
                 passwords_to_store[DBPasswordService.SECRET_KEY_APP] = app_password
-                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_APP}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
             elif DBPasswordService.SECRET_KEY_APP not in existing_secret_keys:
                 # Role exists but password not in SystemSecrets - generate and store it
                 app_password = DBPasswordService.generate_password()
@@ -1922,11 +1981,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     ),
                     {"password": app_password},
                 )
-                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_APP}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
 
             # Create or update leyzen_migrator role
             if DBPasswordService.ROLE_MIGRATOR not in existing_roles:
@@ -1940,11 +1994,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 passwords_to_store[DBPasswordService.SECRET_KEY_MIGRATOR] = (
                     migrator_password
                 )
-                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_MIGRATOR}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
             elif DBPasswordService.SECRET_KEY_MIGRATOR not in existing_secret_keys:
                 # Role exists but password not in SystemSecrets - generate and store it
                 migrator_password = DBPasswordService.generate_password()
@@ -1957,11 +2007,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     ),
                     {"password": migrator_password},
                 )
-                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_MIGRATOR}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
 
             # Create or update leyzen_secrets role
             if DBPasswordService.ROLE_SECRETS not in existing_roles:
@@ -1975,11 +2020,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 passwords_to_store[DBPasswordService.SECRET_KEY_SECRETS] = (
                     secrets_password
                 )
-                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_SECRETS}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
             elif DBPasswordService.SECRET_KEY_SECRETS not in existing_secret_keys:
                 # Role exists but password not in SystemSecrets - generate and store it
                 secrets_password = DBPasswordService.generate_password()
@@ -1992,11 +2033,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     ),
                     {"password": secrets_password},
                 )
-                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_SECRETS}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
 
             # Create or update leyzen_orchestrator role
             if DBPasswordService.ROLE_ORCHESTRATOR not in existing_roles:
@@ -2010,11 +2046,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 passwords_to_store[DBPasswordService.SECRET_KEY_ORCHESTRATOR] = (
                     orchestrator_password
                 )
-                log_msg = f"[INIT] Created role {DBPasswordService.ROLE_ORCHESTRATOR}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
             elif DBPasswordService.SECRET_KEY_ORCHESTRATOR not in existing_secret_keys:
                 # Role exists but password not in SystemSecrets - generate and store it
                 orchestrator_password = DBPasswordService.generate_password()
@@ -2027,18 +2059,69 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     ),
                     {"password": orchestrator_password},
                 )
-                log_msg = f"[INIT] Generated and stored password for existing role {DBPasswordService.ROLE_ORCHESTRATOR}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
 
             # Configure privileges
             # Grant USAGE on schema public to all roles
-            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_app"'))
-            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_migrator"'))
-            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_secrets"'))
-            conn.execute(text('GRANT USAGE ON SCHEMA public TO "leyzen_orchestrator"'))
+            # Handle "tuple concurrently updated" and transaction errors gracefully (multiple workers)
+            def safe_grant(statement: str, description: str = ""):
+                """Execute GRANT statement in a separate transaction, handling errors gracefully."""
+                max_retries = 2
+                for attempt in range(max_retries):
+                    try:
+                        # Use a separate transaction for each GRANT to avoid transaction conflicts
+                        with engine.begin() as grant_conn:
+                            grant_conn.execute(text(statement))
+                        # Success - break out of retry loop
+                        break
+                    except Exception as grant_error:
+                        error_str = str(grant_error).lower()
+                        # Check for transaction errors that require rollback
+                        is_transaction_error = (
+                            "infailedsqltransaction" in error_str
+                            or "current transaction is aborted" in error_str
+                        )
+                        is_concurrent_error = (
+                            "tuple concurrently updated" in error_str
+                            or "internalerror" in error_str
+                        )
+
+                        if is_concurrent_error:
+                            # Another worker already granted this - that's fine
+                            break
+                        elif is_transaction_error and attempt < max_retries - 1:
+                            # Transaction was aborted - retry in a new transaction
+                            import time
+
+                            time.sleep(0.1 * (attempt + 1))  # Small delay before retry
+                            continue
+                        else:
+                            # Different error or max retries reached - log but continue
+                            if app_logger:
+                                app_logger.log(
+                                    f"[WARNING] Failed to {description}: {grant_error}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Failed to {description}: {grant_error}"
+                                )
+                            break
+
+            safe_grant(
+                'GRANT USAGE ON SCHEMA public TO "leyzen_app"',
+                "grant USAGE to leyzen_app",
+            )
+            safe_grant(
+                'GRANT USAGE ON SCHEMA public TO "leyzen_migrator"',
+                "grant USAGE to leyzen_migrator",
+            )
+            safe_grant(
+                'GRANT USAGE ON SCHEMA public TO "leyzen_secrets"',
+                "grant USAGE to leyzen_secrets",
+            )
+            safe_grant(
+                'GRANT USAGE ON SCHEMA public TO "leyzen_orchestrator"',
+                "grant USAGE to leyzen_orchestrator",
+            )
 
             # Get list of all application tables (exclude system_secrets)
             tables_result = conn.execute(
@@ -2055,31 +2138,36 @@ def init_db_roles(app: Any, secret_key: str) -> None:
 
             # Grant privileges to leyzen_app on application tables
             for table in app_tables:
-                conn.execute(
-                    text(
-                        f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"'
-                    )
+                safe_grant(
+                    f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"',
+                    f"grant privileges on {table} to leyzen_app",
                 )
 
             # Grant CREATE privilege to leyzen_migrator on schema
             # This allows leyzen_migrator to create, alter, and drop tables in the schema
             # No need to grant ALTER/DROP on individual tables - CREATE on schema is sufficient
-            conn.execute(text('GRANT CREATE ON SCHEMA public TO "leyzen_migrator"'))
+            safe_grant(
+                'GRANT CREATE ON SCHEMA public TO "leyzen_migrator"',
+                "grant CREATE to leyzen_migrator",
+            )
 
             # Grant privileges to leyzen_secrets on system_secrets only
-            conn.execute(
-                text(
-                    'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"'
-                )
+            safe_grant(
+                'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"',
+                "grant privileges on system_secrets to leyzen_secrets",
             )
 
             # Grant SELECT only to leyzen_orchestrator on system_secrets
-            conn.execute(
-                text('GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"')
+            safe_grant(
+                'GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"',
+                "grant SELECT on system_secrets to leyzen_orchestrator",
             )
 
             # Revoke all privileges from leyzen_app on system_secrets
-            conn.execute(text('REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"'))
+            safe_grant(
+                'REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"',
+                "revoke privileges from leyzen_app on system_secrets",
+            )
 
             # Set default privileges for future tables
             # Future tables created by leyzen_migrator will grant SELECT/INSERT/UPDATE/DELETE to leyzen_app
@@ -2102,12 +2190,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
 
             # Transaction commits here automatically with engine.begin()
 
-            log_msg = "[INIT] PostgreSQL roles initialized successfully"
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
-
     except Exception as transaction_error:
         # Log the error but continue to store passwords
         # Passwords were already set in PostgreSQL before the error occurred
@@ -2123,19 +2205,11 @@ def init_db_roles(app: Any, secret_key: str) -> None:
         # (We're using a new admin connection, so use_admin_connection=True)
         # IMPORTANT: Store passwords even if transaction failed - passwords were already set in PostgreSQL
         if passwords_to_store:
-            log_msg = f"[INIT] passwords_to_store contains {len(passwords_to_store)} password(s) to store"
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
+
             storage_errors = []
             for password_key, password_value in passwords_to_store.items():
                 try:
-                    log_msg = f"[INIT] Attempting to store password for {password_key}"
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
+
                     DBPasswordService.store_password(
                         secret_key,
                         password_key,
@@ -2143,11 +2217,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                         app,
                         use_admin_connection=True,
                     )
-                    log_msg = f"[INIT] Successfully stored password for {password_key} in SystemSecrets"
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
+
                 except Exception as store_error:
                     # Collect errors but continue to try storing all passwords
                     error_msg = f"[ERROR] Failed to store password for {password_key} in SystemSecrets: {store_error}"
@@ -2168,12 +2238,17 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 raise RuntimeError(
                     f"Failed to store {len(storage_errors)} password(s) in SystemSecrets: {error_details}"
                 )
-        else:
-            log_msg = "[INIT] No passwords to store (all passwords already exist or no roles to create)"
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
+
+        # Always release the advisory lock
+        try:
+            with engine.begin() as unlock_conn:
+                unlock_conn.execute(
+                    text("SELECT pg_advisory_unlock(:lock_high, :lock_low)"),
+                    {"lock_high": ADVISORY_LOCK_HIGH, "lock_low": ADVISORY_LOCK_LOW},
+                )
+        except Exception:
+            # Ignore errors when releasing lock
+            pass
 
         engine.dispose()
 
@@ -2250,7 +2325,7 @@ def get_secrets_connection(app: Any, secret_key: str) -> Any:
     return create_engine(postgres_url, pool_pre_ping=True)
 
 
-def init_db(app) -> None:
+def init_db(app) -> bool:
     """Initialize database with Flask app.
 
     Creates all tables and indexes using SQLAlchemy. Handles cases where objects
@@ -2258,18 +2333,222 @@ def init_db(app) -> None:
 
     This function will not raise exceptions for duplicate index/table errors,
     as these are expected when the database schema already exists.
+
+    Uses PostgreSQL advisory locks to ensure only one worker performs initialization
+    when multiple workers start simultaneously.
+
+    Returns:
+        bool: True if this worker actually performed the initialization,
+              False if another worker did it or database was already initialized.
     """
     db.init_app(app)
     with app.app_context():
+        from sqlalchemy import text as sql_text
+
+        # Get logger early to ensure logs are written
         import logging
 
         logger = logging.getLogger(__name__)
-        # Also try to use app logger if available (for consistency with app.py logs)
         app_logger = None
         try:
             app_logger = app.config.get("LOGGER")
         except Exception:
             pass
+
+        # Use advisory lock to ensure only one worker initializes the database
+        # Lock ID: Use two 32-bit integers (high, low) for "LEYZENVAULT"
+        # Split the hex value 0x4C45595A454E5641554C54 into two parts
+        # High 32 bits: 0x4C45595A, Low 32 bits: 0x454E5641 (truncated, but unique enough)
+        ADVISORY_LOCK_HIGH = 0x4C45595A  # "LEYZ"
+        ADVISORY_LOCK_LOW = 0x5641554C  # "VAUL" (using part of the remaining)
+
+        # Check if database is already initialized before acquiring lock
+        inspector = None
+        try:
+            from sqlalchemy import inspect as sql_inspect
+
+            inspector = sql_inspect(db.engine)
+            existing_tables = set(inspector.get_table_names())
+            # Consider database initialized if system_secrets table exists
+            db_already_initialized = "system_secrets" in existing_tables
+        except Exception:
+            # If we can't check, assume not initialized
+            db_already_initialized = False
+
+        # If database is already initialized, only one worker should log this
+        if db_already_initialized:
+            # Check if another worker already logged this by checking system_settings
+            already_logged = False
+            try:
+                SystemSettings = globals()["SystemSettings"]
+                existing_log = (
+                    db.session.query(SystemSettings)
+                    .filter_by(key="init_status_logged")
+                    .first()
+                )
+                if existing_log and existing_log.value == "true":
+                    already_logged = True
+            except Exception:
+                pass
+
+            if not already_logged:
+                # Try to acquire lock briefly - only the first worker to acquire will log
+                lock_acquired = False
+                try:
+                    result = db.session.execute(
+                        sql_text("SELECT pg_try_advisory_lock(:lock_high, :lock_low)"),
+                        {
+                            "lock_high": ADVISORY_LOCK_HIGH,
+                            "lock_low": ADVISORY_LOCK_LOW,
+                        },
+                    )
+                    lock_acquired = result.scalar() is True
+                    db.session.commit()
+
+                    if lock_acquired:
+                        # Double-check after acquiring lock (another worker might have set it)
+                        try:
+                            SystemSettings = globals()["SystemSettings"]
+                            existing_log = (
+                                db.session.query(SystemSettings)
+                                .filter_by(key="init_status_logged")
+                                .first()
+                            )
+                            if existing_log and existing_log.value == "true":
+                                already_logged = True
+                            else:
+                                # Set flag and log
+                                if existing_log:
+                                    existing_log.value = "true"
+                                else:
+                                    from uuid import uuid4
+
+                                    log_flag = SystemSettings(
+                                        id=str(uuid4()),
+                                        key="init_status_logged",
+                                        value="true",
+                                    )
+                                    db.session.add(log_flag)
+                                db.session.commit()
+
+                                if app_logger:
+                                    app_logger.log(
+                                        "[INIT] Database already initialized, skipping initialization"
+                                    )
+                                    app_logger.flush()
+                                else:
+                                    logger.info(
+                                        "[INIT] Database already initialized, skipping initialization"
+                                    )
+                        except Exception:
+                            # If we can't set flag, log anyway
+                            if app_logger:
+                                app_logger.log(
+                                    "[INIT] Database already initialized, skipping initialization"
+                                )
+                                app_logger.flush()
+                            else:
+                                logger.info(
+                                    "[INIT] Database already initialized, skipping initialization"
+                                )
+
+                        # Release lock
+                        try:
+                            db.session.execute(
+                                sql_text(
+                                    "SELECT pg_advisory_unlock(:lock_high, :lock_low)"
+                                ),
+                                {
+                                    "lock_high": ADVISORY_LOCK_HIGH,
+                                    "lock_low": ADVISORY_LOCK_LOW,
+                                },
+                            )
+                            db.session.commit()
+                        except Exception:
+                            db.session.rollback()
+                except Exception:
+                    db.session.rollback()
+            return False
+
+        # Try to acquire advisory lock with retry logic
+        # Use a small random delay to avoid all workers trying at exactly the same time
+        import time
+        import random
+
+        lock_acquired = False
+        max_retries = 10
+        base_delay = 0.1 + random.uniform(
+            0, 0.2
+        )  # Random delay between 0.1 and 0.3 seconds
+
+        for attempt in range(max_retries):
+            try:
+                # Always use non-blocking lock with retries (two-integer version)
+                result = db.session.execute(
+                    sql_text("SELECT pg_try_advisory_lock(:lock_high, :lock_low)"),
+                    {"lock_high": ADVISORY_LOCK_HIGH, "lock_low": ADVISORY_LOCK_LOW},
+                )
+                lock_acquired = result.scalar() is True
+                db.session.commit()
+
+                if lock_acquired:
+                    # Lock successfully acquired - only log if we're actually going to initialize
+                    # (not if database is already initialized)
+                    break
+                else:
+                    pass
+
+            except Exception as lock_error:
+                db.session.rollback()
+                lock_acquired = False
+                if app_logger:
+                    app_logger.log(
+                        f"[INIT] Lock acquisition attempt {attempt + 1} failed: {lock_error}"
+                    )
+                    app_logger.flush()
+
+            # Wait before retry (except on last attempt)
+            if attempt < max_retries - 1 and not lock_acquired:
+                # Exponential backoff with jitter
+                delay = base_delay * (2**attempt) + random.uniform(0, 0.1)
+                time.sleep(delay)
+
+        # If lock not acquired after all retries, another worker is initializing
+        if not lock_acquired:
+            # Wait a bit for the other worker to finish
+            time.sleep(2)
+            return False
+
+        # This worker has the lock - proceed with initialization
+        initialization_performed = False
+        # If database was already initialized, release lock and return immediately
+        if db_already_initialized:
+            initialization_performed = False
+            if app_logger:
+                app_logger.log(
+                    "[INIT] Database already initialized, skipping initialization"
+                )
+                app_logger.flush()
+            else:
+                logger.info(
+                    "[INIT] Database already initialized, skipping initialization"
+                )
+            try:
+                db.session.execute(
+                    sql_text("SELECT pg_advisory_unlock(:lock_high, :lock_low)"),
+                    {"lock_high": ADVISORY_LOCK_HIGH, "lock_low": ADVISORY_LOCK_LOW},
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            return False
+        else:
+            initialization_performed = True
+            if app_logger:
+                app_logger.log("[INIT] Starting database initialization...")
+                app_logger.flush()
+            else:
+                logger.info("[INIT] Starting database initialization...")
 
         # Note: PostgreSQL roles initialization is moved after db.create_all()
         # to ensure system_secrets table exists before storing passwords
@@ -2405,11 +2684,6 @@ def init_db(app) -> None:
         # If objects already exist, that's fine - database is already initialized
         try:
             # Log using app logger if available, otherwise use standard logger
-            log_msg = "[INIT] Creating database tables..."
-            if app_logger:
-                app_logger.log(log_msg)
-            else:
-                logger.info(log_msg)
 
             # Create specific tables manually with SQL before db.create_all()
             # Prevents db.create_all() from trying to create indexes for non-existent tables
@@ -2652,23 +2926,11 @@ def init_db(app) -> None:
             # This ensures system_secrets table exists before storing passwords
             try:
                 secret_key = app.config.get("SECRET_KEY")
-                log_msg = f"[INIT] Checking if roles need initialization. SECRET_KEY present: {bool(secret_key)}"
-                if app_logger:
-                    app_logger.log(log_msg)
-                else:
-                    logger.info(log_msg)
+
                 if secret_key:
-                    log_msg = "[INIT] Calling init_db_roles..."
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
+
                     init_db_roles(app, secret_key)
-                    log_msg = "[INIT] init_db_roles completed successfully"
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
+
                 else:
                     log_msg = "[WARNING] SECRET_KEY not available, skipping role initialization"
                     if app_logger:
@@ -2788,14 +3050,15 @@ def init_db(app) -> None:
                     else:
                         logger.warning(log_msg)
 
-            # Old migration code removed - now handled by migration system above
-            # (Removed: api_keys prefix validation and jwt_blacklist jti column migration)
-
             log_msg = "Database initialization completed successfully"
             if app_logger:
                 app_logger.log(log_msg)
+                app_logger.flush()
             else:
                 logger.info(log_msg)
+
+            # This worker performed initialization
+            initialization_performed = True
         except Exception as e:
             import sys
             import traceback
@@ -2818,11 +3081,6 @@ def init_db(app) -> None:
 
                     # Verify all required tables exist
                     # Some tables may be missing even if db.create_all() raised a duplicate error
-                    log_msg = "[INIT] Verifying all required tables exist..."
-                    if app_logger:
-                        app_logger.log(log_msg)
-                    else:
-                        logger.info(log_msg)
 
                     inspector = sql_inspect(db.engine)
                     existing_tables = set(inspector.get_table_names())
@@ -2859,6 +3117,7 @@ def init_db(app) -> None:
                     SystemSettings = globals()["SystemSettings"]
                     ApiKey = globals()["ApiKey"]
                     ExternalStorageMetadata = globals()["ExternalStorageMetadata"]
+                    DatabaseBackup = globals()["DatabaseBackup"]
 
                     # Map table names to their model classes
                     required_tables = {
@@ -2891,6 +3150,7 @@ def init_db(app) -> None:
                         "system_settings": SystemSettings,
                         "api_keys": ApiKey,
                         "external_storage_metadata": ExternalStorageMetadata,
+                        "database_backups": DatabaseBackup,
                     }
 
                     missing_tables = [
@@ -2999,11 +3259,7 @@ def init_db(app) -> None:
                                         ]
 
                                         if orphaned_indexes:
-                                            log_msg = f"[INIT] Found orphaned indexes for {table_name}: {', '.join(orphaned_indexes)}. Cleaning them up..."
-                                            if app_logger:
-                                                app_logger.log(log_msg)
-                                            else:
-                                                logger.warning(log_msg)
+                                            pass
 
                                             # Drop orphaned indexes
                                             for idx_name in orphaned_indexes:
@@ -3014,11 +3270,7 @@ def init_db(app) -> None:
                                                         )
                                                     )
                                                     db.session.commit()
-                                                    log_msg = f"[INIT] Dropped orphaned index: {idx_name}"
-                                                    if app_logger:
-                                                        app_logger.log(log_msg)
-                                                    else:
-                                                        logger.info(log_msg)
+
                                                 except Exception as drop_error:
                                                     # Ignore errors when dropping indexes
                                                     db.session.rollback()
@@ -3078,11 +3330,7 @@ def init_db(app) -> None:
                                             """
                                             db.session.execute(sql_text(create_sql))
                                             db.session.commit()
-                                            log_msg = f"[INIT] Table {table_name} created using raw SQL"
-                                            if app_logger:
-                                                app_logger.log(log_msg)
-                                            else:
-                                                logger.info(log_msg)
+
                                         except Exception as sql_error:
                                             # SQL fallback failed - log but continue with normal flow
                                             log_msg = f"[DEBUG] Raw SQL creation failed for {table_name}: {sql_error}"
@@ -3098,11 +3346,7 @@ def init_db(app) -> None:
                                     existing_tables_after = inspector.get_table_names()
 
                                     if table_name in existing_tables_after:
-                                        log_msg = f"[INIT] Created missing table: {table_name} (verified)"
-                                        if app_logger:
-                                            app_logger.log(log_msg)
-                                        else:
-                                            logger.info(log_msg)
+
                                         table_created = True
                                         break
                                     else:
@@ -3188,19 +3432,10 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        log_msg = "[INIT] jwt_blacklist table ensured to exist"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
+
                     except Exception as create_table_error:
                         # Table might already exist, that's OK
                         db.session.rollback()
-                        log_msg = f"[INIT] Table creation attempt: {create_table_error}"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.debug(log_msg)
 
                     # Now ensure jti column exists - use IF NOT EXISTS equivalent
                     try:
@@ -3211,29 +3446,16 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        log_msg = "[INIT] jti column added successfully"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
+
                     except Exception as add_col_error:
                         error_str = str(add_col_error).lower()
                         if "already exists" in error_str or "duplicate" in error_str:
                             # Column already exists - that's what we want!
                             db.session.rollback()
-                            log_msg = "[INIT] jti column already exists (good!)"
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.info(log_msg)
+
                         else:
                             # Different error - log but continue
                             db.session.rollback()
-                            log_msg = f"[INIT] Error adding jti column: {add_col_error}"
-                            if app_logger:
-                                app_logger.log(log_msg)
-                            else:
-                                logger.warning(log_msg)
 
                     # Ensure index exists
                     try:
@@ -3243,18 +3465,9 @@ def init_db(app) -> None:
                             )
                         )
                         db.session.commit()
-                        log_msg = "[INIT] jti index ensured"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
+
                     except Exception as index_error:
                         db.session.rollback()
-                        log_msg = f"[INIT] Index creation: {index_error}"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.warning(log_msg)
 
                     # Clear cache
                     try:
@@ -3269,11 +3482,7 @@ def init_db(app) -> None:
                         result = db.session.execute(
                             sql_text("SELECT jti FROM jwt_blacklist LIMIT 0")
                         )
-                        log_msg = "[INIT] jti column verified - can be queried"
-                        if app_logger:
-                            app_logger.log(log_msg)
-                        else:
-                            logger.info(log_msg)
+
                     except Exception as verify_error:
                         # This is bad - column doesn't exist or can't be queried
                         error_str = str(verify_error).lower()
@@ -3291,11 +3500,7 @@ def init_db(app) -> None:
                                     )
                                 )
                                 db.session.commit()
-                                log_msg = "[INIT] jti column added via IF NOT EXISTS"
-                                if app_logger:
-                                    app_logger.log(log_msg)
-                                else:
-                                    logger.info(log_msg)
+
                             except Exception:
                                 # PostgreSQL doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
                                 # So we'll just log the error
@@ -3337,3 +3542,17 @@ def init_db(app) -> None:
                         exc_info=True,
                     )
                     raise
+        finally:
+            # Always release the advisory lock
+            try:
+                db.session.execute(
+                    sql_text("SELECT pg_advisory_unlock(:lock_high, :lock_low)"),
+                    {"lock_high": ADVISORY_LOCK_HIGH, "lock_low": ADVISORY_LOCK_LOW},
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                # Ignore errors when releasing lock
+
+        # Return True if this worker performed initialization, False otherwise
+        return initialization_performed
