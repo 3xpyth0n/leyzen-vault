@@ -29,6 +29,7 @@ func init() {
 		defaultEnv = override
 	}
 	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
 	rootCmd.PersistentFlags().StringVar(&envFile, "env-file", defaultEnv, "Path to the environment file to use")
 }
 
