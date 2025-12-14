@@ -873,7 +873,7 @@ export default {
 
 .form-group input:focus {
   outline: none;
-  border-color: #38bdf8;
+  border-color: #8b5cf6;
   background: rgba(15, 23, 42, 0.7);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
 }
@@ -958,7 +958,7 @@ export default {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1017,7 +1017,7 @@ export default {
 }
 
 .btn-continue {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 
@@ -1072,7 +1072,7 @@ p a:hover {
   width: 32px;
   height: 32px;
   border: 3px solid rgba(148, 163, 184, 0.2);
-  border-top-color: #38bdf8;
+  border-top-color: #8b5cf6;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1171,7 +1171,7 @@ p a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #38bdf8;
+  color: #8b5cf6;
   font-size: 1.2rem;
   font-weight: bold;
 }
@@ -1205,7 +1205,7 @@ p a:hover {
 }
 
 .btn-restore-confirm {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 
@@ -1234,7 +1234,7 @@ p a:hover {
   width: 64px;
   height: 64px;
   border: 4px solid rgba(148, 163, 184, 0.2);
-  border-top-color: #38bdf8;
+  border-top-color: #8b5cf6;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

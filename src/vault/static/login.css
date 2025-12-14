@@ -83,18 +83,18 @@
 
   --border-color: rgba(148, 163, 184, 0.2);
   --border-color-hover: rgba(148, 163, 184, 0.4);
-  --border-color-active: rgba(56, 189, 248, 0.5);
+  --border-color-active: rgba(139, 92, 246, 0.5);
 
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
   --text-disabled: #64748b;
 
-  --accent-blue: #38bdf8;
-  --accent-blue-dark: #0ea5e9;
+  --accent-blue: #8b5cf6;
+  --accent-blue-dark: #7c3aed;
   --accent-purple: #818cf8;
   --accent-purple-dark: #6366f1;
-  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
 
   --success: #10b981;
   --success-dark: #059669;
@@ -119,7 +119,7 @@
 
   --border-color: rgba(148, 163, 184, 0.3);
   --border-color-hover: rgba(148, 163, 184, 0.5);
-  --border-color-active: rgba(56, 189, 248, 0.6);
+  --border-color-active: rgba(139, 92, 246, 0.6);
 
   --text-primary: #0f172a;
   --text-secondary: #334155;
@@ -186,7 +186,7 @@ body::before {
   background:
     radial-gradient(
       circle at 20% 30%,
-      rgba(59, 130, 246, 0.15),
+      rgba(139, 92, 246, 0.15),
       transparent 50%
     ),
     radial-gradient(
@@ -236,12 +236,12 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(139, 92, 246, 0.3);
   border-color: var(--accent-blue);
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background: rgba(56, 189, 248, 0.5);
+  background: rgba(139, 92, 246, 0.5);
   border-color: var(--accent-blue);
 }
 
@@ -355,7 +355,7 @@ body::before {
   outline: none;
   border-color: var(--accent-blue);
   background: var(--bg-glass-hover);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .password-input-wrapper {
@@ -448,7 +448,7 @@ body::before {
 }
 
 .login-form button[type="submit"]:focus-visible {
-  outline: 3px solid rgba(56, 189, 248, 0.5);
+  outline: 3px solid rgba(139, 92, 246, 0.5);
   outline-offset: 2px;
 }
 
@@ -520,7 +520,7 @@ body::before {
   max-height: 80vh;
   width: auto;
   border-radius: var(--radius-lg);
-  border: 2px solid rgba(56, 189, 248, 0.8);
+  border: 2px solid rgba(139, 92, 246, 0.8);
   background: var(--bg-glass);
   box-shadow: var(--shadow-2xl);
   transform: scale(0.95);
@@ -735,7 +735,7 @@ body.captcha-overlay-open {
   outline: none;
   border-color: var(--accent-blue);
   background: var(--bg-glass-hover);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .input:disabled {
@@ -794,11 +794,11 @@ select.input-sm:focus {
   outline: none !important;
   border-color: var(--accent-blue) !important;
   background: var(--bg-glass-hover) !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%238b5cf6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
   background-repeat: no-repeat !important;
   background-position: right var(--space-3) center !important;
   background-size: 12px 12px !important;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1) !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;
 }
 
 select:disabled,
@@ -1105,7 +1105,7 @@ select.input-sm:disabled {
   outline: none;
   border-color: var(--accent-blue);
   background: rgba(15, 23, 42, 0.7);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 /* Layout System - Google Drive-like */
@@ -1262,7 +1262,7 @@ select.input-sm:disabled {
   outline: none;
   border-color: var(--accent-blue);
   background: var(--bg-glass-hover);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .toolbar-select {
@@ -1568,10 +1568,10 @@ select.input-sm:disabled {
 }
 
 .drop-target {
-  background: rgba(56, 189, 248, 0.2) !important;
+  background: rgba(139, 92, 246, 0.2) !important;
   border: 2px dashed var(--accent-blue) !important;
   border-radius: var(--radius-lg);
-  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
 }
 
 .drag-drop-overlay {
@@ -1581,7 +1581,7 @@ select.input-sm:disabled {
   justify-content: center;
   pointer-events: none;
   z-index: var(--z-modal);
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(139, 92, 246, 0.1);
   border: 2px dashed var(--accent-blue);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(4px);
@@ -1638,9 +1638,9 @@ select.input-sm:disabled {
 .folder-card.selected,
 .file-row.selected,
 .folder-row.selected {
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(139, 92, 246, 0.15);
   border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
 }
 
 .selection-checkbox {
@@ -1991,7 +1991,7 @@ kbd {
 
 .upload-area.dragover {
   border-color: var(--accent-blue);
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(139, 92, 246, 0.1);
   transform: scale(1.02);
 }
 
@@ -2351,7 +2351,7 @@ kbd {
 }
 
 .search-highlight {
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(139, 92, 246, 0.3);
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
   font-weight: 600;
@@ -2388,7 +2388,7 @@ kbd {
 .search-input:focus {
   outline: none;
   border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 /* Folders Grid Styles */
@@ -2507,11 +2507,11 @@ kbd {
 .breadcrumb-home {
   font-weight: 600;
   color: var(--accent-blue);
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(139, 92, 246, 0.1);
 }
 
 .breadcrumb-home:hover {
-  background: rgba(56, 189, 248, 0.2);
+  background: rgba(139, 92, 246, 0.2);
   color: var(--accent-blue);
   transform: translateY(-1px);
 }
@@ -2903,14 +2903,14 @@ kbd {
 }
 
 .modal-btn-confirm {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 
 .modal-btn-confirm:hover {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
   transform: translateY(-1px);
 }
 
@@ -2934,7 +2934,7 @@ kbd {
 }
 
 .modal-btn:focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline: 2px solid rgba(139, 92, 246, 0.5);
   outline-offset: 2px;
 }
 
@@ -3072,8 +3072,8 @@ body.modal-open {
 }
 
 .status.info {
-  background: rgba(56, 189, 248, 0.15);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   color: var(--accent-blue);
 }
 
@@ -3731,7 +3731,7 @@ body.modal-open {
 .share-number-input:focus,
 .share-password-input:focus {
   outline: none;
-  border-color: rgba(59, 130, 246, 0.5);
+  border-color: rgba(139, 92, 246, 0.5);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -4003,9 +4003,9 @@ body {
   border-radius: 50%;
   background: radial-gradient(
     circle at 30% 30%,
-    rgba(59, 130, 246, 0.45),
+    rgba(139, 92, 246, 0.45),
     rgba(139, 92, 246, 0.4),
-    rgba(56, 189, 248, 0.25),
+    rgba(139, 92, 246, 0.25),
     transparent 60%
   );
   filter: blur(30px);
@@ -4180,7 +4180,7 @@ textarea::placeholder {
 
 /* Buttons */
 button {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   border: none;
   border-radius: 8px;
   color: #fff;
@@ -4441,7 +4441,7 @@ a:hover {
 .vault-login #login-submit-btn {
   width: 100%;
   padding: 0.85rem 1rem;
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   border: none;
   border-radius: 0.75rem;
   color: #fff;
@@ -4462,7 +4462,7 @@ a:hover {
 .vault-login #login-submit-btn:hover:not(:disabled) {
   opacity: 0.95;
   transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(56, 189, 248, 0.35);
+  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.35);
 }
 
 .vault-login button[type="submit"]:disabled,

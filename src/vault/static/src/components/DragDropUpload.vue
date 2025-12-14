@@ -98,12 +98,12 @@ export default {
 }
 
 .drag-drop-zone:hover {
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
 }
 
 .drag-drop-zone.drag-over {
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   background: rgba(56, 189, 248, 0.1);
   transform: scale(1.02);
 }

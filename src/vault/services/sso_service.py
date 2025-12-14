@@ -519,7 +519,6 @@ class SSOService:
             import hmac
 
             hmac.compare_digest(stored_state or "", state or "")
-            # Log the failure for debugging
             try:
                 current_app.logger.warning(
                     f"SSO OAuth2 callback: Missing state - stored_state={'present' if stored_state else 'missing'}, "

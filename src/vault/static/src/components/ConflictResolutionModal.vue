@@ -293,7 +293,7 @@ body.sidebar-collapsed .modal-overlay {
   width: 1.2rem;
   height: 1.2rem;
   cursor: pointer;
-  accent-color: #38bdf8;
+  accent-color: #8b5cf6;
 }
 
 .modal-buttons {
@@ -341,7 +341,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .modal-btn-confirm {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 

@@ -11,12 +11,16 @@
       <transition name="page" mode="out-in">
         <AppLayout
           v-if="needsAppLayout"
-          :key="'layout-' + currentRoute.path"
+          :key="'layout-authenticated'"
           @logout="handleLogout"
         >
           <component :is="Component" :key="currentRoute.path" />
         </AppLayout>
-        <component v-else :is="Component" :key="currentRoute.path" />
+        <component
+          v-else
+          :is="Component"
+          :key="'public-' + currentRoute.path"
+        />
       </transition>
     </router-view>
   </div>

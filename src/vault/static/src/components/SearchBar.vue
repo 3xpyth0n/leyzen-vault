@@ -531,7 +531,7 @@ export default {
 }
 
 .search-filter-btn.active {
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
 }
 
 .search-filters {
@@ -609,7 +609,7 @@ export default {
 }
 
 .toggle-option.active {
-  background: var(--accent-blue, #38bdf8);
+  background: var(--accent-blue, #8b5cf6);
   color: var(--text-primary, #f1f5f9);
   box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
 }
@@ -719,7 +719,7 @@ export default {
 }
 
 .search-highlight {
-  background-color: var(--accent-blue, #38bdf8);
+  background-color: var(--accent-blue, #8b5cf6);
   color: var(--text-primary, #f1f5f9);
   padding: 0.1em 0.2em;
   border-radius: 0.2em;

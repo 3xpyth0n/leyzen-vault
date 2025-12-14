@@ -93,7 +93,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #60a5fa;
+  color: #8b5cf6;
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -102,7 +102,7 @@ export default {
 }
 
 .btn-link:hover {
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .loading,
@@ -140,7 +140,7 @@ export default {
   justify-content: center;
   background: rgba(56, 189, 248, 0.2);
   border-radius: 50%;
-  color: #38bdf8;
+  color: #8b5cf6;
   font-weight: 600;
   font-size: 0.9rem;
 }
@@ -211,7 +211,7 @@ export default {
 
 .user-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #60a5fa);
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
   border-radius: 3px;
   transition: width 0.3s ease;
 }

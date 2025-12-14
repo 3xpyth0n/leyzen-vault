@@ -405,7 +405,6 @@ class ExternalStorageService:
             last_modified = response.get("LastModified")
 
             if last_modified is None:
-                # Log warning with full response info for debugging
                 response_keys = (
                     list(response.keys()) if hasattr(response, "keys") else "N/A"
                 )

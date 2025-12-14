@@ -269,7 +269,7 @@ export default {
   height: 100%;
   background: var(
     --accent-gradient,
-    linear-gradient(90deg, #38bdf8 0%, #3b82f6 100%)
+    linear-gradient(90deg, #8b5cf6 0%, #7c3aed 100%)
   );
   border-radius: 4px;
   transition: width 0.3s ease;

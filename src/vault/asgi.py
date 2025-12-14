@@ -122,7 +122,20 @@ def _load_full_app_in_background() -> None:
         _full_app_middleware = WSGIMiddleware(_flask_app)
         _full_app_ready.set()
         if _logger:
-            _logger.log("[INIT] Full application loaded and ready")
+            # Use lock to ensure only one worker logs the ready message
+            from vault.app import _log_once_with_lock
+
+            # Lock ID: Use two 32-bit integers (high, low) for "READY"
+            ADVISORY_LOCK_HIGH = 0x52454144  # "READ"
+            ADVISORY_LOCK_LOW = 0x59000000  # "Y" (padded)
+            _log_once_with_lock(
+                _flask_app,
+                _logger,
+                "[INIT] Full application loaded and ready",
+                ADVISORY_LOCK_HIGH,
+                ADVISORY_LOCK_LOW,
+                also_stdout=False,
+            )
     except Exception as e:
         import logging
 
@@ -143,6 +156,7 @@ class LazyWSGIMiddleware:
         """Handle ASGI requests, routing to minimal or full app."""
         if _full_app_ready.is_set() and _full_app_middleware is not None:
             # Full app is ready, use it
+            # WSGIMiddleware already handles Flask in a thread pool internally
             await _full_app_middleware(scope, receive, send)
         else:
             # Use minimal app (responds to /healthz immediately)

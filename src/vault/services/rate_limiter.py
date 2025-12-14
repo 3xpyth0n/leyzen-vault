@@ -135,8 +135,6 @@ class RateLimiter:
             import traceback
 
             logger = logging.getLogger(__name__)
-
-            # Log detailed error for debugging
             logger.error(
                 f"Rate limiting error in check_rate_limit (fail-closed): {e}\n{traceback.format_exc()}"
             )
@@ -353,7 +351,6 @@ class RateLimiter:
         except Exception as e:
             # SECURITY: Always fail-closed (deny request) if rate limiting fails
             # This prevents bypassing rate limits due to errors
-            # Log detailed error for debugging
             logger.error(
                 f"Rate limiting error in check_rate_limit_custom (fail-closed): {e}\n{traceback.format_exc()}"
             )

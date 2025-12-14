@@ -46,7 +46,7 @@ export default {
     },
     color: {
       type: String,
-      default: "#38bdf8",
+      default: "#8b5cf6",
     },
     legend: {
       type: Array,

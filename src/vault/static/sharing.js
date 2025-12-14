@@ -1,5 +1,14 @@
 /** @file sharing.js - Share file with download links */
 
+// Import fileKeyStorage dynamically (same pattern as files.js)
+let fileKeyStorage = null;
+(async () => {
+  try {
+    const module = await import("/static/src/services/fileKeyStorage.js");
+    fileKeyStorage = module;
+  } catch (e) {}
+})();
+
 // Helper function to safely set innerHTML with Trusted Types
 function setInnerHTML(element, html) {
   if (window.vaultHTMLPolicy) {
@@ -812,36 +821,104 @@ class SharingManager {
       return;
     }
 
-    // Get file key from localStorage directly (same method as getFileKey in files.js)
+    // Get file key - check IndexedDB first, then localStorage, then global functions
+    // Same method as getFileKey in files.js and SharedView.vue
     let fileKey = null;
-    try {
-      // Try to get key from localStorage first
-      const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-      const keyStr = keys[fileId];
-      if (keyStr) {
-        // Use VaultCrypto if available (from vault.js or global)
-        if (window.VaultCrypto && window.VaultCrypto.base64urlToArray) {
-          fileKey = window.VaultCrypto.base64urlToArray(keyStr);
-        } else {
-          // Fallback: try to decode base64url manually
+
+    // Ensure fileKeyStorage is loaded (import dynamically if needed)
+    let currentFileKeyStorage = fileKeyStorage;
+    if (!currentFileKeyStorage) {
+      try {
+        // Try multiple possible paths for the import
+        try {
+          const module = await import("/static/src/services/fileKeyStorage.js");
+          currentFileKeyStorage = module;
+          fileKeyStorage = module; // Cache for future use
+        } catch (e1) {
+          // Fallback: try relative path
           try {
-            const binaryString = atob(
-              keyStr.replace(/-/g, "+").replace(/_/g, "/"),
-            );
-            fileKey = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              fileKey[i] = binaryString.charCodeAt(i);
-            }
-          } catch (e) {
-            fileKey = null;
+            const module = await import("../src/services/fileKeyStorage.js");
+            currentFileKeyStorage = module;
+            fileKeyStorage = module;
+          } catch (e2) {
+            currentFileKeyStorage = null;
           }
         }
+      } catch (e) {
+        currentFileKeyStorage = null;
       }
-    } catch (e) {
-      fileKey = null;
     }
 
-    // If not in localStorage, try to get from global function
+    // First: Try to get key from IndexedDB via fileKeyStorage
+    if (currentFileKeyStorage) {
+      try {
+        const keyStr = await currentFileKeyStorage.getFileKey(fileId);
+        if (keyStr) {
+          // Use VaultCrypto if available (from vault.js or global)
+          if (window.VaultCrypto && window.VaultCrypto.base64urlToArray) {
+            fileKey = window.VaultCrypto.base64urlToArray(keyStr);
+          } else {
+            // Fallback: try to decode base64url manually
+            try {
+              const binaryString = atob(
+                keyStr.replace(/-/g, "+").replace(/_/g, "/"),
+              );
+              fileKey = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                fileKey[i] = binaryString.charCodeAt(i);
+              }
+            } catch (e) {
+              fileKey = null;
+            }
+          }
+        }
+      } catch (e) {
+        fileKey = null;
+      }
+    }
+
+    // Second: Fallback to localStorage if not found in IndexedDB
+    if (!fileKey) {
+      try {
+        const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+        const keyStr = keys[fileId];
+        if (keyStr) {
+          // Use VaultCrypto if available (from vault.js or global)
+          if (window.VaultCrypto && window.VaultCrypto.base64urlToArray) {
+            fileKey = window.VaultCrypto.base64urlToArray(keyStr);
+            // Store in IndexedDB for future use
+            if (currentFileKeyStorage) {
+              try {
+                await currentFileKeyStorage.storeFileKey(fileId, keyStr);
+              } catch (e) {}
+            }
+          } else {
+            // Fallback: try to decode base64url manually
+            try {
+              const binaryString = atob(
+                keyStr.replace(/-/g, "+").replace(/_/g, "/"),
+              );
+              fileKey = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                fileKey[i] = binaryString.charCodeAt(i);
+              }
+              // Store in IndexedDB for future use
+              if (currentFileKeyStorage) {
+                try {
+                  await currentFileKeyStorage.storeFileKey(fileId, keyStr);
+                } catch (e) {}
+              }
+            } catch (e) {
+              fileKey = null;
+            }
+          }
+        }
+      } catch (e) {
+        fileKey = null;
+      }
+    }
+
+    // Third: Try to get from global function
     if (!fileKey) {
       if (typeof getFileKey === "function") {
         fileKey = getFileKey(fileId);
@@ -851,7 +928,13 @@ class SharingManager {
     }
 
     // If still not found and we have vaultspaceId and vaultspaceKey, try to get from API
-    if (!fileKey && vaultspaceId && vaultspaceKey) {
+    // This is important: even if IndexedDB check failed, we should try API if we have the keys
+    if (
+      !fileKey &&
+      vaultspaceId &&
+      vaultspaceKey &&
+      vaultspaceKey instanceof CryptoKey
+    ) {
       try {
         const jwtToken = localStorage.getItem("jwt_token");
 
@@ -877,9 +960,21 @@ class SharingManager {
           if (fileData.file_key && fileData.file_key.encrypted_key) {
             // Decrypt file key using vaultspace key
             try {
-              // Use window.decryptFileKey if available (exposed from main.js)
-              if (window.decryptFileKey) {
-                const decryptedKey = await window.decryptFileKey(
+              let decryptFileKeyFunc = window.decryptFileKey;
+
+              // If window.decryptFileKey is not available, try to import it dynamically
+              if (!decryptFileKeyFunc) {
+                try {
+                  const encryptionModule =
+                    await import("/static/src/services/encryption.js");
+                  decryptFileKeyFunc = encryptionModule.decryptFileKey;
+                } catch (e) {
+                  // Fallback failed, continue without it
+                }
+              }
+
+              if (decryptFileKeyFunc) {
+                const decryptedKey = await decryptFileKeyFunc(
                   vaultspaceKey,
                   fileData.file_key.encrypted_key,
                   true, // extractable: true to allow export for storage
@@ -891,23 +986,37 @@ class SharingManager {
                 );
                 fileKey = new Uint8Array(keyArrayBuffer);
 
-                // Store in localStorage for future use
+                // Store in IndexedDB and localStorage for future use
                 try {
-                  const keys = JSON.parse(
-                    localStorage.getItem("vault_keys") || "{}",
-                  );
+                  let keyBase64 = null;
                   if (
                     window.VaultCrypto &&
                     window.VaultCrypto.arrayToBase64url
                   ) {
-                    keys[fileId] = window.VaultCrypto.arrayToBase64url(fileKey);
+                    keyBase64 = window.VaultCrypto.arrayToBase64url(fileKey);
                   } else {
                     // Fallback to base64
-                    keys[fileId] = btoa(
-                      String.fromCharCode.apply(null, fileKey),
-                    );
+                    keyBase64 = btoa(String.fromCharCode.apply(null, fileKey));
                   }
-                  localStorage.setItem("vault_keys", JSON.stringify(keys));
+
+                  // Store in IndexedDB first (preferred storage)
+                  if (currentFileKeyStorage && keyBase64) {
+                    try {
+                      await currentFileKeyStorage.storeFileKey(
+                        fileId,
+                        keyBase64,
+                      );
+                    } catch (e) {}
+                  }
+
+                  // Also store in localStorage as fallback
+                  try {
+                    const keys = JSON.parse(
+                      localStorage.getItem("vault_keys") || "{}",
+                    );
+                    keys[fileId] = keyBase64;
+                    localStorage.setItem("vault_keys", JSON.stringify(keys));
+                  } catch (e) {}
                 } catch (e) {}
               }
             } catch (e) {}
@@ -920,7 +1029,6 @@ class SharingManager {
     this.currentFileKey = fileKey;
 
     if (!fileKey) {
-      // Don't return - let the modal show, but warn user
       if (window.Notifications) {
         window.Notifications.warning(
           "Decryption key not found. You may need to decrypt this file first to share it.",

@@ -409,7 +409,7 @@
 </template>
 
 <script>
-import { files, vaultspaces, auth } from "../services/api";
+import { files, vaultspaces, auth, config } from "../services/api";
 import BatchActions from "../components/BatchActions.vue";
 import DragDropUpload from "../components/DragDropUpload.vue";
 import FileListView from "../components/FileListView.vue";
@@ -441,7 +441,12 @@ import { folderPicker } from "../utils/FolderPicker";
 import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
 import ConflictResolutionModal from "../components/ConflictResolutionModal.vue";
-import { zipFolder, extractZip } from "../services/zipService.js";
+import {
+  zipFolder,
+  extractZip,
+  zipFiles,
+  generateZipFileName,
+} from "../services/zipService.js";
 import { trash } from "../services/trash.js";
 import PasswordInput from "../components/PasswordInput.vue";
 
@@ -4421,13 +4426,108 @@ export default {
     },
 
     async handleBatchDownload(items) {
-      // Download files individually
-      // In the future, we could create a ZIP file on the server
-      for (const item of items) {
-        if (item.mime_type !== "application/x-directory") {
-          try {
-            await this.downloadFile(item);
-          } catch (err) {}
+      // Filter out directories
+      const filesToDownload = items.filter(
+        (item) => item.mime_type !== "application/x-directory",
+      );
+
+      if (filesToDownload.length === 0) {
+        this.showAlert({
+          type: "error",
+          title: "Error",
+          message: "No files selected for download",
+        });
+        return;
+      }
+
+      // If only one file, download individually
+      if (filesToDownload.length === 1) {
+        try {
+          await this.downloadFile(filesToDownload[0]);
+        } catch (err) {
+          this.showAlert({
+            type: "error",
+            title: "Download Failed",
+            message: "Download failed: " + err.message,
+          });
+        }
+        return;
+      }
+
+      // Multiple files: create ZIP
+      try {
+        if (!this.vaultspaceKey) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "VaultSpace key not loaded",
+          });
+          return;
+        }
+
+        // Get timezone from config
+        const configData = await config.getConfig();
+        const timezone = configData.timezone || "UTC";
+
+        // Generate ZIP filename
+        const zipFileName = generateZipFileName(timezone);
+
+        // Initialize download progress
+        this.downloading = true;
+        this.downloadProgress = 0;
+        this.downloadSpeed = 0;
+        this.downloadTimeRemaining = null;
+        this.downloadFileName = "Creating ZIP...";
+
+        // Create ZIP
+        const zipBlob = await zipFiles(
+          filesToDownload,
+          this.$route.params.id,
+          this.vaultspaceKey,
+          (current, total, message) => {
+            this.downloadProgress = Math.min(Math.round(current * 100), 100);
+            if (message) {
+              this.downloadFileName = message;
+            }
+          },
+          timezone,
+        );
+
+        // Download ZIP
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = zipFileName;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Update progress to complete
+        this.downloadProgress = 100;
+
+        // Hide progress after a short delay
+        setTimeout(() => {
+          this.downloadProgress = null;
+          this.downloadSpeed = 0;
+          this.downloadTimeRemaining = null;
+          this.downloadFileName = "";
+        }, 1000);
+      } catch (err) {
+        this.showAlert({
+          type: "error",
+          title: "Download Failed",
+          message: "Failed to create ZIP: " + err.message,
+        });
+        this.downloadProgress = null;
+        this.downloadSpeed = 0;
+        this.downloadTimeRemaining = null;
+        this.downloadFileName = "";
+      } finally {
+        this.downloading = false;
+        if (this.downloadProgress !== 100) {
+          this.downloadProgress = null;
+          this.downloadSpeed = 0;
+          this.downloadTimeRemaining = null;
+          this.downloadFileName = "";
         }
       }
     },
@@ -4534,6 +4634,7 @@ export default {
   pointer-events: auto;
 }
 
+/* Button overrides specific to view header - keep these as they override global styles */
 .view-header .btn-primary,
 .header-actions .btn-primary {
   background: transparent;
@@ -4630,7 +4731,7 @@ export default {
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   background: rgba(56, 189, 248, 0.1);
 }
 
@@ -4638,7 +4739,7 @@ export default {
 .grid-body-row.search-highlighted {
   position: relative;
   animation: searchHighlight 0.5s ease-in-out;
-  border-color: var(--accent-blue, #38bdf8) !important;
+  border-color: var(--accent-blue, #8b5cf6) !important;
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
 }
 
@@ -4808,58 +4909,16 @@ export default {
   border-radius: var(--radius-md);
 }
 
+/* Modal styles use global .modal-overlay and .modal from vault.css with sidebar-specific padding */
 .modal-overlay {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  background: rgba(7, 14, 28, 0.4) !important;
-  backdrop-filter: blur(15px) !important;
-  -webkit-backdrop-filter: blur(15px) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 10000 !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  padding: 2rem !important;
   padding-left: calc(
     2rem + 250px
   ) !important; /* Default: sidebar expanded (250px) */
-  overflow-y: auto !important;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
-}
-
-.modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  padding: 2rem !important;
-  border-radius: 2rem !important;
-  min-width: 400px !important;
-  max-width: 90vw !important;
-  max-height: 90vh !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
-  position: relative !important;
-  z-index: 10001 !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  color: var(--text-primary, #f1f5f9) !important;
-  display: flex !important;
-  flex-direction: column !important;
-  box-sizing: border-box !important;
-  overflow-y: auto !important;
 }
 
 .modal-header {
@@ -4896,48 +4955,10 @@ body.sidebar-collapsed .modal-overlay {
   margin-bottom: 1.5rem;
 }
 
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.modal .form-group {
-  margin-bottom: 1.5rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.modal .form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #cbd5e1;
-  font-weight: 500;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .modal .form-group input {
   width: 100%;
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
-  color: #e6eef6;
-  font-size: 0.95rem;
-  font-family: inherit;
   box-sizing: border-box;
-}
-
-.modal .form-group input:focus {
-  outline: none;
-  border-color: rgba(88, 166, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.modal .form-group input::placeholder {
-  color: rgba(148, 163, 184, 0.6);
 }
 
 .form-actions {
@@ -5245,7 +5266,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .password-modal-btn-unlock {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 

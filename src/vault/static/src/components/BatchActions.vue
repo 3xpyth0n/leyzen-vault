@@ -1,50 +1,49 @@
 <template>
-  <div v-if="selectedCount > 0" class="batch-actions-bar glass glass-card">
-    <div class="batch-info">
-      <span class="batch-count">{{ selectedCount }} item(s) selected</span>
-    </div>
-    <div class="batch-buttons">
-      <button
-        @click="showDeleteConfirm = true"
-        class="btn btn-danger btn-sm"
-        :disabled="processing"
-      >
-        Delete
-      </button>
-      <button
-        @click="handleDownload"
-        class="btn btn-secondary btn-sm"
-        :disabled="processing"
-      >
-        Download
-      </button>
-      <button @click="clearSelection" class="btn btn-secondary btn-sm">
-        Cancel
-      </button>
-    </div>
+  <Teleport to="body">
+    <div v-if="selectedCount > 0" class="batch-actions-bar glass glass-card">
+      <div class="batch-info">
+        <span class="batch-count">{{ selectedCount }} item(s) selected</span>
+      </div>
+      <div class="batch-buttons">
+        <button
+          @click="showDeleteConfirm = true"
+          class="btn btn-danger btn-sm"
+          :disabled="processing"
+        >
+          Delete
+        </button>
+        <button
+          @click="handleDownload"
+          class="btn btn-secondary btn-sm"
+          :disabled="processing"
+        >
+          Download
+        </button>
+      </div>
 
-    <!-- Delete Confirmation Modal -->
-    <ConfirmationModal
-      :show="showDeleteConfirm"
-      title="Delete Selected Items"
-      :message="`Are you sure you want to delete ${selectedCount} item(s)? This action cannot be undone.`"
-      confirm-text="Delete"
-      :dangerous="true"
-      :disabled="processing"
-      @confirm="confirmDelete"
-      @close="showDeleteConfirm = false"
-    />
+      <!-- Delete Confirmation Modal -->
+      <ConfirmationModal
+        :show="showDeleteConfirm"
+        title="Delete Selected Items"
+        :message="`Are you sure you want to delete ${selectedCount} item(s)? This action cannot be undone.`"
+        confirm-text="Delete"
+        :dangerous="true"
+        :disabled="processing"
+        @confirm="confirmDelete"
+        @close="showDeleteConfirm = false"
+      />
 
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="showAlertModal = false"
-      @ok="showAlertModal = false"
-    />
-  </div>
+      <!-- Alert Modal -->
+      <AlertModal
+        :show="showAlertModal"
+        :type="alertModalConfig.type"
+        :title="alertModalConfig.title"
+        :message="alertModalConfig.message"
+        @close="showAlertModal = false"
+        @ok="showAlertModal = false"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script>
@@ -128,10 +127,6 @@ export default {
       }
     };
 
-    const clearSelection = () => {
-      emit("clear");
-    };
-
     return {
       processing,
       showDeleteConfirm,
@@ -140,7 +135,6 @@ export default {
       alertModalConfig,
       confirmDelete,
       handleDownload,
-      clearSelection,
     };
   },
 };
@@ -157,10 +151,22 @@ export default {
   align-items: center;
   padding: 1rem 1.5rem;
   border-radius: 2rem;
-  z-index: 1000;
+  z-index: 100001 !important;
   min-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   gap: 1.5rem; /* Add gap between info and buttons */
+}
+
+.mobile-mode .batch-actions-bar {
+  min-width: auto;
+  width: calc(100% - 2rem);
+  max-width: 100%;
+  left: 1rem;
+  right: 1rem;
+  transform: none;
+  padding: 0.75rem 1rem;
+  gap: 1rem;
+  z-index: 100001 !important;
 }
 
 .batch-info {

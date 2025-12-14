@@ -62,6 +62,14 @@ def _is_retryable_error(exception: Exception) -> bool:
     if "connection" in error_str and ("lost" in error_str or "closed" in error_str):
         return True
 
+    # Check for pool timeout errors (can be retried)
+    if "timeout" in error_str and ("pool" in error_str or "connection" in error_str):
+        return True
+
+    # Check for TimeoutError from SQLAlchemy pool
+    if error_type == "TimeoutError" or "timeouterror" in error_type.lower():
+        return True
+
     return False
 
 

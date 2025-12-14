@@ -266,13 +266,15 @@
               v-if="
                 hasThumbnail(item) &&
                 (isImageFile(item) || isAudioFile(item)) &&
-                getThumbnailUrl(item.id)
+                getThumbnailUrl(item.id) &&
+                getThumbnailUrl(item.id).length > 0
               "
               :key="`thumb-${item.id}-${thumbnailUpdateTrigger}`"
               :src="getThumbnailUrl(item.id)"
               :alt="item.original_name"
               class="file-thumbnail"
               @error="handleThumbnailError"
+              @load="thumbnailUpdateTrigger++"
             />
             <span v-else v-html="getFileIcon(item, 'large')"></span>
             <span
@@ -321,7 +323,15 @@
 </template>
 
 <script>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  watchEffect,
+  nextTick,
+  onMounted,
+  onUnmounted,
+} from "vue";
 import { thumbnails, files } from "../services/api";
 import { debounce } from "../utils/debounce";
 import { decryptFile, decryptFileKey } from "../services/encryption";
@@ -1579,12 +1589,12 @@ export default {
     };
 
     const hasThumbnail = (file) => {
-      // For images, always try to show thumbnail (either from storage or load image directly)
-      // For audio files, check if thumbnail URL is already cached (meaning cover was found)
-      // The actual check is done when loading the thumbnail
+      // For images and audio files, always try to show thumbnail
+      // This allows the loading to be triggered even if thumbnail is not yet loaded
+      // The actual check if thumbnail exists is done in getThumbnailUrl()
       return (
         isImageFile(file) ||
-        (isAudioFile(file) && window.__leyzenThumbnailUrls.has(file.id)) ||
+        isAudioFile(file) ||
         generatedThumbnails.value.has(file.id)
       );
     };
@@ -2139,7 +2149,17 @@ export default {
                   !failedThumbnails.value.has(file.id)
                 ) {
                   // Try to load thumbnail first (will fallback to image/audio cover if needed)
-                  loadThumbnailUrl(file.id, file);
+                  // Load immediately for visible items
+                  const rect = card.getBoundingClientRect();
+                  const isVisible =
+                    rect.top < window.innerHeight + 50 && rect.bottom > -50;
+
+                  if (isVisible) {
+                    // Use await to ensure loading completes for visible items
+                    loadThumbnailUrl(file.id, file).catch(() => {
+                      // Silently handle errors
+                    });
+                  }
 
                   // Also observe for thumbnail generation if needed (images only)
                   if (isImageFile(file)) {
@@ -2168,33 +2188,121 @@ export default {
         if (props.viewMode === "grid") {
           setupThumbnailObserver();
         }
+        // Also load thumbnails when files/folders change
+        if (allItems.value.length > 0) {
+          loadExistingThumbnails();
+        }
       },
-      { deep: true },
+      { deep: true, flush: "post" },
     );
+
+    // Track if thumbnails are currently being loaded to avoid duplicate calls
+    const isLoadingThumbnails = ref(false);
+
+    // Retry mechanism to ensure thumbnails load
+    let thumbnailRetryInterval = null;
 
     // Load existing thumbnails on mount
     const loadExistingThumbnails = async () => {
+      // Check if there are any items to process
+      if (!allItems.value || allItems.value.length === 0) {
+        return;
+      }
+
+      // Prevent duplicate calls
+      if (isLoadingThumbnails.value) {
+        return;
+      }
+
       // Load thumbnails for all image files (will fallback to image if thumbnail doesn't exist)
       const filesToLoad = allItems.value.filter(
         (file) => isImageFile(file) || isAudioFile(file),
       );
 
-      // Wait for DOM to be ready
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // If no image or audio files, nothing to load
+      if (filesToLoad.length === 0) {
+        return;
+      }
 
-      // Load thumbnails sequentially to avoid race conditions
-      for (const file of filesToLoad) {
-        await loadThumbnailUrl(file.id, file);
-        // Small delay between loads to ensure reactivity
+      isLoadingThumbnails.value = true;
+
+      try {
+        // Wait for DOM to be ready
         await nextTick();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Load thumbnails sequentially to avoid race conditions
+        for (const file of filesToLoad) {
+          // Skip if already loaded
+          if (window.__leyzenThumbnailUrls.has(file.id)) {
+            continue;
+          }
+
+          try {
+            await loadThumbnailUrl(file.id, file);
+            thumbnailUpdateTrigger.value++;
+            await nextTick();
+          } catch (error) {
+            // Continue loading other thumbnails even if one fails
+          }
+
+          await nextTick();
+        }
+
+        thumbnailUpdateTrigger.value++;
+        await nextTick();
+      } finally {
+        isLoadingThumbnails.value = false;
+      }
+    };
+
+    // Retry function to ensure thumbnails are loaded
+    const retryLoadThumbnails = () => {
+      if (allItems.value.length === 0) {
+        return;
+      }
+
+      const imageAndAudioFiles = allItems.value.filter(
+        (file) => isImageFile(file) || isAudioFile(file),
+      );
+
+      if (imageAndAudioFiles.length === 0) {
+        return;
+      }
+
+      // Check if any thumbnails are missing
+      const missingThumbnails = imageAndAudioFiles.filter(
+        (file) => !window.__leyzenThumbnailUrls.has(file.id),
+      );
+
+      if (missingThumbnails.length > 0 && !isLoadingThumbnails.value) {
+        loadExistingThumbnails();
       }
     };
 
     // Setup observer on mount
     onMounted(() => {
-      // Load existing thumbnails
-      loadExistingThumbnails();
+      // Wait a bit for props to be available, then load thumbnails
+      nextTick(() => {
+        if (allItems.value.length > 0) {
+          loadExistingThumbnails();
+        }
+      });
+
+      // Also try loading after a delay in case props arrive later
+      setTimeout(() => {
+        if (allItems.value.length > 0) {
+          loadExistingThumbnails();
+        }
+        if (props.viewMode === "grid") {
+          setupThumbnailObserver();
+        }
+      }, 500);
+
+      // Set up periodic retry to ensure thumbnails load
+      thumbnailRetryInterval = setInterval(() => {
+        retryLoadThumbnails();
+      }, 1000);
 
       if (props.viewMode === "grid") {
         // Delay to ensure DOM is fully rendered
@@ -2230,19 +2338,49 @@ export default {
       }
     });
 
-    // Watch for new files with thumbnails
-    watch(
-      () => allItems.value,
-      () => {
-        loadExistingThumbnails();
-      },
-      { deep: true },
-    );
+    // Track last loaded items to avoid unnecessary reloads
+    const lastLoadedItemsHash = ref("");
+
+    // Helper to create a hash of items for comparison
+    const getItemsHash = (items) => {
+      if (!items || items.length === 0) return "";
+      return items
+        .map((item) => item.id)
+        .sort()
+        .join(",");
+    };
+
+    watchEffect(() => {
+      const files = props.files;
+      const folders = props.folders;
+      const items = allItems.value;
+
+      if (items && items.length > 0) {
+        const currentHash = getItemsHash(items);
+
+        if (currentHash !== lastLoadedItemsHash.value) {
+          lastLoadedItemsHash.value = currentHash;
+
+          nextTick(() => {
+            loadExistingThumbnails();
+            if (props.viewMode === "grid") {
+              setupThumbnailObserver();
+            }
+          });
+        }
+      }
+    });
 
     // Cleanup observer on unmount
     onUnmounted(() => {
       // Remove mobile mode listener
       window.removeEventListener("mobile-mode-changed", handleMobileModeChange);
+
+      // Clear retry interval
+      if (thumbnailRetryInterval) {
+        clearInterval(thumbnailRetryInterval);
+        thumbnailRetryInterval = null;
+      }
 
       if (thumbnailObserver) {
         thumbnailObserver.disconnect();
@@ -2435,7 +2573,7 @@ export default {
   background: rgba(88, 166, 255, 0.15);
   border-color: rgba(88, 166, 255, 0.3);
   opacity: 1;
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
 .view-toggle .btn-icon svg {
@@ -2545,7 +2683,7 @@ export default {
 }
 
 .grid-body-row.focused > .grid-cell:first-child {
-  outline: 2px solid var(--accent-blue, #38bdf8);
+  outline: 2px solid var(--accent-blue, #8b5cf6);
   outline-offset: -2px;
   border-radius: 2px 0 0 2px;
 }
@@ -2556,7 +2694,7 @@ export default {
 
 .grid-body-row.drop-target > .grid-cell {
   background: rgba(56, 189, 248, 0.2);
-  border: 2px dashed var(--accent-blue, #38bdf8);
+  border: 2px dashed var(--accent-blue, #8b5cf6);
 }
 
 .grid-body-row.dragging > .grid-cell {
@@ -2654,18 +2792,18 @@ export default {
 }
 
 .column-resizer:hover {
-  background: var(--accent-blue, #38bdf8);
+  background: var(--accent-blue, #8b5cf6);
   opacity: 0.6;
 }
 
 .column-resizer:active {
-  background: var(--accent-blue, #38bdf8);
+  background: var(--accent-blue, #8b5cf6);
   opacity: 1;
 }
 
 .sort-indicator {
   margin-left: 0.5rem;
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
 }
 
 .file-name {
@@ -2716,7 +2854,7 @@ export default {
 .inline-edit-input {
   flex: 1;
   background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border: 1px solid var(--accent-blue, #38bdf8);
+  border: 1px solid var(--accent-blue, #8b5cf6);
   border-radius: 4px;
   padding: 0.25rem 0.5rem;
   color: var(--text-primary, #f1f5f9);
@@ -2727,7 +2865,7 @@ export default {
 
 .inline-edit-input:focus {
   outline: none;
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
@@ -2801,13 +2939,13 @@ export default {
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   background: rgba(56, 189, 248, 0.1);
 }
 
 .file-card.drop-target {
   background: rgba(56, 189, 248, 0.2);
-  border: 2px dashed var(--accent-blue, #38bdf8);
+  border: 2px dashed var(--accent-blue, #8b5cf6);
 }
 
 .file-card.dragging {

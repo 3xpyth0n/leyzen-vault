@@ -127,7 +127,7 @@
                   hasAvailableLink(file.share_links)
                 "
                 @click="openSendEmailModalForFile(file)"
-                class="btn btn-small btn-send-email"
+                class="btn btn-small btn-primary"
                 :title="'Send share link via email'"
               >
                 Send Email
@@ -188,7 +188,7 @@
               <div class="link-actions">
                 <button
                   @click="copyLink(link, file.id)"
-                  class="btn btn-small"
+                  class="btn btn-small btn-primary"
                   :disabled="
                     !isLinkAvailable(link) || !hasDecryptionKey(link, file.id)
                   "
@@ -1401,36 +1401,10 @@ export default {
   margin-left: auto;
 }
 
-.file-actions .btn,
-.file-actions .btn-send-email {
+.file-actions .btn {
   margin: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
-}
-
-.btn.btn-small.btn-send-email {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0.5rem 1rem !important;
-  font-size: 0.875rem;
-  white-space: nowrap;
-  line-height: 1.5 !important;
-  text-align: center;
-  vertical-align: middle;
-  transition: all 0.3s ease;
-  transform: translateY(0);
-}
-
-.btn.btn-small.btn-send-email:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.4);
-  opacity: 0.95;
-}
-
-.btn.btn-small.btn-send-email:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(88, 166, 255, 0.3);
 }
 
 .file-icon {
@@ -1844,7 +1818,7 @@ export default {
 }
 
 .email-modal .btn-primary {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 

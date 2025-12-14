@@ -656,7 +656,7 @@ export default {
 
 .custom-select-option.is-selected {
   background: rgba(56, 189, 248, 0.1);
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .custom-select-option-text {

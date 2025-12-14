@@ -101,11 +101,62 @@ fi
 # Synchronize database backups on startup
 if [ -f "/app/infra/vault/sync_backups.py" ] && command -v python3 >/dev/null 2>&1; then
   log "Running backup synchronization..."
-  # Capture output and log it
+  # Capture output and log it line by line to ensure consistent prefixing
   SYNC_OUTPUT=$(python3 /app/infra/vault/sync_backups.py 2>&1)
   if [ -n "$SYNC_OUTPUT" ]; then
-    log "$SYNC_OUTPUT"
+    echo "$SYNC_OUTPUT" | while IFS= read -r line; do
+      log "$line"
+    done
   fi
+fi
+
+# Adjust uvicorn log level based on LEYZEN_ENVIRONMENT
+if [ "$1" = "uvicorn" ]; then
+  LEYZEN_ENV="${LEYZEN_ENVIRONMENT:-}"
+  LEYZEN_ENV=$(echo "$LEYZEN_ENV" | tr '[:upper:]' '[:lower:]' | xargs)
+  
+  # Determine log level: debug for dev/development, error for production (default)
+  if [ "$LEYZEN_ENV" = "dev" ] || [ "$LEYZEN_ENV" = "development" ]; then
+    UVICORN_LOG_LEVEL="debug"
+  else
+    UVICORN_LOG_LEVEL="error"
+  fi
+  
+  # Check if --log-level already exists in arguments
+  HAS_LOG_LEVEL=false
+  for arg in "$@"; do
+    if [ "$arg" = "--log-level" ]; then
+      HAS_LOG_LEVEL=true
+      break
+    fi
+  done
+  
+  # Build new arguments array, replacing or adding --log-level
+  TEMP_ARGS=""
+  SKIP_NEXT=false
+  ARG_COUNT=0
+  
+  for arg in "$@"; do
+    ARG_COUNT=$((ARG_COUNT + 1))
+    if [ "$SKIP_NEXT" = true ]; then
+      SKIP_NEXT=false
+      continue
+    fi
+    if [ "$arg" = "--log-level" ]; then
+      # Replace existing --log-level with the one from environment
+      TEMP_ARGS="$TEMP_ARGS --log-level $UVICORN_LOG_LEVEL"
+      SKIP_NEXT=true
+    else
+      TEMP_ARGS="$TEMP_ARGS $arg"
+      # If we've processed the second argument, haven't found --log-level yet, and it doesn't exist, insert it
+      if [ "$HAS_LOG_LEVEL" = false ] && [ $ARG_COUNT -eq 2 ]; then
+        TEMP_ARGS="$TEMP_ARGS --log-level $UVICORN_LOG_LEVEL"
+      fi
+    fi
+  done
+  
+  # Rebuild the argument list
+  eval "set -- $TEMP_ARGS"
 fi
 
 # Drop privileges to vault user if running as root

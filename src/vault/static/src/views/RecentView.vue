@@ -243,7 +243,7 @@
 <script>
 import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { useRouter } from "vue-router";
-import { files, auth, vaultspaces } from "../services/api";
+import { files, auth, vaultspaces, config } from "../services/api";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
 import FilePreview from "../components/FilePreview.vue";
@@ -255,6 +255,7 @@ import { folderPicker } from "../utils/FolderPicker";
 import { decryptFileKey, decryptFile } from "../services/encryption.js";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import PasswordInput from "../components/PasswordInput.vue";
+import { zipFiles, generateZipFileName } from "../services/zipService.js";
 import {
   getUserMasterKey,
   decryptVaultSpaceKeyForUser,
@@ -262,6 +263,11 @@ import {
   getCachedVaultSpaceKey,
   createVaultSpaceKey,
 } from "../services/keyManager.js";
+import {
+  getFileKey as getFileKeyFromStorage,
+  storeFileKey,
+} from "../services/fileKeyStorage.js";
+import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
 
 export default {
   name: "RecentView",
@@ -303,6 +309,7 @@ export default {
       title: "Error",
       message: "",
     });
+    const vaultspaceKeys = ref({});
 
     const daysOptions = [
       { value: 7, label: "Last 7 days" },
@@ -376,13 +383,13 @@ export default {
       const loadKeyPromises = Array.from(vaultspaceIds).map(
         async (vaultspaceId) => {
           try {
-            // Check if key is already cached
-            const cachedKey = getCachedVaultSpaceKey(vaultspaceId);
-            if (cachedKey) {
-              return; // Already cached
+            // Check if key is already in vaultspaceKeys
+            if (vaultspaceKeys.value[vaultspaceId]) {
+              return; // Already loaded
             }
 
-            // Try to get encrypted VaultSpace key from server
+            // Always decrypt from server with extractable: true
+            // Even if key is cached, we need it to be extractable for file key decryption
             const vaultspaceKeyData = await vaultspaces.getKey(vaultspaceId);
 
             if (!vaultspaceKeyData) {
@@ -397,16 +404,20 @@ export default {
               const vaultspaceKey = await decryptVaultSpaceKeyForUser(
                 userMasterKey,
                 encryptedKey,
+                true, // extractable to use for file key decryption
               );
               cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+              vaultspaceKeys.value[vaultspaceId] = vaultspaceKey;
             } else {
               // Decrypt VaultSpace key with user master key
               try {
                 const vaultspaceKey = await decryptVaultSpaceKeyForUser(
                   userMasterKey,
                   vaultspaceKeyData.encrypted_key,
+                  true, // extractable to use for file key decryption
                 );
                 cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+                vaultspaceKeys.value[vaultspaceId] = vaultspaceKey;
               } catch (decryptErr) {
                 // Decryption failed - VaultSpace key was encrypted with a different master key
                 // Silently fail for this vaultspace
@@ -578,7 +589,18 @@ export default {
           const fileKey = await decryptFileKey(
             vaultspaceKey,
             fileData.file_key.encrypted_key,
+            true, // extractable to store it
           );
+
+          // Store file key in IndexedDB for future use (e.g., sharing)
+          try {
+            const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+            const keyArray = new Uint8Array(exportedKey);
+            const keyBase64 = arrayToBase64url(keyArray);
+            await storeFileKey(item.id, keyBase64);
+          } catch (e) {
+            // Silently fail if storage fails
+          }
 
           // Decrypt file
           const decrypted = await decryptFile(fileKey, encrypted.buffer, iv);
@@ -629,15 +651,79 @@ export default {
         editingItemId.value = null;
       } else if (action === "share") {
         // Open share modal using SharingManager
-        if (window.sharingManager) {
-          const vaultspaceKey = await window.keyManager?.getVaultSpaceKey(
+        // Always load vaultspaceKey from server with extractable: true
+        // This ensures the key is always extractable for file key decryption
+        let vaultspaceKey = null;
+
+        try {
+          const userMasterKey = await getUserMasterKey();
+          if (!userMasterKey) {
+            showAlert({
+              type: "error",
+              title: "Error",
+              message:
+                "Unable to access encryption keys. Please unlock your files first.",
+            });
+            return;
+          }
+
+          const vaultspaceKeyData = await vaultspaces.getKey(
             item.vaultspace_id,
           );
+          if (!vaultspaceKeyData) {
+            // Key doesn't exist, create it
+            const currentUser = await auth.getCurrentUser();
+            const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
+            await vaultspaces.share(
+              item.vaultspace_id,
+              currentUser.id,
+              encryptedKey,
+            );
+            vaultspaceKey = await decryptVaultSpaceKeyForUser(
+              userMasterKey,
+              encryptedKey,
+              true, // extractable to use for file key decryption
+            );
+          } else {
+            // Decrypt VaultSpace key with user master key
+            vaultspaceKey = await decryptVaultSpaceKeyForUser(
+              userMasterKey,
+              vaultspaceKeyData.encrypted_key,
+              true, // extractable to use for file key decryption
+            );
+          }
+
+          // Cache the key for future use
+          cacheVaultSpaceKey(item.vaultspace_id, vaultspaceKey);
+          vaultspaceKeys.value[item.vaultspace_id] = vaultspaceKey;
+        } catch (e) {
+          showAlert({
+            type: "error",
+            title: "Error",
+            message:
+              "Failed to load encryption key: " +
+              (e.message || "Unknown error"),
+          });
+          return;
+        }
+
+        if (!vaultspaceKey) {
+          showAlert({
+            type: "error",
+            title: "Error",
+            message: "Unable to load encryption key for this VaultSpace.",
+          });
+          return;
+        }
+
+        if (window.sharingManager) {
+          const safeVaultspaceKey =
+            vaultspaceKey !== undefined ? vaultspaceKey : null;
           window.sharingManager.showShareModal(
             item.id,
             "file",
             item.vaultspace_id,
-            vaultspaceKey,
+            safeVaultspaceKey,
           );
         } else {
           // Fallback: try to load sharing manager
@@ -647,16 +733,15 @@ export default {
             retries++;
             if (window.sharingManager) {
               clearInterval(checkInterval);
-              window.keyManager
-                ?.getVaultSpaceKey(item.vaultspace_id)
-                .then((key) => {
-                  window.sharingManager.showShareModal(
-                    item.id,
-                    "file",
-                    item.vaultspace_id,
-                    key,
-                  );
-                });
+              // Ensure vaultspaceKey is never undefined - use null if undefined
+              const safeVaultspaceKey =
+                vaultspaceKey !== undefined ? vaultspaceKey : null;
+              window.sharingManager.showShareModal(
+                item.id,
+                "file",
+                item.vaultspace_id,
+                safeVaultspaceKey,
+              );
             } else if (retries >= maxRetries) {
               clearInterval(checkInterval);
               showAlert({
@@ -869,8 +954,23 @@ export default {
     };
 
     const handleBatchDownload = async (items) => {
-      // Download each file individually
-      for (const item of items) {
+      // Filter out directories
+      const filesToDownload = items.filter(
+        (item) => item.mime_type !== "application/x-directory",
+      );
+
+      if (filesToDownload.length === 0) {
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "No files selected for download",
+        });
+        return;
+      }
+
+      // If only one file, download individually
+      if (filesToDownload.length === 1) {
+        const item = filesToDownload[0];
         try {
           // Download file
           const encryptedDataArrayBuffer = await files.download(
@@ -905,7 +1005,18 @@ export default {
           const fileKey = await decryptFileKey(
             vaultspaceKey,
             fileData.file_key.encrypted_key,
+            true, // extractable to store it
           );
+
+          // Store file key in IndexedDB for future use (e.g., sharing)
+          try {
+            const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+            const keyArray = new Uint8Array(exportedKey);
+            const keyBase64 = arrayToBase64url(keyArray);
+            await storeFileKey(item.id, keyBase64);
+          } catch (e) {
+            // Silently fail if storage fails
+          }
 
           // Decrypt file
           const decrypted = await decryptFile(fileKey, encrypted.buffer, iv);
@@ -925,6 +1036,51 @@ export default {
             message: `Failed to download ${item.original_name}: ${err.message}`,
           });
         }
+        clearSelection();
+        return;
+      }
+
+      // Multiple files: create ZIP
+      try {
+        // Get timezone from config
+        const configData = await config.getConfig();
+        const timezone = configData.timezone || "UTC";
+
+        // Generate ZIP filename
+        const zipFileName = generateZipFileName(timezone);
+
+        // Create ZIP with getter function for vaultspace keys
+        const getVaultspaceKey = async (vaultspaceId) => {
+          const key = await window.keyManager?.getVaultSpaceKey(vaultspaceId);
+          if (!key) {
+            throw new Error(
+              `VaultSpace key not found for vaultspace ${vaultspaceId}. Please refresh the page.`,
+            );
+          }
+          return key;
+        };
+
+        const zipBlob = await zipFiles(
+          filesToDownload,
+          (fileItem) => fileItem.vaultspace_id,
+          getVaultspaceKey,
+          null,
+          timezone,
+        );
+
+        // Download ZIP
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = zipFileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showAlert({
+          type: "error",
+          title: "Download Failed",
+          message: "Failed to create ZIP: " + err.message,
+        });
       }
       clearSelection();
     };
@@ -1019,6 +1175,7 @@ export default {
       openPasswordModal,
       handleBatchDelete,
       handleBatchDownload,
+      vaultspaceKeys,
     };
   },
 };
@@ -1362,7 +1519,7 @@ export default {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 

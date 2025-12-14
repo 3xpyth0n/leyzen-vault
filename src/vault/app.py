@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 import ipaddress
 
+logger = logging.getLogger(__name__)
+
 from flask import Flask, current_app
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -135,7 +137,6 @@ try:
     from .blueprints.file_events_api import file_events_api_bp  # noqa: E402
 except Exception as e:
     # Log error but don't fail startup
-    logger = logging.getLogger(__name__)
     logger.warning(f"Failed to import file_events_api_bp: {e}")
     file_events_api_bp = None
 from .blueprints.internal_api import internal_api_bp  # noqa: E402
@@ -665,17 +666,17 @@ def _calculate_pool_settings(workers: int) -> dict[str, object]:
     Returns:
         Dictionary with SQLAlchemy engine options for connection pooling
     """
-    # Adaptive pool sizing: conservative for small deployments, scaling up for larger ones
-    # Formula: pool_size starts at 5 for small deployments, scales with workers
-    # This provides ~15-30 connections per worker, which is sufficient for concurrent requests
-    pool_size = max(5, workers * 2)
+    # Adaptive pool sizing: increased to prevent worker blocking
+    # Formula: pool_size starts at 10 for small deployments, scales with workers
+    # This provides ~30-60 connections per worker to handle concurrent requests and prevent blocking
+    pool_size = max(10, workers * 3)
 
     # max_overflow: additional connections for traffic spikes
-    # Smaller relative overhead for small deployments, more headroom for larger ones
-    max_overflow = max(10, workers * 3)
+    # Increased to provide more headroom and prevent timeouts
+    max_overflow = max(15, workers * 4)
 
     # Cap max_overflow to prevent excessive connections (safety limit)
-    max_overflow = min(max_overflow, 100)
+    max_overflow = min(max_overflow, 150)
 
     # Warn if configuration seems excessive (rare edge case)
     if pool_size > 50:
@@ -690,7 +691,7 @@ def _calculate_pool_settings(workers: int) -> dict[str, object]:
     return {
         "pool_size": pool_size,
         "max_overflow": max_overflow,
-        "pool_timeout": 30,  # Timeout when getting connection from pool
+        "pool_timeout": 1,  # Timeout when getting connection from pool
         "pool_recycle": 3600,  # Recycle connections after 1 hour to prevent stale connections
         "pool_pre_ping": True,  # Verify connections before using (detects stale connections)
         "connect_args": {
@@ -702,6 +703,175 @@ def _calculate_pool_settings(workers: int) -> dict[str, object]:
             "options": "-c lock_timeout=5000 -c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000",
         },
     }
+
+
+def _log_once_with_lock(
+    app: Flask,
+    logger,
+    message: str,
+    lock_high: int,
+    lock_low: int,
+    also_stdout: bool = False,
+) -> bool:
+    """Log a message once using PostgreSQL advisory lock.
+
+    Uses a PostgreSQL advisory lock to ensure only one worker logs the message,
+    even if the database was already initialized.
+
+    Args:
+        app: Flask app instance
+        logger: Logger instance to use for logging
+        message: Message to log
+        lock_high: High 32 bits of the advisory lock ID
+        lock_low: Low 32 bits of the advisory lock ID
+        also_stdout: If True, also print to stdout for docker logs visibility
+
+    Returns:
+        True if this worker logged the message, False otherwise
+    """
+    import os
+    import fcntl
+
+    # Try PostgreSQL lock first (preferred method)
+    try:
+        with app.app_context():
+            from sqlalchemy import text as sql_text
+
+            # Try to acquire lock (non-blocking)
+            lock_acquired = False
+            try:
+                result = db.session.execute(
+                    sql_text("SELECT pg_try_advisory_lock(:lock_high, :lock_low)"),
+                    {
+                        "lock_high": lock_high,
+                        "lock_low": lock_low,
+                    },
+                )
+                lock_acquired = result.scalar() is True
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+            if lock_acquired:
+                try:
+                    logger.log(message)
+                    logger.flush()
+                    if also_stdout:
+                        print(message, flush=True)
+
+                    # Release lock
+                    try:
+                        db.session.execute(
+                            sql_text(
+                                "SELECT pg_advisory_unlock(:lock_high, :lock_low)"
+                            ),
+                            {
+                                "lock_high": lock_high,
+                                "lock_low": lock_low,
+                            },
+                        )
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+
+                    return True
+                except Exception:
+                    # Release lock on error
+                    try:
+                        db.session.execute(
+                            sql_text(
+                                "SELECT pg_advisory_unlock(:lock_high, :lock_low)"
+                            ),
+                            {
+                                "lock_high": lock_high,
+                                "lock_low": lock_low,
+                            },
+                        )
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                    return False
+            else:
+                # Another worker is logging, return False
+                return False
+    except Exception:
+        # If database is not available, use file-based lock as fallback
+        lock_file_path = f"/tmp/leyzen_lock_{lock_high}_{lock_low}.lock"
+        try:
+            lock_file = open(lock_file_path, "w")
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Check if file is empty (first time)
+                lock_file.seek(0, 2)  # Seek to end
+                if lock_file.tell() == 0:
+                    # First worker to acquire lock, log the message
+                    logger.log(message)
+                    logger.flush()
+                    if also_stdout:
+                        print(message, flush=True)
+                    lock_file.write("logged")
+                    lock_file.flush()
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    lock_file.close()
+                    return True
+                else:
+                    # Already logged by another worker
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    lock_file.close()
+                    return False
+            except BlockingIOError:
+                # Another worker has the lock
+                lock_file.close()
+                return False
+        except Exception:
+            # If file lock fails, log anyway to ensure message is shown
+            logger.log(message)
+            logger.flush()
+            if also_stdout:
+                print(message, flush=True)
+            return True
+
+
+def _log_dev_mode_warning_once(app: Flask, logger) -> bool:
+    """Log development mode warning once using PostgreSQL advisory lock.
+
+    Uses a PostgreSQL advisory lock to ensure only one worker logs the warning,
+    even if the database was already initialized.
+
+    Args:
+        app: Flask app instance
+        logger: Logger instance to use for logging
+
+    Returns:
+        True if this worker logged the warning, False otherwise
+    """
+    # Lock ID: Use two 32-bit integers (high, low) for "DEVWARN"
+    ADVISORY_LOCK_HIGH = 0x44455657  # "DEVM"
+    ADVISORY_LOCK_LOW = 0x41524E00  # "WARN" (padded)
+
+    warning_msg = (
+        "[WARNING] Application is running in DEVELOPMENT mode. "
+        "This should never be used in production. "
+        "Set LEYZEN_ENVIRONMENT=production for production deployments."
+    )
+
+    # Log both messages
+    _log_once_with_lock(
+        app,
+        logger,
+        "[INIT] Running in DEVELOPMENT mode - permissive security checks",
+        ADVISORY_LOCK_HIGH,
+        ADVISORY_LOCK_LOW,
+        also_stdout=True,
+    )
+    return _log_once_with_lock(
+        app,
+        logger,
+        warning_msg,
+        ADVISORY_LOCK_HIGH,
+        ADVISORY_LOCK_LOW,
+        also_stdout=True,
+    )
 
 
 def create_app(
@@ -780,6 +950,26 @@ def create_app(
             )
 
     app.config["IS_PRODUCTION"] = is_production
+
+    # Configure Python logging based on environment
+    if not is_production:
+        # In development mode, enable DEBUG level logging to stdout/stderr
+        # This allows uvicorn to capture and display logger.info and logger.debug calls
+        log_module = sys.modules["logging"]
+        root_logger = log_module.getLogger()
+        root_logger.setLevel(log_module.DEBUG)
+        # Remove existing handlers to avoid duplicates
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        # Add StreamHandler to stdout so uvicorn can capture logs
+        stream_handler = log_module.StreamHandler(sys.stdout)
+        stream_handler.setLevel(log_module.DEBUG)
+        formatter = log_module.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        stream_handler.setFormatter(formatter)
+        root_logger.addHandler(stream_handler)
+    # In production, keep default WARNING level (no handler added)
 
     # Load settings
     try:
@@ -940,18 +1130,27 @@ def create_app(
                     "[INIT] Running in PRODUCTION mode - security checks enabled"
                 )
         else:
-            if db_initialized_by_this_worker:
+            # Use lock to ensure only one worker logs the development mode warning
+            try:
+                _log_dev_mode_warning_once(app, logger)
+            except Exception as e:
+                # If lock mechanism fails, log anyway to ensure warning is shown
+                warning_msg = (
+                    "[WARNING] Application is running in DEVELOPMENT mode. "
+                    "This should never be used in production. "
+                    "Set LEYZEN_ENVIRONMENT=production for production deployments."
+                )
                 logger.log(
                     "[INIT] Running in DEVELOPMENT mode - permissive security checks"
                 )
-            import warnings
-
-            warnings.warn(
-                "WARNING: Application is running in DEVELOPMENT mode. "
-                "This should never be used in production. "
-                "Set LEYZEN_ENVIRONMENT=production for production deployments.",
-                UserWarning,
-            )
+                logger.log(warning_msg)
+                logger.flush()
+                # Also print to stdout for docker logs visibility
+                print(
+                    "[INIT] Running in DEVELOPMENT mode - permissive security checks",
+                    flush=True,
+                )
+                print(warning_msg, flush=True)
 
         # jti column is already verified in init_db() - no need to check again here
         # This prevents SQLAlchemy errors and duplicate checks across workers

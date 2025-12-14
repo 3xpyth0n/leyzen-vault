@@ -89,4 +89,4 @@ ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 # --no-access-log: Disable access logs (200, 300, 400 responses)
 # --log-level error: Only log errors and critical issues
 # --timeout-graceful-shutdown: Reduce graceful shutdown timeout to speed up container stops
-CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error --timeout-graceful-shutdown 2
+CMD cd /app/src && uvicorn vault.asgi:app --host 0.0.0.0 --port 80 --workers ${VAULT_WORKERS:-2} --no-access-log --log-level error --timeout-graceful-shutdown 2 --timeout-keep-alive 5 --limit-concurrency 100

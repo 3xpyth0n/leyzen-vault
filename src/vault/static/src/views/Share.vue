@@ -669,7 +669,7 @@ onMounted(() => {
   width: 40px;
   height: 40px;
   border: 3px solid rgba(148, 163, 184, 0.2);
-  border-top-color: var(--accent-blue, #38bdf8);
+  border-top-color: var(--accent-blue, #8b5cf6);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -706,7 +706,7 @@ onMounted(() => {
   justify-content: center;
   background: rgba(56, 189, 248, 0.1);
   border-radius: 1rem;
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
   border: 1px solid rgba(56, 189, 248, 0.2);
 }
 
@@ -833,7 +833,7 @@ onMounted(() => {
 .password-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
 }
 
 .password-input-wrapper {
@@ -855,7 +855,7 @@ onMounted(() => {
 
 .password-input:focus {
   outline: none;
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
 }
 

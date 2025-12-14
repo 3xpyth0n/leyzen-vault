@@ -227,7 +227,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-icon-info {
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .modal-title {
@@ -270,7 +270,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-btn-ok {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 
@@ -310,7 +310,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-btn-info {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 

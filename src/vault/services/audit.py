@@ -75,7 +75,6 @@ class AuditService:
                     enrichment = self.ip_enrichment_service.enrich_ip(user_ip)
                     ipv4 = enrichment.get("ipv4")
                     ip_location = enrichment.get("ip_location")
-                    # Log enrichment result for debugging
                     logger.debug(
                         f"IP enrichment for {user_ip}: ipv4={ipv4}, "
                         f"location={'present' if ip_location else 'none'}"

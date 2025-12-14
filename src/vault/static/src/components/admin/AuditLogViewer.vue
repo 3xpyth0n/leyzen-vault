@@ -172,7 +172,7 @@ const isSecurityEvent = (action, success) => {
 
 const stringifyDetails = (details) => {
   try {
-    return JSON.stringify(details);
+    return JSON.stringify(details, null, 2);
   } catch (e) {
     return "";
   }
@@ -258,6 +258,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .section-header {
@@ -372,6 +374,8 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 0.75rem;
   transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .log-entry:hover {
@@ -416,6 +420,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .log-detail {
@@ -445,6 +452,9 @@ onBeforeUnmount(() => {
   margin-top: 0.5rem;
   padding-top: 0.75rem;
   border-top: 1px solid rgba(148, 163, 184, 0.1);
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .details-code {
@@ -457,9 +467,12 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   color: var(--text-primary, #e6eef6);
   overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
   line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+  width: --webkit-fill-available;
+  box-sizing: border-box;
 }
 
 .log-detail {
@@ -606,8 +619,8 @@ onBeforeUnmount(() => {
   .details-code {
     font-size: 0.75rem;
     padding: 0.5rem 0.75rem;
-    word-break: break-all;
-    overflow-wrap: anywhere;
+    white-space: pre;
+    overflow-x: auto;
   }
 }
 </style>

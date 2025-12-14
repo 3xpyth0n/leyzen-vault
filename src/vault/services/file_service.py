@@ -369,6 +369,15 @@ class AdvancedFileService:
             logger.error(f"Failed to delete file {file_id} after retries: {e}")
             raise
 
+        # Update folder size for parent folder after deletion
+        if parent_id:
+            try:
+                self.update_folder_size_recursive(parent_id)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to update folder size for parent {parent_id}: {e}"
+                )
+
         # Invalidate cache for the parent folder to ensure fresh data
         # The cache key format is: "files:vaultspace_id:user_id:parent_id:page:per_page"
         cache = get_cache_service()
@@ -1458,6 +1467,15 @@ class AdvancedFileService:
 
         db.session.commit()
 
+        # Update folder size for parent folder after copy
+        if new_parent_id:
+            try:
+                self.update_folder_size_recursive(new_parent_id)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to update folder size for parent {new_parent_id}: {e}"
+                )
+
         # Invalidate cache for the target vaultspace to ensure fresh data
         cache = get_cache_service()
         vaultspace_pattern = f"files:{target_vaultspace_id}:{user_id}:"
@@ -1567,6 +1585,34 @@ class AdvancedFileService:
                 total_size += child.size
 
         return total_size
+
+    def update_folder_size_recursive(self, folder_id: str) -> None:
+        """Update folder size and all parent folder sizes recursively.
+
+        Args:
+            folder_id: Folder ID to update
+        """
+        if not folder_id:
+            return
+
+        # Calculate current folder size
+        total_size = self.calculate_folder_size(folder_id)
+
+        # Update folder in database
+        folder = db.session.query(File).filter_by(id=folder_id).first()
+        if folder and folder.mime_type == "application/x-directory":
+            folder.size = total_size
+            db.session.flush()  # Ensure changes are staged
+            db.session.commit()
+
+            # Invalidate cache for this vaultspace to ensure fresh data
+            cache = get_cache_service()
+            vaultspace_pattern = f"files:{folder.vaultspace_id}:"
+            cache.invalidate_pattern(vaultspace_pattern)
+
+            # Recursively update parent folders
+            if folder.parent_id:
+                self.update_folder_size_recursive(folder.parent_id)
 
     def list_files_in_vaultspace(
         self,

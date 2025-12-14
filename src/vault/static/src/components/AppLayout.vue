@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout" :class="{ 'mobile-active': isMobileMode }">
-    <!-- Header -->
-    <header class="app-header">
+    <!-- Header (Mobile Only) -->
+    <header v-if="isMobileMode" class="app-header">
       <div class="header-left">
         <div class="app-title-wrapper">
           <img :src="faviconUrl" alt="Leyzen Vault" class="app-logo" />
@@ -32,8 +32,44 @@
     <aside
       v-if="!isMobileMode"
       class="sidebar"
-      :class="{ collapsed: sidebarCollapsed }"
+      :class="{ collapsed: isCollapsed }"
+      :style="{ width: sidebarWidth + 'px' }"
     >
+      <!-- Sidebar Header: Title -->
+      <div class="sidebar-header">
+        <div class="sidebar-title-section">
+          <div class="app-title-wrapper">
+            <transition name="title-fade" mode="out-in">
+              <img
+                v-if="isCollapsed"
+                :src="faviconUrl"
+                alt="Leyzen Vault"
+                class="app-logo"
+                key="logo"
+              />
+              <h1
+                v-else
+                class="app-title"
+                @click="$router.push('/dashboard')"
+                style="cursor: pointer"
+                key="title"
+              >
+                Leyzen Vault
+              </h1>
+            </transition>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resize Handle -->
+      <div
+        class="sidebar-resize-handle"
+        @mousedown="startResize"
+        @mouseenter="handleMouseEnter"
+        @mouseleave="handleMouseLeave"
+      ></div>
+
+      <!-- Sidebar Navigation -->
       <nav class="sidebar-nav">
         <button
           @click="handleNavigation('/dashboard')"
@@ -84,14 +120,21 @@
         <!-- Pinned VaultSpaces Section -->
         <div v-if="pinnedVaultSpaces.length > 0" class="pinned-section">
           <div class="pinned-section-header">
-            <span v-if="!sidebarCollapsed" class="pinned-section-title"
-              >Pinned</span
-            >
-            <span
-              v-else
-              class="pinned-section-icon"
-              v-html="getIcon('pin', 20)"
-            ></span>
+            <transition name="pinned-header-fade" mode="out-in">
+              <span
+                v-if="!isCollapsed"
+                class="pinned-section-title"
+                key="title"
+              >
+                Pinned
+              </span>
+              <span
+                v-else
+                class="pinned-section-icon"
+                v-html="getIcon('pin', 20)"
+                key="icon"
+              ></span>
+            </transition>
           </div>
           <transition-group
             name="pinned-item"
@@ -99,7 +142,7 @@
             class="pinned-items-container"
           >
             <button
-              v-for="vaultspace in pinnedVaultSpaces"
+              v-for="(vaultspace, index) in pinnedVaultSpaces"
               :key="vaultspace.id"
               @click="openVaultSpace(vaultspace.id)"
               class="sidebar-item pinned-item"
@@ -110,8 +153,21 @@
                   vaultspace.id,
                 ),
                 'pinned-item-updating': updatingPinnedItems.has(vaultspace.id),
+                dragging: draggedItemIndex === index,
+                'drag-over': dragOverIndex === index,
+                'drag-over-top':
+                  dragOverIndex === index && dragOverPosition === 'top',
+                'drag-over-bottom':
+                  dragOverIndex === index && dragOverPosition === 'bottom',
               }"
               :disabled="isServerOffline"
+              draggable="true"
+              @dragstart="handleDragStart($event, index)"
+              @dragend="handleDragEnd($event)"
+              @dragover="handleDragOver($event, index)"
+              @dragenter="handleDragEnter($event, index)"
+              @dragleave="handleDragLeave($event, index)"
+              @drop="handleDrop($event, index)"
             >
               <span
                 class="sidebar-icon pinned-icon"
@@ -122,26 +178,34 @@
           </transition-group>
         </div>
       </nav>
-      <button
-        @click="toggleSidebar"
-        class="sidebar-toggle"
-        :title="sidebarCollapsed ? 'Expand' : 'Collapse'"
-      >
-        <span v-html="getIcon('chevron-left', 16)"></span>
-      </button>
+
+      <!-- Sidebar Footer: Status + User Menu -->
+      <div class="sidebar-footer">
+        <ServerStatusIndicator />
+        <UserMenuDropdown
+          :is-admin="isAdmin"
+          :is-super-admin="isSuperAdmin"
+          :orchestrator-enabled="orchestratorEnabled"
+          @logout="handleLogout"
+        />
+      </div>
     </aside>
 
     <!-- Main Content Area -->
     <div
       class="main-content"
       :class="{
-        'sidebar-collapsed': sidebarCollapsed,
         'mobile-active': isMobileMode,
       }"
+      :style="{ marginLeft: sidebarWidth + 'px' }"
     >
       <!-- Page Content -->
       <main class="page-content">
-        <slot />
+        <transition name="page" mode="out-in">
+          <div :key="$route.path" class="page-transition-wrapper">
+            <slot />
+          </div>
+        </transition>
       </main>
     </div>
 
@@ -189,7 +253,8 @@ export default {
   emits: ["logout"],
   data() {
     return {
-      sidebarCollapsed: false,
+      sidebarWidth: 250,
+      isResizing: false,
       showLogoutModal: false,
       isAdmin: false,
       isSuperAdmin: false,
@@ -202,8 +267,13 @@ export default {
       vaultspaceDeletedHandler: null,
       disintegratingPinnedItems: new Set(),
       updatingPinnedItems: new Set(),
+      draggedItemIndex: null,
+      dragOverIndex: null,
+      dragOverPosition: null, // 'top' or 'bottom'
       isMobileMode: false,
       mobileModeChangeHandler: null,
+      resizeStartX: 0,
+      resizeStartWidth: 0,
     };
   },
   computed: {
@@ -230,6 +300,9 @@ export default {
       }
       return false; // Default to online if status not available
     },
+    isCollapsed() {
+      return this.sidebarWidth < 175;
+    },
   },
   methods: {
     getIcon(iconName, size = 24) {
@@ -245,10 +318,67 @@ export default {
       }
       return "";
     },
+    getPinnedOrderFromStorage() {
+      try {
+        const stored = localStorage.getItem("pinnedVaultSpacesOrder");
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch (err) {
+        // Invalid JSON, ignore
+      }
+      return null;
+    },
+    savePinnedOrderToStorage(order) {
+      try {
+        localStorage.setItem("pinnedVaultSpacesOrder", JSON.stringify(order));
+      } catch (err) {
+        // Storage quota exceeded or other error, ignore
+      }
+    },
+    sortVaultSpacesByOrder(vaultspaces, order) {
+      if (!order || order.length === 0) {
+        return vaultspaces;
+      }
+      // Create a map for quick lookup
+      const vaultspaceMap = new Map(vaultspaces.map((vs) => [vs.id, vs]));
+      // Sort by order array
+      const sorted = [];
+      const orderSet = new Set(order);
+      // First, add items in the order specified
+      for (const id of order) {
+        if (vaultspaceMap.has(id)) {
+          sorted.push(vaultspaceMap.get(id));
+          vaultspaceMap.delete(id);
+        }
+      }
+      // Then add any remaining items (newly pinned, not in localStorage)
+      for (const vs of vaultspaceMap.values()) {
+        sorted.push(vs);
+      }
+      return sorted;
+    },
     async loadPinnedVaultSpaces() {
       this.loadingPinned = true;
       try {
-        this.pinnedVaultSpaces = await vaultspaces.listPinned();
+        const pinnedList = await vaultspaces.listPinned();
+        const storedOrder = this.getPinnedOrderFromStorage();
+
+        if (storedOrder && storedOrder.length > 0) {
+          // Use stored order to sort
+          this.pinnedVaultSpaces = this.sortVaultSpacesByOrder(
+            pinnedList,
+            storedOrder,
+          );
+          // Update localStorage with current vaultspaces (in case some were removed)
+          const currentIds = this.pinnedVaultSpaces.map((vs) => vs.id);
+          this.savePinnedOrderToStorage(currentIds);
+        } else {
+          // No stored order, use API order and save it
+          this.pinnedVaultSpaces = pinnedList;
+          const order = pinnedList.map((vs) => vs.id);
+          this.savePinnedOrderToStorage(order);
+        }
       } catch (err) {
         this.pinnedVaultSpaces = [];
       } finally {
@@ -286,6 +416,123 @@ export default {
       // Force refresh pinned VaultSpaces
       this.loadPinnedVaultSpaces();
     },
+    handleDragStart(event, index) {
+      this.draggedItemIndex = index;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/html", event.target.outerHTML);
+      event.target.style.opacity = "0.5";
+    },
+    handleDragEnd(event) {
+      event.target.style.opacity = "";
+      this.draggedItemIndex = null;
+      this.dragOverIndex = null;
+      this.dragOverPosition = null;
+    },
+    handleDragOver(event, index) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (this.draggedItemIndex !== null && this.draggedItemIndex !== index) {
+        this.dragOverIndex = index;
+        // Determine if we're over the top or bottom half of the element
+        const rect = event.currentTarget.getBoundingClientRect();
+        const y = event.clientY - rect.top;
+        this.dragOverPosition = y < rect.height / 2 ? "top" : "bottom";
+      }
+    },
+    handleDragEnter(event, index) {
+      event.preventDefault();
+      if (this.draggedItemIndex !== null && this.draggedItemIndex !== index) {
+        this.dragOverIndex = index;
+        // Determine if we're over the top or bottom half of the element
+        const rect = event.currentTarget.getBoundingClientRect();
+        const y = event.clientY - rect.top;
+        this.dragOverPosition = y < rect.height / 2 ? "top" : "bottom";
+      }
+    },
+    handleDragLeave(event, index) {
+      // Only clear dragOverIndex if we're actually leaving the container
+      // Don't clear if we're moving to a sibling pinned item
+      // Check if relatedTarget is another pinned item (sibling)
+      let isMovingToSibling = false;
+      if (event.relatedTarget && event.relatedTarget.closest) {
+        const siblingPinnedItem = event.relatedTarget.closest(".pinned-item");
+        isMovingToSibling =
+          siblingPinnedItem !== null &&
+          siblingPinnedItem !== event.currentTarget;
+      }
+
+      if (!isMovingToSibling) {
+        // Only clear if this was the element we were hovering over
+        if (this.dragOverIndex === index) {
+          this.dragOverIndex = null;
+          this.dragOverPosition = null;
+        }
+      }
+    },
+    async handleDrop(event, dropIndex) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (
+        this.draggedItemIndex === null ||
+        this.draggedItemIndex === dropIndex
+      ) {
+        this.dragOverIndex = null;
+        this.dragOverPosition = null;
+        return;
+      }
+
+      // Reorder the array
+      const newOrder = [...this.pinnedVaultSpaces];
+      const [draggedItem] = newOrder.splice(this.draggedItemIndex, 1);
+
+      // Calculate the insertion index based on drop position
+      // When we remove an element, all indices after it shift down by 1
+      let insertIndex;
+      const position = this.dragOverPosition || "top"; // Default to 'top' if not set
+
+      if (this.draggedItemIndex < dropIndex) {
+        // Dragging down: after removal, the drop target is now at (dropIndex - 1)
+        if (position === "top") {
+          // Insert before the drop target
+          insertIndex = dropIndex - 1;
+        } else {
+          // Insert after the drop target
+          insertIndex = dropIndex;
+        }
+      } else {
+        // Dragging up: the drop target index doesn't change
+        if (position === "top") {
+          // Insert before the drop target
+          insertIndex = dropIndex;
+        } else {
+          // Insert after the drop target
+          insertIndex = dropIndex + 1;
+        }
+      }
+      newOrder.splice(insertIndex, 0, draggedItem);
+
+      // Clear drag state
+      this.dragOverIndex = null;
+      this.dragOverPosition = null;
+
+      // Update local state immediately
+      this.pinnedVaultSpaces = newOrder;
+
+      // Save to localStorage immediately
+      const order = newOrder.map((vs) => vs.id);
+      this.savePinnedOrderToStorage(order);
+
+      // Save to database in background
+      try {
+        await vaultspaces.updatePinnedOrder(order);
+      } catch (err) {
+        // If API call fails, keep localStorage order
+        // It will be synced on next load
+      }
+
+      this.draggedItemIndex = null;
+    },
     openVaultSpace(vaultspaceId) {
       // Block navigation if server is offline
       if (this.isServerOffline) {
@@ -300,18 +547,59 @@ export default {
       }
       this.$router.push(path);
     },
-    toggleSidebar() {
-      this.sidebarCollapsed = !this.sidebarCollapsed;
-      // Save preference to localStorage
-      localStorage.setItem("sidebarCollapsed", this.sidebarCollapsed);
-      // Update body class for modal positioning
+    startResize(e) {
+      this.isResizing = true;
+      this.resizeStartX = e.clientX;
+      this.resizeStartWidth = this.sidebarWidth;
+      const sidebar = document.querySelector(".sidebar");
+      if (sidebar) {
+        sidebar.style.transition = "none";
+      }
+      document.addEventListener("mousemove", this.handleResize);
+      document.addEventListener("mouseup", this.stopResize);
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      e.preventDefault();
+    },
+    handleResize(e) {
+      if (!this.isResizing) return;
+      const deltaX = e.clientX - this.resizeStartX;
+      const newWidth = this.resizeStartWidth + deltaX;
+      this.setSidebarWidth(newWidth);
+    },
+    stopResize() {
+      this.isResizing = false;
+      document.removeEventListener("mousemove", this.handleResize);
+      document.removeEventListener("mouseup", this.stopResize);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      const sidebar = document.querySelector(".sidebar");
+      if (sidebar) {
+        sidebar.style.transition = "";
+      }
+    },
+    setSidebarWidth(width) {
+      const minWidth = 70;
+      const maxWidth = 250;
+      this.sidebarWidth = Math.max(minWidth, Math.min(maxWidth, width));
+      localStorage.setItem("sidebarWidth", this.sidebarWidth);
       this.updateBodyClass();
     },
     updateBodyClass() {
-      if (this.sidebarCollapsed) {
+      if (this.isCollapsed) {
         document.body.classList.add("sidebar-collapsed");
       } else {
         document.body.classList.remove("sidebar-collapsed");
+      }
+    },
+    handleMouseEnter() {
+      if (!this.isResizing) {
+        document.body.style.cursor = "col-resize";
+      }
+    },
+    handleMouseLeave() {
+      if (!this.isResizing) {
+        document.body.style.cursor = "";
       }
     },
     updateHeaderHeight() {
@@ -387,10 +675,13 @@ export default {
       window.addEventListener("load", this.updateHeaderHeight);
     });
 
-    // Load sidebar state from localStorage
-    const saved = localStorage.getItem("sidebarCollapsed");
-    if (saved !== null) {
-      this.sidebarCollapsed = saved === "true";
+    // Load sidebar width from localStorage
+    const savedWidth = localStorage.getItem("sidebarWidth");
+    if (savedWidth !== null) {
+      const width = parseInt(savedWidth, 10);
+      if (!isNaN(width) && width >= 70 && width <= 250) {
+        this.sidebarWidth = width;
+      }
     }
     // Update body class based on initial sidebar state
     this.updateBodyClass();
@@ -450,6 +741,9 @@ export default {
 
         // Replace the vaultspace object completely to trigger reactivity
         this.pinnedVaultSpaces.splice(index, 1, vaultspace);
+        // Update localStorage order
+        const order = this.pinnedVaultSpaces.map((vs) => vs.id);
+        this.savePinnedOrderToStorage(order);
       } else {
         // Refresh full list if vaultspace not found (may have been pinned in the meantime)
         this.refreshPinnedVaultSpaces();
@@ -478,6 +772,10 @@ export default {
         this.pinnedVaultSpaces = this.pinnedVaultSpaces.filter(
           (vs) => vs.id !== vaultspaceId,
         );
+
+        // Update localStorage order
+        const order = this.pinnedVaultSpaces.map((vs) => vs.id);
+        this.savePinnedOrderToStorage(order);
 
         // Clean up animation state
         this.disintegratingPinnedItems.delete(vaultspaceId);
@@ -520,6 +818,8 @@ export default {
     }
     // Clean up body class
     document.body.classList.remove("sidebar-collapsed");
+    // Clean up resize event listeners
+    this.stopResize();
   },
 };
 </script>
@@ -536,10 +836,9 @@ export default {
 .sidebar {
   position: fixed;
   left: 0;
-  top: var(--header-height, 100px);
+  top: 0;
   bottom: 0;
-  height: calc(100vh - var(--header-height, 100px));
-  width: 250px;
+  height: 100vh;
   background: linear-gradient(
     180deg,
     rgba(30, 41, 59, 0.7),
@@ -548,19 +847,16 @@ export default {
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0 0 1rem 0;
+  border-radius: 0 1rem 1rem 0;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 99;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: 1.5rem;
-  padding-bottom: 4rem;
   display: flex;
   flex-direction: column;
   visibility: visible;
   opacity: 1;
-  will-change: width;
   contain: layout style paint;
 }
 
@@ -587,7 +883,6 @@ export default {
 }
 
 .sidebar.collapsed {
-  width: 70px !important;
   display: flex !important;
   flex-direction: column !important;
   visibility: visible !important;
@@ -595,54 +890,133 @@ export default {
   transform: none !important;
 }
 
-.sidebar-toggle {
-  position: absolute;
-  bottom: 1rem;
-  right: 0.5rem;
-  width: 2rem;
-  height: 2rem;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: none;
-  border-radius: 8px;
-  color: #e6eef6;
-  cursor: pointer;
+/* Sidebar Header */
+.sidebar-header {
+  position: relative;
+  padding: 0rem 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.sidebar-title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.sidebar-header .app-title-wrapper {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .sidebar-header .app-title-wrapper {
+  justify-content: center;
+  width: 100%;
+  overflow: visible;
+}
+
+.sidebar-header .app-logo {
+  height: 1.75rem;
+  width: 1.75rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.sidebar-header .app-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
   transition:
-    background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    background 0.3s ease,
+    transform 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.sidebar-header .app-title:hover {
+  background: linear-gradient(120deg, #c5b0ffff, #a575ffff, #818cf8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  transform: scale(1.03);
+}
+
+.title-fade-enter-active,
+.title-fade-leave-active {
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.title-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.title-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 1.5rem 0.5rem 1rem 0.5rem;
+}
+
+.sidebar.collapsed .sidebar-title-section {
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  overflow: visible;
+}
+
+/* Resize Handle */
+.sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
   z-index: 101;
-  visibility: visible;
-  opacity: 1;
-  will-change: transform, background;
-  transform: rotate(0deg);
+  background: transparent;
+  transition: background 0.2s ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.sidebar.collapsed .sidebar-toggle {
-  right: 0.5rem;
-  left: auto;
-  visibility: visible;
-  opacity: 1;
-  transform: rotate(180deg);
+.sidebar-resize-handle:hover {
+  background: rgba(88, 166, 255, 0.3);
 }
 
-.sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
+.sidebar-resize-handle:active {
+  background: rgba(88, 166, 255, 0.5);
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
-  padding: 0 0.75rem;
+  padding: 1rem 0.75rem;
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: padding 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar.collapsed .sidebar-nav {
-  padding: 1.25rem 0.75rem;
+  padding: 1rem 0.5rem;
   align-items: center;
   gap: 0.625rem;
 }
@@ -659,7 +1033,7 @@ export default {
   color: #e6eef6;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 0.95rem;
   text-align: left;
   width: 100%;
@@ -697,7 +1071,7 @@ export default {
     rgba(56, 189, 248, 0.15)
   );
   box-shadow: 0 4px 16px rgba(88, 166, 255, 0.2);
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
 .sidebar-icon {
@@ -726,18 +1100,28 @@ export default {
   flex: 1;
   opacity: 1;
   transition:
-    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 400ms cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 400ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: translateX(0);
-  will-change: opacity, transform;
+  will-change: opacity, transform, max-width;
+  max-width: 200px;
 }
 
 .sidebar.collapsed .sidebar-label {
-  display: none;
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-10px);
+  max-width: 0;
+  margin: 0;
+  padding: 0;
   pointer-events: none;
+}
+
+.pinned-item .sidebar-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Pinned Section */
@@ -747,6 +1131,8 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .pinned-section-header {
@@ -783,14 +1169,57 @@ export default {
   height: 20px;
 }
 
+.pinned-header-fade-enter-active,
+.pinned-header-fade-leave-active {
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pinned-header-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.pinned-header-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
 .pinned-items-container {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
+  width: 100%;
 }
 
 .pinned-item {
   padding-left: 0.75rem;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+}
+
+.sidebar-item.pinned-item,
+button.sidebar-item.pinned-item,
+.sidebar .sidebar-item.pinned-item,
+.sidebar-nav .sidebar-item.pinned-item,
+.pinned-items-container .sidebar-item.pinned-item {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.sidebar.collapsed .pinned-item,
+.sidebar.collapsed .sidebar-item.pinned-item,
+.sidebar.collapsed button.sidebar-item.pinned-item {
+  padding: 0.875rem;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 .pinned-icon {
@@ -860,13 +1289,18 @@ export default {
 /* Transition group animations for pinned items */
 .pinned-item-enter-active {
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100% !important;
+  box-sizing: border-box;
 }
 
 .pinned-item-leave-active {
   transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   position: absolute;
-  width: 100%;
+  width: 100% !important;
   z-index: 1;
+  box-sizing: border-box;
+  min-width: 0 !important;
+  max-width: 100% !important;
 }
 
 .pinned-item-enter-from {
@@ -884,29 +1318,115 @@ export default {
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Drag and drop styles for pinned items */
+.pinned-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.pinned-item.drag-over-top {
+  border-top: 2px solid #3b82f6;
+  margin-top: -2px;
+}
+
+.pinned-item.drag-over-bottom {
+  border-bottom: 2px solid #3b82f6;
+  margin-bottom: -2px;
+}
+
+.pinned-item[draggable="true"] {
+  cursor: grab;
+}
+
+.pinned-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0.75rem 1.5rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 1rem 0.5rem 1.5rem 0.5rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-footer :deep(.server-status-indicator) {
+  flex: 1;
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
+  display: flex !important;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.sidebar.collapsed .sidebar-footer :deep(.server-status-indicator) {
+  flex: none;
+  width: 100% !important;
+  padding: 0.5rem;
+  justify-content: center;
+}
+
+.sidebar.collapsed
+  .sidebar-footer
+  :deep(.server-status-indicator .status-text) {
+  display: none;
+}
+
+.sidebar-footer :deep(.user-menu-wrapper) {
+  flex: 1;
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
+  display: block !important;
+  box-sizing: border-box;
+}
+
+.sidebar-footer :deep(.user-menu-button) {
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+.sidebar.collapsed .sidebar-footer :deep(.user-menu-button) {
+  width: 100% !important;
+  padding: 0.625rem;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-footer :deep(.user-menu-chevron) {
+  display: none;
+}
+
 /* Main Content */
 .main-content {
   flex: 1;
-  margin-left: 250px;
-  padding-top: var(--header-height, 100px);
-  transition: margin-left 0.3s ease;
+  padding-top: 0;
+  transition: none;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
-.main-content.sidebar-collapsed {
-  margin-left: 70px;
-}
-
 .mobile-mode .main-content {
   margin-left: 0 !important;
   margin-top: 0 !important;
-}
-
-.mobile-mode .main-content.sidebar-collapsed {
-  margin-left: 0 !important;
-  margin-top: 0 !important;
+  padding-top: var(--header-height, 100px);
 }
 
 /* Header */
@@ -994,6 +1514,12 @@ export default {
   z-index: 1;
 }
 
+.page-transition-wrapper {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .mobile-mode .page-content {
   padding-bottom: calc(2rem + 64px);
   padding: 1rem;
@@ -1052,10 +1578,6 @@ export default {
   }
 
   .main-content {
-    margin-left: 70px;
-  }
-
-  .main-content.sidebar-collapsed {
     margin-left: 70px;
   }
 

@@ -764,7 +764,6 @@ def prepare_rotation():
         )
         validation_service.load_whitelist()
 
-        # Log whitelist size for debugging
         whitelist_size = len(validation_service._legitimate_files)
         whitelist_keys_sample = list(validation_service._legitimate_files.keys())[:5]
         current_app.logger.info(
@@ -1072,7 +1071,6 @@ def prepare_rotation():
                         f"({missing_percentage:.1f}%) - within tolerance "
                         f"(found in tmpfs: {found_in_tmpfs}, found in source: {found_in_source})"
                     )
-                    # Log first few missing files for debugging
                     for file_id in missing_files[:3]:
                         current_app.logger.debug(
                             f"[PREPARE ROTATION] Missing file (within tolerance): {file_id}"
@@ -1085,7 +1083,6 @@ def prepare_rotation():
                         f"({missing_percentage:.1f}%) - exceeds 10% tolerance "
                         f"(found in tmpfs: {found_in_tmpfs}, found in source: {found_in_source})"
                     )
-                    # Log first few missing files for debugging
                     for file_id in missing_files[:5]:
                         current_app.logger.error(
                             f"[PREPARE ROTATION] Missing file: {file_id}"

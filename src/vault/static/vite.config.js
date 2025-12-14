@@ -57,6 +57,26 @@ function flaskStaticPlugin() {
       ) {
         return { id, external: true };
       }
+      // Mark static scripts as external to prevent bundling
+      if (
+        id === "/static/notifications.js" ||
+        id === "notifications.js" ||
+        id.endsWith("/notifications.js") ||
+        id === "/static/cleanup-modal.js" ||
+        id === "cleanup-modal.js" ||
+        id.endsWith("/cleanup-modal.js") ||
+        id === "/static/sharing.js" ||
+        id === "sharing.js" ||
+        id.endsWith("/sharing.js") ||
+        id === "/static/unregister-service-worker.js" ||
+        id === "unregister-service-worker.js" ||
+        id.endsWith("/unregister-service-worker.js") ||
+        id === "/static/trusted-types-init.js" ||
+        id === "trusted-types-init.js" ||
+        id.endsWith("/trusted-types-init.js")
+      ) {
+        return { id, external: true };
+      }
       // Mark static icon files as external to prevent bundling
       if (
         id.includes("/static/icons/") ||
@@ -156,6 +176,26 @@ export default defineConfig({
         if (id === "/favicon.ico" || id.endsWith("/favicon.ico")) {
           return true;
         }
+        // Mark static scripts as external to prevent bundling
+        if (
+          id === "/static/notifications.js" ||
+          id === "notifications.js" ||
+          id.endsWith("/notifications.js") ||
+          id === "/static/cleanup-modal.js" ||
+          id === "cleanup-modal.js" ||
+          id.endsWith("/cleanup-modal.js") ||
+          id === "/static/sharing.js" ||
+          id === "sharing.js" ||
+          id.endsWith("/sharing.js") ||
+          id === "/static/unregister-service-worker.js" ||
+          id === "unregister-service-worker.js" ||
+          id.endsWith("/unregister-service-worker.js") ||
+          id === "/static/trusted-types-init.js" ||
+          id === "trusted-types-init.js" ||
+          id.endsWith("/trusted-types-init.js")
+        ) {
+          return true;
+        }
         return false;
       },
       onwarn(warning, warn) {
@@ -170,7 +210,8 @@ export default defineConfig({
             warning.message.includes("icons.js") ||
             warning.message.includes("cleanup-modal.js") ||
             warning.message.includes("sharing.js") ||
-            warning.message.includes("unregister-service-worker.js"))
+            warning.message.includes("unregister-service-worker.js") ||
+            warning.message.includes("notifications.js"))
         ) {
           return;
         }
@@ -206,7 +247,8 @@ export default defineConfig({
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
           msg.includes("sharing.js") ||
-          msg.includes("unregister-service-worker.js"))
+          msg.includes("unregister-service-worker.js") ||
+          msg.includes("notifications.js"))
       ) {
         // Suppress this warning
         return;
@@ -223,7 +265,8 @@ export default defineConfig({
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
           msg.includes("sharing.js") ||
-          msg.includes("unregister-service-worker.js"))
+          msg.includes("unregister-service-worker.js") ||
+          msg.includes("notifications.js"))
       ) {
         // Suppress this warning
         return;

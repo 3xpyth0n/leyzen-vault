@@ -25,6 +25,34 @@
           </span>
         </div>
       </div>
+      <div class="integration-actions">
+        <div class="backup-controls-card">
+          <CustomSelect
+            v-model="manualBackupStorage"
+            :options="manualBackupStorageOptions"
+            placeholder="Select storage"
+            :disabled="backupRunning"
+            size="small"
+            class="backup-storage-select-card"
+            @click.stop
+          />
+          <button
+            @click.stop="createManualBackup"
+            class="btn-backup-trigger"
+            :disabled="backupRunning"
+            :title="
+              backupRunning ? 'Backup in progress...' : 'Create manual backup'
+            "
+          >
+            <span
+              v-html="getIcon(backupRunning ? 'clock' : 'database', 18)"
+            ></span>
+          </button>
+        </div>
+        <div class="integration-arrow">
+          <span v-html="getIcon('arrow-right', 20)"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Configuration Modal -->
@@ -69,14 +97,14 @@
                   @click="activeTab = 'history'"
                   :class="['tab-button', { active: activeTab === 'history' }]"
                 >
-                  Backups List
+                  Backups History
                 </button>
                 <button
-                  :ref="(el) => setTabRef(el, 'actions')"
-                  @click="activeTab = 'actions'"
-                  :class="['tab-button', { active: activeTab === 'actions' }]"
+                  :ref="(el) => setTabRef(el, 'restore')"
+                  @click="activeTab = 'restore'"
+                  :class="['tab-button', { active: activeTab === 'restore' }]"
                 >
-                  Actions
+                  Restore
                 </button>
                 <div
                   class="tab-indicator"
@@ -270,58 +298,232 @@
                 </div>
               </div>
 
-              <!-- Actions Tab -->
-              <div v-if="activeTab === 'actions'" class="tab-content">
-                <div class="actions-section">
-                  <h4>Manual Backup</h4>
-                  <p>Create a backup of the database immediately.</p>
-                  <div class="backup-controls">
-                    <CustomSelect
-                      v-model="manualBackupStorage"
-                      :options="manualBackupStorageOptions"
-                      placeholder="Select storage"
-                      :disabled="backupRunning"
-                      class="backup-storage-select"
-                    />
-                    <button
-                      @click="createManualBackup"
-                      class="btn-primary"
-                      :disabled="backupRunning"
-                    >
-                      {{
-                        backupRunning
-                          ? "Backup in progress..."
-                          : "Create Backup"
-                      }}
-                    </button>
-                  </div>
+              <!-- Restore Tab -->
+              <div v-if="activeTab === 'restore'" class="tab-content">
+                <div v-if="loadingBackups" class="loading">
+                  <span v-html="getIcon('clock', 24)"></span>
+                  Loading backups...
                 </div>
-
-                <div class="actions-section">
-                  <h4>Restore from Backup</h4>
-                  <p>
-                    Restore the database from a previous backup. The application
-                    will be put in maintenance mode during restoration.
-                  </p>
-                  <div class="form-group">
-                    <label>Select Backup:</label>
-                    <CustomSelect
-                      v-model="selectedBackupId"
-                      :options="backupOptions"
-                      placeholder="Select a backup to restore"
-                      :disabled="restoreRunning"
-                    />
+                <div v-else-if="backupsError" class="error">
+                  {{ backupsError }}
+                </div>
+                <div v-else class="restore-section">
+                  <div class="restore-header">
+                    <h4>Restore from Backup</h4>
+                    <p>
+                      Restore the database from a previous backup. The
+                      application will be put in maintenance mode during
+                      restoration.
+                    </p>
                   </div>
-                  <button
-                    @click="restoreBackup"
-                    class="btn-warning restore-btn"
-                    :disabled="!selectedBackupId || restoreRunning"
-                  >
-                    {{ restoreRunning ? "Restoring..." : "Restore Backup" }}
-                  </button>
-                  <div v-if="restoreRunning" class="form-help">
-                    <strong>Warning:</strong> The application is in maintenance
-                    mode. Do not close this page.
+
+                  <!-- Search and Filters -->
+                  <div class="restore-filters">
+                    <div class="filter-row">
+                      <div class="filter-group">
+                        <label>Search:</label>
+                        <input
+                          v-model="restoreSearchQuery"
+                          type="text"
+                          placeholder="Search by date, ID, or location..."
+                          class="form-input filter-input"
+                          @input="restorePage = 1"
+                        />
+                      </div>
+                      <div class="filter-group">
+                        <label>Type:</label>
+                        <CustomSelect
+                          v-model="restoreFilters.type"
+                          :options="backupTypeFilterOptions"
+                          placeholder="All types"
+                          @change="restorePage = 1"
+                        />
+                      </div>
+                      <div class="filter-group">
+                        <label>Status:</label>
+                        <CustomSelect
+                          v-model="restoreFilters.status"
+                          :options="backupStatusFilterOptions"
+                          placeholder="All statuses"
+                          @change="restorePage = 1"
+                        />
+                      </div>
+                      <div class="filter-group">
+                        <label>Storage:</label>
+                        <CustomSelect
+                          v-model="restoreFilters.storage"
+                          :options="backupStorageFilterOptions"
+                          placeholder="All storage"
+                          @change="restorePage = 1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Backups Table -->
+                  <div class="restore-table-container">
+                    <table class="restore-table">
+                      <thead>
+                        <tr>
+                          <th class="col-select"></th>
+                          <th
+                            class="col-date sortable"
+                            @click="sortBackups('created_at')"
+                          >
+                            Date
+                            <span
+                              v-if="restoreSortBy === 'created_at'"
+                              class="sort-indicator"
+                            >
+                              {{ restoreSortOrder === "asc" ? "↑" : "↓" }}
+                            </span>
+                          </th>
+                          <th class="col-type">Type</th>
+                          <th class="col-status">Status</th>
+                          <th
+                            class="col-size sortable"
+                            @click="sortBackups('size_bytes')"
+                          >
+                            Size
+                            <span
+                              v-if="restoreSortBy === 'size_bytes'"
+                              class="sort-indicator"
+                            >
+                              {{ restoreSortOrder === "asc" ? "↑" : "↓" }}
+                            </span>
+                          </th>
+                          <th class="col-storage">Storage</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-if="paginatedBackups.length === 0"
+                          class="empty-row"
+                        >
+                          <td colspan="6" class="text-center">
+                            No backups found matching your criteria
+                          </td>
+                        </tr>
+                        <tr
+                          v-for="backup in paginatedBackups"
+                          :key="backup.id"
+                          :class="{
+                            'row-selected': selectedBackupId === backup.id,
+                            'row-disabled': backup.status !== 'completed',
+                          }"
+                          @click="
+                            backup.status === 'completed' &&
+                            selectBackupForRestore(backup.id)
+                          "
+                        >
+                          <td class="col-select">
+                            <input
+                              type="radio"
+                              :checked="selectedBackupId === backup.id"
+                              :disabled="backup.status !== 'completed'"
+                              @click.stop="
+                                backup.status === 'completed' &&
+                                selectBackupForRestore(backup.id)
+                              "
+                            />
+                          </td>
+                          <td class="col-date">
+                            {{ formatDate(backup.created_at) }}
+                          </td>
+                          <td class="col-type">
+                            <span class="backup-type-badge">{{
+                              backup.backup_type
+                            }}</span>
+                          </td>
+                          <td class="col-status">
+                            <span
+                              :class="[
+                                'backup-status-badge',
+                                `status-${backup.status}`,
+                              ]"
+                            >
+                              {{ formatStatus(backup.status) }}
+                            </span>
+                          </td>
+                          <td class="col-size">
+                            {{ formatSize(backup.size_bytes) }}
+                          </td>
+                          <td class="col-storage">
+                            <span
+                              v-if="backup.storageTargets"
+                              class="storage-badge-small"
+                            >
+                              {{ getStorageLabelShort(backup.storageTargets) }}
+                            </span>
+                            <span v-else class="storage-badge-small">
+                              {{ inferStorageType(backup) }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- Pagination -->
+                  <div class="restore-pagination">
+                    <div class="pagination-info">
+                      <span>
+                        Showing
+                        {{ (restorePage - 1) * restorePageSize + 1 }} to
+                        {{
+                          Math.min(
+                            restorePage * restorePageSize,
+                            filteredAndSortedBackups.length,
+                          )
+                        }}
+                        of {{ filteredAndSortedBackups.length }} backups
+                      </span>
+                      <div class="pagination-size">
+                        <label>Per page:</label>
+                        <CustomSelect
+                          v-model="restorePageSize"
+                          :options="pageSizeOptions"
+                          @change="restorePage = 1"
+                        />
+                      </div>
+                    </div>
+                    <div class="pagination-controls">
+                      <button
+                        @click="restorePage = Math.max(1, restorePage - 1)"
+                        :disabled="restorePage === 1"
+                        class="btn btn-secondary btn-small"
+                      >
+                        Previous
+                      </button>
+                      <span class="page-numbers">
+                        Page {{ restorePage }} of
+                        {{ totalPages }}
+                      </span>
+                      <button
+                        @click="
+                          restorePage = Math.min(totalPages, restorePage + 1)
+                        "
+                        :disabled="restorePage >= totalPages"
+                        class="btn btn-secondary btn-small"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Restore Action -->
+                  <div class="restore-actions">
+                    <button
+                      @click="restoreBackup"
+                      class="btn-warning restore-btn"
+                      :disabled="!selectedBackupId || restoreRunning"
+                    >
+                      {{ restoreRunning ? "Restoring..." : "Restore Backup" }}
+                    </button>
+                    <div v-if="restoreRunning" class="form-help">
+                      <strong>Warning:</strong> The application is in
+                      maintenance mode. Do not close this page.
+                    </div>
                   </div>
                 </div>
               </div>
@@ -370,6 +572,12 @@ export default {
     const loadingBackups = ref(false);
     const backupsError = ref(null);
     const backups = ref([]);
+
+    // Cache for backups list
+    const BACKUPS_CACHE_TTL = 120000; // 120 seconds
+    const backupsCache = ref(null);
+    const backupsCacheTimestamp = ref(null);
+
     const inferStorageTargets = (backup) => {
       const metadata = backup.metadata || {};
       // First check metadata.storage.type (correct location in metadata.json)
@@ -468,6 +676,7 @@ export default {
       left: "0px",
       width: "0px",
     });
+    let resizeObserver = null;
 
     // Store the logo path in a variable to avoid Vite treating it as a module import
     const dbLogoPath = "/static/icons/database-backup.png";
@@ -504,17 +713,172 @@ export default {
     // Declare timezone before using it in computed
     const timezone = ref("UTC");
 
-    const backupOptions = computed(() => {
-      // Include timezone.value in the computed to make it reactive
-      // Access timezone.value directly to ensure reactivity
-      const tz = timezone.value;
-      return backups.value
-        .filter((b) => b.status === "completed")
-        .map((b) => ({
-          label: `${formatDate(b.created_at)} - ${formatSize(b.size_bytes)}`,
-          value: b.id,
-        }));
+    // Restore tab state
+    const restoreSearchQuery = ref("");
+    const restoreFilters = ref({
+      type: "all",
+      status: "completed",
+      storage: "all",
     });
+    const restoreSortBy = ref("created_at");
+    const restoreSortOrder = ref("desc");
+    const restorePage = ref(1);
+    const restorePageSize = ref(10);
+
+    const backupTypeFilterOptions = [
+      { label: "All types", value: "all" },
+      { label: "Manual", value: "manual" },
+      { label: "Scheduled", value: "scheduled" },
+    ];
+
+    const backupStatusFilterOptions = [
+      { label: "All statuses", value: "all" },
+      { label: "Completed", value: "completed" },
+      { label: "Running", value: "running" },
+      { label: "Pending", value: "pending" },
+      { label: "Failed", value: "failed" },
+    ];
+
+    const backupStorageFilterOptions = [
+      { label: "All storage", value: "all" },
+      { label: "Local", value: "local" },
+      { label: "S3", value: "s3" },
+      { label: "Both", value: "both" },
+    ];
+
+    const pageSizeOptions = [
+      { label: "10", value: 10 },
+      { label: "25", value: 25 },
+      { label: "50", value: 50 },
+      { label: "100", value: 100 },
+    ];
+
+    const inferStorageType = (backup) => {
+      const storageTargets = inferStorageTargets(backup);
+      if (storageTargets.local && storageTargets.s3) {
+        return "Both";
+      }
+      if (storageTargets.s3) {
+        return "S3";
+      }
+      return "Local";
+    };
+
+    const getStorageLabelShort = (targets) => {
+      if (targets?.local && targets?.s3) {
+        return "Both";
+      }
+      if (targets?.s3) {
+        return "S3";
+      }
+      return "Local";
+    };
+
+    const filteredAndSortedBackups = computed(() => {
+      let filtered = [...backups.value];
+
+      // Apply search filter
+      if (restoreSearchQuery.value.trim()) {
+        const query = restoreSearchQuery.value.toLowerCase().trim();
+        filtered = filtered.filter((backup) => {
+          const dateStr = formatDate(backup.created_at).toLowerCase();
+          const idStr = backup.id.toLowerCase();
+          const locationStr = (backup.storage_location || "").toLowerCase();
+          return (
+            dateStr.includes(query) ||
+            idStr.includes(query) ||
+            locationStr.includes(query)
+          );
+        });
+      }
+
+      // Apply type filter
+      if (restoreFilters.value.type && restoreFilters.value.type !== "all") {
+        filtered = filtered.filter(
+          (backup) => backup.backup_type === restoreFilters.value.type,
+        );
+      }
+
+      // Apply status filter
+      if (
+        restoreFilters.value.status &&
+        restoreFilters.value.status !== "all"
+      ) {
+        filtered = filtered.filter(
+          (backup) => backup.status === restoreFilters.value.status,
+        );
+      }
+
+      // Apply storage filter
+      if (
+        restoreFilters.value.storage &&
+        restoreFilters.value.storage !== "all"
+      ) {
+        filtered = filtered.filter((backup) => {
+          const storageTargets = inferStorageTargets(backup);
+          if (restoreFilters.value.storage === "both") {
+            return storageTargets.local && storageTargets.s3;
+          }
+          if (restoreFilters.value.storage === "s3") {
+            return storageTargets.s3 && !storageTargets.local;
+          }
+          if (restoreFilters.value.storage === "local") {
+            return storageTargets.local && !storageTargets.s3;
+          }
+          return true;
+        });
+      }
+
+      // Apply sorting
+      filtered.sort((a, b) => {
+        let aValue, bValue;
+
+        if (restoreSortBy.value === "created_at") {
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+        } else if (restoreSortBy.value === "size_bytes") {
+          aValue = a.size_bytes || 0;
+          bValue = b.size_bytes || 0;
+        } else {
+          return 0;
+        }
+
+        if (restoreSortOrder.value === "asc") {
+          return aValue - bValue;
+        } else {
+          return bValue - aValue;
+        }
+      });
+
+      return filtered;
+    });
+
+    const totalPages = computed(() => {
+      return Math.ceil(
+        filteredAndSortedBackups.value.length / restorePageSize.value,
+      );
+    });
+
+    const paginatedBackups = computed(() => {
+      const start = (restorePage.value - 1) * restorePageSize.value;
+      const end = start + restorePageSize.value;
+      return filteredAndSortedBackups.value.slice(start, end);
+    });
+
+    const sortBackups = (field) => {
+      if (restoreSortBy.value === field) {
+        restoreSortOrder.value =
+          restoreSortOrder.value === "asc" ? "desc" : "asc";
+      } else {
+        restoreSortBy.value = field;
+        restoreSortOrder.value = "desc";
+      }
+      restorePage.value = 1;
+    };
+
+    const selectBackupForRestore = (backupId) => {
+      selectedBackupId.value = backupId;
+    };
 
     const loadConfig = async () => {
       loading.value = true;
@@ -572,14 +936,46 @@ export default {
       }
     };
 
+    const invalidateBackupsCache = () => {
+      backupsCache.value = null;
+      backupsCacheTimestamp.value = null;
+    };
+
+    const addBackupToList = (backupData) => {
+      backups.value = [backupData, ...backups.value];
+    };
+
+    const removeBackupFromList = (backupId) => {
+      backups.value = backups.value.filter((b) => b.id !== backupId);
+    };
+
     const loadBackups = async () => {
+      // Check if cache is valid
+      const now = Date.now();
+      if (
+        backupsCache.value !== null &&
+        backupsCacheTimestamp.value !== null &&
+        now - backupsCacheTimestamp.value < BACKUPS_CACHE_TTL
+      ) {
+        // Use cached data
+        backups.value = backupsCache.value;
+        loadingBackups.value = false;
+        return;
+      }
+
+      // Cache invalid or missing, fetch from API
       loadingBackups.value = true;
       backupsError.value = null;
       try {
         // Ensure timezone is loaded before formatting dates
         await loadTimezone();
         const response = await admin.listDatabaseBackups();
-        backups.value = response.backups || [];
+        const backupsList = response.backups || [];
+        backups.value = backupsList;
+
+        // Update cache
+        backupsCache.value = backupsList;
+        backupsCacheTimestamp.value = now;
       } catch (err) {
         backupsError.value = err.message || "Failed to load backups";
       } finally {
@@ -637,15 +1033,43 @@ export default {
         await admin.createDatabaseBackup({
           storage_type: manualBackupStorage.value,
         });
+
+        // Create temporary backup entry
+        const tempBackup = {
+          id: `temp-${Date.now()}`,
+          backup_type: "manual",
+          status: "running",
+          storage_location:
+            manualBackupStorage.value === "s3"
+              ? "s3://"
+              : manualBackupStorage.value === "both"
+                ? "local & s3://"
+                : "local",
+          created_at: new Date().toISOString(),
+          size_bytes: 0,
+          metadata: {
+            storage_type: manualBackupStorage.value,
+          },
+        };
+
+        // Add to list immediately
+        addBackupToList(tempBackup);
+
+        // Invalidate cache so next load will fetch fresh data
+        invalidateBackupsCache();
+
         showAlert({
           type: "success",
           title: "Backup Started",
           message: "Database backup has been started in the background.",
         });
-        // Reload backups after a delay
-        setTimeout(() => {
-          loadBackups();
-        }, 2000);
+
+        // Optionally refresh after delay to update temp entry with real data
+        if (activeTab.value === "history" || activeTab.value === "restore") {
+          setTimeout(() => {
+            loadBackups();
+          }, 5000);
+        }
       } catch (err) {
         showAlert({
           type: "error",
@@ -764,12 +1188,18 @@ export default {
       deletingBackup.value = backupId;
       try {
         await admin.deleteDatabaseBackup(backupId);
+
+        // Remove from list immediately
+        removeBackupFromList(backupId);
+
+        // Invalidate cache
+        invalidateBackupsCache();
+
         showAlert({
           type: "success",
           title: "Backup Deleted",
           message: "Backup has been deleted successfully.",
         });
-        await loadBackups();
       } catch (err) {
         showAlert({
           type: "error",
@@ -786,7 +1216,7 @@ export default {
       // Load timezone first before any operations that use formatDate
       await loadTimezone();
       loadConfig();
-      if (activeTab.value === "history" || activeTab.value === "actions") {
+      if (activeTab.value === "history" || activeTab.value === "restore") {
         loadBackups();
       }
       // Update indicator position when modal opens
@@ -810,10 +1240,30 @@ export default {
     };
 
     watch(activeTab, async (newTab) => {
-      if (newTab === "history" || newTab === "actions") {
+      if (newTab === "history" || newTab === "restore") {
         // Ensure timezone is loaded before loading backups
         await loadTimezone();
         loadBackups();
+      }
+    });
+
+    // Reset pagination when filters change
+    watch(
+      [
+        restoreSearchQuery,
+        () => restoreFilters.value.type,
+        () => restoreFilters.value.status,
+        () => restoreFilters.value.storage,
+      ],
+      () => {
+        restorePage.value = 1;
+      },
+    );
+
+    // Ensure page is valid when page size changes
+    watch(restorePageSize, () => {
+      if (restorePage.value > totalPages.value) {
+        restorePage.value = Math.max(1, totalPages.value);
       }
     });
 
@@ -919,6 +1369,10 @@ export default {
     const setTabRef = (el, tabId) => {
       if (el) {
         tabRefs.value[tabId] = el;
+        // Observe the new tab element if ResizeObserver is set up
+        if (resizeObserver && typeof ResizeObserver !== "undefined") {
+          resizeObserver.observe(el);
+        }
       }
     };
 
@@ -935,17 +1389,24 @@ export default {
 
         const containerRect = tabsContainer.value.getBoundingClientRect();
         const tabRect = activeTabElement.getBoundingClientRect();
+        const left =
+          tabRect.left - containerRect.left + tabsContainer.value.scrollLeft;
+        const width = tabRect.width;
 
-        // Only update if we have valid dimensions
-        if (containerRect.width > 0 && tabRect.width > 0) {
-          const left = tabRect.left - containerRect.left;
-          const width = tabRect.width;
+        // Calculate vertical position based on which line the tab is on
+        // Use getBoundingClientRect for top position relative to container
+        const activeTabTop = tabRect.top - containerRect.top;
+        const activeTabHeight = tabRect.height;
 
-          indicatorStyle.value = {
-            left: `${left}px`,
-            width: `${width}px`,
-          };
-        }
+        // Calculate top position: indicator should be at the bottom of the active tab's line
+        // top = position of tab + height of tab - height of indicator
+        const top = activeTabTop + activeTabHeight - 2.5;
+
+        indicatorStyle.value = {
+          left: `${left}px`,
+          width: `${width}px`,
+          top: `${top}px`,
+        };
       });
     };
 
@@ -968,6 +1429,16 @@ export default {
       }
     });
 
+    // Handle scroll on tabs container to update indicator position
+    const handleScroll = () => {
+      updateIndicatorPosition();
+    };
+
+    // Handle window resize to update indicator position
+    const handleResize = () => {
+      updateIndicatorPosition();
+    };
+
     onMounted(async () => {
       // Load timezone first, before any other operations
       await loadTimezone();
@@ -976,6 +1447,57 @@ export default {
       setTimeout(() => {
         updateIndicatorPosition();
       }, 100);
+
+      // Add scroll listener to tabs container
+      if (tabsContainer.value) {
+        tabsContainer.value.addEventListener("scroll", handleScroll);
+      }
+
+      // Add window resize listener
+      if (typeof window !== "undefined") {
+        window.addEventListener("resize", handleResize);
+      }
+
+      // Setup ResizeObserver to watch for size changes
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => {
+          requestAnimationFrame(() => {
+            updateIndicatorPosition();
+          });
+        });
+
+        // Observe the tabs container
+        if (tabsContainer.value) {
+          resizeObserver.observe(tabsContainer.value);
+        }
+
+        // Observe each tab button
+        nextTick(() => {
+          Object.values(tabRefs.value).forEach((tabEl) => {
+            if (tabEl) {
+              resizeObserver.observe(tabEl);
+            }
+          });
+        });
+      }
+    });
+
+    onUnmounted(() => {
+      // Remove scroll listener from tabs container
+      if (tabsContainer.value) {
+        tabsContainer.value.removeEventListener("scroll", handleScroll);
+      }
+
+      // Remove window resize listener
+      if (typeof window !== "undefined") {
+        window.removeEventListener("resize", handleResize);
+      }
+
+      // Disconnect ResizeObserver
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
     });
 
     return {
@@ -995,7 +1517,6 @@ export default {
       backupsError,
       backups,
       dedupedBackups,
-      backupOptions,
       deletingBackup,
       backupRunning,
       restoreRunning,
@@ -1024,6 +1545,23 @@ export default {
       indicator,
       indicatorStyle,
       setTabRef,
+      restoreSearchQuery,
+      restoreFilters,
+      restoreSortBy,
+      restoreSortOrder,
+      restorePage,
+      restorePageSize,
+      backupTypeFilterOptions,
+      backupStatusFilterOptions,
+      backupStorageFilterOptions,
+      pageSizeOptions,
+      filteredAndSortedBackups,
+      totalPages,
+      paginatedBackups,
+      sortBackups,
+      selectBackupForRestore,
+      inferStorageType,
+      getStorageLabelShort,
     };
   },
 };
@@ -1043,7 +1581,7 @@ export default {
   cursor: pointer;
   transition: all 0.2s ease;
   border: 1px solid rgba(148, 163, 184, 0.1);
-  min-height: 120px; /* Ensure minimum height for consistency */
+  min-height: 120px;
 }
 
 @media (min-width: 769px) {
@@ -1052,11 +1590,13 @@ export default {
   }
 
   .integration-content {
-    justify-content: center; /* Center content vertically */
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
   }
 
   .integration-content h3 {
-    white-space: nowrap; /* Prevent wrapping on desktop */
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -1065,7 +1605,7 @@ export default {
 .integration-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: rgba(96, 165, 250, 0.3);
+  border-color: rgba(139, 92, 246, 0.3);
 }
 
 .integration-logo {
@@ -1091,6 +1631,8 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .integration-content h3 {
@@ -1141,6 +1683,78 @@ export default {
   overflow: visible;
 }
 
+.backup-controls-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding-top: 2px;
+  overflow: visible;
+}
+
+.backup-storage-select-card {
+  min-width: 140px;
+  max-width: 160px;
+  flex-shrink: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.backup-storage-select-card :deep(.custom-select-trigger-sm) {
+  min-height: 2.5rem;
+  height: 2.5rem;
+  padding: 0.5rem 1rem;
+  padding-right: 1.75rem;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.backup-storage-select-card:hover :deep(.custom-select-trigger-sm) {
+  z-index: 2;
+}
+
+.btn-backup-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem;
+  min-width: 2.5rem;
+  width: 2.5rem;
+  min-height: 2.5rem;
+  height: 2.5rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 0.5rem;
+  color: #8b5cf6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.btn-backup-trigger:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.5);
+  transform: translateY(-1px);
+  z-index: 2;
+}
+
+.btn-backup-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-backup-trigger span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .integration-arrow {
   flex-shrink: 0;
   color: #64748b;
@@ -1148,7 +1762,7 @@ export default {
 }
 
 .integration-card:hover .integration-arrow {
-  color: #60a5fa;
+  color: #8b5cf6;
   transform: translateX(4px);
 }
 
@@ -1215,34 +1829,30 @@ export default {
 }
 
 .tab-button.active {
-  color: #60a5fa;
+  color: #8b5cf6;
   background: rgba(88, 166, 255, 0.1);
 }
 
 /* Liquid glass indicator */
 .tab-indicator {
   position: absolute;
-  bottom: 0;
   height: 2.5px;
-  background: linear-gradient(
-    90deg,
-    rgba(96, 165, 250, 1),
-    rgba(56, 189, 248, 1),
-    rgba(96, 165, 250, 1)
-  );
+  background: var(--accent-gradient);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: 999px;
   box-shadow:
-    0 0 8px rgba(96, 165, 250, 0.6),
-    0 0 16px rgba(56, 189, 248, 0.4),
+    0 0 8px rgba(139, 92, 246, 0.6),
+    0 0 16px rgba(139, 92, 246, 0.4),
     inset 0 1px 1px rgba(255, 255, 255, 0.3);
   transition:
     left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 2;
   pointer-events: none;
   will-change: left, width;
+  margin-top: 0.3rem;
 }
 
 .tab-content {
@@ -1264,34 +1874,10 @@ export default {
   font-weight: 600;
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-group label {
-  color: #cbd5e1;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .form-input,
 .form-select {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  color: #e6eef6;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
-}
-
-.form-input:focus,
-.form-select:focus {
-  outline: none;
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+  /* Use global .input styles from vault.css */
 }
 
 .form-help {
@@ -1374,8 +1960,8 @@ export default {
 }
 
 .toggle-input:checked + .toggle-slider {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  border-color: rgba(139, 92, 246, 0.5);
 }
 
 .toggle-input:checked + .toggle-slider:before {
@@ -1383,7 +1969,7 @@ export default {
 }
 
 .toggle-input:focus + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .toggle-switch:hover .toggle-slider {
@@ -1391,83 +1977,20 @@ export default {
 }
 
 .toggle-switch:hover .toggle-input:checked + .toggle-slider {
-  border-color: rgba(96, 165, 250, 0.7);
+  border-color: rgba(139, 92, 246, 0.7);
 }
 
-.form-actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.btn {
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.3);
-}
-
-.btn-secondary {
-  background: rgba(30, 41, 59, 0.6);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(148, 163, 184, 0.4);
-}
-
-.btn-warning {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: white;
-}
-
-.btn-warning:hover:not(:disabled) {
-  background: linear-gradient(135deg, #d97706, #b45309);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-}
-
-.btn-danger {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  color: white;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: linear-gradient(135deg, #dc2626, #b91c1c);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-}
-
+/* Button styles use global .btn, .btn-primary, .btn-secondary, .btn-danger, .btn-warning from vault.css */
 .btn-small {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .backups-list {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  contain: layout style paint;
 }
 
 .backups-count-info {
@@ -1475,8 +1998,8 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
   border-radius: 8px;
   margin-bottom: 1rem;
   font-size: 0.9rem;
@@ -1552,9 +2075,9 @@ export default {
 }
 
 .status-running {
-  background: rgba(96, 165, 250, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 .status-failed {
@@ -1654,64 +2177,297 @@ export default {
   margin-bottom: 1rem;
 }
 
-.actions-section {
-  margin-bottom: 2rem;
-  padding-bottom: 2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.actions-section:last-child {
-  border-bottom: none;
-}
-
-.backup-controls {
+.restore-section {
   display: flex;
-  gap: 1rem;
-  align-items: center;
-  margin-top: 1rem;
-  width: fit-content;
-  max-width: 45%;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.backup-storage-select {
-  flex: 0 0 auto;
-  width: 150px;
-  min-width: 150px;
+.restore-header {
+  margin-bottom: 1rem;
 }
 
-.actions-section h4 {
+.restore-header h4 {
   margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
   color: #cbd5e1;
   font-weight: 600;
 }
 
-.actions-section p {
-  margin: 0 0 1rem 0;
+.restore-header p {
+  margin: 0;
   color: #94a3b8;
   font-size: 0.9rem;
   line-height: 1.5;
 }
 
-.restore-btn {
-  margin-top: 1rem;
+.restore-filters {
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 1rem;
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+.filter-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 150px;
+}
+
+.filter-group label {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.filter-input {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  color: #e6eef6;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.restore-table-container {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(30, 41, 59, 0.3);
+}
+
+.restore-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+.restore-table thead {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.restore-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.restore-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.restore-table th.sortable:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.sort-indicator {
+  margin-left: 0.5rem;
+  color: #8b5cf6;
+  font-weight: bold;
+}
+
+.restore-table td {
+  padding: 0.75rem 1rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+}
+
+.restore-table tbody tr {
+  transition: background 0.2s ease;
+  cursor: pointer;
+}
+
+.restore-table tbody tr:hover:not(.empty-row):not(.row-disabled) {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.restore-table tbody tr.row-selected {
+  background: rgba(139, 92, 246, 0.1);
+  border-left: 3px solid #8b5cf6;
+}
+
+.restore-table tbody tr.row-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.restore-table tbody tr.empty-row {
+  cursor: default;
+}
+
+.restore-table tbody tr.empty-row:hover {
+  background: transparent;
+}
+
+.restore-table .text-center {
+  text-align: center;
+  padding: 2rem;
+  color: #94a3b8;
+}
+
+.col-select {
+  width: 50px;
+  text-align: center;
+}
+
+.col-date {
+  min-width: 180px;
+}
+
+.col-type {
+  min-width: 100px;
+}
+
+.col-status {
+  min-width: 100px;
+}
+
+.col-size {
+  min-width: 100px;
+}
+
+.col-storage {
+  min-width: 100px;
+}
+
+.backup-type-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(139, 92, 246, 0.1);
+  color: #c4b5fd;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.backup-status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.backup-status-badge.status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.backup-status-badge.status-running {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.backup-status-badge.status-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.backup-status-badge.status-pending {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.storage-badge-small {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(139, 92, 246, 0.1);
+  color: #c4b5fd;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.restore-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.pagination-info {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 2rem;
+  gap: 1rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  flex-wrap: nowrap;
 }
 
+.pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pagination-size label {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.page-numbers {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.restore-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.restore-btn {
+  align-self: flex-start;
+}
+
+/* Modal styles use global .modal-overlay and .modal from vault.css */
 .modal {
   max-width: 800px;
   width: 100%;
@@ -1724,7 +2480,8 @@ export default {
 }
 
 .modal-wide {
-  max-width: 95vw;
+  width: 90%;
+  overflow-y: visible;
 }
 
 .modal-header {
@@ -1784,6 +2541,9 @@ export default {
   width: 100%;
   flex: 1;
   overflow-y: auto;
+  transform: translateZ(0);
+  contain: layout style paint;
+  -webkit-overflow-scrolling: touch;
 }
 
 .config-card {
@@ -1901,39 +2661,72 @@ export default {
   }
 
   .modal-wide {
-    max-width: 95vw;
+    width: 90%;
+    overflow-y: visible;
   }
 
   .tabs-header {
     padding: 0.5rem 0.75rem;
-    gap: 0.25rem;
+    gap: 0.5rem;
     margin-bottom: 1rem;
     justify-content: flex-start;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: visible;
   }
 
   .tab-button {
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
-    flex: 0 0 auto;
-    min-width: fit-content;
+    flex: 0 0 calc(50% - 0.25rem);
+    min-width: 0;
     white-space: nowrap;
   }
 
-  .backup-controls {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.75rem;
-    max-width: 100%;
-    width: fit-content;
+  .tab-button:nth-child(3) {
+    flex: 0 0 100%;
   }
 
-  .backup-storage-select {
-    width: 130px;
-    min-width: 130px;
-    flex: 0 0 auto;
+  .backup-controls-card {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .backup-storage-select-card {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .filter-row {
+    flex-direction: column;
+  }
+
+  .filter-group {
+    min-width: 100%;
+  }
+
+  .restore-table-container {
+    overflow-x: auto;
+  }
+
+  .restore-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-info {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .pagination-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .checksum-value {
@@ -1992,12 +2785,20 @@ export default {
 @media (max-width: 640px) {
   .tabs-header {
     padding: 0.5rem 0.5rem;
-    gap: 0.2rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: visible;
   }
 
   .tab-button {
     padding: 0.5rem 0.6rem;
     font-size: 0.8rem;
+    flex: 0 0 calc(50% - 0.25rem);
+  }
+
+  .tab-button:nth-child(3) {
+    flex: 0 0 100%;
   }
 
   .backup-header {
@@ -2032,60 +2833,5 @@ export default {
   .backup-item {
     padding: 0.75rem;
   }
-}
-
-.integration-description {
-  font-size: 0.85rem;
-}
-
-.integration-status {
-  margin-top: 0.75rem;
-}
-
-.integration-actions {
-  flex-direction: column;
-  width: 100%;
-  gap: 0.75rem;
-  padding-right: 0;
-  align-items: stretch;
-}
-
-.integration-arrow {
-  display: none;
-}
-
-.modal-overlay {
-  padding: 1rem;
-}
-
-.modal-wide {
-  max-width: 95vw;
-}
-
-.tabs-header {
-  padding: 0.5rem 0.75rem;
-  gap: 0.25rem;
-  margin-bottom: 1rem;
-}
-
-.tab-button {
-  padding: 0.5rem 0.5rem;
-  font-size: 0.85rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.backup-controls {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: 100%;
-  width: fit-content;
-}
-
-.backup-storage-select {
-  width: 130px;
-  min-width: 130px;
-  flex: 0 0 auto;
 }
 </style>

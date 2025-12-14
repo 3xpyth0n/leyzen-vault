@@ -129,7 +129,7 @@
         @click.self="showActionsModal = false"
       >
         <div class="modal glass glass-card modal-wide" @click.stop>
-          <div class="modal-header sticky-header">
+          <div class="modal-header">
             <h3>
               <span v-html="getIcon('edit', 20)"></span>
               Edit User
@@ -301,92 +301,96 @@
               ×
             </button>
           </div>
-          <div v-if="userDetails && userDetails.user" class="user-details-grid">
-            <div class="detail-section glass">
-              <h4>Basic Information</h4>
-              <div class="detail-item">
-                <span class="detail-label">Email:</span>
-                <span class="detail-value">{{
-                  userDetails.user?.email || "N/A"
-                }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Role:</span>
-                <span
-                  class="role-badge"
-                  :class="`role-${userDetails.user?.global_role || 'user'}`"
-                >
-                  {{ userDetails.user?.global_role || "user" }}
-                </span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Status:</span>
-                <span
-                  class="status-badge"
-                  :class="{
-                    verified: userDetails.user?.email_verified,
-                    unverified: !userDetails.user?.email_verified,
-                  }"
-                >
-                  {{
-                    userDetails.user?.email_verified ? "Verified" : "Unverified"
-                  }}
-                </span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Created:</span>
-                <span class="detail-value">{{
-                  formatDate(userDetails.user?.created_at)
-                }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Last Login:</span>
-                <span class="detail-value">{{
-                  formatDate(userDetails.user?.last_login)
-                }}</span>
-              </div>
-            </div>
-            <div class="detail-section glass">
-              <h4>Storage</h4>
-              <div class="detail-item">
-                <span class="detail-label">Files:</span>
-                <span class="detail-value">{{
-                  userDetails?.files_count || 0
-                }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Used:</span>
-                <span class="detail-value">{{
-                  formatSize(userDetails?.quota?.used)
-                }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Limit:</span>
-                <span class="detail-value">
-                  <span v-if="userDetails?.quota?.limit">{{
-                    formatSize(userDetails.quota.limit)
-                  }}</span>
-                  <span v-else>Unlimited</span>
-                </span>
-              </div>
-            </div>
-            <div class="detail-section glass">
-              <h4>VaultSpaces</h4>
-              <div class="detail-item">
-                <span class="detail-label">Total:</span>
-                <span class="detail-value">{{
-                  userDetails?.vaultspaces?.length || 0
-                }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="form-actions">
-            <button
-              @click="viewingUserDetails = null"
-              class="btn btn-secondary"
+          <div class="modal-body">
+            <div
+              v-if="userDetails && userDetails.user"
+              class="user-details-grid"
             >
-              Close
-            </button>
+              <div class="detail-section glass">
+                <h4>Basic Information</h4>
+                <div class="detail-item">
+                  <span class="detail-label">Email:</span>
+                  <span class="detail-value">{{
+                    userDetails.user?.email || "N/A"
+                  }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Role:</span>
+                  <span
+                    class="role-badge"
+                    :class="`role-${userDetails.user?.global_role || 'user'}`"
+                  >
+                    {{ userDetails.user?.global_role || "user" }}
+                  </span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Status:</span>
+                  <span
+                    class="status-badge"
+                    :class="{
+                      verified: userDetails.user?.email_verified,
+                      unverified: !userDetails.user?.email_verified,
+                    }"
+                  >
+                    {{
+                      userDetails.user?.email_verified
+                        ? "Verified"
+                        : "Unverified"
+                    }}
+                  </span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Created:</span>
+                  <span class="detail-value">{{
+                    formatDate(userDetails.user?.created_at)
+                  }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Last Login:</span>
+                  <span class="detail-value">{{
+                    formatDate(userDetails.user?.last_login)
+                  }}</span>
+                </div>
+              </div>
+              <div class="detail-section glass">
+                <h4>Storage</h4>
+                <div class="detail-item">
+                  <span class="detail-label">VaultSpaces:</span>
+                  <span class="detail-value">{{
+                    userDetails?.vaultspaces?.length || 0
+                  }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Files:</span>
+                  <span class="detail-value">{{
+                    userDetails?.files_count || 0
+                  }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Used:</span>
+                  <span class="detail-value">{{
+                    formatSize(userDetails?.quota?.used)
+                  }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Limit:</span>
+                  <span class="detail-value">
+                    <span v-if="userDetails?.quota?.limit">{{
+                      formatSize(userDetails.quota.limit)
+                    }}</span>
+                    <span v-else>Unlimited</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button
+                @click="viewingUserDetails = null"
+                class="btn btn-secondary"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1251,9 +1255,9 @@ export default {
 }
 
 .role-user {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 .role-admin {
@@ -1318,7 +1322,7 @@ export default {
 .btn-icon:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.1);
   border-color: rgba(56, 189, 248, 0.3);
-  color: #38bdf8;
+  color: #8b5cf6;
   transform: translateY(-2px);
 }
 
@@ -1379,32 +1383,10 @@ export default {
   min-width: auto;
 }
 
+/* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 100000 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 1 !important;
-  visibility: visible !important;
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 /* Adjust modal overlay when sidebar is collapsed */
@@ -1418,40 +1400,7 @@ body.mobile-mode .modal-overlay {
   padding-right: 2rem !important;
 }
 
-.modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 2rem;
-  border-radius: 2rem;
-  min-width: 400px;
-  max-width: 90vw;
-  max-height: 90vh;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  position: relative;
-  overflow-y: auto;
-  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes slideUp {
-  from {
-    transform: scale(0.95) translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
-}
+/* Modal uses global .modal styles from vault.css */
 
 .modal-large {
   min-width: 600px;
@@ -1459,8 +1408,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-wide {
   width: 90%;
-  max-width: 900px;
-  min-width: 500px;
+  overflow-y: visible;
 }
 
 .modal-view .user-details-grid {
@@ -1478,25 +1426,12 @@ body.mobile-mode .modal-overlay {
   padding: 1.5rem 2rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.modal-header.sticky-header {
   position: sticky;
   top: 0;
   -webkit-backdrop-filter: blur(20px);
-  margin: 0;
-  padding: 1.5rem 2rem;
+  z-index: 20;
   width: 100%;
   box-sizing: border-box;
-  border-radius: 1.25rem 1.25rem 0 0;
-  z-index: 20;
-  border-top: none;
-  border-left: none;
-  border-right: none;
 }
 
 .modal-body {
@@ -1520,7 +1455,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-header h3 :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .modal-close-btn {
@@ -1593,46 +1528,21 @@ body.mobile-mode .modal-overlay {
   margin-bottom: 0;
 }
 
+.actions-section .form-group {
+  margin-bottom: 1rem;
+}
+
 .modal-form {
   width: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.form-group {
-  margin-bottom: 1.25rem;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #cbd5e1;
-  font-size: 0.9rem;
-  font-weight: 500;
-  width: 100%;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .form-input,
 .form-select {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
   box-sizing: border-box;
-}
-
-.form-input:focus,
-.form-select:focus {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(30, 41, 59, 0.6);
 }
 
 .checkbox-label {
@@ -1679,7 +1589,7 @@ body.mobile-mode .modal-overlay {
     rgba(56, 189, 248, 0.2) 0%,
     rgba(129, 140, 248, 0.2) 100%
   );
-  color: #38bdf8;
+  color: #8b5cf6;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
@@ -1726,11 +1636,7 @@ body.mobile-mode .modal-overlay {
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-}
+/* Button disabled state uses global .btn:disabled from vault.css */
 
 .warning-message,
 .danger-message,
@@ -1839,7 +1745,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .loading :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
   animation: spin 1s linear infinite;
 }
 
@@ -1878,26 +1784,10 @@ body.mobile-mode .modal-overlay {
   font-size: 0.9rem;
 }
 
+/* Form input styles use global .input from vault.css */
 .form-input {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
   box-sizing: border-box;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(30, 41, 59, 0.6);
-}
-
-.form-input::placeholder {
-  color: #64748b;
 }
 
 /* Glass morphism effect - uses global styles from assets/styles.css */

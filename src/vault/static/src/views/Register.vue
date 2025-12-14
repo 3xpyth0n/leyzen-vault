@@ -327,7 +327,7 @@ input:disabled {
 button[type="submit"] {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   border: none;
   border-radius: 8px;
   color: white;

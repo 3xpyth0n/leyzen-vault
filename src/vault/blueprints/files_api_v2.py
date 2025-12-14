@@ -560,6 +560,21 @@ def upload_file_v2():
                     exc_info=True,
                 )
 
+        # Update parent folder sizes recursively after successful file upload
+        # Refresh file_obj to ensure we have the latest data from database
+        db.session.refresh(file_obj)
+        parent_id = file_obj.parent_id
+
+        # Check if parent_id is valid (not None and not empty string)
+        if parent_id and str(parent_id).strip():
+            try:
+                file_service.update_folder_size_recursive(parent_id)
+            except Exception as e:
+                # Log error but don't fail the upload
+                current_app.logger.warning(
+                    f"Failed to update folder size for parent {parent_id}: {e}"
+                )
+
         return (
             jsonify(
                 {
@@ -628,6 +643,80 @@ def list_files():
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/folders/<folder_id>/recalculate-size", methods=["POST"])
+@csrf.exempt
+@jwt_required
+def recalculate_folder_size(folder_id: str):
+    """Recalculate and update folder size recursively.
+
+    This endpoint can be used to fix folder sizes for existing folders
+    that were created before the automatic size update was implemented.
+
+    Args:
+        folder_id: Folder ID to recalculate
+
+    Returns:
+        JSON with updated folder info
+    """
+    from vault.blueprints.validators import validate_file_id
+
+    if not validate_file_id(folder_id):
+        return jsonify({"error": "Invalid folder_id format (must be UUID)"}), 400
+
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    file_service = _get_file_service()
+
+    try:
+        # Check if folder exists and user has permission
+        file_obj, permissions = file_service.get_file_with_permissions(
+            folder_id, user.id
+        )
+
+        if not file_obj:
+            return jsonify({"error": "Folder not found"}), 404
+
+        if file_obj.mime_type != "application/x-directory":
+            return jsonify({"error": "File is not a folder"}), 400
+
+        # Check permissions
+        has_permission = False
+        if file_obj.owner_user_id == user.id:
+            has_permission = True
+        elif permissions:
+            has_permission = True
+
+        if not has_permission:
+            return jsonify({"error": "Permission denied"}), 403
+
+        # Recalculate folder size
+        file_service.update_folder_size_recursive(folder_id)
+
+        # Refresh folder to get updated size
+        from vault.database.schema import File, db
+
+        db.session.refresh(file_obj)
+
+        return (
+            jsonify(
+                {
+                    "folder": file_obj.to_dict(),
+                    "message": f"Folder size recalculated: {file_obj.size} bytes",
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        current_app.logger.error(
+            f"[FOLDER_SIZE_UPDATE] Failed to recalculate folder size for {folder_id}: {e}",
+            exc_info=True,
+        )
+        return jsonify({"error": str(e)}), 500
 
 
 @files_api_bp.route("/<file_id>", methods=["GET"])

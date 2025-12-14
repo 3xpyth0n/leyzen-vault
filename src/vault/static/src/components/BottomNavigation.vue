@@ -499,7 +499,7 @@ export default {
 
 .bottom-nav-item.router-link-active {
   background: rgba(88, 166, 255, 0.15);
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
 .bottom-nav-item:disabled {

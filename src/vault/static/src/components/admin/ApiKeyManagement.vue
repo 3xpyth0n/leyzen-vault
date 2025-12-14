@@ -697,8 +697,8 @@ export default {
   border-radius: 0.25rem;
   font-family: "Courier New", monospace;
   font-size: 0.85rem;
-  color: #60a5fa;
-  border: 1px solid rgba(96, 165, 250, 0.2);
+  color: white;
+  border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .actions {
@@ -732,7 +732,7 @@ export default {
 .btn-icon:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.1);
   border-color: rgba(56, 189, 248, 0.3);
-  color: #38bdf8;
+  color: #8b5cf6;
   transform: translateY(-2px);
 }
 
@@ -751,84 +751,26 @@ export default {
   display: block;
 }
 
+/* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 100000 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 1 !important;
-  visibility: visible !important;
-  animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
-/* Remove sidebar padding in mobile mode */
 body.mobile-mode .modal-overlay {
   padding-left: 2rem !important;
   padding-right: 2rem !important;
 }
 
-.modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 2rem;
-  border-radius: 2rem;
-  min-width: 400px;
-  max-width: 90vw;
-  max-height: 90vh;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  position: relative;
-  overflow-y: auto;
-  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes slideUp {
-  from {
-    transform: scale(0.95) translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
-}
+/* Modal uses global .modal styles from vault.css */
 
 .modal-wide {
   width: 90%;
-  max-width: 600px;
-  min-width: 500px;
+  overflow-y: visible;
 }
 
 .modal-header {
@@ -856,7 +798,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-header h3 :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .modal-close-btn {
@@ -897,32 +839,10 @@ body.mobile-mode .modal-overlay {
   gap: 1.25rem;
 }
 
-.form-group {
-  margin-bottom: 1.25rem;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #cbd5e1;
-  font-size: 0.9rem;
-  font-weight: 500;
-  width: 100%;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .form-input,
 .form-select {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
   box-sizing: border-box;
 }
 
@@ -1026,8 +946,8 @@ body.mobile-mode .modal-overlay {
   border-radius: 0.75rem;
   font-family: "Courier New", monospace;
   font-size: 0.9rem;
-  color: #60a5fa;
-  border: 1px solid rgba(96, 165, 250, 0.2);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.2);
   word-break: break-all;
 }
 
@@ -1073,7 +993,7 @@ body.mobile-mode .modal-overlay {
     rgba(56, 189, 248, 0.2) 0%,
     rgba(129, 140, 248, 0.2) 100%
   );
-  color: #38bdf8;
+  color: #8b5cf6;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
@@ -1142,7 +1062,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .loading :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
   animation: spin 1s linear infinite;
 }
 

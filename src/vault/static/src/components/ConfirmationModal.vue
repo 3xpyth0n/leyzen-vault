@@ -263,7 +263,7 @@ export default {
 }
 
 .modal-btn-confirm {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
   color: white;
 }
 

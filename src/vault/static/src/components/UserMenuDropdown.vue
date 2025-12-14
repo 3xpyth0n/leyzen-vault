@@ -376,12 +376,12 @@ export default {
 
 .user-menu-item:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
 .user-menu-item.router-link-active {
   background: rgba(88, 166, 255, 0.15);
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
 .user-menu-item-icon {

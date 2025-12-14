@@ -857,16 +857,23 @@ export default {
   opacity: 1;
 }
 
-.vaultspace-action-btn {
+.vaultspace-action-btn,
+.vaultspace-menu-btn {
   background: rgba(255, 255, 255, 0);
   padding: 0.5rem;
   cursor: pointer;
   font-size: 1rem;
   transition: all 0.2s ease;
   color: #e6eef6;
+  border: none;
+  border-radius: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.vaultspace-action-btn:hover {
+.vaultspace-action-btn:hover,
+.vaultspace-menu-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(88, 166, 255, 0.3);
 }
@@ -929,7 +936,7 @@ export default {
 }
 
 .vaultspace-pinned-indicator {
-  color: #38bdf8;
+  color: #8b5cf6;
   font-weight: 500;
 }
 
@@ -949,24 +956,7 @@ export default {
   transition: all 0.2s ease;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.btn-secondary {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.3);
-}
+/* Button styles use global .btn-primary and .btn-secondary from vault.css */
 
 .btn-outline {
   background: transparent;
@@ -979,53 +969,16 @@ export default {
   background: rgba(88, 166, 255, 0.1);
 }
 
+/* Modal styles use global .modal-overlay and .modal from vault.css with sidebar-specific padding */
 .modal-overlay {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  background: rgba(7, 14, 28, 0.4) !important;
-  backdrop-filter: blur(15px) !important;
-  -webkit-backdrop-filter: blur(15px) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 10000 !important;
-  padding: 2rem !important;
   padding-left: calc(
     2rem + 250px
   ) !important; /* Default: sidebar expanded (250px) */
-  overflow-y: auto !important;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
-}
-
-.modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  padding: 2rem !important;
-  border-radius: 2rem !important;
-  min-width: 400px !important;
-  max-width: 90vw !important;
-  max-height: 90vh !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
-  position: relative !important;
-  z-index: 10001 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  box-sizing: border-box !important;
-  overflow-y: auto !important;
 }
 
 .modal h2 {
@@ -1037,17 +990,7 @@ body.sidebar-collapsed .modal-overlay {
   text-align: center !important;
 }
 
-.form-group {
-  margin-bottom: 1.25rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #cbd5e1;
-  font-weight: 500;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .form-group input,
 .form-group select {
   width: 100%;

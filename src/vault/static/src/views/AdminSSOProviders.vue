@@ -187,462 +187,477 @@
     <!-- Create/Edit Modal -->
     <teleport to="body">
       <div v-if="showModal" class="modal-overlay" @click="closeModal">
-        <div class="modal-content" @click.stop>
+        <div class="modal glass glass-card modal-wide" @click.stop>
           <div class="modal-header">
-            <h2>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h2>
-            <button @click="closeModal" class="modal-close">&times;</button>
+            <h3>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h3>
+            <button
+              @click="closeModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
+            </button>
           </div>
 
-          <form @submit.prevent="handleSaveProvider" class="provider-form">
-            <div class="form-group">
-              <label for="provider-name">Name *</label>
-              <input
-                id="provider-name"
-                v-model="form.name"
-                type="text"
-                required
-                autocomplete="off"
-                placeholder="e.g., Google SSO, Azure AD"
-              />
-            </div>
+          <div class="modal-body">
+            <form @submit.prevent="handleSaveProvider" class="modal-form">
+              <div class="form-group">
+                <label for="provider-name">Name *</label>
+                <input
+                  id="provider-name"
+                  v-model="form.name"
+                  type="text"
+                  required
+                  autocomplete="off"
+                  placeholder="e.g., Google SSO, Azure AD"
+                />
+              </div>
 
-            <div class="form-group">
-              <label for="provider-type">Provider Type *</label>
-              <select
-                id="provider-type"
-                v-model="form.provider_type"
-                required
-                :disabled="editingProvider !== null"
-                @change="onProviderTypeChange"
+              <div class="form-group">
+                <label for="provider-type">Provider Type *</label>
+                <CustomSelect
+                  id="provider-type"
+                  v-model="form.provider_type"
+                  :options="providerTypeOptions"
+                  :disabled="editingProvider !== null"
+                  @change="onProviderTypeChange"
+                  placeholder="Select provider..."
+                />
+              </div>
+
+              <!-- Google Configuration -->
+              <div
+                v-if="form.provider_type === 'google'"
+                class="config-section"
               >
-                <option value="">Select provider...</option>
-                <option value="email-magic-link">Email Magic Link</option>
-                <option value="google">Google</option>
-                <option value="microsoft">Microsoft Entra</option>
-                <option value="slack">Slack</option>
-                <option value="discord">Discord</option>
-                <option value="gitlab">GitLab</option>
-                <option value="oidc">OIDC (Generic)</option>
-                <option value="saml">SAML (Generic)</option>
-              </select>
-            </div>
-
-            <!-- Google Configuration -->
-            <div v-if="form.provider_type === 'google'" class="config-section">
-              <h3>Google Configuration</h3>
-              <p class="config-description">
-                Configure Google OAuth2. You'll need to create OAuth credentials
-                in the
-                <a
-                  href="https://console.cloud.google.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Google Cloud Console
-                </a>
-                and set the redirect URI to:
-                <code>{{ getRedirectUri() }}</code>
-              </p>
-              <div class="form-group">
-                <label for="google-client-id">Google Client ID *</label>
-                <input
-                  id="google-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="xxxxx.apps.googleusercontent.com"
-                />
-              </div>
-              <div class="form-group">
-                <label for="google-client-secret">Google Client Secret *</label>
-                <input
-                  id="google-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  placeholder="GOCSPX-xxxxx"
-                />
-              </div>
-            </div>
-
-            <!-- Microsoft Entra Configuration -->
-            <div
-              v-if="form.provider_type === 'microsoft'"
-              class="config-section"
-            >
-              <h3>Microsoft Entra Configuration</h3>
-              <p class="config-description">
-                Configure Microsoft Entra ID (Azure AD) using OpenID Connect.
-              </p>
-              <div class="form-group">
-                <label for="microsoft-tenant-id">Tenant ID *</label>
-                <input
-                  id="microsoft-tenant-id"
-                  v-model="form.config.tenant_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or common"
-                />
-                <small
-                  >Use "common" for multi-tenant or your specific tenant
-                  ID</small
-                >
-              </div>
-              <div class="form-group">
-                <label for="microsoft-client-id"
-                  >Client ID (Application ID) *</label
-                >
-                <input
-                  id="microsoft-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                />
-              </div>
-              <div class="form-group">
-                <label for="microsoft-client-secret">Client Secret *</label>
-                <input
-                  id="microsoft-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  placeholder="Client secret value"
-                />
-              </div>
-            </div>
-
-            <!-- Slack Configuration -->
-            <div v-if="form.provider_type === 'slack'" class="config-section">
-              <h3>Slack Configuration</h3>
-              <p class="config-description">
-                Configure Slack OAuth2. Create an app at
-                <a
-                  href="https://api.slack.com/apps"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  api.slack.com/apps
-                </a>
-                and set the redirect URI to:
-                <code>{{ getRedirectUri() }}</code>
-              </p>
-              <div class="form-group">
-                <label for="slack-client-id">Slack Client ID *</label>
-                <input
-                  id="slack-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="1234567890.1234567890"
-                />
-              </div>
-              <div class="form-group">
-                <label for="slack-client-secret">Slack Client Secret *</label>
-                <input
-                  id="slack-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  placeholder="Client secret"
-                />
-              </div>
-            </div>
-
-            <!-- Discord Configuration -->
-            <div v-if="form.provider_type === 'discord'" class="config-section">
-              <h3>Discord Configuration</h3>
-              <p class="config-description">
-                Configure Discord OAuth2. Create an application at
-                <a
-                  href="https://discord.com/developers/applications"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  discord.com/developers
-                </a>
-                and set the redirect URI to:
-                <code>{{ getRedirectUri() }}</code>
-              </p>
-              <div class="form-group">
-                <label for="discord-client-id">Discord Client ID *</label>
-                <input
-                  id="discord-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="123456789012345678"
-                />
-              </div>
-              <div class="form-group">
-                <label for="discord-client-secret"
-                  >Discord Client Secret *</label
-                >
-                <input
-                  id="discord-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  placeholder="Client secret"
-                />
-              </div>
-            </div>
-
-            <!-- GitLab Configuration -->
-            <div v-if="form.provider_type === 'gitlab'" class="config-section">
-              <h3>GitLab Configuration</h3>
-              <p class="config-description">
-                Configure GitLab OAuth2. Create an application in your GitLab
-                instance (Settings → Applications) and set the redirect URI to:
-                <code>{{ getRedirectUri() }}</code>
-              </p>
-              <div class="form-group">
-                <label for="gitlab-instance-url">GitLab Instance URL</label>
-                <input
-                  id="gitlab-instance-url"
-                  v-model="form.config.instance_url"
-                  type="url"
-                  autocomplete="off"
-                  placeholder="https://gitlab.com (default)"
-                />
-                <small
-                  >Leave empty for gitlab.com, or enter your self-hosted GitLab
-                  URL</small
-                >
-              </div>
-              <div class="form-group">
-                <label for="gitlab-client-id">GitLab Application ID *</label>
-                <input
-                  id="gitlab-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="Application ID"
-                />
-              </div>
-              <div class="form-group">
-                <label for="gitlab-client-secret">GitLab Secret *</label>
-                <input
-                  id="gitlab-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  placeholder="Secret"
-                />
-              </div>
-            </div>
-
-            <!-- OIDC Generic Configuration -->
-            <div v-if="form.provider_type === 'oidc'" class="config-section">
-              <h3>OIDC (Generic) Configuration</h3>
-              <p class="config-description">
-                Configure a generic OpenID Connect provider. OIDC discovery will
-                be used to find endpoints automatically.
-              </p>
-              <div class="form-group">
-                <label for="oidc-issuer-url">Issuer URL *</label>
-                <input
-                  id="oidc-issuer-url"
-                  v-model="form.config.issuer_url"
-                  type="url"
-                  required
-                  autocomplete="off"
-                  placeholder="https://idp.example.com"
-                />
-                <small>OIDC discovery will be used to find endpoints</small>
-              </div>
-              <div class="form-group">
-                <label for="oidc-client-id">Client ID *</label>
-                <input
-                  id="oidc-client-id"
-                  v-model="form.config.client_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                />
-              </div>
-              <div class="form-group">
-                <label for="oidc-client-secret">Client Secret *</label>
-                <input
-                  id="oidc-client-secret"
-                  v-model="form.config.client_secret"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                />
-              </div>
-              <div class="form-group">
-                <label for="oidc-redirect-uri">Redirect URI</label>
-                <input
-                  id="oidc-redirect-uri"
-                  v-model="form.config.redirect_uri"
-                  type="url"
-                  autocomplete="off"
-                  placeholder="Auto-generated if not provided"
-                />
-              </div>
-              <div class="form-group">
-                <label for="oidc-scopes">Scopes</label>
-                <input
-                  id="oidc-scopes"
-                  v-model="form.config.scopes"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="openid email profile (default)"
-                />
-              </div>
-            </div>
-
-            <!-- Email Magic Link Configuration -->
-            <div
-              v-if="form.provider_type === 'email-magic-link'"
-              class="config-section"
-            >
-              <h3>Email Magic Link Configuration</h3>
-              <p class="config-description">
-                Users will receive a magic link via email to sign in. No
-                password required. Make sure email (SMTP) is configured in
-                system settings.
-              </p>
-
-              <!-- SMTP Status -->
-              <div class="smtp-status">
-                <div class="smtp-status-header">
-                  <span class="smtp-status-label">SMTP Configuration:</span>
-                  <button
-                    @click="testSMTP"
-                    class="btn btn-small btn-secondary"
-                    :disabled="smtpTesting"
-                    type="button"
+                <h3>Google Configuration</h3>
+                <p class="config-description">
+                  Configure Google OAuth2. You'll need to create OAuth
+                  credentials in the
+                  <a
+                    href="https://console.cloud.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    {{ smtpTesting ? "Testing..." : "Test SMTP" }}
-                  </button>
+                    Google Cloud Console
+                  </a>
+                  and set the redirect URI to:
+                  <code>{{ getRedirectUri() }}</code>
+                </p>
+                <div class="form-group">
+                  <label for="google-client-id">Google Client ID *</label>
+                  <input
+                    id="google-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="xxxxx.apps.googleusercontent.com"
+                  />
                 </div>
-                <div
-                  v-if="smtpStatus !== null"
-                  class="smtp-status-message"
-                  :class="smtpStatus.success ? 'success' : 'error'"
-                >
-                  <span class="smtp-status-icon">
-                    {{ smtpStatus.success ? "✓" : "✗" }}
-                  </span>
-                  <span class="smtp-status-text">
-                    {{
-                      smtpStatus.success ? smtpStatus.message : smtpStatus.error
-                    }}
-                  </span>
+                <div class="form-group">
+                  <label for="google-client-secret"
+                    >Google Client Secret *</label
+                  >
+                  <input
+                    id="google-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="GOCSPX-xxxxx"
+                  />
                 </div>
               </div>
 
-              <div class="form-group">
-                <label for="magic-link-expiry">Link Expiry (minutes)</label>
-                <input
-                  id="magic-link-expiry"
-                  v-model="form.config.expiry_minutes"
-                  type="number"
-                  min="5"
-                  max="1440"
-                  autocomplete="off"
-                  placeholder="15 (default)"
-                />
-                <small
-                  >How long the magic link remains valid (5-1440 minutes)</small
+              <!-- Microsoft Entra Configuration -->
+              <div
+                v-if="form.provider_type === 'microsoft'"
+                class="config-section"
+              >
+                <h3>Microsoft Entra Configuration</h3>
+                <p class="config-description">
+                  Configure Microsoft Entra ID (Azure AD) using OpenID Connect.
+                </p>
+                <div class="form-group">
+                  <label for="microsoft-tenant-id">Tenant ID *</label>
+                  <input
+                    id="microsoft-tenant-id"
+                    v-model="form.config.tenant_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or common"
+                  />
+                  <small
+                    >Use "common" for multi-tenant or your specific tenant
+                    ID</small
+                  >
+                </div>
+                <div class="form-group">
+                  <label for="microsoft-client-id"
+                    >Client ID (Application ID) *</label
+                  >
+                  <input
+                    id="microsoft-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="microsoft-client-secret">Client Secret *</label>
+                  <input
+                    id="microsoft-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="Client secret value"
+                  />
+                </div>
+              </div>
+
+              <!-- Slack Configuration -->
+              <div v-if="form.provider_type === 'slack'" class="config-section">
+                <h3>Slack Configuration</h3>
+                <p class="config-description">
+                  Configure Slack OAuth2. Create an app at
+                  <a
+                    href="https://api.slack.com/apps"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    api.slack.com/apps
+                  </a>
+                  and set the redirect URI to:
+                  <code>{{ getRedirectUri() }}</code>
+                </p>
+                <div class="form-group">
+                  <label for="slack-client-id">Slack Client ID *</label>
+                  <input
+                    id="slack-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="1234567890.1234567890"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="slack-client-secret">Slack Client Secret *</label>
+                  <input
+                    id="slack-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="Client secret"
+                  />
+                </div>
+              </div>
+
+              <!-- Discord Configuration -->
+              <div
+                v-if="form.provider_type === 'discord'"
+                class="config-section"
+              >
+                <h3>Discord Configuration</h3>
+                <p class="config-description">
+                  Configure Discord OAuth2. Create an application at
+                  <a
+                    href="https://discord.com/developers/applications"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    discord.com/developers
+                  </a>
+                  and set the redirect URI to:
+                  <code>{{ getRedirectUri() }}</code>
+                </p>
+                <div class="form-group">
+                  <label for="discord-client-id">Discord Client ID *</label>
+                  <input
+                    id="discord-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="123456789012345678"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="discord-client-secret"
+                    >Discord Client Secret *</label
+                  >
+                  <input
+                    id="discord-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="Client secret"
+                  />
+                </div>
+              </div>
+
+              <!-- GitLab Configuration -->
+              <div
+                v-if="form.provider_type === 'gitlab'"
+                class="config-section"
+              >
+                <h3>GitLab Configuration</h3>
+                <p class="config-description">
+                  Configure GitLab OAuth2. Create an application in your GitLab
+                  instance (Settings → Applications) and set the redirect URI
+                  to:
+                  <code>{{ getRedirectUri() }}</code>
+                </p>
+                <div class="form-group">
+                  <label for="gitlab-instance-url">GitLab Instance URL</label>
+                  <input
+                    id="gitlab-instance-url"
+                    v-model="form.config.instance_url"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="https://gitlab.com (default)"
+                  />
+                  <small
+                    >Leave empty for gitlab.com, or enter your self-hosted
+                    GitLab URL</small
+                  >
+                </div>
+                <div class="form-group">
+                  <label for="gitlab-client-id">GitLab Application ID *</label>
+                  <input
+                    id="gitlab-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="Application ID"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="gitlab-client-secret">GitLab Secret *</label>
+                  <input
+                    id="gitlab-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    placeholder="Secret"
+                  />
+                </div>
+              </div>
+
+              <!-- OIDC Generic Configuration -->
+              <div v-if="form.provider_type === 'oidc'" class="config-section">
+                <h3>OIDC (Generic) Configuration</h3>
+                <p class="config-description">
+                  Configure a generic OpenID Connect provider. OIDC discovery
+                  will be used to find endpoints automatically.
+                </p>
+                <div class="form-group">
+                  <label for="oidc-issuer-url">Issuer URL *</label>
+                  <input
+                    id="oidc-issuer-url"
+                    v-model="form.config.issuer_url"
+                    type="url"
+                    required
+                    autocomplete="off"
+                    placeholder="https://idp.example.com"
+                  />
+                  <small>OIDC discovery will be used to find endpoints</small>
+                </div>
+                <div class="form-group">
+                  <label for="oidc-client-id">Client ID *</label>
+                  <input
+                    id="oidc-client-id"
+                    v-model="form.config.client_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="oidc-client-secret">Client Secret *</label>
+                  <input
+                    id="oidc-client-secret"
+                    v-model="form.config.client_secret"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="oidc-redirect-uri">Redirect URI</label>
+                  <input
+                    id="oidc-redirect-uri"
+                    v-model="form.config.redirect_uri"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="Auto-generated if not provided"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="oidc-scopes">Scopes</label>
+                  <input
+                    id="oidc-scopes"
+                    v-model="form.config.scopes"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="openid email profile (default)"
+                  />
+                </div>
+              </div>
+
+              <!-- Email Magic Link Configuration -->
+              <div
+                v-if="form.provider_type === 'email-magic-link'"
+                class="config-section"
+              >
+                <h3>Email Magic Link Configuration</h3>
+                <p class="config-description">
+                  Users will receive a magic link via email to sign in. No
+                  password required. Make sure email (SMTP) is configured in
+                  system settings.
+                </p>
+
+                <!-- SMTP Status -->
+                <div class="smtp-status">
+                  <div class="smtp-status-header">
+                    <span class="smtp-status-label">SMTP Configuration:</span>
+                    <button
+                      @click="testSMTP"
+                      class="btn btn-small btn-secondary"
+                      :disabled="smtpTesting"
+                      type="button"
+                    >
+                      {{ smtpTesting ? "Testing..." : "Test SMTP" }}
+                    </button>
+                  </div>
+                  <div
+                    v-if="smtpStatus !== null"
+                    class="smtp-status-message"
+                    :class="smtpStatus.success ? 'success' : 'error'"
+                  >
+                    <span class="smtp-status-icon">
+                      {{ smtpStatus.success ? "✓" : "✗" }}
+                    </span>
+                    <span class="smtp-status-text">
+                      {{
+                        smtpStatus.success
+                          ? smtpStatus.message
+                          : smtpStatus.error
+                      }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="magic-link-expiry">Link Expiry (minutes)</label>
+                  <input
+                    id="magic-link-expiry"
+                    v-model="form.config.expiry_minutes"
+                    type="number"
+                    min="5"
+                    max="1440"
+                    autocomplete="off"
+                    placeholder="15 (default)"
+                  />
+                  <small
+                    >How long the magic link remains valid (5-1440
+                    minutes)</small
+                  >
+                </div>
+              </div>
+
+              <!-- SAML Generic Configuration -->
+              <div v-if="form.provider_type === 'saml'" class="config-section">
+                <h3>SAML (Generic) Configuration</h3>
+                <div class="form-group">
+                  <label for="saml-entity-id">IdP Entity ID *</label>
+                  <input
+                    id="saml-entity-id"
+                    v-model="form.config.entity_id"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="https://idp.example.com/metadata"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="saml-sso-url">SSO URL *</label>
+                  <input
+                    id="saml-sso-url"
+                    v-model="form.config.sso_url"
+                    type="url"
+                    required
+                    autocomplete="off"
+                    placeholder="https://idp.example.com/sso"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="saml-x509-cert">X.509 Certificate *</label>
+                  <textarea
+                    id="saml-x509-cert"
+                    v-model="form.config.x509_cert"
+                    required
+                    rows="5"
+                    autocomplete="off"
+                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                  ></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="saml-sp-entity-id">SP Entity ID</label>
+                  <input
+                    id="saml-sp-entity-id"
+                    v-model="form.config.sp_entity_id"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="leyzen-vault (default)"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="saml-acs-url">ACS URL</label>
+                  <input
+                    id="saml-acs-url"
+                    v-model="form.config.acs_url"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="Auto-generated if not provided"
+                  />
+                </div>
+              </div>
+
+              <div v-if="formError" class="error-message">{{ formError }}</div>
+              <div v-if="formSuccess" class="success-message">
+                {{ formSuccess }}
+              </div>
+
+              <div class="form-actions">
+                <button
+                  type="button"
+                  @click="closeModal"
+                  class="btn btn-secondary"
+                  :disabled="formLoading"
                 >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="btn btn-primary"
+                  :disabled="formLoading"
+                >
+                  {{ formLoading ? "Saving..." : "Save" }}
+                </button>
               </div>
-            </div>
-
-            <!-- SAML Generic Configuration -->
-            <div v-if="form.provider_type === 'saml'" class="config-section">
-              <h3>SAML (Generic) Configuration</h3>
-              <div class="form-group">
-                <label for="saml-entity-id">IdP Entity ID *</label>
-                <input
-                  id="saml-entity-id"
-                  v-model="form.config.entity_id"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="https://idp.example.com/metadata"
-                />
-              </div>
-              <div class="form-group">
-                <label for="saml-sso-url">SSO URL *</label>
-                <input
-                  id="saml-sso-url"
-                  v-model="form.config.sso_url"
-                  type="url"
-                  required
-                  autocomplete="off"
-                  placeholder="https://idp.example.com/sso"
-                />
-              </div>
-              <div class="form-group">
-                <label for="saml-x509-cert">X.509 Certificate *</label>
-                <textarea
-                  id="saml-x509-cert"
-                  v-model="form.config.x509_cert"
-                  required
-                  rows="5"
-                  autocomplete="off"
-                  placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                ></textarea>
-              </div>
-              <div class="form-group">
-                <label for="saml-sp-entity-id">SP Entity ID</label>
-                <input
-                  id="saml-sp-entity-id"
-                  v-model="form.config.sp_entity_id"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="leyzen-vault (default)"
-                />
-              </div>
-              <div class="form-group">
-                <label for="saml-acs-url">ACS URL</label>
-                <input
-                  id="saml-acs-url"
-                  v-model="form.config.acs_url"
-                  type="url"
-                  autocomplete="off"
-                  placeholder="Auto-generated if not provided"
-                />
-              </div>
-            </div>
-
-            <div v-if="formError" class="error-message">{{ formError }}</div>
-            <div v-if="formSuccess" class="success-message">
-              {{ formSuccess }}
-            </div>
-
-            <div class="form-actions">
-              <button
-                type="button"
-                @click="closeModal"
-                class="btn btn-secondary"
-                :disabled="formLoading"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                :disabled="formLoading"
-              >
-                {{ formLoading ? "Saving..." : "Save" }}
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
     </teleport>
@@ -701,51 +716,58 @@
         class="modal-overlay"
         @click.self="showDomainRuleModal = false"
       >
-        <div class="modal-content" @click.stop>
+        <div class="modal glass glass-card modal-wide" @click.stop>
           <div class="modal-header">
-            <h2>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h2>
-            <button @click="closeDomainRuleModal" class="modal-close">
-              &times;
+            <h3>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h3>
+            <button
+              @click="closeDomainRuleModal"
+              class="modal-close-btn"
+              aria-label="Close"
+              type="button"
+            >
+              ×
             </button>
           </div>
-          <form @submit.prevent="handleSaveDomainRule" class="provider-form">
-            <div class="form-group">
-              <label for="domain-rule-pattern">Domain Pattern:</label>
-              <input
-                id="domain-rule-pattern"
-                v-model="domainRuleForm.domain_pattern"
-                type="text"
-                required
-                :disabled="domainRuleForm.loading"
-                placeholder="example.com or *.example.com"
-                autofocus
-              />
-              <small>Use * for wildcards (e.g., *.example.com)</small>
-            </div>
-            <div v-if="domainRuleForm.error" class="error-message">
-              {{ domainRuleForm.error }}
-            </div>
-            <div v-if="domainRuleForm.success" class="success-message">
-              {{ domainRuleForm.success }}
-            </div>
-            <div class="form-actions">
-              <button
-                type="button"
-                @click="closeDomainRuleModal"
-                class="btn btn-secondary"
-                :disabled="domainRuleForm.loading"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="domainRuleForm.loading"
-                class="btn btn-primary"
-              >
-                {{ domainRuleForm.loading ? "Saving..." : "Save" }}
-              </button>
-            </div>
-          </form>
+          <div class="modal-body">
+            <form @submit.prevent="handleSaveDomainRule" class="modal-form">
+              <div class="form-group">
+                <label for="domain-rule-pattern">Domain Pattern:</label>
+                <input
+                  id="domain-rule-pattern"
+                  v-model="domainRuleForm.domain_pattern"
+                  type="text"
+                  required
+                  :disabled="domainRuleForm.loading"
+                  placeholder="example.com or *.example.com"
+                  autofocus
+                />
+                <small>Use * for wildcards (e.g., *.example.com)</small>
+              </div>
+              <div v-if="domainRuleForm.error" class="error-message">
+                {{ domainRuleForm.error }}
+              </div>
+              <div v-if="domainRuleForm.success" class="success-message">
+                {{ domainRuleForm.success }}
+              </div>
+              <div class="form-actions">
+                <button
+                  type="button"
+                  @click="closeDomainRuleModal"
+                  class="btn btn-secondary"
+                  :disabled="domainRuleForm.loading"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  :disabled="domainRuleForm.loading"
+                  class="btn btn-primary"
+                >
+                  {{ domainRuleForm.loading ? "Saving..." : "Save" }}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </teleport>
@@ -780,6 +802,7 @@ import { admin } from "../services/api";
 import { logger } from "../utils/logger.js";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
+import CustomSelect from "../components/CustomSelect.vue";
 
 const loading = ref(false);
 const error = ref("");
@@ -852,6 +875,18 @@ const form = ref({
     expiry_minutes: "",
   },
 });
+
+const providerTypeOptions = [
+  { value: "", label: "Select provider..." },
+  { value: "email-magic-link", label: "Email Magic Link" },
+  { value: "google", label: "Google" },
+  { value: "microsoft", label: "Microsoft Entra" },
+  { value: "slack", label: "Slack" },
+  { value: "discord", label: "Discord" },
+  { value: "gitlab", label: "GitLab" },
+  { value: "oidc", label: "OIDC (Generic)" },
+  { value: "saml", label: "SAML (Generic)" },
+];
 
 // Map provider types to technical types
 const getTechnicalProviderType = (providerType) => {
@@ -1789,20 +1824,12 @@ h1 {
   background: #58a6ff;
 }
 
-/* Modal Styles */
+/* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 100000 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  background: rgba(7, 14, 28, 0.4);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  overflow-y: auto;
+  background: rgba(7, 14, 28, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 1 !important;
   visibility: visible !important;
@@ -1818,82 +1845,82 @@ h1 {
   }
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
-/* Remove sidebar padding in mobile mode */
 body.mobile-mode .modal-overlay {
   padding-left: 2rem !important;
   padding-right: 2rem !important;
 }
 
-.modal-content {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  padding: 2rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  overflow-y: auto;
-  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes slideUp {
-  from {
-    transform: scale(0.95) translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
+/* Modal uses global .modal styles from vault.css */
+.modal-wide {
+  width: 90%;
+  overflow-y: visible;
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  margin-bottom: 0;
+  padding: 1.5rem 2rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.modal-header h2 {
-  color: #e6eef6;
+.modal-header h3 {
   margin: 0;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #94a3b8;
-  font-size: 2rem;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0;
-  width: 2rem;
-  height: 2rem;
-}
-
-.modal-close:hover {
   color: #e6eef6;
+  font-size: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.provider-form {
-  padding: 1.5rem;
+.modal-close-btn {
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.5rem;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.modal-close-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e6eef6;
 }
 
 .modal-body {
-  padding: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 2rem;
+  padding-top: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modal-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .delete-modal .modal-body p {
@@ -2027,7 +2054,7 @@ body.mobile-mode .modal-overlay {
     rgba(56, 189, 248, 0.2) 0%,
     rgba(129, 140, 248, 0.2) 100%
   );
-  color: #38bdf8;
+  color: #8b5cf6;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 

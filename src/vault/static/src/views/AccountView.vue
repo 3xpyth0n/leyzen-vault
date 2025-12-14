@@ -279,114 +279,62 @@
     </div>
 
     <!-- 2FA Setup Modal -->
-    <div
-      v-if="show2FASetupModal"
-      class="modal-overlay"
-      @click="show2FASetupModal = false"
-    >
-      <div class="modal glass glass-card modal-large" @click.stop>
-        <TwoFactorSetup
-          @success="handle2FASetupSuccess"
-          @cancel="show2FASetupModal = false"
-        />
+    <teleport to="body">
+      <div
+        v-if="show2FASetupModal"
+        class="modal-overlay"
+        @click.self="show2FASetupModal = false"
+      >
+        <div class="modal glass glass-card modal-large" @click.stop>
+          <TwoFactorSetup
+            @success="handle2FASetupSuccess"
+            @cancel="show2FASetupModal = false"
+          />
+        </div>
       </div>
-    </div>
+    </teleport>
 
     <!-- Disable 2FA Modal -->
-    <div
-      v-if="showDisable2FAModal"
-      class="modal-overlay"
-      @click="showDisable2FAModal = false"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <h2>Disable 2FA</h2>
-        <p class="warning-text">
-          Are you sure you want to disable 2FA? Your account will be less
-          secure.
-        </p>
-        <form @submit.prevent="handleDisable2FA">
-          <div class="form-group">
-            <label for="disable-2fa-password"
-              >Enter your password to confirm:</label
-            >
-            <PasswordInput
-              id="disable-2fa-password"
-              v-model="disable2FAForm.password"
-              autocomplete="current-password"
-              required
-              :disabled="disable2FAForm.loading"
-              placeholder="Enter your password"
-            />
-          </div>
-          <div v-if="disable2FAForm.error" class="error-message">
-            {{ disable2FAForm.error }}
-          </div>
-          <div class="form-actions">
-            <button
-              type="submit"
-              :disabled="disable2FAForm.loading"
-              class="btn btn-danger"
-            >
-              {{ disable2FAForm.loading ? "Disabling..." : "Disable 2FA" }}
-            </button>
-            <button
-              type="button"
-              @click="showDisable2FAModal = false"
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Regenerate Backup Codes Modal -->
-    <div
-      v-if="showRegenerateBackupModal"
-      class="modal-overlay"
-      @click="closeRegenerateBackupModal"
-    >
-      <div class="modal glass glass-card" @click.stop>
-        <h2>Regenerate Backup Codes</h2>
-
-        <div v-if="!regeneratedBackupCodes">
-          <p>
-            Regenerating backup codes will invalidate your existing codes. Make
-            sure to save the new codes in a secure place.
+    <teleport to="body">
+      <div
+        v-if="showDisable2FAModal"
+        class="modal-overlay"
+        @click.self="showDisable2FAModal = false"
+      >
+        <div class="modal glass glass-card" @click.stop>
+          <h2>Disable 2FA</h2>
+          <p class="warning-text">
+            Are you sure you want to disable 2FA? Your account will be less
+            secure.
           </p>
-          <form @submit.prevent="handleRegenerateBackupCodes">
+          <form @submit.prevent="handleDisable2FA">
             <div class="form-group">
-              <label for="regenerate-password"
+              <label for="disable-2fa-password"
                 >Enter your password to confirm:</label
               >
               <PasswordInput
-                id="regenerate-password"
-                v-model="regenerateBackupForm.password"
+                id="disable-2fa-password"
+                v-model="disable2FAForm.password"
                 autocomplete="current-password"
                 required
-                :disabled="regenerateBackupForm.loading"
+                :disabled="disable2FAForm.loading"
                 placeholder="Enter your password"
               />
             </div>
-            <div v-if="regenerateBackupForm.error" class="error-message">
-              {{ regenerateBackupForm.error }}
+            <div v-if="disable2FAForm.error" class="error-message">
+              {{ disable2FAForm.error }}
             </div>
             <div class="form-actions">
               <button
                 type="submit"
-                :disabled="regenerateBackupForm.loading"
-                class="btn btn-primary"
+                :disabled="disable2FAForm.loading"
+                class="btn btn-danger"
               >
-                {{
-                  regenerateBackupForm.loading
-                    ? "Generating..."
-                    : "Regenerate Codes"
-                }}
+                {{ disable2FAForm.loading ? "Disabling..." : "Disable 2FA" }}
               </button>
               <button
                 type="button"
-                @click="closeRegenerateBackupModal"
+                @click="showDisable2FAModal = false"
                 class="btn btn-secondary"
               >
                 Cancel
@@ -394,31 +342,92 @@
             </div>
           </form>
         </div>
+      </div>
+    </teleport>
 
-        <div v-else>
-          <p class="warning-text">
-            <strong>Save these codes now!</strong> They won't be shown again.
-          </p>
-          <div class="backup-codes-display">
-            <div
-              v-for="(code, index) in regeneratedBackupCodes"
-              :key="index"
-              class="backup-code"
-            >
-              <code>{{ code }}</code>
-            </div>
+    <!-- Regenerate Backup Codes Modal -->
+    <teleport to="body">
+      <div
+        v-if="showRegenerateBackupModal"
+        class="modal-overlay"
+        @click.self="closeRegenerateBackupModal"
+      >
+        <div class="modal glass glass-card" @click.stop>
+          <h2>Regenerate Backup Codes</h2>
+
+          <div v-if="!regeneratedBackupCodes">
+            <p>
+              Regenerating backup codes will invalidate your existing codes.
+              Make sure to save the new codes in a secure place.
+            </p>
+            <form @submit.prevent="handleRegenerateBackupCodes">
+              <div class="form-group">
+                <label for="regenerate-password"
+                  >Enter your password to confirm:</label
+                >
+                <PasswordInput
+                  id="regenerate-password"
+                  v-model="regenerateBackupForm.password"
+                  autocomplete="current-password"
+                  required
+                  :disabled="regenerateBackupForm.loading"
+                  placeholder="Enter your password"
+                />
+              </div>
+              <div v-if="regenerateBackupForm.error" class="error-message">
+                {{ regenerateBackupForm.error }}
+              </div>
+              <div class="form-actions">
+                <button
+                  type="submit"
+                  :disabled="regenerateBackupForm.loading"
+                  class="btn btn-primary"
+                >
+                  {{
+                    regenerateBackupForm.loading
+                      ? "Generating..."
+                      : "Regenerate Codes"
+                  }}
+                </button>
+                <button
+                  type="button"
+                  @click="closeRegenerateBackupModal"
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
-          <div class="form-actions">
-            <button @click="downloadBackupCodes" class="btn btn-secondary">
-              Download Codes
-            </button>
-            <button @click="closeRegenerateBackupModal" class="btn btn-primary">
-              I've Saved My Codes
-            </button>
+
+          <div v-else>
+            <p class="warning-text">
+              <strong>Save these codes now!</strong> They won't be shown again.
+            </p>
+            <div class="backup-codes-display">
+              <div
+                v-for="(code, index) in regeneratedBackupCodes"
+                :key="index"
+                class="backup-code"
+              >
+                <code>{{ code }}</code>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button @click="downloadBackupCodes" class="btn btn-secondary">
+                Download Codes
+              </button>
+              <button
+                @click="closeRegenerateBackupModal"
+                class="btn btn-primary"
+              >
+                I've Saved My Codes
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </teleport>
   </div>
 
   <!-- Confirmation Modal -->
@@ -1266,97 +1275,7 @@ export default {
   font-size: 1rem;
 }
 
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #e6eef6;
-  font-weight: 500;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e6eef6;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: rgba(88, 166, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.form-group input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.form-group input::placeholder {
-  color: #64748b;
-}
-
-.form-actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.btn-primary {
-  background: rgba(88, 166, 255, 0.2);
-  color: #e6eef6;
-  border: 1px solid rgba(88, 166, 255, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: rgba(88, 166, 255, 0.3);
-  border-color: rgba(88, 166, 255, 0.5);
-}
-
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
-  color: #e6eef6;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.btn-danger {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.3);
-  border-color: rgba(239, 68, 68, 0.5);
-}
+/* Form and button styles use global .form-group, .input, .btn, .btn-primary, .btn-secondary, .btn-danger from vault.css */
 
 .error-message {
   color: #fca5a5;
@@ -1391,26 +1310,12 @@ export default {
   margin-bottom: 1rem;
 }
 
+/* Modal overlay uses global styles from vault.css with sidebar-specific padding adjustments */
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(7, 14, 28, 0.4);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  overflow-y: auto;
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
 body.sidebar-collapsed .modal-overlay {
   padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }

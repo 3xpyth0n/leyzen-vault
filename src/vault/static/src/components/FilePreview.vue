@@ -1,7 +1,12 @@
 <template>
   <teleport to="body">
     <div v-if="show" class="file-preview-overlay" @click="close">
-      <div class="file-preview-modal glass glass-card" @click.stop>
+      <div
+        ref="modalRef"
+        class="file-preview-modal glass glass-card"
+        :style="{ height: modalHeight }"
+        @click.stop
+      >
         <div class="preview-header">
           <h2>{{ fileName }}</h2>
           <div class="preview-actions">
@@ -20,74 +25,228 @@
           </div>
         </div>
 
-        <div class="preview-content" v-if="loading">
-          <div class="loading">Loading preview...</div>
-        </div>
-
-        <div class="preview-content" v-else-if="error">
-          <div class="error-message glass">{{ error }}</div>
-        </div>
-
-        <div class="preview-content" v-else>
-          <!-- Image Preview -->
-          <div v-if="isImage" class="image-preview">
-            <img :src="previewUrl" :alt="fileName" @load="onImageLoad" />
-            <div v-if="imageLoading" class="loading-overlay">Loading...</div>
+        <Transition name="fade" mode="out-in">
+          <div
+            ref="previewContentRef"
+            class="preview-content"
+            v-if="loading"
+            key="loading"
+          >
+            <div class="loading">Loading preview...</div>
           </div>
 
-          <!-- Video Preview -->
-          <div v-else-if="isVideo" class="video-preview">
-            <div
-              ref="videoContainer"
-              class="video-container"
-              @mouseenter="showVideoControls"
-              @mouseleave="hideVideoControls"
-              @mousemove="showVideoControls"
-            >
-              <video
-                ref="videoElement"
+          <div
+            ref="previewContentRef"
+            class="preview-content"
+            v-else-if="error"
+            key="error"
+          >
+            <div class="error-message glass">{{ error }}</div>
+          </div>
+
+          <div
+            ref="previewContentRef"
+            class="preview-content"
+            v-else
+            key="content"
+          >
+            <!-- Image Preview -->
+            <div v-if="isImage" class="image-preview">
+              <img
                 :src="previewUrl"
-                @timeupdate="updateVideoProgress"
-                @loadedmetadata="onVideoLoadedMetadata"
-                @play="isVideoPlaying = true"
-                @pause="isVideoPlaying = false"
-                @ended="isVideoPlaying = false"
-                class="video-player"
-              >
-                Your browser does not support video playback.
-              </video>
+                :alt="fileName"
+                @load="onImageLoad"
+                :class="{ 'image-loaded': !imageLoading }"
+              />
+              <div v-if="imageLoading" class="loading-overlay">Loading...</div>
+            </div>
+
+            <!-- Video Preview -->
+            <div v-else-if="isVideo" class="video-preview">
               <div
-                class="video-player-controls"
-                :class="{ 'video-player-controls--visible': showControls }"
+                ref="videoContainer"
+                class="video-container"
+                @mouseenter="showVideoControls"
+                @mouseleave="hideVideoControls"
+                @mousemove="showVideoControls"
               >
-                <div class="video-player-controls__progress">
-                  <p class="video-player-controls__time">
-                    {{ formattedVideoCurrentTime }}
-                  </p>
-                  <span
-                    class="video-player-controls__progress-bar"
-                    @click="seekVideoByClick"
-                    @mousedown="startVideoSeeking"
-                  >
+                <video
+                  ref="videoElement"
+                  :src="previewUrl"
+                  @timeupdate="updateVideoProgress"
+                  @loadedmetadata="onVideoLoadedMetadata"
+                  @play="isVideoPlaying = true"
+                  @pause="isVideoPlaying = false"
+                  @ended="isVideoPlaying = false"
+                  class="video-player"
+                >
+                  Your browser does not support video playback.
+                </video>
+                <div
+                  class="video-player-controls"
+                  :class="{ 'video-player-controls--visible': showControls }"
+                >
+                  <div class="video-player-controls__progress">
+                    <p class="video-player-controls__time">
+                      {{ formattedVideoCurrentTime }}
+                    </p>
                     <span
-                      class="video-player-controls__progress-filled"
-                      :style="{ width: videoProgress + '%' }"
-                    ></span>
-                    <span
-                      class="video-player-controls__progress-thumb"
-                      :style="{ left: videoProgress + '%' }"
-                    ></span>
-                  </span>
-                  <p class="video-player-controls__time">
-                    {{ formattedVideoDuration }}
-                  </p>
+                      class="video-player-controls__progress-bar"
+                      @click="seekVideoByClick"
+                      @mousedown="startVideoSeeking"
+                    >
+                      <span
+                        class="video-player-controls__progress-filled"
+                        :style="{ width: videoProgress + '%' }"
+                      ></span>
+                      <span
+                        class="video-player-controls__progress-thumb"
+                        :style="{ left: videoProgress + '%' }"
+                      ></span>
+                    </span>
+                    <p class="video-player-controls__time">
+                      {{ formattedVideoDuration }}
+                    </p>
+                  </div>
+                  <div class="video-player-controls__bottom">
+                    <div class="video-player-controls__left">
+                      <svg
+                        @click="seekVideoBackward"
+                        viewBox="0 0 16 16"
+                        class="video-player-controls__control-btn"
+                      >
+                        <path
+                          d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      <svg
+                        @click="toggleVideoPlay"
+                        viewBox="0 0 16 16"
+                        class="video-player-controls__control-btn video-player-controls__control-btn--play"
+                        :class="{
+                          'video-player-controls__control-btn--playing':
+                            isVideoPlaying,
+                        }"
+                      >
+                        <path
+                          v-if="!isVideoPlaying"
+                          d="M4.018 14L14.41 8 4.018 2z"
+                          fill="currentColor"
+                        />
+                        <path
+                          v-else
+                          d="M3 2h3v12H3V2zm7 0h3v12h-3V2z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      <svg
+                        @click="seekVideoForward"
+                        viewBox="0 0 16 16"
+                        class="video-player-controls__control-btn"
+                      >
+                        <path
+                          d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </div>
+                    <p class="video-player-controls__song-name">
+                      {{ fileName }}
+                    </p>
+                    <button
+                      @click="toggleFullscreen"
+                      class="video-player-controls__control-btn video-player-controls__control-btn--fullscreen"
+                      :aria-label="
+                        isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'
+                      "
+                    >
+                      <svg
+                        v-if="!isFullscreen"
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M8 3H5C3.89543 3 3 3.89543 3 5V8M21 8V5C21 3.89543 20.1046 3 19 3H16M16 21H19C20.1046 21 21 20.1046 21 19V16M3 16V19C3 20.1046 3.89543 21 5 21H8"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                      <svg
+                        v-else
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M9 9L4 4M4 4V8M4 4H8M15 9L20 4M20 4V8M20 4H16M9 15L4 20M4 20V16M4 20H8M15 15L20 20M20 20V16M20 20H16"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-                <div class="video-player-controls__bottom">
-                  <div class="video-player-controls__left">
+              </div>
+            </div>
+
+            <!-- Audio Preview -->
+            <div v-else-if="isAudio" class="audio-preview">
+              <div class="audio-player">
+                <div class="audio-player__artwork">
+                  <img
+                    v-if="hasAudioCover && audioCoverUrl"
+                    :src="audioCoverUrl"
+                    alt="Album cover"
+                    class="audio-player__artwork-image"
+                  />
+                  <svg
+                    v-else
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                    />
+                  </svg>
+                </div>
+                <div class="audio-player__container">
+                  <p class="audio-player__song-name">{{ fileName }}</p>
+                  <div class="audio-player__progress">
+                    <p class="audio-player__time">{{ formattedCurrentTime }}</p>
+                    <span
+                      class="audio-player__progress-bar"
+                      @click="seekAudioByClick"
+                      @mousedown="startSeeking"
+                      @mousemove="updateProgressHover"
+                      @mouseleave="hideProgressHover"
+                    >
+                      <span
+                        class="audio-player__progress-filled"
+                        :style="{ width: progress + '%' }"
+                      ></span>
+                      <span
+                        class="audio-player__progress-thumb"
+                        :style="{ left: progress + '%' }"
+                      ></span>
+                    </span>
+                    <p class="audio-player__time">{{ formattedDuration }}</p>
+                  </div>
+                  <div class="audio-player__controls">
                     <svg
-                      @click="seekVideoBackward"
+                      @click="seekBackward"
                       viewBox="0 0 16 16"
-                      class="video-player-controls__control-btn"
+                      class="audio-player__control-btn"
                     >
                       <path
                         d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
@@ -95,16 +254,15 @@
                       />
                     </svg>
                     <svg
-                      @click="toggleVideoPlay"
+                      @click="togglePlay"
                       viewBox="0 0 16 16"
-                      class="video-player-controls__control-btn video-player-controls__control-btn--play"
+                      class="audio-player__control-btn audio-player__control-btn--play"
                       :class="{
-                        'video-player-controls__control-btn--playing':
-                          isVideoPlaying,
+                        'audio-player__control-btn--playing': isPlaying,
                       }"
                     >
                       <path
-                        v-if="!isVideoPlaying"
+                        v-if="!isPlaying"
                         d="M4.018 14L14.41 8 4.018 2z"
                         fill="currentColor"
                       />
@@ -115,9 +273,9 @@
                       />
                     </svg>
                     <svg
-                      @click="seekVideoForward"
+                      @click="seekForward"
                       viewBox="0 0 16 16"
-                      class="video-player-controls__control-btn"
+                      class="audio-player__control-btn"
                     >
                       <path
                         d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
@@ -125,244 +283,124 @@
                       />
                     </svg>
                   </div>
-                  <p class="video-player-controls__song-name">{{ fileName }}</p>
-                  <button
-                    @click="toggleFullscreen"
-                    class="video-player-controls__control-btn video-player-controls__control-btn--fullscreen"
-                    :aria-label="
-                      isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'
+                </div>
+              </div>
+              <audio
+                ref="audioElement"
+                :src="previewUrl"
+                @timeupdate="updateProgress"
+                @loadedmetadata="onLoadedMetadata"
+                @play="isPlaying = true"
+                @pause="isPlaying = false"
+                @ended="isPlaying = false"
+              ></audio>
+            </div>
+
+            <!-- Markdown Preview -->
+            <div v-else-if="isMarkdown" class="markdown-preview">
+              <div class="markdown-content" ref="markdownContentRef"></div>
+            </div>
+
+            <!-- Text Preview -->
+            <div v-else-if="isText" class="text-preview">
+              <pre class="text-content">{{ textContent }}</pre>
+            </div>
+
+            <!-- ZIP Preview -->
+            <div v-else-if="isZip" class="zip-preview">
+              <div v-if="zipLoading" class="loading">
+                Loading ZIP contents...
+              </div>
+              <div v-else-if="zipFiles.length > 0" class="zip-content">
+                <div class="zip-header">
+                  <h3>Archive Contents</h3>
+                  <p class="zip-info">
+                    {{ zipFileCount }}
+                    {{ zipFileCount === 1 ? "file" : "files" }}
+                    <span v-if="zipFolderCount > 0">
+                      in {{ zipFolderCount }}
+                      {{ zipFolderCount === 1 ? "folder" : "folders" }}
+                    </span>
+                  </p>
+                </div>
+                <div class="zip-file-list">
+                  <div
+                    v-for="(item, index) in zipFiles"
+                    :key="index"
+                    class="zip-file-item"
+                    :class="{
+                      'zip-folder-item': item.type === 'folder',
+                      'zip-clickable':
+                        item.type === 'folder' && item.hasChildren,
+                    }"
+                    :style="{ paddingLeft: item.depth * 1.5 + 0.75 + 'rem' }"
+                    @click="
+                      item.type === 'folder' && item.hasChildren
+                        ? toggleFolder(item.path)
+                        : null
                     "
                   >
-                    <svg
-                      v-if="!isFullscreen"
-                      viewBox="0 0 24 24"
-                      width="16"
-                      height="16"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
+                    <div
+                      class="zip-expand-icon"
+                      v-if="item.type === 'folder' && item.hasChildren"
                     >
-                      <path
-                        d="M8 3H5C3.89543 3 3 3.89543 3 5V8M21 8V5C21 3.89543 20.1046 3 19 3H16M16 21H19C20.1046 21 21 20.1046 21 19V16M3 16V19C3 20.1046 3.89543 21 5 21H8"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                    <svg
-                      v-else
-                      viewBox="0 0 24 24"
-                      width="16"
-                      height="16"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 9L4 4M4 4V8M4 4H8M15 9L20 4M20 4V8M20 4H16M9 15L4 20M4 20V16M4 20H8M15 15L20 20M20 20V16M20 20H16"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Audio Preview -->
-          <div v-else-if="isAudio" class="audio-preview">
-            <div class="audio-player">
-              <div class="audio-player__artwork">
-                <img
-                  v-if="hasAudioCover && audioCoverUrl"
-                  :src="audioCoverUrl"
-                  alt="Album cover"
-                  class="audio-player__artwork-image"
-                />
-                <svg
-                  v-else
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                  />
-                </svg>
-              </div>
-              <div class="audio-player__container">
-                <p class="audio-player__song-name">{{ fileName }}</p>
-                <div class="audio-player__progress">
-                  <p class="audio-player__time">{{ formattedCurrentTime }}</p>
-                  <span
-                    class="audio-player__progress-bar"
-                    @click="seekAudioByClick"
-                    @mousedown="startSeeking"
-                    @mousemove="updateProgressHover"
-                    @mouseleave="hideProgressHover"
-                  >
-                    <span
-                      class="audio-player__progress-filled"
-                      :style="{ width: progress + '%' }"
-                    ></span>
-                    <span
-                      class="audio-player__progress-thumb"
-                      :style="{ left: progress + '%' }"
-                    ></span>
-                  </span>
-                  <p class="audio-player__time">{{ formattedDuration }}</p>
-                </div>
-                <div class="audio-player__controls">
-                  <svg
-                    @click="seekBackward"
-                    viewBox="0 0 16 16"
-                    class="audio-player__control-btn"
-                  >
-                    <path
-                      d="M13 2.5L5 7.119V3H3v10h2V8.881l8 4.619z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <svg
-                    @click="togglePlay"
-                    viewBox="0 0 16 16"
-                    class="audio-player__control-btn audio-player__control-btn--play"
-                    :class="{ 'audio-player__control-btn--playing': isPlaying }"
-                  >
-                    <path
-                      v-if="!isPlaying"
-                      d="M4.018 14L14.41 8 4.018 2z"
-                      fill="currentColor"
-                    />
-                    <path
-                      v-else
-                      d="M3 2h3v12H3V2zm7 0h3v12h-3V2z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <svg
-                    @click="seekForward"
-                    viewBox="0 0 16 16"
-                    class="audio-player__control-btn"
-                  >
-                    <path
-                      d="M11 3v4.119L3 2.5v11l8-4.619V13h2V3z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-            <audio
-              ref="audioElement"
-              :src="previewUrl"
-              @timeupdate="updateProgress"
-              @loadedmetadata="onLoadedMetadata"
-              @play="isPlaying = true"
-              @pause="isPlaying = false"
-              @ended="isPlaying = false"
-            ></audio>
-          </div>
-
-          <!-- Markdown Preview -->
-          <div v-else-if="isMarkdown" class="markdown-preview">
-            <div class="markdown-content" ref="markdownContentRef"></div>
-          </div>
-
-          <!-- Text Preview -->
-          <div v-else-if="isText" class="text-preview">
-            <pre class="text-content">{{ textContent }}</pre>
-          </div>
-
-          <!-- ZIP Preview -->
-          <div v-else-if="isZip" class="zip-preview">
-            <div v-if="zipLoading" class="loading">Loading ZIP contents...</div>
-            <div v-else-if="zipFiles.length > 0" class="zip-content">
-              <div class="zip-header">
-                <h3>Archive Contents</h3>
-                <p class="zip-info">
-                  {{ zipFileCount }} {{ zipFileCount === 1 ? "file" : "files" }}
-                  <span v-if="zipFolderCount > 0">
-                    in {{ zipFolderCount }}
-                    {{ zipFolderCount === 1 ? "folder" : "folders" }}
-                  </span>
-                </p>
-              </div>
-              <div class="zip-file-list">
-                <div
-                  v-for="(item, index) in zipFiles"
-                  :key="index"
-                  class="zip-file-item"
-                  :class="{
-                    'zip-folder-item': item.type === 'folder',
-                    'zip-clickable': item.type === 'folder' && item.hasChildren,
-                  }"
-                  :style="{ paddingLeft: item.depth * 1.5 + 0.75 + 'rem' }"
-                  @click="
-                    item.type === 'folder' && item.hasChildren
-                      ? toggleFolder(item.path)
-                      : null
-                  "
-                >
-                  <div
-                    class="zip-expand-icon"
-                    v-if="item.type === 'folder' && item.hasChildren"
-                  >
-                    <span
-                      v-html="
-                        getIcon(
-                          isFolderExpanded(item.path)
-                            ? 'chevronDown'
-                            : 'chevronRight',
-                          14,
-                        )
-                      "
-                    ></span>
-                  </div>
-                  <div
-                    class="zip-expand-placeholder"
-                    v-else-if="item.type === 'folder' && !item.hasChildren"
-                  ></div>
-                  <div class="zip-file-icon">
-                    <span
-                      v-html="
-                        getIcon(item.type === 'folder' ? 'folder' : 'file', 20)
-                      "
-                    ></span>
-                  </div>
-                  <div class="zip-file-info">
-                    <div class="zip-file-name">{{ item.name }}</div>
-                  </div>
-                  <div class="zip-file-size" v-if="item.type === 'file'">
-                    {{ formatFileSize(item.size) }}
+                      <span
+                        v-html="
+                          getIcon(
+                            isFolderExpanded(item.path)
+                              ? 'chevronDown'
+                              : 'chevronRight',
+                            14,
+                          )
+                        "
+                      ></span>
+                    </div>
+                    <div
+                      class="zip-expand-placeholder"
+                      v-else-if="item.type === 'folder' && !item.hasChildren"
+                    ></div>
+                    <div class="zip-file-icon">
+                      <span
+                        v-html="
+                          getIcon(
+                            item.type === 'folder' ? 'folder' : 'file',
+                            20,
+                          )
+                        "
+                      ></span>
+                    </div>
+                    <div class="zip-file-info">
+                      <div class="zip-file-name">{{ item.name }}</div>
+                    </div>
+                    <div class="zip-file-size" v-if="item.type === 'file'">
+                      {{ formatFileSize(item.size) }}
+                    </div>
                   </div>
                 </div>
               </div>
+              <div v-else class="zip-empty">
+                <p>This ZIP file appears to be empty.</p>
+              </div>
             </div>
-            <div v-else class="zip-empty">
-              <p>This ZIP file appears to be empty.</p>
-            </div>
-          </div>
 
-          <!-- Unsupported Type -->
-          <div v-else class="unsupported-preview">
-            <div class="unsupported-icon" ref="defaultIconRef"></div>
-            <p>Preview not available for this file type.</p>
-            <p class="mime-type">{{ mimeType }}</p>
-            <button @click="download" class="btn btn-primary">
-              Download File
-            </button>
+            <!-- Unsupported Type -->
+            <div v-else class="unsupported-preview">
+              <div class="unsupported-icon" ref="defaultIconRef"></div>
+              <p>Preview not available for this file type.</p>
+              <p class="mime-type">{{ mimeType }}</p>
+              <button @click="download" class="btn btn-primary">
+                Download File
+              </button>
+            </div>
           </div>
-        </div>
+        </Transition>
       </div>
     </div>
   </teleport>
 </template>
 
 <script>
-import { ref, computed, watch, nextTick } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { files } from "../services/api";
 import {
   getUserMasterKey,
@@ -370,9 +408,15 @@ import {
   decryptVaultSpaceKeyForUser,
 } from "../services/keyManager";
 import { decryptFile, decryptFileKey } from "../services/encryption";
+import {
+  getFileKey as getFileKeyFromStorage,
+  storeFileKey,
+} from "../services/fileKeyStorage.js";
+import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
 import { normalizeMimeType } from "../utils/mimeType";
 import * as mm from "music-metadata";
 import JSZip from "jszip";
+import { getThumbnail, setThumbnail } from "../services/thumbnailCache";
 
 export default {
   name: "FilePreview",
@@ -400,6 +444,11 @@ export default {
   },
   emits: ["close", "download", "unzip"],
   setup(props, { emit }) {
+    // Initialize global thumbnail cache if not exists
+    if (!window.__leyzenThumbnailUrls) {
+      window.__leyzenThumbnailUrls = new Map();
+    }
+
     const loading = ref(false);
     const error = ref(null);
     const previewUrl = ref(null);
@@ -408,6 +457,10 @@ export default {
     const imageLoading = ref(false);
     const markdownContentRef = ref(null);
     const defaultIconRef = ref(null);
+    const previewContentRef = ref(null);
+    const modalRef = ref(null);
+    const modalHeight = ref("auto");
+    let resizeObserver = null;
 
     // ZIP preview state
     const zipFiles = ref([]);
@@ -745,69 +798,268 @@ export default {
       expandedFolders.value.clear();
 
       // Clean up previous audio cover
+      // Only revoke if not in global cache (shared with FileListView)
       if (audioCoverUrl.value) {
-        URL.revokeObjectURL(audioCoverUrl.value);
+        const cachedCoverUrl = window.__leyzenThumbnailUrls?.get(props.fileId);
+        // Only revoke if this is a different URL (not shared)
+        if (audioCoverUrl.value !== cachedCoverUrl) {
+          URL.revokeObjectURL(audioCoverUrl.value);
+        }
         audioCoverUrl.value = null;
       }
       hasAudioCover.value = false;
 
       try {
-        // Get VaultSpace key
-        const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
-        if (!vaultspaceKey) {
-          throw new Error("VaultSpace key not loaded");
-        }
-
-        // Download encrypted file
-        const encryptedData = await files.download(
-          props.fileId,
-          props.vaultspaceId,
-        );
-
-        // Get file key from server
-        const fileData = await files.get(props.fileId, props.vaultspaceId);
-        if (!fileData.file_key) {
-          throw new Error("File key not found");
-        }
-
-        // Decrypt file key with VaultSpace key
-        const fileKey = await decryptFileKey(
-          vaultspaceKey,
-          fileData.file_key.encrypted_key,
-        );
-
-        // Decrypt file data
-        // Extract IV and encrypted content (IV is first 12 bytes)
-        const encryptedDataArray = new Uint8Array(encryptedData);
-        const iv = encryptedDataArray.slice(0, 12);
-        const encrypted = encryptedDataArray.slice(12);
-
-        // Decrypt file
-        const decryptedData = await decryptFile(fileKey, encrypted.buffer, iv);
-
         // Create preview based on file type
         if (isZip.value) {
-          // For ZIP files, load archive contents
+          // For ZIP files, we need to download and decrypt
+          // Get VaultSpace key
+          const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
+          if (!vaultspaceKey) {
+            throw new Error("VaultSpace key not loaded");
+          }
+
+          // Download encrypted file
+          const encryptedData = await files.download(
+            props.fileId,
+            props.vaultspaceId,
+          );
+
+          // Get file key from server
+          const fileData = await files.get(props.fileId, props.vaultspaceId);
+          if (!fileData.file_key) {
+            throw new Error("File key not found");
+          }
+
+          // Decrypt file key with VaultSpace key
+          const fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+          );
+
+          // Decrypt file data
+          // Extract IV and encrypted content (IV is first 12 bytes)
+          const encryptedDataArray = new Uint8Array(encryptedData);
+          const iv = encryptedDataArray.slice(0, 12);
+          const encrypted = encryptedDataArray.slice(12);
+
+          // Decrypt file
+          const decryptedData = await decryptFile(
+            fileKey,
+            encrypted.buffer,
+            iv,
+          );
+
+          // Load archive contents
           await loadZipPreview(decryptedData);
         } else if (isImage.value || isVideo.value || isAudio.value) {
-          // Create blob URL for media files using normalized mime type
-          const blob = new Blob([decryptedData], {
-            type: normalizedMimeType.value,
-          });
-          previewUrl.value = URL.createObjectURL(blob);
+          // For images, check cache first before downloading
+          if (isImage.value) {
+            imageLoading.value = true;
+            // Check global cache first
+            const cachedUrl = window.__leyzenThumbnailUrls.get(props.fileId);
+            if (cachedUrl) {
+              previewUrl.value = cachedUrl;
+              // Image from cache should load quickly, but still wait for load event
+              // onImageLoad will set imageLoading to false
+            } else {
+              // Check IndexedDB cache
+              const cachedBlob = await getThumbnail(props.fileId);
+              if (cachedBlob) {
+                const blobUrl = URL.createObjectURL(cachedBlob);
+                previewUrl.value = blobUrl;
+                // Store in global cache for future use
+                window.__leyzenThumbnailUrls.set(props.fileId, blobUrl);
+                // Image will trigger onImageLoad when loaded
+              } else {
+                // Fallback to download and decrypt
+                // Get VaultSpace key
+                const vaultspaceKey = getCachedVaultSpaceKey(
+                  props.vaultspaceId,
+                );
+                if (!vaultspaceKey) {
+                  throw new Error("VaultSpace key not loaded");
+                }
 
-          // Extract cover art for audio files
-          if (isAudio.value) {
-            extractAudioCover(decryptedData).then((coverUrl) => {
-              if (coverUrl) {
-                audioCoverUrl.value = coverUrl;
+                // Download encrypted file
+                const encryptedData = await files.download(
+                  props.fileId,
+                  props.vaultspaceId,
+                );
+
+                // Get file key from server
+                const fileData = await files.get(
+                  props.fileId,
+                  props.vaultspaceId,
+                );
+                if (!fileData.file_key) {
+                  throw new Error("File key not found");
+                }
+
+                // Decrypt file key with VaultSpace key
+                const fileKey = await decryptFileKey(
+                  vaultspaceKey,
+                  fileData.file_key.encrypted_key,
+                );
+
+                // Decrypt file data
+                // Extract IV and encrypted content (IV is first 12 bytes)
+                const encryptedDataArray = new Uint8Array(encryptedData);
+                const iv = encryptedDataArray.slice(0, 12);
+                const encrypted = encryptedDataArray.slice(12);
+
+                // Decrypt file
+                const decryptedData = await decryptFile(
+                  fileKey,
+                  encrypted.buffer,
+                  iv,
+                );
+
+                // Create blob URL for the image
+                const blob = new Blob([decryptedData], {
+                  type: normalizedMimeType.value,
+                });
+                const blobUrl = URL.createObjectURL(blob);
+                previewUrl.value = blobUrl;
+
+                // Store in persistent cache and global cache
+                await setThumbnail(
+                  props.fileId,
+                  blob,
+                  normalizedMimeType.value,
+                );
+                window.__leyzenThumbnailUrls.set(props.fileId, blobUrl);
+              }
+            }
+          } else if (isVideo.value || isAudio.value) {
+            // For video and audio, we need the full file for playback
+            // Get VaultSpace key
+            const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
+            if (!vaultspaceKey) {
+              throw new Error("VaultSpace key not loaded");
+            }
+
+            // Download encrypted file
+            const encryptedData = await files.download(
+              props.fileId,
+              props.vaultspaceId,
+            );
+
+            // Get file key from server
+            const fileData = await files.get(props.fileId, props.vaultspaceId);
+            if (!fileData.file_key) {
+              throw new Error("File key not found");
+            }
+
+            // Decrypt file key with VaultSpace key
+            const fileKey = await decryptFileKey(
+              vaultspaceKey,
+              fileData.file_key.encrypted_key,
+            );
+
+            // Decrypt file data
+            // Extract IV and encrypted content (IV is first 12 bytes)
+            const encryptedDataArray = new Uint8Array(encryptedData);
+            const iv = encryptedDataArray.slice(0, 12);
+            const encrypted = encryptedDataArray.slice(12);
+
+            // Decrypt file
+            const decryptedData = await decryptFile(
+              fileKey,
+              encrypted.buffer,
+              iv,
+            );
+
+            // Create blob URL for media files using normalized mime type
+            const blob = new Blob([decryptedData], {
+              type: normalizedMimeType.value,
+            });
+            previewUrl.value = URL.createObjectURL(blob);
+
+            // Extract cover art for audio files (check cache first)
+            if (isAudio.value) {
+              // Check cache for audio cover art
+              const cachedCoverUrl = window.__leyzenThumbnailUrls.get(
+                props.fileId,
+              );
+              if (cachedCoverUrl) {
+                audioCoverUrl.value = cachedCoverUrl;
                 hasAudioCover.value = true;
               } else {
-                hasAudioCover.value = false;
+                // Check IndexedDB cache
+                const cachedCoverBlob = await getThumbnail(props.fileId);
+                if (cachedCoverBlob) {
+                  const coverBlobUrl = URL.createObjectURL(cachedCoverBlob);
+                  audioCoverUrl.value = coverBlobUrl;
+                  hasAudioCover.value = true;
+                  // Store in global cache
+                  window.__leyzenThumbnailUrls.set(props.fileId, coverBlobUrl);
+                } else {
+                  // Fallback to extraction
+                  extractAudioCover(decryptedData).then(async (coverUrl) => {
+                    if (coverUrl) {
+                      audioCoverUrl.value = coverUrl;
+                      hasAudioCover.value = true;
+                      // Store in global cache
+                      window.__leyzenThumbnailUrls.set(props.fileId, coverUrl);
+                      // Store in IndexedDB cache - need to convert URL to Blob
+                      try {
+                        const response = await fetch(coverUrl);
+                        const coverBlob = await response.blob();
+                        await setThumbnail(
+                          props.fileId,
+                          coverBlob,
+                          coverBlob.type || "image/jpeg",
+                        );
+                      } catch (e) {
+                        // Silently fail - cache is optional
+                      }
+                    } else {
+                      hasAudioCover.value = false;
+                    }
+                  });
+                }
               }
-            });
+            }
           }
         } else if (isMarkdown.value) {
+          // For Markdown files, we need to download and decrypt
+          // Get VaultSpace key
+          const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
+          if (!vaultspaceKey) {
+            throw new Error("VaultSpace key not loaded");
+          }
+
+          // Download encrypted file
+          const encryptedData = await files.download(
+            props.fileId,
+            props.vaultspaceId,
+          );
+
+          // Get file key from server
+          const fileData = await files.get(props.fileId, props.vaultspaceId);
+          if (!fileData.file_key) {
+            throw new Error("File key not found");
+          }
+
+          // Decrypt file key with VaultSpace key
+          const fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+          );
+
+          // Decrypt file data
+          // Extract IV and encrypted content (IV is first 12 bytes)
+          const encryptedDataArray = new Uint8Array(encryptedData);
+          const iv = encryptedDataArray.slice(0, 12);
+          const encrypted = encryptedDataArray.slice(12);
+
+          // Decrypt file
+          const decryptedData = await decryptFile(
+            fileKey,
+            encrypted.buffer,
+            iv,
+          );
           // For Markdown files, convert to HTML
           const decoder = new TextDecoder("utf-8");
           const markdownText = decoder.decode(decryptedData);
@@ -832,6 +1084,44 @@ export default {
             }
           }
         } else if (isText.value) {
+          // For text files, we need to download and decrypt
+          // Get VaultSpace key
+          const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
+          if (!vaultspaceKey) {
+            throw new Error("VaultSpace key not loaded");
+          }
+
+          // Download encrypted file
+          const encryptedData = await files.download(
+            props.fileId,
+            props.vaultspaceId,
+          );
+
+          // Get file key from server
+          const fileData = await files.get(props.fileId, props.vaultspaceId);
+          if (!fileData.file_key) {
+            throw new Error("File key not found");
+          }
+
+          // Decrypt file key with VaultSpace key
+          const fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+          );
+
+          // Decrypt file data
+          // Extract IV and encrypted content (IV is first 12 bytes)
+          const encryptedDataArray = new Uint8Array(encryptedData);
+          const iv = encryptedDataArray.slice(0, 12);
+          const encrypted = encryptedDataArray.slice(12);
+
+          // Decrypt file
+          const decryptedData = await decryptFile(
+            fileKey,
+            encrypted.buffer,
+            iv,
+          );
+
           // For text files, decode and display
           const decoder = new TextDecoder("utf-8");
           textContent.value = decoder.decode(decryptedData);
@@ -1124,13 +1414,24 @@ export default {
         progress.value = 0;
       }
       // Clean up blob URLs
+      // Only revoke if not in global cache (shared with FileListView)
       if (previewUrl.value) {
-        URL.revokeObjectURL(previewUrl.value);
+        const cachedUrl = window.__leyzenThumbnailUrls?.get(props.fileId);
+        // Only revoke if this is a different URL (not shared)
+        if (previewUrl.value !== cachedUrl) {
+          URL.revokeObjectURL(previewUrl.value);
+        }
         previewUrl.value = null;
       }
       // Clean up audio cover
+      // Only revoke if not in global cache (shared with FileListView)
       if (audioCoverUrl.value) {
-        URL.revokeObjectURL(audioCoverUrl.value);
+        const cachedCoverUrl = window.__leyzenThumbnailUrls?.get(props.fileId);
+        // Only revoke if this is a different URL (not shared)
+        // Note: For audio, the cover URL might be the same as the thumbnail URL
+        if (audioCoverUrl.value !== cachedCoverUrl) {
+          URL.revokeObjectURL(audioCoverUrl.value);
+        }
         audioCoverUrl.value = null;
       }
       hasAudioCover.value = false;
@@ -1152,6 +1453,10 @@ export default {
 
     const onImageLoad = () => {
       imageLoading.value = false;
+      // Update modal height after image loads
+      nextTick(() => {
+        updateModalHeight();
+      });
     };
 
     // Audio player functions
@@ -1584,6 +1889,8 @@ export default {
       () => [props.show, props.fileId],
       async ([newShow, newFileId]) => {
         if (newShow && newFileId) {
+          // Set initial height to a small value for smooth transition
+          modalHeight.value = "200px";
           // Wait for DOM to be ready before loading preview
           // Use multiple nextTick to ensure Vue has rendered everything
           await nextTick();
@@ -1591,6 +1898,14 @@ export default {
           await nextTick();
           await new Promise((resolve) => setTimeout(resolve, 100));
           await loadPreview();
+          // Setup resize observer after content is loaded
+          await nextTick();
+          await nextTick();
+          // Wait a bit more for images to start loading
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (previewContentRef.value) {
+            setupResizeObserver();
+          }
 
           // Add keyboard listeners for video controls after preview is loaded
           await nextTick();
@@ -1676,13 +1991,28 @@ export default {
               } catch (error) {}
             })();
           }
+          // Clean up blob URLs
+          // Only revoke if not in global cache (shared with FileListView)
           if (previewUrl.value) {
-            URL.revokeObjectURL(previewUrl.value);
+            const cachedUrl = window.__leyzenThumbnailUrls?.get(
+              newFileId || props.fileId,
+            );
+            // Only revoke if this is a different URL (not shared)
+            if (previewUrl.value !== cachedUrl) {
+              URL.revokeObjectURL(previewUrl.value);
+            }
             previewUrl.value = null;
           }
           // Clean up audio cover
+          // Only revoke if not in global cache (shared with FileListView)
           if (audioCoverUrl.value) {
-            URL.revokeObjectURL(audioCoverUrl.value);
+            const cachedCoverUrl = window.__leyzenThumbnailUrls?.get(
+              newFileId || props.fileId,
+            );
+            // Only revoke if this is a different URL (not shared)
+            if (audioCoverUrl.value !== cachedCoverUrl) {
+              URL.revokeObjectURL(audioCoverUrl.value);
+            }
             audioCoverUrl.value = null;
           }
           hasAudioCover.value = false;
@@ -1723,6 +2053,91 @@ export default {
       },
     );
 
+    // Setup ResizeObserver to animate modal height changes
+    const updateModalHeight = () => {
+      if (!previewContentRef.value || !modalRef.value) {
+        return;
+      }
+
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (!previewContentRef.value || !modalRef.value) {
+          return;
+        }
+
+        const contentHeight = previewContentRef.value.scrollHeight;
+        const headerHeight =
+          modalRef.value.querySelector(".preview-header")?.offsetHeight || 0;
+        const bottomMargin = 2.5 * 16;
+        const totalHeight = contentHeight + headerHeight + bottomMargin;
+
+        // Clamp to max-height (90vh)
+        const maxHeight = window.innerHeight * 0.9;
+        const finalHeight = Math.min(totalHeight, maxHeight);
+
+        // Only update if height actually changed (with small threshold to avoid jitter)
+        const newHeight = `${finalHeight}px`;
+        const currentHeight =
+          modalHeight.value === "auto" ? 0 : parseFloat(modalHeight.value) || 0;
+        const heightDiff = Math.abs(finalHeight - currentHeight);
+
+        if (heightDiff > 1) {
+          modalHeight.value = newHeight;
+        }
+      });
+    };
+
+    const setupResizeObserver = () => {
+      if (!previewContentRef.value) {
+        return;
+      }
+
+      // Clean up existing observer
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+
+      // Create new observer
+      resizeObserver = new ResizeObserver(() => {
+        updateModalHeight();
+      });
+
+      resizeObserver.observe(previewContentRef.value);
+      updateModalHeight();
+    };
+
+    // Watch for content ref changes to setup observer
+    watch(
+      () => [props.show, previewContentRef.value, loading.value],
+      async ([show, contentRef, isLoading]) => {
+        if (show && contentRef && !isLoading) {
+          await nextTick();
+          await nextTick();
+          // Small delay to ensure content is fully rendered
+          setTimeout(() => {
+            setupResizeObserver();
+          }, 50);
+        } else {
+          if (resizeObserver) {
+            resizeObserver.disconnect();
+            resizeObserver = null;
+          }
+          if (!show) {
+            modalHeight.value = "auto";
+          }
+        }
+      },
+    );
+
+    // Cleanup on unmount
+    onUnmounted(() => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+    });
+
     return {
       loading,
       error,
@@ -1738,6 +2153,9 @@ export default {
       defaultFileIcon,
       markdownContentRef,
       defaultIconRef,
+      previewContentRef,
+      modalRef,
+      modalHeight,
       audioElement,
       isPlaying,
       currentTime,
@@ -1823,6 +2241,8 @@ export default {
   flex-direction: column;
   border-radius: 2rem;
   overflow: hidden;
+  transition: height 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: height;
 }
 
 .preview-header {
@@ -1852,12 +2272,13 @@ export default {
 .preview-content {
   flex: 1;
   overflow: visible;
-  padding: 2rem;
+  padding: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 400px;
+  min-height: auto;
   background: transparent;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .image-preview {
@@ -1874,6 +2295,12 @@ export default {
   max-height: 70vh;
   object-fit: contain;
   border-radius: var(--radius-md, 8px);
+  transition: opacity 0.3s ease-in-out;
+  opacity: 0;
+}
+
+.image-preview img.image-loaded {
+  opacity: 1;
 }
 
 .loading-overlay {
@@ -1895,6 +2322,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
+  transition: height 0.3s ease-in-out;
 }
 
 .video-container {
@@ -2005,7 +2433,7 @@ export default {
   left: 0;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(90deg, #8b5cf6 0%, #8b5cf6 100%);
   border-radius: 10px;
   transition: width 0.1s linear;
 }
@@ -2014,7 +2442,7 @@ export default {
   width: 10px;
   height: 10px;
   position: absolute;
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   opacity: 0;
   left: 0;
   top: 50%;
@@ -2055,11 +2483,11 @@ export default {
 }
 
 .video-player-controls__control-btn:hover {
-  fill: #38bdf8;
+  fill: #8b5cf6;
 }
 
 .video-player-controls__control-btn--play {
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   fill: var(--text-primary, #f1f5f9);
   padding: 2px;
   width: 18px;
@@ -2075,7 +2503,7 @@ export default {
 }
 
 .video-player-controls__control-btn--playing {
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   fill: var(--text-primary, #f1f5f9);
 }
 
@@ -2110,6 +2538,12 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  transition: height 0.3s ease-in-out;
+}
+
+.mobile-mode .audio-preview {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .audio-player {
@@ -2204,7 +2638,7 @@ export default {
   left: 0;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(90deg, #8b5cf6 0%, #8b5cf6 100%);
   border-radius: 10px;
   transition: width 0.1s linear;
 }
@@ -2213,7 +2647,7 @@ export default {
   width: 10px;
   height: 10px;
   position: absolute;
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   opacity: 0;
   left: 0;
   top: 50%;
@@ -2248,11 +2682,11 @@ export default {
 }
 
 .audio-player__control-btn:hover {
-  fill: #38bdf8;
+  fill: #8b5cf6;
 }
 
 .audio-player__control-btn--play {
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   fill: var(--text-primary, #f1f5f9);
   padding: 2px;
   width: 18px;
@@ -2268,13 +2702,65 @@ export default {
 }
 
 .audio-player__control-btn--playing {
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   fill: var(--text-primary, #f1f5f9);
 }
 
 .audio-player__control-btn--playing:hover {
   filter: brightness(0.7);
   opacity: 0.9;
+}
+
+.mobile-mode .audio-player {
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mobile-mode .audio-player__artwork {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1;
+  height: auto;
+  border-radius: 1rem;
+  align-self: center;
+}
+
+.mobile-mode .audio-player__artwork svg {
+  width: 64px;
+  height: 64px;
+}
+
+.mobile-mode .audio-player__artwork-image {
+  border-radius: 1rem;
+}
+
+.mobile-mode .audio-player__container {
+  width: 100%;
+  align-items: center;
+}
+
+.mobile-mode .audio-player__song-name {
+  text-align: center;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-mode .audio-player__controls {
+  gap: 1rem;
+}
+
+.mobile-mode .audio-player__control-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-mode .audio-player__control-btn--play {
+  width: 32px;
+  height: 32px;
 }
 
 /* Hidden audio element */
@@ -2287,6 +2773,7 @@ export default {
   max-width: 900px;
   max-height: 70vh;
   overflow: auto;
+  transition: height 0.3s ease-in-out;
 }
 
 .text-content {
@@ -2300,6 +2787,7 @@ export default {
   line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .markdown-preview {
@@ -2307,6 +2795,7 @@ export default {
   max-width: 900px;
   max-height: 70vh;
   overflow: auto;
+  transition: height 0.3s ease-in-out;
 }
 
 .markdown-content {
@@ -2317,6 +2806,7 @@ export default {
   line-height: 1.8;
   font-size: 1rem;
   overflow: visible;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .markdown-content :deep(h1) {
@@ -2362,7 +2852,7 @@ export default {
   border-radius: 4px;
   font-family: "Courier New", monospace;
   font-size: 0.9em;
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
 }
 
 .markdown-content :deep(pre) {
@@ -2394,9 +2884,9 @@ export default {
 }
 
 .markdown-content :deep(a) {
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
   text-decoration: none;
-  border-bottom: 1px solid var(--accent-blue, #38bdf8);
+  border-bottom: 1px solid var(--accent-blue, #8b5cf6);
   transition: opacity 0.2s;
 }
 
@@ -2419,6 +2909,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .unsupported-icon {
@@ -2455,6 +2946,22 @@ export default {
   border-radius: var(--radius-md, 8px);
 }
 
+/* Fade transition classes */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease-in-out;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+}
+
 .btn-icon {
   background: none;
   border: none;
@@ -2476,6 +2983,7 @@ export default {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
+  transition: height 0.3s ease-in-out;
 }
 
 .zip-content {
@@ -2581,7 +3089,7 @@ export default {
 }
 
 .zip-folder-item .zip-file-icon {
-  color: var(--accent-blue, #38bdf8);
+  color: var(--accent-blue, #8b5cf6);
   opacity: 0.9;
 }
 
@@ -2637,7 +3145,7 @@ export default {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
   color: var(--text-primary, #f1f5f9);
   border: none;
   padding: 0.5rem 1rem;

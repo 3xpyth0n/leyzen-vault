@@ -52,7 +52,7 @@ try:
 
     if not app.config["SECRET_KEY"]:
         print(
-            "[sync_backups] Warning: SECRET_KEY not found, cannot sync backups",
+            "Warning: SECRET_KEY not found, cannot sync backups",
             file=sys.stderr,
         )
         sys.exit(0)
@@ -65,7 +65,7 @@ try:
         app.config["SQLALCHEMY_DATABASE_URI"] = postgres_url
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     except Exception as e:
-        print(f"[sync_backups] Failed to get postgres URL: {e}", file=sys.stderr)
+        print(f"Failed to get postgres URL: {e}", file=sys.stderr)
         app.config["SQLALCHEMY_DATABASE_URI"] = env_values.get("DATABASE_URL", "")
 
     # Initialize database connection
@@ -87,12 +87,12 @@ try:
                     db.session.execute(db.text("SELECT 1"))
 
                     # Connection successful, perform sync
-                    print("[sync_backups] Synchronizing backups from storage...")
+                    print("Synchronizing backups from storage...")
                     service = DatabaseBackupService(app.config["SECRET_KEY"], app)
                     result = service.sync_backups_from_storage()
 
                     print(
-                        f"[sync_backups] Sync completed: added {result['added']}, processed {result['processed']}"
+                        f"Sync completed: added {result['added']}, processed {result['processed']}"
                     )
                     db.session.commit()
                     sys.exit(0)
@@ -105,7 +105,7 @@ try:
                         continue
                     else:
                         print(
-                            f"[sync_backups] Failed to sync backups after {max_retries} attempts: {e}",
+                            f"Failed to sync backups after {max_retries} attempts: {e}",
                             file=sys.stderr,
                         )
                         pass
@@ -115,7 +115,7 @@ try:
             except Exception:
                 pass
 except Exception as e:
-    print(f"[sync_backups] Fatal error: {e}", file=sys.stderr)
+    print(f"Fatal error: {e}", file=sys.stderr)
     import traceback
 
     traceback.print_exc(file=sys.stderr)

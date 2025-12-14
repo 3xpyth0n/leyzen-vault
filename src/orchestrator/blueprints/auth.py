@@ -318,11 +318,13 @@ def captcha_image():
     renew = request.args.get("renew") == "1"
     nonce_param = request.args.get("nonce", "").strip()
     text: str | None = None
+    new_captcha_generated = False
 
     if renew:
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
         text = _get_captcha_from_store(nonce_param)
+        new_captcha_generated = True
     else:
         # Try to get CAPTCHA from store if nonce provided
         if nonce_param:
@@ -330,6 +332,7 @@ def captcha_image():
 
         # If no nonce provided or CAPTCHA not found, generate a new one
         if not text:
+            new_captcha_generated = True
             nonce_param = _refresh_captcha()
             text = _get_captcha_from_store(nonce_param)
 
@@ -339,6 +342,12 @@ def captcha_image():
     response.headers["Content-Type"] = mimetype
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
+
+    # Always include nonce in header if a new CAPTCHA was generated
+    # This allows the frontend to update its nonce reference and avoid expiration issues
+    if new_captcha_generated and nonce_param:
+        response.headers["X-Captcha-Nonce"] = nonce_param
+
     return response
 
 

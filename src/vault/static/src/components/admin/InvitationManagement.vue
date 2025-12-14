@@ -335,7 +335,7 @@ export default {
 }
 
 .loading :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
   animation: spin 1s linear infinite;
 }
 

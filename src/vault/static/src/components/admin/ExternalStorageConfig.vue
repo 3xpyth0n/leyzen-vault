@@ -755,7 +755,7 @@ export default {
 .integration-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: rgba(96, 165, 250, 0.3);
+  border-color: rgba(139, 92, 246, 0.3);
 }
 
 .integration-logo {
@@ -838,7 +838,7 @@ export default {
 }
 
 .integration-card:hover .integration-arrow {
-  color: #60a5fa;
+  color: #8b5cf6;
   transform: translateX(4px);
 }
 
@@ -889,10 +889,10 @@ export default {
   width: 2.5rem;
   min-height: 2.5rem;
   height: 2.5rem;
-  background: rgba(96, 165, 250, 0.1);
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 0.5rem;
-  color: #60a5fa;
+  color: #8b5cf6;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -902,8 +902,8 @@ export default {
 }
 
 .btn-sync-trigger:hover:not(:disabled) {
-  background: rgba(96, 165, 250, 0.2);
-  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.5);
   transform: translateY(-1px);
   z-index: 2;
 }
@@ -964,12 +964,12 @@ export default {
   padding: 1rem;
   background: rgba(30, 41, 59, 0.3);
   border-radius: 0.5rem;
-  border-left: 3px solid rgba(96, 165, 250, 0.5);
+  border-left: 3px solid rgba(139, 92, 246, 0.5);
 }
 
 .sync-mode-explanation h4 {
   margin: 0 0 0.5rem 0;
-  color: #60a5fa;
+  color: #8b5cf6;
   font-size: 1rem;
   font-weight: 600;
 }
@@ -984,9 +984,9 @@ export default {
 .info-modal-footer {
   margin-top: 0.5rem;
   padding: 1rem;
-  background: rgba(96, 165, 250, 0.1);
+  background: rgba(139, 92, 246, 0.1);
   border-radius: 0.5rem;
-  border: 1px solid rgba(96, 165, 250, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .info-modal-footer p {
@@ -997,37 +997,14 @@ export default {
 }
 
 .info-modal-footer strong {
-  color: #60a5fa;
+  color: #8b5cf6;
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 2rem;
-}
-
-.modal {
-  max-width: 800px;
-  width: 100%;
-  max-height: 90vh;
-  overflow: hidden;
-  border-radius: 1rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-}
+/* Modal styles use global .modal-overlay and .modal from vault.css */
 
 .modal-wide {
-  max-width: 95vw;
+  width: 90%;
+  overflow-y: visible;
 }
 
 .modal-header {
@@ -1141,8 +1118,8 @@ export default {
 .form-input:focus,
 .form-select:focus {
   outline: none;
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .form-checkbox {
@@ -1205,8 +1182,8 @@ export default {
 }
 
 .toggle-input:checked + .toggle-slider {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  border-color: rgba(139, 92, 246, 0.5);
 }
 
 .toggle-input:checked + .toggle-slider:before {
@@ -1214,7 +1191,7 @@ export default {
 }
 
 .toggle-input:focus + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 .toggle-switch:hover .toggle-slider {
@@ -1222,7 +1199,7 @@ export default {
 }
 
 .toggle-switch:hover .toggle-input:checked + .toggle-slider {
-  border-color: rgba(96, 165, 250, 0.7);
+  border-color: rgba(139, 92, 246, 0.7);
 }
 
 .form-help {
@@ -1257,14 +1234,14 @@ export default {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.3);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 
 .btn-secondary {

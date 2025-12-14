@@ -102,7 +102,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #60a5fa;
+  color: #8b5cf6;
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -111,7 +111,7 @@ export default {
 }
 
 .btn-link:hover {
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .loading,
@@ -134,7 +134,7 @@ export default {
   padding: 0.75rem;
   background: rgba(30, 41, 59, 0.3);
   border-radius: 0.5rem;
-  border-left: 3px solid #38bdf8;
+  border-left: 3px solid #8b5cf6;
   transition: background 0.2s ease;
 }
 

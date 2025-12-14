@@ -391,6 +391,9 @@ class UserPinnedVaultSpace(db.Model):
     pinned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    display_order: Mapped[int] = mapped_column(
+        Integer, nullable=True, default=0, server_default="0"
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User")
@@ -414,6 +417,7 @@ class UserPinnedVaultSpace(db.Model):
             "user_id": self.user_id,
             "vaultspace_id": self.vaultspace_id,
             "pinned_at": self.pinned_at.isoformat(),
+            "display_order": self.display_order,
         }
 
     def __repr__(self) -> str:
@@ -2376,6 +2380,7 @@ def init_db(app) -> bool:
             db_already_initialized = False
 
         # If database is already initialized, only one worker should log this
+        # But we still need to run migrations even if database is already initialized
         if db_already_initialized:
             # Check if another worker already logged this by checking system_settings
             already_logged = False
@@ -2468,6 +2473,23 @@ def init_db(app) -> bool:
                             db.session.rollback()
                 except Exception:
                     db.session.rollback()
+
+            # Always run migrations even if database is already initialized
+            # Migrations are idempotent and safe to run multiple times
+            try:
+                from vault.database.migrations.registry import run_migrations
+
+                run_migrations(app_logger)
+            except Exception as migration_error:
+                log_msg = (
+                    f"[MIGRATIONS] ERROR: Migration system failed: {migration_error}"
+                )
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.error(log_msg)
+                # Don't re-raise - other workers might succeed
+
             return False
 
         # Try to acquire advisory lock with retry logic
@@ -2517,22 +2539,55 @@ def init_db(app) -> bool:
         if not lock_acquired:
             # Wait a bit for the other worker to finish
             time.sleep(2)
+            # Even if we don't have the lock, we should still run migrations
+            # Migrations are idempotent and safe to run multiple times
+            try:
+                from vault.database.migrations.registry import run_migrations
+
+                run_migrations(app_logger)
+            except Exception as migration_error:
+                log_msg = (
+                    f"[MIGRATIONS] ERROR: Migration system failed: {migration_error}"
+                )
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.error(log_msg)
+                # Don't re-raise here - other worker might succeed
             return False
 
         # This worker has the lock - proceed with initialization
         initialization_performed = False
-        # If database was already initialized, release lock and return immediately
+        # If database was already initialized, skip table creation but still run migrations
         if db_already_initialized:
             initialization_performed = False
             if app_logger:
                 app_logger.log(
-                    "[INIT] Database already initialized, skipping initialization"
+                    "[INIT] Database already initialized, skipping table creation"
                 )
                 app_logger.flush()
             else:
                 logger.info(
-                    "[INIT] Database already initialized, skipping initialization"
+                    "[INIT] Database already initialized, skipping table creation"
                 )
+
+            # Still run migrations even if database is already initialized
+            # New migrations may have been added since last initialization
+            try:
+                from vault.database.migrations.registry import run_migrations
+
+                run_migrations(app_logger)
+            except Exception as migration_error:
+                log_msg = (
+                    f"[MIGRATIONS] ERROR: Migration system failed: {migration_error}"
+                )
+                if app_logger:
+                    app_logger.log(log_msg)
+                else:
+                    logger.error(log_msg)
+                # Re-raise to prevent startup with incomplete migrations
+                raise
+
             try:
                 db.session.execute(
                     sql_text("SELECT pg_advisory_unlock(:lock_high, :lock_low)"),

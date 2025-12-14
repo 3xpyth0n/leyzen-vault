@@ -17,10 +17,10 @@ from vault.database.schema import (
     db,
 )
 from vault.services.encryption_service import EncryptionService
-
-logger = logging.getLogger(__name__)
 from vault.storage import FileStorage
 from vault.utils.valid_icons import is_valid_icon_name
+
+logger = logging.getLogger(__name__)
 
 
 class VaultSpaceService:
@@ -410,10 +410,27 @@ class VaultSpaceService:
         if existing:
             return existing
 
+        # Get the maximum display_order for this user to place new pin at the end
+        # Fallback to 0 if column doesn't exist yet
+        new_order = 0
+        try:
+            from sqlalchemy import func
+
+            max_order = (
+                db.session.query(func.max(UserPinnedVaultSpace.display_order))
+                .filter_by(user_id=user_id)
+                .scalar()
+            )
+            new_order = (max_order + 1) if max_order is not None else 0
+        except Exception:
+            # Column doesn't exist yet, use default 0
+            pass
+
         # Create new pin
         pinned = UserPinnedVaultSpace(
             user_id=user_id,
             vaultspace_id=vaultspace_id,
+            display_order=new_order,
         )
         db.session.add(pinned)
         db.session.commit()
@@ -460,14 +477,69 @@ class VaultSpaceService:
             user_id: User ID
 
         Returns:
-            List of VaultSpace objects that are pinned by the user
+            List of VaultSpace objects that are pinned by the user, ordered by display_order
         """
-        pinned_relations = (
-            db.session.query(UserPinnedVaultSpace)
-            .filter_by(user_id=user_id)
-            .order_by(UserPinnedVaultSpace.pinned_at.desc())
-            .all()
-        )
+        # Check if display_order column exists
+        from sqlalchemy import inspect
+        from sqlalchemy.orm import defer
+
+        inspector = inspect(db.engine)
+        has_display_order = False
+        try:
+            columns = [
+                col["name"] for col in inspector.get_columns("user_pinned_vaultspaces")
+            ]
+            has_display_order = "display_order" in columns
+        except Exception:
+            pass
+
+        try:
+            if has_display_order:
+                pinned_relations = (
+                    db.session.query(UserPinnedVaultSpace)
+                    .filter_by(user_id=user_id)
+                    .order_by(UserPinnedVaultSpace.display_order.asc())
+                    .all()
+                )
+            else:
+                # Fallback to pinned_at if display_order doesn't exist yet
+                # Defer display_order to avoid loading it if column doesn't exist
+                pinned_relations = (
+                    db.session.query(UserPinnedVaultSpace)
+                    .options(defer(UserPinnedVaultSpace.display_order))
+                    .filter_by(user_id=user_id)
+                    .order_by(UserPinnedVaultSpace.pinned_at.desc())
+                    .all()
+                )
+        except Exception as e:
+            # If query fails (e.g., column doesn't exist), fallback to pinned_at
+            # Use raw SQL to avoid loading display_order
+            logger.debug(
+                f"Error querying with display_order, using raw SQL fallback: {e}"
+            )
+            from sqlalchemy import text
+
+            result = db.session.execute(
+                text(
+                    """
+                    SELECT id, user_id, vaultspace_id, pinned_at
+                    FROM user_pinned_vaultspaces
+                    WHERE user_id = :user_id
+                    ORDER BY pinned_at DESC
+                """
+                ),
+                {"user_id": user_id},
+            )
+            pinned_relations = []
+            for row in result:
+                # Create a minimal object with only the fields we need
+                pinned = UserPinnedVaultSpace()
+                pinned.id = row.id
+                pinned.user_id = row.user_id
+                pinned.vaultspace_id = row.vaultspace_id
+                pinned.pinned_at = row.pinned_at
+                pinned.display_order = None
+                pinned_relations.append(pinned)
 
         # Get the VaultSpaces
         vaultspaces = []
@@ -479,6 +551,60 @@ class VaultSpaceService:
                     vaultspaces.append(vaultspace)
 
         return vaultspaces
+
+    def update_pinned_order(self, user_id: str, vaultspace_ids: list[str]) -> bool:
+        """Update the display order of pinned VaultSpaces for a user.
+
+        Args:
+            user_id: User ID
+            vaultspace_ids: List of vaultspace IDs in the desired order
+
+        Returns:
+            True if update was successful
+
+        Raises:
+            ValueError: If any vaultspace_id is not pinned by the user or if display_order column doesn't exist
+        """
+        # Check if display_order column exists using inspector (more reliable)
+        from sqlalchemy import inspect
+
+        inspector = inspect(db.engine)
+        has_display_order = False
+        try:
+            columns = [
+                col["name"] for col in inspector.get_columns("user_pinned_vaultspaces")
+            ]
+            has_display_order = "display_order" in columns
+        except Exception:
+            pass
+
+        if not has_display_order:
+            raise ValueError(
+                "display_order column does not exist. Please run database migrations."
+            )
+
+        # Verify all vaultspaces are pinned by this user
+        pinned_relations = (
+            db.session.query(UserPinnedVaultSpace)
+            .filter_by(user_id=user_id)
+            .filter(UserPinnedVaultSpace.vaultspace_id.in_(vaultspace_ids))
+            .all()
+        )
+
+        if len(pinned_relations) != len(vaultspace_ids):
+            raise ValueError("One or more vaultspaces are not pinned by this user")
+
+        # Update display_order for each pinned relation
+        for order, vaultspace_id in enumerate(vaultspace_ids):
+            pinned = next(
+                (p for p in pinned_relations if p.vaultspace_id == vaultspace_id),
+                None,
+            )
+            if pinned:
+                pinned.display_order = order
+
+        db.session.commit()
+        return True
 
     def is_vaultspace_pinned(self, user_id: str, vaultspace_id: str) -> bool:
         """Check if a VaultSpace is pinned by a user.

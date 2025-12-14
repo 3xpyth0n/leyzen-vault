@@ -264,7 +264,7 @@ export default {
 
 .quota-bar {
   height: 100%;
-  background: var(--accent-blue, #38bdf8);
+  background: var(--accent-blue, #8b5cf6);
   transition:
     width 0.3s ease,
     background-color 0.3s ease;

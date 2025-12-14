@@ -275,6 +275,7 @@ export default {
       left: "0px",
       width: "0px",
     });
+    let resizeObserver = null;
 
     const tabs = [
       { id: "dashboard", label: "Dashboard" },
@@ -335,6 +336,10 @@ export default {
     const setTabRef = (el, tabId) => {
       if (el) {
         tabRefs.value[tabId] = el;
+        // Observe the new tab element if ResizeObserver is set up
+        if (resizeObserver && typeof ResizeObserver !== "undefined") {
+          resizeObserver.observe(el);
+        }
       }
     };
 
@@ -347,8 +352,8 @@ export default {
 
         const containerRect = tabsContainer.value.getBoundingClientRect();
         const tabRect = activeTabElement.getBoundingClientRect();
-
-        const left = tabRect.left - containerRect.left;
+        const left =
+          tabRect.left - containerRect.left + tabsContainer.value.scrollLeft;
         const width = tabRect.width;
 
         indicatorStyle.value = {
@@ -395,6 +400,11 @@ export default {
       }
     };
 
+    // Handle scroll on tabs container to update indicator position
+    const handleScroll = () => {
+      updateIndicatorPosition();
+    };
+
     onMounted(async () => {
       // Initialize URL hash if not present
       if (typeof window !== "undefined") {
@@ -416,6 +426,34 @@ export default {
         window.addEventListener("resize", handleResize);
         window.addEventListener("hashchange", handleHashChange);
       }
+
+      // Add scroll listener to tabs container
+      if (tabsContainer.value) {
+        tabsContainer.value.addEventListener("scroll", handleScroll);
+      }
+
+      // Setup ResizeObserver to watch for size changes
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => {
+          requestAnimationFrame(() => {
+            updateIndicatorPosition();
+          });
+        });
+
+        // Observe the tabs container
+        if (tabsContainer.value) {
+          resizeObserver.observe(tabsContainer.value);
+        }
+
+        // Observe each tab button
+        nextTick(() => {
+          Object.values(tabRefs.value).forEach((tabEl) => {
+            if (tabEl) {
+              resizeObserver.observe(tabEl);
+            }
+          });
+        });
+      }
     });
 
     onBeforeUnmount(() => {
@@ -423,6 +461,17 @@ export default {
       if (typeof window !== "undefined") {
         window.removeEventListener("resize", handleResize);
         window.removeEventListener("hashchange", handleHashChange);
+      }
+
+      // Remove scroll listener from tabs container
+      if (tabsContainer.value) {
+        tabsContainer.value.removeEventListener("scroll", handleScroll);
+      }
+
+      // Disconnect ResizeObserver
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
       }
     });
 
@@ -525,8 +574,8 @@ export default {
 }
 
 .admin-tab-button.active {
-  color: #60a5fa;
-  background: rgba(88, 166, 255, 0.1);
+  color: white;
+  background: rgba(139, 92, 246, 0.1);
 }
 
 /* Liquid glass indicator */
@@ -534,18 +583,13 @@ export default {
   position: absolute;
   bottom: 0;
   height: 2.5px;
-  background: linear-gradient(
-    90deg,
-    rgba(96, 165, 250, 1),
-    rgba(56, 189, 248, 1),
-    rgba(96, 165, 250, 1)
-  );
+  background: var(--accent-gradient);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-radius: 999px;
   box-shadow:
-    0 0 8px rgba(96, 165, 250, 0.6),
-    0 0 16px rgba(56, 189, 248, 0.4),
+    0 0 8px rgba(139, 92, 246, 0.6),
+    0 0 16px rgba(139, 92, 246, 0.4),
     inset 0 1px 1px rgba(255, 255, 255, 0.3);
   transition:
     left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -613,21 +657,35 @@ export default {
 }
 
 .btn-refresh {
-  background: rgba(0, 0, 0, 0);
-  padding: 0rem;
-  margin-top: 0.1rem;
+  background: transparent !important;
+  border: none !important;
+  padding: 0.25rem !important;
+  margin: 0 !important;
+  margin-left: 0.5rem !important;
   cursor: pointer;
   color: #cbd5e1;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  min-width: auto !important;
+  width: auto !important;
+  height: auto !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: 1 !important;
 }
 
 .btn-refresh:hover {
-  background: rgba(0, 0, 0, 0);
+  background: transparent !important;
   color: #e6eef6;
   transform: rotate(90deg);
+  box-shadow: none !important;
+  border: none !important;
 }
 
 .stats-grid {
@@ -685,7 +743,7 @@ export default {
 .stat-value {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #38bdf8;
+  color: #8b5cf6;
   margin-bottom: 0.5rem;
 }
 
@@ -766,7 +824,7 @@ export default {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #60a5fa);
+  background: linear-gradient(90deg, #8b5cf6, #8b5cf6);
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -908,7 +966,7 @@ export default {
 .quick-stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #38bdf8;
+  color: #8b5cf6;
   margin-bottom: 0.5rem;
 }
 

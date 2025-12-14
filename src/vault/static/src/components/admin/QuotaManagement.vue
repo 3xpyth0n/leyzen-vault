@@ -584,7 +584,7 @@ export default {
 }
 
 .text-unlimited {
-  color: #38bdf8;
+  color: #8b5cf6;
   font-weight: 500;
 }
 
@@ -631,7 +631,7 @@ export default {
 }
 
 .loading :deep(svg) {
-  color: #38bdf8;
+  color: #8b5cf6;
   animation: spin 1s linear infinite;
 }
 
@@ -715,7 +715,7 @@ export default {
     rgba(56, 189, 248, 0.2) 0%,
     rgba(129, 140, 248, 0.2) 100%
   );
-  color: #38bdf8;
+  color: #8b5cf6;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
@@ -762,11 +762,7 @@ export default {
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-}
+/* Button disabled state uses global .btn:disabled from vault.css */
 
 .btn-sm {
   padding: 0.25rem 0.5rem;
@@ -783,9 +779,8 @@ export default {
   padding: 2rem;
   padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  overflow-y: auto;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 1 !important;
   visibility: visible !important;
@@ -832,7 +827,7 @@ body.mobile-mode .modal-overlay {
   flex-direction: column;
   box-sizing: border-box;
   position: relative;
-  overflow-y: auto;
+  overflow: hidden;
   animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -849,8 +844,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-wide {
   width: 90%;
-  max-width: 600px;
-  min-width: 500px;
+  overflow-y: visible;
 }
 
 .modal-header {
@@ -914,46 +908,11 @@ body.mobile-mode .modal-overlay {
   flex-direction: column;
 }
 
-.form-group {
-  margin-bottom: 1.25rem;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #cbd5e1;
-  font-size: 0.9rem;
-  font-weight: 500;
-  width: 100%;
-}
-
+/* Form styles use global .form-group and .input from vault.css */
 .form-input,
 .form-select {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
   box-sizing: border-box;
-}
-
-.form-input:focus,
-.form-select:focus {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(30, 41, 59, 0.6);
-}
-
-.form-input:disabled,
-.form-select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .form-help {

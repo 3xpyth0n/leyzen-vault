@@ -94,6 +94,8 @@ class MigrationRegistry:
         """Determine if a migration should be applied.
 
         Checks both the migration's internal state check and the registry.
+        The migration's internal state (needs_application) is the source of truth
+        to ensure the database is in the correct state.
 
         Args:
             migration: Migration instance to check
@@ -101,12 +103,23 @@ class MigrationRegistry:
         Returns:
             True if migration should be applied, False otherwise
         """
-        # First check if migration is already recorded as applied
-        if self.is_migration_applied(migration.name, migration.version):
+        # Check migration's internal state first (source of truth)
+        # This ensures the database is actually in the correct state
+        if not migration.needs_application():
             return False
 
-        # Then check migration's internal state
-        return migration.needs_application()
+        # If migration needs to be applied, check if it's already recorded
+        # This prevents duplicate application attempts
+        if self.is_migration_applied(migration.name, migration.version):
+            # Migration is marked as applied but database state says it's not
+            # This can happen if migration was partially applied or rolled back
+            # Log a warning but still allow it to be applied
+            logger.warning(
+                f"Migration {migration.name} is marked as applied but database state indicates it needs to be applied. Re-applying..."
+            )
+            return True
+
+        return True
 
 
 def run_migrations(app_logger: Any | None = None) -> None:
@@ -132,6 +145,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.pinned_vaultspaces_migration import (
         PinnedVaultSpacesMigration,
     )
+    from vault.database.migrations.pinned_vaultspaces_display_order_migration import (
+        PinnedVaultSpacesDisplayOrderMigration,
+    )
     from vault.database.migrations.session_key_salt_migration import (
         SessionKeySaltMigration,
     )
@@ -148,6 +164,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(ApiKeysPrefixMigration)
     registry.register(JwtJtiMigration)
     registry.register(PinnedVaultSpacesMigration)
+    registry.register(PinnedVaultSpacesDisplayOrderMigration)
     registry.register(AuditLogsEnrichmentMigration)
     registry.register(SessionKeySaltMigration)
     registry.register(ExternalStorageMetadataMigration)

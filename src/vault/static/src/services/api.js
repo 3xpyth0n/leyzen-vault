@@ -1255,6 +1255,23 @@ export const vaultspaces = {
   },
 
   /**
+   * Update the display order of pinned VaultSpaces.
+   *
+   * @param {Array<string>} vaultspaceIds - Array of vaultspace IDs in desired order
+   * @returns {Promise<void>}
+   */
+  async updatePinnedOrder(vaultspaceIds) {
+    const response = await apiRequest("/vaultspaces/pinned/order", {
+      method: "PUT",
+      body: JSON.stringify({ vaultspace_ids: vaultspaceIds }),
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to update pinned order");
+    }
+  },
+
+  /**
    * Share VaultSpace with a user.
    *
    * @param {string} vaultspaceId - VaultSpace ID

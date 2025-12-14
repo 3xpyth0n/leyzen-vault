@@ -8,6 +8,7 @@
 
 import JSZip from "jszip";
 import { apiRequest, parseErrorResponse } from "./api.js";
+import apiService from "./api.js";
 import {
   decryptFileKey,
   encryptFileKey,
@@ -633,4 +634,195 @@ async function downloadFileWithProgress(fileId, vaultspaceId, onProgress) {
     xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.send();
   });
+}
+
+/**
+ * Generate ZIP filename with current date in DDMMAAAA format using specified timezone.
+ *
+ * @param {string} timezone - Timezone string (e.g., "Europe/Paris", "UTC")
+ * @returns {string} ZIP filename in format "export_DDMMAAAA.zip"
+ */
+export function generateZipFileName(timezone = "UTC") {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  const parts = formatter.formatToParts(now);
+  const day = parts.find((p) => p.type === "day").value;
+  const month = parts.find((p) => p.type === "month").value;
+  const year = parts.find((p) => p.type === "year").value;
+
+  return `export_${day}${month}${year}.zip`;
+}
+
+/**
+ * Zip multiple files: download, decrypt, create ZIP, and return blob for download.
+ *
+ * @param {Array} fileItems - Array of file objects with id, vaultspace_id, original_name, file_key
+ * @param {string|function} vaultspaceIdOrGetter - VaultSpace ID (if all files from same vaultspace) or function to get vaultspace key for a file
+ * @param {CryptoKey|function} vaultspaceKeyOrGetter - Decrypted VaultSpace key (if all files from same vaultspace) or function to get vaultspace key for a file
+ * @param {function} onProgress - Progress callback (current, total, message)
+ * @param {string} timezone - Timezone for filename generation (default: "UTC")
+ * @returns {Promise<Blob>} ZIP file blob ready for download
+ */
+export async function zipFiles(
+  fileItems,
+  vaultspaceIdOrGetter,
+  vaultspaceKeyOrGetter,
+  onProgress = null,
+  timezone = "UTC",
+) {
+  try {
+    if (!fileItems || fileItems.length === 0) {
+      throw new Error("No files to zip");
+    }
+
+    // Filter out directories
+    const files = fileItems.filter(
+      (item) => item.mime_type !== "application/x-directory",
+    );
+
+    if (files.length === 0) {
+      throw new Error("No files to zip (only directories selected)");
+    }
+
+    const zip = new JSZip();
+    const totalFiles = files.length;
+    let processedFiles = 0;
+
+    if (onProgress) {
+      onProgress(0, 1.0, `Downloading ${totalFiles} files...`);
+    }
+
+    for (const fileItem of files) {
+      try {
+        // Get vaultspace ID and key for this file
+        const fileVaultspaceId =
+          typeof vaultspaceIdOrGetter === "function"
+            ? fileItem.vaultspace_id
+            : vaultspaceIdOrGetter;
+        const fileVaultspaceKey =
+          typeof vaultspaceKeyOrGetter === "function"
+            ? await vaultspaceKeyOrGetter(fileItem.vaultspace_id)
+            : vaultspaceKeyOrGetter;
+
+        if (!fileVaultspaceKey) {
+          throw new Error(
+            `VaultSpace key not found for file ${fileItem.original_name || fileItem.name}`,
+          );
+        }
+
+        // Download encrypted file
+        const encryptedData = await downloadFileWithProgress(
+          fileItem.id,
+          fileVaultspaceId,
+          (loaded, total) => {
+            if (onProgress) {
+              // Calculate file progress as a fraction (0-1)
+              const fileProgressFraction = total > 0 ? loaded / total : 0;
+              // Calculate overall progress: base progress for completed files + current file progress
+              // Each file represents 1/totalFiles of the total progress
+              const baseProgress = processedFiles / totalFiles;
+              const currentFileProgress = fileProgressFraction / totalFiles;
+              const overallProgress = baseProgress + currentFileProgress;
+              // Ensure progress doesn't exceed 1.0 (100%)
+              const normalizedProgress = Math.min(overallProgress, 1.0);
+              onProgress(
+                normalizedProgress,
+                1.0,
+                `Downloading ${fileItem.original_name || fileItem.name}...`,
+              );
+            }
+          },
+        );
+
+        // Get file data with encrypted key
+        const fileInfo = await apiService.files.get(
+          fileItem.id,
+          fileVaultspaceId,
+        );
+
+        if (!fileInfo || !fileInfo.file_key) {
+          throw new Error(
+            `File key not found for ${fileItem.original_name || fileItem.name}`,
+          );
+        }
+
+        // Decrypt file key
+        const fileKey = await decryptFileKey(
+          fileVaultspaceKey,
+          fileInfo.file_key.encrypted_key,
+        );
+
+        // Decrypt file data
+        const encryptedArray = new Uint8Array(encryptedData);
+        const iv = encryptedArray.slice(0, 12);
+        const encrypted = encryptedArray.slice(12);
+
+        const decryptedData = await decryptFile(fileKey, encrypted, iv);
+
+        // Add to ZIP with original filename
+        const fileName = fileItem.original_name || fileItem.name || "file";
+        zip.file(fileName, decryptedData);
+
+        processedFiles++;
+        if (onProgress) {
+          const progress = processedFiles / totalFiles;
+          const normalizedProgress = Math.min(progress, 1.0);
+          onProgress(
+            normalizedProgress,
+            1.0,
+            `Processed ${processedFiles}/${totalFiles} files...`,
+          );
+        }
+      } catch (error) {
+        logger.error(
+          `Failed to process file ${fileItem.original_name || fileItem.name}:`,
+          error,
+        );
+        // Check for specific error types
+        if (error.message && error.message.includes("quota")) {
+          throw new Error(
+            `Storage quota exceeded while processing ${fileItem.original_name || fileItem.name}. Please free up space and try again.`,
+          );
+        } else if (error.message && error.message.includes("network")) {
+          throw new Error(
+            `Network error while downloading ${fileItem.original_name || fileItem.name}. Please check your connection and try again.`,
+          );
+        } else if (error.message && error.message.includes("decrypt")) {
+          throw new Error(
+            `Failed to decrypt file ${fileItem.original_name || fileItem.name}. The file key may be missing or corrupted.`,
+          );
+        } else {
+          throw new Error(
+            `Failed to process file ${fileItem.original_name || fileItem.name}: ${error.message || "Unknown error"}`,
+          );
+        }
+      }
+    }
+
+    // Generate ZIP file
+    if (onProgress) {
+      onProgress(1.0, 1.0, "Creating ZIP archive...");
+    }
+    const zipBlob = await zip.generateAsync(
+      { type: "blob", compression: "DEFLATE" },
+      (metadata) => {
+        if (onProgress) {
+          // ZIP creation is the final step, so progress should be 100%
+          // We keep it at 100% since all files are already processed
+          onProgress(1.0, 1.0, `Creating ZIP: ${metadata.percent.toFixed(0)}%`);
+        }
+      },
+    );
+
+    return zipBlob;
+  } catch (error) {
+    logger.error("Failed to zip files:", error);
+    throw error;
+  }
 }

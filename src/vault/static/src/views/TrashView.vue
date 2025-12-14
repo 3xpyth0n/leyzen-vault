@@ -617,7 +617,7 @@ export default {
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #38bdf8);
+  border-color: var(--accent-blue, #8b5cf6);
   background: rgba(56, 189, 248, 0.1);
 }
 

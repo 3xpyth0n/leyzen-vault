@@ -24,7 +24,33 @@ class FileStorage:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.source_dir = source_dir
         if self.source_dir:
-            self.source_dir.mkdir(parents=True, exist_ok=True)
+            # Ensure parent directory exists and is accessible
+            try:
+                self.source_dir.mkdir(parents=True, exist_ok=True)
+                if not self.source_dir.exists():
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Source directory {self.source_dir} could not be created"
+                    )
+                else:
+                    source_files_dir = self.source_dir / "files"
+                    source_files_dir.mkdir(parents=True, exist_ok=True)
+                    if not source_files_dir.exists():
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"Source files directory {source_files_dir} could not be created"
+                        )
+            except Exception as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Failed to initialize source directory {self.source_dir}: {e}"
+                )
 
     @staticmethod
     def validate_filename(filename: str) -> tuple[bool, str | None]:

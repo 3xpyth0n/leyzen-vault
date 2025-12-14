@@ -430,3 +430,53 @@ def get_pinned_vaultspaces():
         ),
         200,
     )
+
+
+@vaultspace_api_bp.route("/pinned/order", methods=["PUT"])
+@csrf.exempt
+@jwt_required
+def update_pinned_order():
+    """Update the display order of pinned VaultSpaces.
+
+    Request body should contain:
+        {
+            "vaultspace_ids": ["id1", "id2", ...]
+        }
+
+    Returns:
+        JSON with success message
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data or "vaultspace_ids" not in data:
+        return jsonify({"error": "vaultspace_ids is required"}), 400
+
+    vaultspace_ids = data.get("vaultspace_ids", [])
+    if not isinstance(vaultspace_ids, list):
+        return jsonify({"error": "vaultspace_ids must be a list"}), 400
+
+    # Validate all IDs
+    for vaultspace_id in vaultspace_ids:
+        if not validate_vaultspace_id(vaultspace_id):
+            return (
+                jsonify({"error": f"Invalid vaultspace_id format: {vaultspace_id}"}),
+                400,
+            )
+
+    vaultspace_service = _get_vaultspace_service()
+
+    try:
+        vaultspace_service.update_pinned_order(user.id, vaultspace_ids)
+        return (
+            jsonify(
+                {
+                    "message": "Pinned order updated successfully",
+                }
+            ),
+            200,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400

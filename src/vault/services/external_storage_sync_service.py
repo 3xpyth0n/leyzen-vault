@@ -99,13 +99,158 @@ class ExternalStorageSyncService:
                     else:
                         target_dir = self.local_storage.storage_dir / "files"
 
-                    target_dir.mkdir(parents=True, exist_ok=True)
+                    # Ensure parent directory of target_dir exists first
+                    import os
+
+                    target_dir_parent = target_dir.parent
+                    try:
+                        # Check if parent exists, if not try to create it
+                        if not target_dir_parent.exists():
+                            logger.debug(
+                                f"Parent directory {target_dir_parent} does not exist, creating it..."
+                            )
+                            target_dir_parent.mkdir(parents=True, exist_ok=True)
+                        if not target_dir_parent.exists():
+                            raise OSError(
+                                f"Failed to create parent directory: {target_dir_parent}"
+                            )
+                        if not target_dir_parent.is_dir():
+                            raise OSError(
+                                f"Parent path exists but is not a directory: {target_dir_parent}"
+                            )
+                        if not os.access(target_dir_parent, os.W_OK):
+                            raise OSError(
+                                f"Parent directory is not writable: {target_dir_parent}"
+                            )
+                        logger.debug(
+                            f"Parent directory {target_dir_parent} verified and accessible"
+                        )
+                    except OSError as e:
+                        error_msg = f"Failed to create or access parent directory {target_dir_parent}: {e}"
+                        logger.error(error_msg)
+                        return False, error_msg
+
+                    # Ensure directory exists - create with explicit error handling
+                    try:
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        # Verify directory was created successfully and is writable
+                        if not target_dir.exists():
+                            raise OSError(f"Failed to create directory: {target_dir}")
+                        if not target_dir.is_dir():
+                            raise OSError(
+                                f"Path exists but is not a directory: {target_dir}"
+                            )
+                        # Check write permissions
+                        if not os.access(target_dir, os.W_OK):
+                            raise OSError(f"Directory is not writable: {target_dir}")
+                    except OSError as e:
+                        error_msg = (
+                            f"Failed to create target directory {target_dir}: {e}"
+                        )
+                        logger.error(error_msg)
+                        return False, error_msg
+
                     target_path = target_dir / file_id
 
-                    # Write file atomically
-                    temp_path = target_path.with_suffix(f"{target_path.suffix}.tmp")
-                    temp_path.write_bytes(encrypted_data)
-                    temp_path.rename(target_path)
+                    # Ensure parent directory of target_path exists (in case file_id has subdirectories)
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Write file atomically using tempfile.mkstemp (more robust than write_bytes)
+                    import tempfile
+
+                    temp_fd = None
+                    temp_path = None
+                    try:
+                        # Critical: Ensure target_dir exists and is writable before writing
+                        if not target_dir.exists():
+                            logger.warning(
+                                f"Target directory {target_dir} does not exist before write, recreating..."
+                            )
+                            target_dir.mkdir(parents=True, exist_ok=True)
+                        if not target_dir.exists() or not target_dir.is_dir():
+                            raise OSError(
+                                f"Target directory {target_dir} is not valid before write"
+                            )
+                        if not os.access(target_dir, os.W_OK):
+                            raise OSError(
+                                f"Target directory {target_dir} is not writable before write"
+                            )
+
+                        # Create temporary file in the same directory as target (guarantees same filesystem)
+                        # This is more robust than write_bytes() as mkstemp() ensures the file is created
+                        logger.debug(f"Creating temporary file in {target_dir}")
+                        temp_fd, temp_path_str = tempfile.mkstemp(
+                            dir=target_dir,
+                            prefix=f".{target_path.name}.",
+                            suffix=".tmp",
+                        )
+                        temp_path = Path(temp_path_str)
+
+                        # Write data using file descriptor (more reliable)
+                        logger.debug(
+                            f"Writing {len(encrypted_data)} bytes to temporary file {temp_path}"
+                        )
+                        with os.fdopen(temp_fd, "wb") as temp_file:
+                            temp_file.write(encrypted_data)
+                            temp_file.flush()
+                            os.fsync(temp_fd)  # Force write to disk
+                        temp_fd = None  # File is closed, don't close again
+
+                        # Verify the file was written successfully
+                        if not temp_path.exists():
+                            raise OSError(
+                                f"Temporary file {temp_path} was not created after write"
+                            )
+                        if not temp_path.is_file():
+                            raise OSError(
+                                f"Temporary file {temp_path} exists but is not a file"
+                            )
+
+                        # Verify directories still exist before rename (critical check)
+                        if not target_dir.exists():
+                            logger.warning(
+                                f"Target directory {target_dir} does not exist before rename, recreating..."
+                            )
+                            target_dir.mkdir(parents=True, exist_ok=True)
+                            if not target_dir.exists():
+                                raise OSError(
+                                    f"Target directory {target_dir} was removed and could not be recreated before rename"
+                                )
+                        if not target_dir.is_dir():
+                            raise OSError(
+                                f"Target directory {target_dir} is not a directory before rename"
+                            )
+                        if not os.access(target_dir, os.W_OK):
+                            raise OSError(
+                                f"Target directory {target_dir} is not writable before rename"
+                            )
+                        # Re-verify temp file exists before rename
+                        if not temp_path.exists():
+                            raise OSError(
+                                f"Temporary file {temp_path} does not exist before rename (was it deleted?)"
+                            )
+                        # Re-ensure directory exists just before rename (defensive)
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        # Final verification before rename
+                        if not target_dir.exists() or not target_dir.is_dir():
+                            raise OSError(
+                                f"Target directory {target_dir} is not valid before rename"
+                            )
+                        logger.debug(f"Renaming {temp_path} to {target_path}")
+                        temp_path.rename(target_path)
+                    except OSError as e:
+                        # Clean up temp file if it exists
+                        if temp_fd is not None:
+                            try:
+                                os.close(temp_fd)
+                            except Exception:
+                                pass
+                        if temp_path and temp_path.exists():
+                            try:
+                                temp_path.unlink()
+                            except Exception:
+                                pass
+                        raise
 
                     logger.info(
                         f"Successfully restored file {file_id} from S3 to local storage"
@@ -255,12 +400,50 @@ class ExternalStorageSyncService:
                 else:
                     target_dir = self.local_storage.storage_dir / "files"
 
+                # Ensure parent directory of target_dir exists first
+                import os
+
+                target_dir_parent = target_dir.parent
+                try:
+                    # Check if parent exists, if not try to create it
+                    if not target_dir_parent.exists():
+                        logger.debug(
+                            f"Parent directory {target_dir_parent} does not exist, creating it..."
+                        )
+                        target_dir_parent.mkdir(parents=True, exist_ok=True)
+                    if not target_dir_parent.exists():
+                        raise OSError(
+                            f"Failed to create parent directory: {target_dir_parent}"
+                        )
+                    if not target_dir_parent.is_dir():
+                        raise OSError(
+                            f"Parent path exists but is not a directory: {target_dir_parent}"
+                        )
+                    if not os.access(target_dir_parent, os.W_OK):
+                        raise OSError(
+                            f"Parent directory is not writable: {target_dir_parent}"
+                        )
+                    logger.debug(
+                        f"Parent directory {target_dir_parent} verified and accessible"
+                    )
+                except OSError as e:
+                    error_msg = f"Failed to create or access parent directory {target_dir_parent}: {e}"
+                    logger.error(error_msg)
+                    return False, error_msg
+
                 # Ensure directory exists - create with explicit error handling
                 try:
                     target_dir.mkdir(parents=True, exist_ok=True)
-                    # Verify directory was created successfully
+                    # Verify directory was created successfully and is writable
                     if not target_dir.exists():
                         raise OSError(f"Failed to create directory: {target_dir}")
+                    if not target_dir.is_dir():
+                        raise OSError(
+                            f"Path exists but is not a directory: {target_dir}"
+                        )
+                    # Check write permissions
+                    if not os.access(target_dir, os.W_OK):
+                        raise OSError(f"Directory is not writable: {target_dir}")
                 except OSError as e:
                     error_msg = f"Failed to create target directory {target_dir}: {e}"
                     logger.error(error_msg)
@@ -268,19 +451,98 @@ class ExternalStorageSyncService:
 
                 target_path = target_dir / storage_ref
 
-                # Write file atomically
-                temp_path = target_path.with_suffix(f"{target_path.suffix}.tmp")
+                # Ensure parent directory of target_path exists (in case storage_ref has subdirectories)
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Write file atomically using tempfile.mkstemp (more robust than write_bytes)
+                import tempfile
+
+                temp_fd = None
+                temp_path = None
                 try:
-                    temp_path.write_bytes(encrypted_data)
-                    # Verify parent directory still exists before rename
+                    # Critical: Ensure target_dir exists and is writable before writing
                     if not target_dir.exists():
-                        raise OSError(
-                            f"Target directory {target_dir} was removed before rename"
+                        logger.warning(
+                            f"Target directory {target_dir} does not exist before write, recreating..."
                         )
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                    if not target_dir.exists() or not target_dir.is_dir():
+                        raise OSError(
+                            f"Target directory {target_dir} is not valid before write"
+                        )
+                    if not os.access(target_dir, os.W_OK):
+                        raise OSError(
+                            f"Target directory {target_dir} is not writable before write"
+                        )
+
+                    # Create temporary file in the same directory as target (guarantees same filesystem)
+                    # This is more robust than write_bytes() as mkstemp() ensures the file is created
+                    logger.debug(f"Creating temporary file in {target_dir}")
+                    temp_fd, temp_path_str = tempfile.mkstemp(
+                        dir=target_dir, prefix=f".{target_path.name}.", suffix=".tmp"
+                    )
+                    temp_path = Path(temp_path_str)
+
+                    # Write data using file descriptor (more reliable)
+                    logger.debug(
+                        f"Writing {len(encrypted_data)} bytes to temporary file {temp_path}"
+                    )
+                    with os.fdopen(temp_fd, "wb") as temp_file:
+                        temp_file.write(encrypted_data)
+                        temp_file.flush()
+                        os.fsync(temp_fd)  # Force write to disk
+                    temp_fd = None  # File is closed, don't close again
+
+                    # Verify the file was written successfully
+                    if not temp_path.exists():
+                        raise OSError(
+                            f"Temporary file {temp_path} was not created after write"
+                        )
+                    if not temp_path.is_file():
+                        raise OSError(
+                            f"Temporary file {temp_path} exists but is not a file"
+                        )
+
+                    # Verify directories still exist before rename (critical check)
+                    if not target_dir.exists():
+                        logger.warning(
+                            f"Target directory {target_dir} does not exist before rename, recreating..."
+                        )
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        if not target_dir.exists():
+                            raise OSError(
+                                f"Target directory {target_dir} was removed and could not be recreated before rename"
+                            )
+                    if not target_dir.is_dir():
+                        raise OSError(
+                            f"Target directory {target_dir} is not a directory before rename"
+                        )
+                    if not os.access(target_dir, os.W_OK):
+                        raise OSError(
+                            f"Target directory {target_dir} is not writable before rename"
+                        )
+                    # Re-verify temp file exists before rename
+                    if not temp_path.exists():
+                        raise OSError(
+                            f"Temporary file {temp_path} does not exist before rename (was it deleted?)"
+                        )
+                    # Re-ensure directory exists just before rename (defensive)
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    # Final verification before rename
+                    if not target_dir.exists() or not target_dir.is_dir():
+                        raise OSError(
+                            f"Target directory {target_dir} is not valid before rename"
+                        )
+                    logger.debug(f"Renaming {temp_path} to {target_path}")
                     temp_path.rename(target_path)
                 except OSError as e:
                     # Clean up temp file if it exists
-                    if temp_path.exists():
+                    if temp_fd is not None:
+                        try:
+                            os.close(temp_fd)
+                        except Exception:
+                            pass
+                    if temp_path and temp_path.exists():
                         try:
                             temp_path.unlink()
                         except Exception:
