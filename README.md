@@ -1,6 +1,6 @@
 # Leyzen Vault 🛰️
 
-**Version 2.3.0**
+**Version 2.4.0**
 
 [![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
@@ -9,6 +9,28 @@
 > **Modular Moving-Target Defense Orchestrator — Enterprise-Grade Secure File Storage**  
 > **The first open-source file vault designed to stay ahead of attackers — by never standing still.**  
 > Licensed under **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE).
+
+## Version 2.4.0 Highlights
+
+**Unlock Enterprise-Grade Storage Flexibility and Mobile Excellence**
+
+Leyzen Vault 2.4.0 introduces three game-changing features that transform how you store, protect, and access your encrypted files:
+
+### 🌐 S3-Compatible External Storage Integration
+
+Break free from local storage limitations with native support for AWS S3, MinIO, and any S3-compatible service. Seamlessly synchronize your encrypted files bidirectionally between local storage and cloud infrastructure, enabling true hybrid deployments. Configure everything securely through the intuitive admin interface—your credentials are encrypted and stored safely. Whether you need cloud redundancy, distributed storage, or complete cloud-based deployments, Leyzen Vault now scales with your infrastructure needs while maintaining end-to-end encryption.
+
+### 💾 Encrypted Database Backup & Restore System
+
+Never lose your critical data again. Leyzen Vault 2.4.0 includes a comprehensive backup solution that protects your entire database with the same military-grade Argon2id encryption used for your files. Schedule automated backups with flexible cron-based scheduling, store them locally or in S3-compatible storage, and restore your entire system in one click directly from the setup page. All backups remain encrypted at rest—because security shouldn't be an afterthought, even for backups. Configure retention policies to automatically manage your backup history, keeping storage clean while preserving essential recovery points.
+
+### 📱 Revolutionary Mobile Mode
+
+Experience Leyzen Vault like never before on mobile devices. Our brand-new mobile-optimized interface features a sleek bottom navigation bar, responsive single-column layouts, and touch-optimized interactions designed specifically for small screens. Toggle between mobile and desktop modes with a single tap, giving you the perfect experience on any device. Every screen has been reimagined for mobile—from file browsing to sharing, everything feels natural and intuitive on your phone or tablet. Your encrypted files, now in your pocket.
+
+**End-to-End Encryption (E2EE)**: All features maintain our zero-trust security model. Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded. The server only stores ciphertext.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
 
 ## Overview
 
@@ -76,13 +98,6 @@ Each service is isolated, documented, reproducible, and observable — offering 
 ### 5. Enterprise features without vendor lock-in
 
 SSO, audit logs, admin dashboard, device management, and REST API v2 — without subscriptions or proprietary dependencies.
-
-## Version 2.3.0 Highlights
-
-Preview support for video, audio, text, and markdown files, enhanced UI with VaultSpace pinning, dynamic icon system, conflict resolution modal, and multiple bug fixes.  
-See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
-
-**End-to-End Encryption (E2EE)**: Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded. The server only stores ciphertext.
 
 ## Author
 
