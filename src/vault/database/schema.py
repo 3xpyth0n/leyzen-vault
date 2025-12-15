@@ -1104,6 +1104,32 @@ class RateLimitTracking(db.Model):
     )
 
 
+class CaptchaEntry(db.Model):
+    """CAPTCHA entry stored in database for multi-worker synchronization."""
+
+    __tablename__ = "captcha_entries"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    nonce: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    session_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(String(50), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_captcha_entries_session_expires", "session_id", "expires_at"),
+    )
+
+
 class JWTBlacklist(db.Model):
     """JWT token blacklist for logout functionality."""
 

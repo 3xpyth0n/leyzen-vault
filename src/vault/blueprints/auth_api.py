@@ -30,6 +30,7 @@ from common.captcha_helpers import (
     get_login_csrf_store_for_app,
     refresh_captcha_with_store,
 )
+from common.captcha import DatabaseCaptchaStore
 from common.services.logging import FileLogger
 
 auth_api_bp = Blueprint("auth_api", __name__, url_prefix="/api/auth")
@@ -87,19 +88,43 @@ def _build_captcha_image(text: str) -> tuple[bytes, str]:
     )
 
 
+def _get_session_id() -> str:
+    """Get or create session ID for CAPTCHA isolation."""
+    if "_id" not in session:
+        import secrets
+
+        session["_id"] = secrets.token_urlsafe(16)
+    return session["_id"]
+
+
 def _store_captcha_entry(nonce: str, text: str) -> None:
     """Store CAPTCHA entry in store."""
-    _get_captcha_store().store(nonce, text)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        store.store(nonce, text, session_id)
+    else:
+        store.store(nonce, text)
 
 
 def _get_captcha_from_store(nonce: str | None) -> str | None:
     """Get CAPTCHA from store."""
-    return _get_captcha_store().get(nonce)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        return store.get(nonce, session_id)
+    else:
+        return store.get(nonce)
 
 
 def _drop_captcha_from_store(nonce: str | None) -> None:
     """Drop CAPTCHA from store."""
-    _get_captcha_store().drop(nonce)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        store.drop(nonce, session_id)
+    else:
+        store.drop(nonce)
 
 
 def _touch_login_csrf_token(token: str | None) -> bool:
@@ -528,7 +553,7 @@ def login():
                     400,
                 )
 
-            expected_captcha = captcha_store.get(captcha_nonce)
+            expected_captcha = _get_captcha_from_store(captcha_nonce)
             # SECURITY: Never log CAPTCHA values or nonces in production
             is_production = current_app.config.get("IS_PRODUCTION", True)
             if not is_production:
@@ -571,12 +596,33 @@ def login():
                         user_ip=client_ip,
                         details={
                             "username_or_email": username_or_email,
-                            "reason": "Invalid captcha response",
+                            "reason": "Incorrect captcha response",
                         },
                         success=False,
                     )
+                # Increment attempt counter and drop if limit reached
                 if captcha_nonce:
-                    captcha_store.drop(captcha_nonce)
+                    captcha_store = _get_captcha_store()
+                    session_id = _get_session_id()
+                    if isinstance(captcha_store, DatabaseCaptchaStore):
+                        attempts = captcha_store.increment_attempts(
+                            captcha_nonce, session_id
+                        )
+                        if attempts >= 2:
+                            _drop_captcha_from_store(captcha_nonce)
+                    else:
+                        attempts = captcha_store.increment_attempts(captcha_nonce)
+                        if attempts >= 2:
+                            _drop_captcha_from_store(captcha_nonce)
+                    if attempts >= 2:
+                        return (
+                            jsonify(
+                                {
+                                    "error": "Too many failed attempts. Please refresh the CAPTCHA and try again."
+                                }
+                            ),
+                            400,
+                        )
                 # SECURITY: Never log CAPTCHA values in production
                 is_production = current_app.config.get("IS_PRODUCTION", True)
                 if not is_production:
@@ -585,11 +631,11 @@ def login():
                         f"CAPTCHA mismatch: expected_len={len(expected_normalized)}, "
                         f"received_len={len(received_normalized)}"
                     )
-                return jsonify({"error": "Invalid captcha response"}), 400
+                return jsonify({"error": "Incorrect captcha response"}), 400
 
             # Clean up captcha after successful verification
             if captcha_nonce:
-                captcha_store.drop(captcha_nonce)
+                _drop_captcha_from_store(captcha_nonce)
 
         auth_service = _get_auth_service()
 
@@ -1575,8 +1621,10 @@ def captcha_image():
 
     Returns:
         CAPTCHA image (PNG or SVG)
-        Always includes X-Captcha-Nonce header if a new CAPTCHA was generated
-        (e.g., when renew=1, nonce invalid/expired, or no nonce provided)
+        Includes X-Captcha-Nonce header only when a new CAPTCHA is generated
+        (when renew=1 or no nonce provided)
+
+    Core principle: One nonce = one image. Never auto-generate when nonce is provided.
     """
     renew = request.args.get("renew") == "1"
     nonce_param = request.args.get("nonce", "").strip()
@@ -1589,35 +1637,32 @@ def captcha_image():
         nonce_param = _refresh_captcha()
         text = _get_captcha_from_store(nonce_param)
         new_captcha_generated = True
-    else:
-        # Try to get CAPTCHA from store if nonce provided
-        if nonce_param:
-            text = _get_captcha_from_store(nonce_param)
-            if not text:
-                # Nonce was provided but CAPTCHA not found (expired or invalid)
-                # Generate a new one and signal to client via header
-                new_captcha_generated = True
-                nonce_param = _refresh_captcha()
-                text = _get_captcha_from_store(nonce_param)
-
-        # If no nonce provided or CAPTCHA not found, generate a new one
-        if not text:
-            new_captcha_generated = True
-            nonce_param = _refresh_captcha()
-            text = _get_captcha_from_store(nonce_param)
-
-    # Ensure we have valid text (defensive check)
-    if not text:
-        # Last resort: generate fresh CAPTCHA
-        new_captcha_generated = True
-        nonce_param = _refresh_captcha()
+    elif nonce_param:
+        # Nonce provided - return that specific CAPTCHA or error
         text = _get_captcha_from_store(nonce_param)
         if not text:
-            # This should never happen, but handle gracefully
-            current_app.logger.error("Failed to generate CAPTCHA after retry")
+            # Nonce not found or expired - return error, DON'T generate new one
+            # Log for debugging - this should not happen frequently
+            current_app.logger.debug(
+                f"CAPTCHA nonce not found: {nonce_param[:8]}... "
+                f"(store size: {len(_get_captcha_store()._store)})"
+            )
             from flask import abort
 
-            abort(500, description="Failed to generate CAPTCHA")
+            abort(404, description="CAPTCHA not found or expired")
+    else:
+        # No nonce provided - generate new CAPTCHA
+        nonce_param = _refresh_captcha()
+        text = _get_captcha_from_store(nonce_param)
+        new_captcha_generated = True
+
+    # Ensure we have valid text
+    if not text:
+        # This should never happen, but handle gracefully
+        current_app.logger.error("Failed to get CAPTCHA text")
+        from flask import abort
+
+        abort(500, description="Failed to generate CAPTCHA")
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 
@@ -1626,8 +1671,7 @@ def captcha_image():
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
 
-    # Always include nonce in header if a new CAPTCHA was generated
-    # This allows the frontend to update its nonce reference and avoid expiration issues
+    # Only include nonce in header if a new CAPTCHA was generated
     if new_captcha_generated and nonce_param:
         response.headers["X-Captcha-Nonce"] = nonce_param
 
@@ -1671,14 +1715,13 @@ def captcha_refresh():
     nonce = _refresh_captcha()
 
     # Verify the CAPTCHA was stored successfully
-    captcha_store = _get_captcha_store()
-    stored_text = captcha_store.get(nonce)
+    stored_text = _get_captcha_from_store(nonce)
     if not stored_text:
         # This should never happen, but handle it gracefully
         current_app.logger.error("Generated CAPTCHA nonce but store lookup failed")
         # Retry once
         nonce = _refresh_captcha()
-        stored_text = captcha_store.get(nonce)
+        stored_text = _get_captcha_from_store(nonce)
         if not stored_text:
             from flask import abort
 

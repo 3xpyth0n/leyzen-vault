@@ -141,6 +141,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.audit_logs_enrichment_migration import (
         AuditLogsEnrichmentMigration,
     )
+    from vault.database.migrations.captcha_entries_migration import (
+        CaptchaEntriesMigration,
+    )
     from vault.database.migrations.jwt_jti_migration import JwtJtiMigration
     from vault.database.migrations.pinned_vaultspaces_migration import (
         PinnedVaultSpacesMigration,
@@ -169,6 +172,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(SessionKeySaltMigration)
     registry.register(ExternalStorageMetadataMigration)
     registry.register(DatabaseBackupMigration)
+    registry.register(CaptchaEntriesMigration)
 
     migrations = registry.get_all_migrations()
 

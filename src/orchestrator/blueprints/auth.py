@@ -31,6 +31,7 @@ from common.captcha_helpers import (
     get_login_csrf_store_for_app,
     refresh_captcha_with_store,
 )
+from common.captcha import DatabaseCaptchaStore
 from common.constants import (
     LOGIN_BLOCK_WINDOW_MINUTES,
     MAX_LOGIN_ATTEMPTS,
@@ -93,19 +94,43 @@ def _build_captcha_image(text: str) -> tuple[bytes, str]:
     )
 
 
+def _get_session_id() -> str:
+    """Get or create session ID for CAPTCHA isolation."""
+    if "_id" not in session:
+        import secrets
+
+        session["_id"] = secrets.token_urlsafe(16)
+    return session["_id"]
+
+
 def _store_captcha_entry(nonce: str, text: str) -> None:
     """Store CAPTCHA entry in store."""
-    _get_captcha_store().store(nonce, text)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        store.store(nonce, text, session_id)
+    else:
+        store.store(nonce, text)
 
 
 def _get_captcha_from_store(nonce: str | None) -> str | None:
     """Get CAPTCHA from store."""
-    return _get_captcha_store().get(nonce)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        return store.get(nonce, session_id)
+    else:
+        return store.get(nonce)
 
 
 def _drop_captcha_from_store(nonce: str | None) -> None:
     """Drop CAPTCHA from store."""
-    _get_captcha_store().drop(nonce)
+    store = _get_captcha_store()
+    session_id = _get_session_id()
+    if isinstance(store, DatabaseCaptchaStore):
+        store.drop(nonce, session_id)
+    else:
+        store.drop(nonce)
 
 
 def _issue_login_csrf_token() -> str:
@@ -260,9 +285,37 @@ def login():
 
         if not expected_captcha or captcha_response != str(expected_captcha).upper():
             register_failed_attempt(client_ip)
-            error = "Invalid captcha response."
-            _drop_captcha_from_store(captcha_nonce_field)
-            captcha_nonce = _refresh_captcha()
+            # Increment attempt counter and drop if limit reached
+            if captcha_nonce_field:
+                captcha_store = _get_captcha_store()
+                session_id = _get_session_id()
+                if isinstance(captcha_store, DatabaseCaptchaStore):
+                    attempts = captcha_store.increment_attempts(
+                        captcha_nonce_field, session_id
+                    )
+                    if attempts >= 2:
+                        _drop_captcha_from_store(captcha_nonce_field)
+                else:
+                    attempts = captcha_store.increment_attempts(captcha_nonce_field)
+                    if attempts >= 2:
+                        _drop_captcha_from_store(captcha_nonce_field)
+                if attempts >= 2:
+                    error = "Too many failed attempts. Please refresh the CAPTCHA and try again."
+                    captcha_nonce = _refresh_captcha()
+                else:
+                    error = "Incorrect captcha response."
+                    login_csrf_token = _issue_login_csrf_token()
+                    return (
+                        render_template(
+                            "login.html",
+                            error=error,
+                            captcha_nonce=captcha_nonce,
+                            login_csrf_token=login_csrf_token,
+                        ),
+                        400,
+                    )
+            error = "Incorrect captcha response."
+            captcha_nonce = _get_captcha_nonce()
             login_csrf_token = _issue_login_csrf_token()
             return (
                 render_template(
@@ -315,26 +368,47 @@ def login():
 
 @auth_bp.route("/captcha-image", methods=["GET"])
 def captcha_image():
+    """Get CAPTCHA image.
+
+    Query parameters:
+        - renew: If "1", generate a new CAPTCHA
+        - nonce: Optional CAPTCHA nonce
+
+    Returns:
+        CAPTCHA image (PNG or SVG)
+        Includes X-Captcha-Nonce header only when a new CAPTCHA is generated
+        (when renew=1 or no nonce provided)
+
+    Core principle: One nonce = one image. Never auto-generate when nonce is provided.
+    """
     renew = request.args.get("renew") == "1"
     nonce_param = request.args.get("nonce", "").strip()
     text: str | None = None
     new_captcha_generated = False
 
     if renew:
+        # Force generation of new CAPTCHA
         _drop_captcha_from_store(nonce_param)
         nonce_param = _refresh_captcha()
         text = _get_captcha_from_store(nonce_param)
         new_captcha_generated = True
-    else:
-        # Try to get CAPTCHA from store if nonce provided
-        if nonce_param:
-            text = _get_captcha_from_store(nonce_param)
-
-        # If no nonce provided or CAPTCHA not found, generate a new one
+    elif nonce_param:
+        # Nonce provided - return that specific CAPTCHA or error
+        text = _get_captcha_from_store(nonce_param)
         if not text:
-            new_captcha_generated = True
-            nonce_param = _refresh_captcha()
-            text = _get_captcha_from_store(nonce_param)
+            # Nonce not found or expired - return error, DON'T generate new one
+            abort(404, description="CAPTCHA not found or expired")
+    else:
+        # No nonce provided - generate new CAPTCHA
+        nonce_param = _refresh_captcha()
+        text = _get_captcha_from_store(nonce_param)
+        new_captcha_generated = True
+
+    # Ensure we have valid text
+    if not text:
+        # This should never happen, but handle gracefully
+        _logger().log("[ERROR] Failed to get CAPTCHA text")
+        abort(500, description="Failed to generate CAPTCHA")
 
     image_bytes, mimetype = _build_captcha_image(str(text))
 
@@ -343,8 +417,7 @@ def captcha_image():
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
 
-    # Always include nonce in header if a new CAPTCHA was generated
-    # This allows the frontend to update its nonce reference and avoid expiration issues
+    # Only include nonce in header if a new CAPTCHA was generated
     if new_captcha_generated and nonce_param:
         response.headers["X-Captcha-Nonce"] = nonce_param
 

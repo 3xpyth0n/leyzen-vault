@@ -45,36 +45,6 @@
     document.body.classList.remove("captcha-overlay-open");
   }
 
-  function checkCaptchaNonce(image, nonceInput) {
-    if (!image || !nonceInput || !image.src) {
-      return;
-    }
-
-    // Make a HEAD request to check for X-Captcha-Nonce header
-    fetch(image.src, {
-      method: "HEAD",
-      credentials: "same-origin",
-    })
-      .then((response) => {
-        if (response.ok) {
-          const headerNonce = response.headers.get("X-Captcha-Nonce");
-          if (headerNonce && headerNonce !== nonceInput.value) {
-            // Server generated a new CAPTCHA, update our nonce
-            nonceInput.value = headerNonce;
-            // Update image URL to match the new nonce
-            const url = new URL(image.src, window.location.origin);
-            url.searchParams.set("nonce", headerNonce);
-            image.src = url.toString();
-            image.dataset.baseUrl = url.toString();
-          }
-        }
-      })
-      .catch((error) => {
-        // Silently fail - nonce check is not critical
-        console.debug("Failed to check CAPTCHA nonce:", error);
-      });
-  }
-
   function requestCaptchaRefresh(
     image,
     nonceInput,
@@ -138,12 +108,6 @@
             const fallback = image.dataset.baseUrl || image.src;
             image.src = withCacheBuster(fallback);
           }
-          // Check for nonce in header after image loads
-          image.addEventListener(
-            "load",
-            () => checkCaptchaNonce(image, nonceInput),
-            { once: true },
-          );
           syncCaptchaOverlayImage(overlay, overlayImage, image);
           if (captchaInput) {
             captchaInput.value = "";
@@ -226,13 +190,6 @@
         event.preventDefault();
         showCaptchaOverlay(overlay, overlayImage, captchaImage);
       });
-
-      // Check for nonce in header when image loads
-      if (nonceInput) {
-        captchaImage.addEventListener("load", () => {
-          checkCaptchaNonce(captchaImage, nonceInput);
-        });
-      }
 
       overlay.addEventListener("click", (event) => {
         if (event.target === overlay) {

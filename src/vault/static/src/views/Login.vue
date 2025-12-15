@@ -84,18 +84,23 @@
           :disabled="loading"
         ></PasswordInput>
         <div class="captcha-section">
-          <div class="captcha-image-wrapper">
+          <div
+            class="captcha-image-wrapper"
+            :class="{ 'captcha-clickable': captchaImageUrl && captchaNonce }"
+            @click="showCaptchaOverlay"
+          >
             <img
+              v-if="captchaImageUrl && captchaNonce"
+              :key="captchaNonce"
               :src="captchaImageUrl"
-              alt="CAPTCHA"
+              alt=""
               class="captcha-image"
-              @click="showCaptchaOverlay"
-              @load="checkCaptchaNonce"
             />
+            <div v-else class="captcha-loading">Loading Captcha</div>
             <button
               type="button"
               class="captcha-refresh"
-              @click="refreshCaptcha"
+              @click.stop="refreshCaptcha"
               :disabled="loading"
             >
               ↻
@@ -127,6 +132,7 @@
       @click="handleOverlayClick"
     >
       <img
+        v-if="captchaImageUrl && captchaNonce"
         :src="captchaImageUrl"
         alt="Captcha enlarged"
         class="captcha-overlay__image"
@@ -190,7 +196,8 @@ const twoFactorError = ref("");
 let handleKeyDown = null;
 
 const showCaptchaOverlay = () => {
-  if (captchaImageUrl.value) {
+  // Only show overlay if both image URL and nonce are available
+  if (captchaImageUrl.value && captchaNonce.value) {
     showOverlay.value = true;
     document.body.classList.add("captcha-overlay-open");
   }
@@ -208,54 +215,16 @@ const handleOverlayClick = (event) => {
 };
 
 /**
- * Fetches a CAPTCHA image and captures the nonce from response headers.
- * Returns the nonce and direct image URL, or null if the request failed.
- * Always uses direct backend URLs to ensure synchronization between image and nonce.
+ * Refresh CAPTCHA by calling the refresh endpoint.
+ * Simple and straightforward - just get new nonce and update state.
  */
-const fetchCaptchaWithNonce = async (url) => {
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      credentials: "same-origin",
-    });
 
-    if (!response.ok) {
-      logger.warn("Failed to fetch CAPTCHA image:", response.status);
-      return null;
-    }
-
-    // Always check for nonce in header first (server may have generated new CAPTCHA)
-    let nonce = response.headers.get("X-Captcha-Nonce");
-
-    // If no nonce in header, try to extract it from URL
-    if (!nonce) {
-      try {
-        const urlObj = new URL(url, window.location.origin);
-        nonce = urlObj.searchParams.get("nonce");
-      } catch (e) {
-        logger.debug("Failed to parse URL for nonce extraction:", e);
-      }
-    }
-
-    if (nonce) {
-      // Use direct backend URL with nonce to ensure synchronization
-      const imageUrl = `/api/auth/captcha-image?nonce=${nonce}`;
-      return { nonce, imageUrl };
-    }
-
-    logger.warn(
-      "No nonce found in CAPTCHA response header or URL, server may have an issue",
-    );
-    return null;
-  } catch (error) {
-    logger.error("Error fetching CAPTCHA with nonce:", error);
-    return null;
-  }
-};
-
+/**
+ * Refresh CAPTCHA by calling the refresh endpoint.
+ * Simple and straightforward - just get new nonce and update state.
+ */
 const refreshCaptcha = async () => {
   try {
-    // Request a new captcha using the refresh endpoint
     const response = await fetch("/api/auth/captcha-refresh", {
       method: "POST",
       credentials: "same-origin",
@@ -264,83 +233,33 @@ const refreshCaptcha = async () => {
       },
     });
 
-    if (response.ok) {
-      const data = await response.json();
+    if (!response.ok) {
+      logger.error("Failed to refresh CAPTCHA:", response.status);
+      // Clear URL to prevent 404 errors
+      captchaImageUrl.value = "";
+      captchaNonce.value = "";
+      return;
+    }
 
-      if (data.nonce) {
-        // Use direct URL with nonce to ensure synchronization
-        captchaNonce.value = data.nonce;
-        captchaImageUrl.value = `/api/auth/captcha-image?nonce=${data.nonce}`;
-      } else {
-        // Fallback: request new CAPTCHA with renew parameter
-        logger.warn("CAPTCHA refresh returned no nonce, using renew parameter");
-        const renewUrl = `/api/auth/captcha-image?renew=1`;
-        const result = await fetchCaptchaWithNonce(renewUrl);
+    const data = await response.json();
 
-        if (result && result.nonce) {
-          captchaNonce.value = result.nonce;
-          captchaImageUrl.value = result.imageUrl;
-        } else {
-          logger.error("Failed to get CAPTCHA with renew parameter");
-        }
-      }
+    if (data.nonce) {
+      // Update nonce and image URL - simple and direct
+      // Always update on refresh to ensure image loads (especially after logout)
+      captchaNonce.value = data.nonce;
+      captchaImageUrl.value = `/api/auth/captcha-image?nonce=${data.nonce}`;
+      captchaResponse.value = "";
     } else {
-      // Refresh endpoint failed - use renew parameter
-      logger.warn("CAPTCHA refresh endpoint failed, using renew parameter");
-      const renewUrl = `/api/auth/captcha-image?renew=1`;
-      const result = await fetchCaptchaWithNonce(renewUrl);
-
-      if (result && result.nonce) {
-        captchaNonce.value = result.nonce;
-        captchaImageUrl.value = result.imageUrl;
-      } else {
-        logger.error("Failed to get CAPTCHA with renew fallback");
-      }
+      logger.error("CAPTCHA refresh returned no nonce");
+      // Clear URL to prevent 404 errors
+      captchaImageUrl.value = "";
+      captchaNonce.value = "";
     }
   } catch (error) {
-    // Last resort: try to get a fresh CAPTCHA with renew parameter
     logger.error("Failed to refresh CAPTCHA:", error);
-    const renewUrl = `/api/auth/captcha-image?renew=1`;
-    const result = await fetchCaptchaWithNonce(renewUrl);
-
-    if (result && result.nonce) {
-      captchaNonce.value = result.nonce;
-      captchaImageUrl.value = result.imageUrl;
-    } else {
-      logger.error("Failed to recover CAPTCHA after error");
-    }
-  }
-
-  // Clear the captcha response input
-  captchaResponse.value = "";
-};
-
-/**
- * Check if the CAPTCHA image has a new nonce in the response header.
- * This ensures we always use the correct nonce that matches the displayed image.
- */
-const checkCaptchaNonce = async () => {
-  if (!captchaImageUrl.value) return;
-
-  try {
-    // Make a HEAD request to check for X-Captcha-Nonce header
-    const response = await fetch(captchaImageUrl.value, {
-      method: "HEAD",
-      credentials: "same-origin",
-    });
-
-    if (response.ok) {
-      const headerNonce = response.headers.get("X-Captcha-Nonce");
-      if (headerNonce && headerNonce !== captchaNonce.value) {
-        // Server generated a new CAPTCHA, update our nonce
-        logger.info("CAPTCHA nonce updated from response header");
-        captchaNonce.value = headerNonce;
-        captchaImageUrl.value = `/api/auth/captcha-image?nonce=${headerNonce}`;
-      }
-    }
-  } catch (error) {
-    // Silently fail - nonce check is not critical
-    logger.debug("Failed to check CAPTCHA nonce:", error);
+    // Clear URL to prevent 404 errors
+    captchaImageUrl.value = "";
+    captchaNonce.value = "";
   }
 };
 
@@ -384,9 +303,10 @@ onMounted(async () => {
     signupEnabled.value = true; // Default to enabled
   }
 
-  // Load captcha only if password auth is enabled
+  // Always refresh CAPTCHA on mount to ensure we have a valid one
+  // This handles cases where user returns to login page after logout
   if (passwordAuthEnabled.value) {
-    refreshCaptcha();
+    await refreshCaptcha();
   }
   // Load SSO providers
   try {
@@ -453,12 +373,16 @@ const handleLogin = async () => {
   } catch (err) {
     error.value = err.message || "Login failed. Please try again.";
 
-    // Check if error is about CAPTCHA expiration
+    // Check if error is about CAPTCHA expiration or too many attempts
     const isCaptchaExpired =
       err.message &&
       (err.message.includes("CAPTCHA expired") ||
         err.message.includes("CAPTCHA invalid") ||
+        err.message.includes("CAPTCHA not found") ||
         err.message.includes("Please refresh the CAPTCHA"));
+
+    const isTooManyAttempts =
+      err.message && err.message.includes("Too many failed attempts");
 
     // Check if error is about unverified email
     if (err.message && err.message.includes("not verified")) {
@@ -468,16 +392,20 @@ const handleLogin = async () => {
       showVerificationLink.value = false;
     }
 
-    // If CAPTCHA expired, refresh it automatically and update error message
-    if (isCaptchaExpired) {
-      logger.info("CAPTCHA expired, automatically refreshing");
+    // Only refresh CAPTCHA if expired or too many attempts, NOT on invalid response
+    if (isCaptchaExpired || isTooManyAttempts) {
+      logger.info("CAPTCHA expired or too many attempts, refreshing");
       await refreshCaptcha();
-      error.value =
-        "The security code has expired. A new code has been generated. Please enter it below.";
-    } else {
-      // For other errors, also refresh CAPTCHA but don't modify error message
-      refreshCaptcha();
+      if (isCaptchaExpired) {
+        error.value =
+          "The security code has expired. A new code has been generated. Please enter it below.";
+      } else if (isTooManyAttempts) {
+        error.value =
+          "Too many failed attempts. A new security code has been generated. Please enter it below.";
+      }
     }
+    // For "Incorrect captcha response" errors, keep the same CAPTCHA (allow retry)
+    // Only clear the input field
     captchaResponse.value = "";
   } finally {
     loading.value = false;
@@ -508,23 +436,33 @@ const handle2FAVerify = async (totpToken) => {
       // Do NOT refresh CAPTCHA - credentials already validated
     }
   } catch (err) {
-    // Check if error is about CAPTCHA expiration
+    // Check if error is about CAPTCHA expiration or too many attempts
     const isCaptchaExpired =
       err.message &&
       (err.message.includes("CAPTCHA expired") ||
         err.message.includes("CAPTCHA invalid") ||
+        err.message.includes("CAPTCHA not found") ||
         err.message.includes("Please refresh the CAPTCHA"));
 
-    if (isCaptchaExpired) {
-      logger.info("CAPTCHA expired during 2FA, automatically refreshing");
+    const isTooManyAttempts =
+      err.message && err.message.includes("Too many failed attempts");
+
+    if (isCaptchaExpired || isTooManyAttempts) {
+      logger.info(
+        "CAPTCHA expired or too many attempts during 2FA, refreshing",
+      );
       await refreshCaptcha();
-      twoFactorError.value =
-        "The security code has expired. A new code has been generated. Please enter it below and try again.";
+      if (isCaptchaExpired) {
+        twoFactorError.value =
+          "The security code has expired. A new code has been generated. Please enter it below and try again.";
+      } else if (isTooManyAttempts) {
+        twoFactorError.value =
+          "Too many failed attempts. A new security code has been generated. Please enter it below and try again.";
+      }
     } else {
       twoFactorError.value =
         err.message || "Verification failed. Please try again.";
-      // Refresh CAPTCHA on error - session may be invalid
-      await refreshCaptcha();
+      // Don't refresh CAPTCHA on other errors - keep it for retry
     }
     loading.value = false;
   }
@@ -704,21 +642,38 @@ button[type="submit"]:disabled {
 }
 
 .captcha-section {
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
   gap: 0.75rem;
+  width: 100%;
 }
 
 .captcha-image-wrapper {
   position: relative;
   display: inline-block;
+  flex-shrink: 0;
+  width: 230px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(13, 17, 23, 0.3);
+}
+
+.captcha-image-wrapper.captcha-clickable {
   cursor: pointer;
 }
 
 .captcha-image {
-  height: auto;
+  height: 70px;
+  width: 230px;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.2);
+  display: block;
 }
 
 .captcha-refresh {
@@ -743,10 +698,36 @@ button[type="submit"]:disabled {
   background: rgba(0, 0, 0, 0.8);
 }
 
-.captcha-input {
+.captcha-loading {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.captcha-section .captcha-input {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-family: monospace;
+  flex: 1;
+  min-width: 0;
+  width: auto !important;
+  max-width: 100%;
 }
 
 p {

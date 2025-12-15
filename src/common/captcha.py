@@ -7,9 +7,13 @@ import random
 import secrets
 import string
 import time
+from datetime import datetime, timezone
 from io import BytesIO
 from threading import Lock
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flask import Flask
 
 from common.constants import (
     CAPTCHA_DISTRACTION_LINES,
@@ -231,9 +235,11 @@ class CaptchaStore:
         Args:
             ttl_seconds: Time-to-live for CAPTCHA entries in seconds
         """
-        self._store: dict[str, tuple[str, float]] = {}
+        self._store: dict[str, tuple[str, float, int]] = {}
         self._lock = Lock()
         self._ttl_seconds = ttl_seconds
+        self._last_prune_time: float = 0.0
+        self._prune_interval: float = 60.0  # Prune at most once per minute
 
     def store(self, nonce: str, text: str) -> None:
         """Store a CAPTCHA entry.
@@ -246,8 +252,12 @@ class CaptchaStore:
             return
         now = time.time()
         with self._lock:
-            self._store[nonce] = (text, now)
-        self.prune(now)
+            self._store[nonce] = (text, now, 0)
+        # Only prune if enough time has passed since last prune
+        # This reduces race conditions and improves performance
+        if now - self._last_prune_time >= self._prune_interval:
+            self.prune(now)
+            self._last_prune_time = now
 
     def get(self, nonce: str | None) -> str | None:
         """Get CAPTCHA text by nonce.
@@ -260,16 +270,67 @@ class CaptchaStore:
         """
         if not nonce:
             return None
-        cutoff = time.time() - self._ttl_seconds
+        now = time.time()
+        cutoff = now - self._ttl_seconds
         with self._lock:
             entry = self._store.get(nonce)
             if not entry:
                 return None
-            text, timestamp = entry
-            if timestamp < cutoff:
-                self._store.pop(nonce, None)
+            text, timestamp, attempts = entry
+            # Add a small grace period (5 seconds) to handle timing issues
+            # This prevents premature expiration due to clock skew or timing variations
+            grace_period = 5.0
+            if timestamp < (cutoff - grace_period):
                 return None
             return text
+
+    def get_attempts(self, nonce: str | None) -> int:
+        """Get the number of failed attempts for a CAPTCHA.
+
+        Args:
+            nonce: Nonce identifier
+
+        Returns:
+            Number of failed attempts, or 0 if not found or expired
+        """
+        if not nonce:
+            return 0
+        now = time.time()
+        cutoff = now - self._ttl_seconds
+        with self._lock:
+            entry = self._store.get(nonce)
+            if not entry:
+                return 0
+            text, timestamp, attempts = entry
+            # Check expiration but don't delete here - let prune handle cleanup
+            if timestamp < cutoff:
+                return 0
+            return attempts
+
+    def increment_attempts(self, nonce: str | None) -> int:
+        """Increment failed validation attempts for a CAPTCHA.
+
+        Args:
+            nonce: Nonce identifier
+
+        Returns:
+            New attempt count, or 0 if not found or expired
+        """
+        if not nonce:
+            return 0
+        now = time.time()
+        cutoff = now - self._ttl_seconds
+        with self._lock:
+            entry = self._store.get(nonce)
+            if not entry:
+                return 0
+            text, timestamp, attempts = entry
+            # Check expiration but don't delete here - let prune handle cleanup
+            if timestamp < cutoff:
+                return 0
+            new_attempts = attempts + 1
+            self._store[nonce] = (text, timestamp, new_attempts)
+            return new_attempts
 
     def drop(self, nonce: str | None) -> None:
         """Drop a CAPTCHA entry.
@@ -290,9 +351,265 @@ class CaptchaStore:
         """
         cutoff = (now or time.time()) - self._ttl_seconds
         with self._lock:
-            expired = [key for key, (_, ts) in self._store.items() if ts < cutoff]
+            expired = [key for key, (_, ts, _) in self._store.items() if ts < cutoff]
             for key in expired:
                 self._store.pop(key, None)
+
+
+class DatabaseCaptchaStore:
+    """Database-backed CAPTCHA store for multi-worker synchronization."""
+
+    def __init__(self, ttl_seconds: int, app: Flask | None = None) -> None:
+        """Initialize database CAPTCHA store.
+
+        Args:
+            ttl_seconds: Time-to-live for CAPTCHA entries in seconds
+            app: Flask application instance (defaults to current_app)
+        """
+        from flask import current_app
+
+        self._app = app or current_app
+        self._ttl_seconds = ttl_seconds
+        self._last_prune_time: float = 0.0
+        self._prune_interval: float = 60.0  # Prune at most once per minute
+        self._lock = Lock()
+
+    def _get_db(self):
+        """Get database instance from Flask app."""
+        try:
+            from vault.database.schema import db
+
+            return db
+        except ImportError:
+            # Orchestrator context - try to import from app context
+            # The database should be available through the app
+            from flask import current_app
+
+            if (
+                hasattr(current_app, "extensions")
+                and "sqlalchemy" in current_app.extensions
+            ):
+                return current_app.extensions["sqlalchemy"].db
+            raise RuntimeError("Database not available in current application context")
+
+    def _get_model(self):
+        """Get CaptchaEntry model."""
+        try:
+            from vault.database.schema import CaptchaEntry
+
+            return CaptchaEntry
+        except ImportError:
+            # Try to get from app context if available
+            from flask import current_app
+
+            if (
+                hasattr(current_app, "extensions")
+                and "sqlalchemy" in current_app.extensions
+            ):
+                # Try to get model from app registry
+                from sqlalchemy import inspect
+
+                db = self._get_db()
+                # Get model from metadata
+                for table_name, table in db.metadata.tables.items():
+                    if table_name == "captcha_entries":
+                        # Return the model class if we can find it
+                        for mapper in db.Model.registry.mappers:
+                            if mapper.class_.__tablename__ == "captcha_entries":
+                                return mapper.class_
+            raise RuntimeError(
+                "CaptchaEntry model not available in current application context"
+            )
+
+    def store(self, nonce: str, text: str, session_id: str) -> None:
+        """Store a CAPTCHA entry.
+
+        Args:
+            nonce: Nonce identifier
+            text: CAPTCHA text
+            session_id: Session identifier for user isolation
+        """
+        if not nonce or not session_id:
+            return
+
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+        now = datetime.now(timezone.utc)
+        expires_at = datetime.fromtimestamp(
+            time.time() + self._ttl_seconds, tz=timezone.utc
+        )
+
+        with self._app.app_context():
+            # Delete any existing entry with same nonce (shouldn't happen but be safe)
+            db.session.query(CaptchaEntry).filter_by(nonce=nonce).delete()
+
+            entry = CaptchaEntry(
+                nonce=nonce,
+                session_id=session_id,
+                text=text,
+                attempts=0,
+                created_at=now,
+                expires_at=expires_at,
+            )
+            db.session.add(entry)
+            db.session.commit()
+
+        # Only prune if enough time has passed since last prune
+        now_ts = time.time()
+        if now_ts - self._last_prune_time >= self._prune_interval:
+            self.prune(now_ts)
+            self._last_prune_time = now_ts
+
+    def get(self, nonce: str | None, session_id: str | None) -> str | None:
+        """Get CAPTCHA text by nonce and session_id.
+
+        Args:
+            nonce: Nonce identifier
+            session_id: Session identifier (must match)
+
+        Returns:
+            CAPTCHA text or None if not found, expired, or session mismatch
+        """
+        if not nonce or not session_id:
+            return None
+
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+        now = datetime.now(timezone.utc)
+
+        with self._app.app_context():
+            entry = (
+                db.session.query(CaptchaEntry)
+                .filter_by(nonce=nonce, session_id=session_id)
+                .first()
+            )
+
+            if not entry:
+                return None
+
+            # Check expiration with grace period (5 seconds)
+            grace_period = 5.0
+            cutoff = datetime.fromtimestamp(
+                time.time() - self._ttl_seconds - grace_period, tz=timezone.utc
+            )
+
+            if entry.created_at < cutoff:
+                return None
+
+            return entry.text
+
+    def get_attempts(self, nonce: str | None, session_id: str | None) -> int:
+        """Get the number of failed attempts for a CAPTCHA.
+
+        Args:
+            nonce: Nonce identifier
+            session_id: Session identifier (must match)
+
+        Returns:
+            Number of failed attempts, or 0 if not found or expired
+        """
+        if not nonce or not session_id:
+            return 0
+
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+        now = datetime.now(timezone.utc)
+
+        with self._app.app_context():
+            entry = (
+                db.session.query(CaptchaEntry)
+                .filter_by(nonce=nonce, session_id=session_id)
+                .first()
+            )
+
+            if not entry:
+                return 0
+
+            # Check expiration but don't delete here - let prune handle cleanup
+            cutoff = datetime.fromtimestamp(
+                time.time() - self._ttl_seconds, tz=timezone.utc
+            )
+
+            if entry.created_at < cutoff:
+                return 0
+
+            return entry.attempts
+
+    def increment_attempts(self, nonce: str | None, session_id: str | None) -> int:
+        """Increment failed validation attempts for a CAPTCHA.
+
+        Args:
+            nonce: Nonce identifier
+            session_id: Session identifier (must match)
+
+        Returns:
+            New attempt count, or 0 if not found or expired
+        """
+        if not nonce or not session_id:
+            return 0
+
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+        now = datetime.now(timezone.utc)
+
+        with self._app.app_context():
+            entry = (
+                db.session.query(CaptchaEntry)
+                .filter_by(nonce=nonce, session_id=session_id)
+                .first()
+            )
+
+            if not entry:
+                return 0
+
+            # Check expiration but don't delete here - let prune handle cleanup
+            cutoff = datetime.fromtimestamp(
+                time.time() - self._ttl_seconds, tz=timezone.utc
+            )
+
+            if entry.created_at < cutoff:
+                return 0
+
+            entry.attempts += 1
+            db.session.commit()
+            return entry.attempts
+
+    def drop(self, nonce: str | None, session_id: str | None) -> None:
+        """Drop a CAPTCHA entry.
+
+        Args:
+            nonce: Nonce identifier
+            session_id: Session identifier (must match for security)
+        """
+        if not nonce or not session_id:
+            return
+
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+
+        with self._app.app_context():
+            db.session.query(CaptchaEntry).filter_by(
+                nonce=nonce, session_id=session_id
+            ).delete()
+            db.session.commit()
+
+    def prune(self, now: float | None = None) -> None:
+        """Prune expired CAPTCHA entries.
+
+        Args:
+            now: Current time (defaults to time.time())
+        """
+        db = self._get_db()
+        CaptchaEntry = self._get_model()
+        cutoff = datetime.fromtimestamp(
+            (now or time.time()) - self._ttl_seconds, tz=timezone.utc
+        )
+
+        with self._app.app_context():
+            db.session.query(CaptchaEntry).filter(
+                CaptchaEntry.expires_at < cutoff
+            ).delete()
+            db.session.commit()
 
 
 class LoginCSRFStore:

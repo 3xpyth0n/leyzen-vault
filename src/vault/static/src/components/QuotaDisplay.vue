@@ -57,7 +57,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { quota } from "../services/api";
 
 export default {
@@ -78,6 +78,10 @@ export default {
     const error = ref(null);
     let refreshTimer = null;
 
+    const isAuthenticated = () => {
+      return localStorage.getItem("jwt_token") !== null;
+    };
+
     // Computed property to get the correct percentage (priority: percentage > disk_percentage)
     const quotaPercentage = computed(() => {
       if (!quotaInfo.value) return 0;
@@ -90,6 +94,11 @@ export default {
     });
 
     const loadQuota = async () => {
+      if (!isAuthenticated()) {
+        stopRefresh();
+        return;
+      }
+
       loading.value = true;
       error.value = null;
       try {
@@ -133,6 +142,9 @@ export default {
           0;
       } catch (err) {
         error.value = err.message || "Failed to load quota";
+        if (err.message && err.message.includes("401")) {
+          stopRefresh();
+        }
       } finally {
         loading.value = false;
       }
@@ -182,19 +194,45 @@ export default {
       return gbRounded + " GB";
     };
 
-    onMounted(() => {
-      loadQuota();
-      if (props.autoRefresh) {
-        refreshTimer = setInterval(loadQuota, props.refreshInterval);
-      }
-    });
-
     const stopRefresh = () => {
       if (refreshTimer) {
         clearInterval(refreshTimer);
         refreshTimer = null;
       }
     };
+
+    const startRefresh = () => {
+      if (!isAuthenticated()) {
+        return;
+      }
+      if (props.autoRefresh && !refreshTimer) {
+        refreshTimer = setInterval(loadQuota, props.refreshInterval);
+      }
+    };
+
+    onMounted(() => {
+      if (isAuthenticated()) {
+        loadQuota();
+        startRefresh();
+      }
+    });
+
+    onBeforeUnmount(() => {
+      stopRefresh();
+    });
+
+    watch(
+      () => localStorage.getItem("jwt_token"),
+      (newToken, oldToken) => {
+        if (!newToken && oldToken) {
+          stopRefresh();
+          quotaInfo.value = null;
+        } else if (newToken && !oldToken) {
+          loadQuota();
+          startRefresh();
+        }
+      },
+    );
 
     return {
       quotaInfo,
@@ -206,11 +244,6 @@ export default {
       formatQuotaLimit,
       stopRefresh,
     };
-  },
-  beforeUnmount() {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-    }
   },
 };
 </script>

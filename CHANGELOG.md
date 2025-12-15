@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The Leyzen Vault project follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CAPTCHA Multi-Worker Synchronization**: Fixed critical issue where CAPTCHA entries were only accessible by the worker that generated them, causing 404 errors and login failures in multi-worker deployments. CAPTCHA storage has been migrated from in-memory store to database-backed storage, ensuring all workers can access the same CAPTCHA entries. Each user session now has its own isolated CAPTCHA, preventing cross-session interference while maintaining proper synchronization across all application workers.
+
 ## [2.4.0] - 2025-12-14
 
 ### Added

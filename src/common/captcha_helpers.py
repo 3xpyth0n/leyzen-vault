@@ -14,10 +14,13 @@ from flask import session
 
 from common.captcha import (
     CaptchaStore,
+    DatabaseCaptchaStore,
     LoginCSRFStore,
     build_captcha_image,
     generate_captcha_text,
 )
+
+from flask import current_app
 
 if TYPE_CHECKING:
     from typing import Any
@@ -26,17 +29,34 @@ if TYPE_CHECKING:
     from orchestrator.config import Settings
 
 
-def get_captcha_store_for_app(settings: VaultSettings | Settings) -> CaptchaStore:
+def get_captcha_store_for_app(
+    settings: VaultSettings | Settings,
+) -> CaptchaStore | DatabaseCaptchaStore:
     """Get or create a CAPTCHA store configured with application settings.
 
     Args:
         settings: Application settings (VaultSettings or Settings) with captcha_store_ttl attribute
 
     Returns:
-        Configured CaptchaStore instance
+        Configured CaptchaStore or DatabaseCaptchaStore instance
     """
     ttl = getattr(settings, "captcha_store_ttl", 300)
-    return CaptchaStore(ttl)
+    # Use DatabaseCaptchaStore for multi-worker support
+    # Try to use database store, fallback to in-memory if database is not available
+    try:
+        app = current_app._get_current_object()
+        # Check if database is available by trying to import the model
+        try:
+            from vault.database.schema import CaptchaEntry
+
+            # Database is available, use DatabaseCaptchaStore
+            return DatabaseCaptchaStore(ttl, app=app)
+        except (ImportError, RuntimeError):
+            # Database not available (e.g., orchestrator without shared DB), use in-memory
+            return CaptchaStore(ttl)
+    except RuntimeError:
+        # No application context, fallback to in-memory store
+        return CaptchaStore(ttl)
 
 
 def get_login_csrf_store_for_app(settings: VaultSettings | Settings) -> LoginCSRFStore:
@@ -53,7 +73,7 @@ def get_login_csrf_store_for_app(settings: VaultSettings | Settings) -> LoginCSR
 
 
 def refresh_captcha_with_store(
-    store: CaptchaStore,
+    store: CaptchaStore | DatabaseCaptchaStore,
     settings: VaultSettings | Settings,
     session_obj: dict[str, Any],
     *,
@@ -62,9 +82,9 @@ def refresh_captcha_with_store(
     """Generate a new CAPTCHA and store it with the given store.
 
     Args:
-        store: CaptchaStore instance to store the CAPTCHA
+        store: CaptchaStore or DatabaseCaptchaStore instance to store the CAPTCHA
         settings: Application settings with captcha_length attribute
-        session_obj: Flask session dictionary (kept for compatibility, not used)
+        session_obj: Flask session dictionary (used to get session_id)
         on_svg_warning: Optional callback to log SVG fallback warnings
 
     Returns:
@@ -73,12 +93,24 @@ def refresh_captcha_with_store(
     captcha_length = getattr(settings, "captcha_length", 6)
     text = generate_captcha_text(captcha_length)
     nonce = secrets.token_urlsafe(8)
-    store.store(nonce, text)
+
+    # Get or create session_id
+    session_id = session_obj.get("_id")
+    if not session_id:
+        session_id = secrets.token_urlsafe(16)
+        session_obj["_id"] = session_id
+
+    # Store with session_id if using DatabaseCaptchaStore
+    if isinstance(store, DatabaseCaptchaStore):
+        store.store(nonce, text, session_id)
+    else:
+        store.store(nonce, text)
+
     return nonce
 
 
 def get_captcha_nonce_with_store(
-    store: CaptchaStore,
+    store: CaptchaStore | DatabaseCaptchaStore,
     session_obj: dict[str, Any],
     settings: VaultSettings | Settings,
     *,
@@ -87,8 +119,8 @@ def get_captcha_nonce_with_store(
     """Get existing CAPTCHA nonce from store or create a new one.
 
     Args:
-        store: CaptchaStore instance to store/retrieve the CAPTCHA
-        session_obj: Flask session dictionary (kept for compatibility, not used)
+        store: CaptchaStore or DatabaseCaptchaStore instance to store/retrieve the CAPTCHA
+        session_obj: Flask session dictionary (used to get session_id)
         settings: Application settings with captcha_length attribute
         on_svg_warning: Optional callback to log SVG fallback warnings
 
