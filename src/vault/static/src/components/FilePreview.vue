@@ -3,7 +3,7 @@
     <div v-if="show" class="file-preview-overlay" @click="close">
       <div
         ref="modalRef"
-        class="file-preview-modal glass glass-card"
+        class="file-preview-modal"
         :style="{ height: modalHeight }"
         @click.stop
       >
@@ -41,7 +41,7 @@
             v-else-if="error"
             key="error"
           >
-            <div class="error-message glass">{{ error }}</div>
+            <div class="error-message">{{ error }}</div>
           </div>
 
           <div
@@ -316,9 +316,9 @@
                   <h3>Archive Contents</h3>
                   <p class="zip-info">
                     {{ zipFileCount }}
-                    {{ zipFileCount === 1 ? "file" : "files" }}
+                    {{ zipFileCount === 1 ? "file" : "files" }},
                     <span v-if="zipFolderCount > 0">
-                      in {{ zipFolderCount }}
+                      {{ zipFolderCount }}
                       {{ zipFolderCount === 1 ? "folder" : "folders" }}
                     </span>
                   </p>
@@ -2237,9 +2237,8 @@ export default {
   width: 100%;
   max-width: 90vw;
   max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  border-radius: 2rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
   overflow: hidden;
   transition: height 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: height;
@@ -2250,13 +2249,13 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-bottom: 1px solid var(--border-color, #004225);
 }
 
 .preview-header h2 {
   margin: 0;
   font-size: 1.25rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2294,7 +2293,7 @@ export default {
   max-width: 100%;
   max-height: 70vh;
   object-fit: contain;
-  border-radius: var(--radius-md, 8px);
+
   transition: opacity 0.3s ease-in-out;
   opacity: 0;
 }
@@ -2313,7 +2312,7 @@ export default {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
-  color: white;
+  color: #a9b7aa;
 }
 
 .video-preview {
@@ -2331,16 +2330,15 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg, 12px);
+
   overflow: hidden;
-  background: var(--bg-secondary, #141b2d);
+  background: var(--bg-modal, #141414);
 }
 
 .video-player {
   width: 100%;
   max-height: 70vh;
   display: block;
-  border-radius: var(--radius-lg, 12px);
 }
 
 .video-player-controls {
@@ -2400,7 +2398,7 @@ export default {
   font-weight: 600;
   font-size: 0.875rem;
   margin: 0;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2423,7 +2421,7 @@ export default {
   background-color: rgba(111, 111, 111, 0.9);
   margin: 0 0.3125rem;
   cursor: pointer;
-  border-radius: 10px;
+
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2433,8 +2431,8 @@ export default {
   left: 0;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #8b5cf6 0%, #8b5cf6 100%);
-  border-radius: 10px;
+  background: transparent;
+
   transition: width 0.1s linear;
 }
 
@@ -2442,12 +2440,12 @@ export default {
   width: 10px;
   height: 10px;
   position: absolute;
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
+  background: transparent;
   opacity: 0;
   left: 0;
   top: 50%;
   transform: translate(-50%, -50%);
-  border-radius: 50%;
+
   transition: opacity 0.2s ease;
   pointer-events: none;
 }
@@ -2462,7 +2460,7 @@ export default {
 
 .video-player-controls__control-btn {
   fill: var(--text-secondary, #9ca3af);
-  border-radius: 50%;
+
   width: 14px;
   height: 14px;
   cursor: pointer;
@@ -2483,12 +2481,12 @@ export default {
 }
 
 .video-player-controls__control-btn:hover {
-  fill: #8b5cf6;
+  fill: #004225;
 }
 
 .video-player-controls__control-btn--play {
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
-  fill: var(--text-primary, #f1f5f9);
+  background: transparent;
+  fill: var(--text-primary, #a9b7aa);
   padding: 2px;
   width: 18px;
   height: 18px;
@@ -2503,8 +2501,8 @@ export default {
 }
 
 .video-player-controls__control-btn--playing {
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
-  fill: var(--text-primary, #f1f5f9);
+  background: transparent;
+  fill: var(--text-primary, #a9b7aa);
 }
 
 .video-player-controls__control-btn--playing:hover {
@@ -2555,7 +2553,7 @@ export default {
   gap: 1rem;
   padding: 1.5rem;
   background: rgba(0, 0, 0, 0.65);
-  border-radius: 1.25rem;
+
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -2564,8 +2562,8 @@ export default {
   width: 70px;
   height: 70px;
   flex-shrink: 0;
-  background: rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
+  background: #004225;
+
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2581,7 +2579,6 @@ export default {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 0.5rem;
 }
 
 .audio-player__container {
@@ -2597,7 +2594,7 @@ export default {
   font-size: 0.875rem;
   margin: 0;
   margin-top: 0;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2628,7 +2625,7 @@ export default {
   background-color: rgba(111, 111, 111, 0.9);
   margin: 0 0.3125rem;
   cursor: pointer;
-  border-radius: 10px;
+
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2638,8 +2635,8 @@ export default {
   left: 0;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #8b5cf6 0%, #8b5cf6 100%);
-  border-radius: 10px;
+  background: transparent;
+
   transition: width 0.1s linear;
 }
 
@@ -2647,12 +2644,12 @@ export default {
   width: 10px;
   height: 10px;
   position: absolute;
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
+  background: transparent;
   opacity: 0;
   left: 0;
   top: 50%;
   transform: translate(-50%, -50%);
-  border-radius: 50%;
+
   transition: opacity 0.2s ease;
   pointer-events: none;
 }
@@ -2673,7 +2670,7 @@ export default {
 
 .audio-player__control-btn {
   fill: var(--text-secondary, #9ca3af);
-  border-radius: 50%;
+
   width: 14px;
   height: 14px;
   cursor: pointer;
@@ -2682,12 +2679,12 @@ export default {
 }
 
 .audio-player__control-btn:hover {
-  fill: #8b5cf6;
+  fill: #004225;
 }
 
 .audio-player__control-btn--play {
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
-  fill: var(--text-primary, #f1f5f9);
+  background: transparent;
+  fill: var(--text-primary, #a9b7aa);
   padding: 2px;
   width: 18px;
   height: 18px;
@@ -2702,8 +2699,8 @@ export default {
 }
 
 .audio-player__control-btn--playing {
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
-  fill: var(--text-primary, #f1f5f9);
+  background: transparent;
+  fill: var(--text-primary, #a9b7aa);
 }
 
 .audio-player__control-btn--playing:hover {
@@ -2725,7 +2722,7 @@ export default {
   max-width: 280px;
   aspect-ratio: 1;
   height: auto;
-  border-radius: 1rem;
+
   align-self: center;
 }
 
@@ -2735,7 +2732,6 @@ export default {
 }
 
 .mobile-mode .audio-player__artwork-image {
-  border-radius: 1rem;
 }
 
 .mobile-mode .audio-player__container {
@@ -2779,9 +2775,9 @@ export default {
 .text-content {
   margin: 0;
   padding: 1rem;
-  background: var(--bg-secondary, #141b2d);
-  border-radius: var(--radius-md, 8px);
-  color: var(--text-primary, #f1f5f9);
+  background: var(--bg-modal, #141414);
+
+  color: var(--text-primary, #a9b7aa);
   font-family: "Courier New", monospace;
   font-size: 0.9rem;
   line-height: 1.6;
@@ -2800,9 +2796,9 @@ export default {
 
 .markdown-content {
   padding: 2rem;
-  background: var(--bg-secondary, #141b2d);
-  border-radius: var(--radius-md, 8px);
-  color: var(--text-primary, #f1f5f9);
+  background: var(--bg-modal, #141414);
+
+  color: var(--text-primary, #a9b7aa);
   line-height: 1.8;
   font-size: 1rem;
   overflow: visible;
@@ -2813,8 +2809,8 @@ export default {
   font-size: 2rem;
   font-weight: 700;
   margin: 1.5rem 0 1rem 0;
-  color: var(--text-primary, #f1f5f9);
-  border-bottom: 2px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  color: var(--text-primary, #a9b7aa);
+  border-bottom: 2px solid var(--border-color, #004225);
   padding-bottom: 0.5rem;
 }
 
@@ -2822,24 +2818,24 @@ export default {
   font-size: 1.5rem;
   font-weight: 600;
   margin: 1.25rem 0 0.75rem 0;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .markdown-content :deep(h3) {
   font-size: 1.25rem;
   font-weight: 600;
   margin: 1rem 0 0.5rem 0;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .markdown-content :deep(p) {
   margin: 1rem 0;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .markdown-content :deep(strong) {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .markdown-content :deep(em) {
@@ -2849,25 +2845,25 @@ export default {
 .markdown-content :deep(code) {
   background: rgba(0, 0, 0, 0.3);
   padding: 0.2rem 0.4rem;
-  border-radius: 4px;
+
   font-family: "Courier New", monospace;
   font-size: 0.9em;
-  color: var(--accent-blue, #8b5cf6);
+  color: #a5a5a5;
 }
 
 .markdown-content :deep(pre) {
   background: rgba(0, 0, 0, 0.4);
   padding: 1rem;
-  border-radius: var(--radius-md, 8px);
+
   overflow-x: auto;
   margin: 1rem 0;
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border: 1px solid var(--border-color, #004225);
 }
 
 .markdown-content :deep(pre code) {
   background: transparent;
   padding: 0;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-size: 0.9rem;
   line-height: 1.6;
 }
@@ -2880,13 +2876,13 @@ export default {
 
 .markdown-content :deep(li) {
   margin: 0.5rem 0;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .markdown-content :deep(a) {
-  color: var(--accent-blue, #8b5cf6);
+  color: var(--accent, #004225);
   text-decoration: none;
-  border-bottom: 1px solid var(--accent-blue, #8b5cf6);
+  border-bottom: 1px solid var(--accent, #004225);
   transition: opacity 0.2s;
 }
 
@@ -2915,26 +2911,26 @@ export default {
 .unsupported-icon {
   width: 64px;
   height: 64px;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
   opacity: 0.6;
   margin-bottom: 0.5rem;
 }
 
 .unsupported-preview p {
   margin: 0.5rem 0;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .mime-type {
   font-family: monospace;
   font-size: 0.9rem;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
 }
 
 .loading {
   padding: 2rem;
   text-align: center;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .error-message {
@@ -2942,8 +2938,7 @@ export default {
   text-align: center;
   color: var(--error, #ef4444);
   background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 /* Fade transition classes */
@@ -2966,14 +2961,14 @@ export default {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 1.5rem;
   padding: 0.5rem;
   line-height: 1;
 }
 
 .btn-icon:hover {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 /* ZIP Preview Styles */
@@ -2998,7 +2993,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 0;
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-bottom: 1px solid var(--border-color, #004225);
   margin-bottom: 1rem;
 }
 
@@ -3006,13 +3001,13 @@ export default {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .zip-info {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .zip-file-list {
@@ -3026,23 +3021,13 @@ export default {
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-md, 8px);
   margin-bottom: 0.25rem;
-  background: rgba(148, 163, 184, 0.03);
   transition: background 0.2s ease;
   min-height: 40px;
 }
 
-.zip-file-item:hover {
-  background: rgba(148, 163, 184, 0.08);
-}
-
-.zip-file-item.zip-folder-item {
-  background: rgba(148, 163, 184, 0.05);
-}
-
 .zip-file-item.zip-folder-item:hover {
-  background: rgba(148, 163, 184, 0.12);
+  border: solid 1px #004225;
 }
 
 .zip-file-item.zip-clickable {
@@ -3051,7 +3036,7 @@ export default {
 }
 
 .zip-file-item.zip-clickable:hover {
-  background: rgba(148, 163, 184, 0.15);
+  border: solid 1px var(--accent);
 }
 
 .zip-expand-icon {
@@ -3061,7 +3046,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   transition:
     transform 0.2s ease,
     color 0.2s ease;
@@ -3077,7 +3062,7 @@ export default {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3089,7 +3074,7 @@ export default {
 }
 
 .zip-folder-item .zip-file-icon {
-  color: var(--accent-blue, #8b5cf6);
+  color: var(--accent, #004225);
   opacity: 0.9;
 }
 
@@ -3104,7 +3089,7 @@ export default {
 .zip-file-name {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3112,12 +3097,12 @@ export default {
 
 .zip-folder-item .zip-file-name {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .zip-file-path {
   font-size: 0.75rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3127,7 +3112,7 @@ export default {
 .zip-file-size {
   flex-shrink: 0;
   font-size: 0.8125rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-variant-numeric: tabular-nums;
   min-width: 60px;
   text-align: right;
@@ -3136,7 +3121,7 @@ export default {
 .zip-empty {
   text-align: center;
   padding: 3rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .zip-empty p {
@@ -3145,11 +3130,11 @@ export default {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 100%);
-  color: var(--text-primary, #f1f5f9);
+  background: transparent;
+  color: var(--text-primary, #a9b7aa);
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: var(--radius-md, 8px);
+
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;

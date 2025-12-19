@@ -27,15 +27,13 @@
       <div class="admin-content">
         <!-- Dashboard Tab -->
         <div v-if="activeTab === 'dashboard'" class="dashboard-tab">
-          <div v-if="statsLoading" class="loading glass glass-card">
-            Loading statistics...
-          </div>
-          <div v-else-if="statsError" class="error glass glass-card">
+          <div v-if="statsLoading" class="loading">Loading statistics...</div>
+          <div v-else-if="statsError" class="error">
             {{ statsError }}
           </div>
           <div v-else-if="stats" class="dashboard-content">
             <!-- Header with refresh button -->
-            <div class="dashboard-header glass glass-card">
+            <div class="dashboard-header">
               <h2>Dashboard Overview</h2>
               <div class="header-actions">
                 <span class="last-update" v-if="lastUpdateTime">
@@ -49,7 +47,7 @@
 
             <!-- Main Statistics Cards -->
             <div class="stats-grid">
-              <div class="stat-card glass glass-card">
+              <div class="stat-card">
                 <h3>Users</h3>
                 <div class="stat-value">{{ stats.users.total }}</div>
                 <div class="stat-details">
@@ -68,7 +66,7 @@
                   </div>
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
+              <div class="stat-card">
                 <h3>Files</h3>
                 <div class="stat-value">{{ stats.files.total }}</div>
                 <div class="stat-details">
@@ -80,7 +78,7 @@
                   </div>
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
+              <div class="stat-card">
                 <h3>VaultSpaces</h3>
                 <div class="stat-value">{{ stats.vaultspaces.total }}</div>
                 <div class="stat-details">
@@ -95,7 +93,7 @@
                   </div>
                 </div>
               </div>
-              <div class="stat-card glass glass-card">
+              <div class="stat-card">
                 <h3>Disk Storage</h3>
                 <div class="stat-value">
                   {{ stats.disk ? stats.disk.used_gb : 0 }} GB
@@ -161,10 +159,7 @@
 
             <!-- Quick Stats Cards -->
             <div class="quick-stats-grid">
-              <div
-                class="quick-stat-card glass glass-card"
-                @click="activeTab = 'api-keys'"
-              >
+              <div class="quick-stat-card" @click="activeTab = 'api-keys'">
                 <h4>API Keys</h4>
                 <div class="quick-stat-value">
                   {{ stats.api_keys?.total || 0 }}
@@ -177,7 +172,7 @@
                 </div>
               </div>
               <div
-                class="quick-stat-card glass glass-card"
+                class="quick-stat-card"
                 @click="activeTab = 'authentication'"
               >
                 <h4>Authentication</h4>
@@ -517,11 +512,8 @@ export default {
 
 /* Admin Header */
 .admin-header-section {
-  background: rgba(30, 41, 59, 0.4);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  background: var(--bg-modal);
+  border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -530,18 +522,11 @@ export default {
 }
 
 .admin-tabs-wrapper {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.4),
-    rgba(15, 23, 42, 0.3)
-  );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
   width: 100%;
   box-sizing: border-box;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  margin-top: 1rem;
   margin-bottom: 2rem;
 }
 
@@ -552,45 +537,41 @@ export default {
   position: relative;
   justify-content: center;
   align-items: center;
+  background: var(--bg-modal, #141414);
 }
 
 .admin-tab-button {
   background: transparent;
   border: none;
-  color: #64748b;
+  border-bottom: 2px solid transparent;
+  color: #a9b7aa;
   padding: 0.75rem 1.25rem;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background var(--transition-base),
+    border-color var(--transition-base);
   position: relative;
   z-index: 1;
-  border-radius: 0.5rem;
 }
 
 .admin-tab-button:hover {
-  color: #cbd5e1;
-  background: rgba(255, 255, 255, 0.05);
+  color: #a9b7aa;
+  background: rgba(10, 10, 10, 0.3);
 }
 
 .admin-tab-button.active {
-  color: white;
-  background: rgba(139, 92, 246, 0.1);
+  color: #a9b7aa;
+  background: var(--accent);
 }
 
-/* Liquid glass indicator */
+/* Tab indicator */
 .tab-indicator {
   position: absolute;
   bottom: 0;
-  height: 2.5px;
-  background: var(--accent-gradient);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-radius: 999px;
-  box-shadow:
-    0 0 8px rgba(139, 92, 246, 0.6),
-    0 0 16px rgba(139, 92, 246, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.3);
+  height: 2px;
+  background: var(--accent);
   transition:
     left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -635,12 +616,11 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .dashboard-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -648,11 +628,11 @@ export default {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.2rem;
 }
 
 .last-update {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
@@ -661,16 +641,15 @@ export default {
   border: none !important;
   padding: 0.25rem !important;
   margin: 0 !important;
-  margin-left: 0.5rem !important;
   cursor: pointer;
-  color: #cbd5e1;
+  color: #a9b7aa;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition:
     color 0.2s ease,
     transform 0.2s ease;
-  border-radius: 0 !important;
+
   box-shadow: none !important;
   min-width: auto !important;
   width: auto !important;
@@ -682,7 +661,7 @@ export default {
 
 .btn-refresh:hover {
   background: transparent !important;
-  color: #e6eef6;
+  color: #a9b7aa;
   transform: rotate(90deg);
   box-shadow: none !important;
   border: none !important;
@@ -701,18 +680,9 @@ export default {
 }
 
 .stat-card {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.55),
-    rgba(15, 23, 42, 0.4)
-  );
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 1rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
   padding: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -733,7 +703,7 @@ export default {
 
 .stat-card h3 {
   margin: 0 0 1rem 0;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -743,7 +713,7 @@ export default {
 .stat-value {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #8b5cf6;
+  color: var(--text-primary);
   margin-bottom: 0.5rem;
 }
 
@@ -755,7 +725,7 @@ export default {
 }
 
 .stat-detail {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
@@ -767,12 +737,12 @@ export default {
 }
 
 .stat-detail-label {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
 .stat-detail-value {
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -783,14 +753,13 @@ export default {
   gap: 0.5rem;
   margin-top: 0.5rem;
   padding-top: 0.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid #004225;
 }
 
 .growth-indicator {
   font-size: 0.9rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
 }
 
 .growth-indicator.positive {
@@ -804,7 +773,7 @@ export default {
 }
 
 .growth-label {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.8rem;
 }
 
@@ -816,25 +785,24 @@ export default {
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: rgba(30, 41, 59, 0.6);
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
   overflow: hidden;
   margin-bottom: 0.5rem;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #8b5cf6, #8b5cf6);
-  border-radius: 4px;
+  background: var(--accent);
   transition: width 0.3s ease;
 }
 
 .progress-fill.high-usage {
-  background: linear-gradient(90deg, #f87171, #ef4444);
+  background: var(--error);
 }
 
 .progress-text {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.8rem;
   text-align: center;
 }
@@ -843,13 +811,12 @@ export default {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .overview-section {
@@ -944,19 +911,20 @@ export default {
 
 .quick-stat-card {
   padding: 1.5rem;
-  border-radius: 1rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .quick-stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: rgba(10, 10, 10, 0.8);
+  border-color: var(--border-color);
 }
 
 .quick-stat-card h4 {
   margin: 0 0 0.75rem 0;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -966,12 +934,12 @@ export default {
 .quick-stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #8b5cf6;
+  color: var(--text-primary);
   margin-bottom: 0.5rem;
 }
 
 .quick-stat-detail {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="recent-activity-list glass glass-card">
+  <div class="recent-activity-list">
     <div class="section-header">
       <h3>Recent Activity</h3>
       <button @click="$emit('view-all')" class="btn-link">View All</button>
@@ -15,11 +15,6 @@
         class="log-item"
         :class="{ 'log-failed': !log.success }"
       >
-        <div class="log-icon">
-          <span
-            :class="['status-indicator', log.success ? 'success' : 'failed']"
-          ></span>
-        </div>
         <div class="log-content">
           <div class="log-action">{{ log.action }}</div>
           <div class="log-meta">
@@ -74,7 +69,8 @@ export default {
 <style scoped>
 .recent-activity-list {
   padding: 1.5rem;
-  border-radius: 1rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -94,7 +90,7 @@ export default {
 
 .section-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -102,7 +98,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #8b5cf6;
+  color: #004225;
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -111,14 +107,14 @@ export default {
 }
 
 .btn-link:hover {
-  color: #8b5cf6;
+  color: #004225;
 }
 
 .loading,
 .empty-state {
   padding: 2rem;
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .logs-list {
@@ -133,8 +129,8 @@ export default {
   gap: 0.75rem;
   padding: 0.75rem;
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
-  border-left: 3px solid #8b5cf6;
+
+  border-left: 3px solid #004225;
   transition: background 0.2s ease;
 }
 
@@ -144,26 +140,6 @@ export default {
 
 .log-item.log-failed {
   border-left-color: #f87171;
-}
-
-.log-icon {
-  flex-shrink: 0;
-  margin-top: 0.25rem;
-}
-
-.status-indicator {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.status-indicator.success {
-  background: #10b981;
-}
-
-.status-indicator.failed {
-  background: #f87171;
 }
 
 .log-content {
@@ -178,7 +154,7 @@ export default {
 }
 
 .log-action {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 500;
   margin-bottom: 0.25rem;
@@ -199,13 +175,13 @@ export default {
 }
 
 .log-ip {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.8rem;
   font-family: monospace;
 }
 
 .log-time {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.8rem;
 }
 </style>

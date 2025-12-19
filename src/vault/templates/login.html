@@ -100,23 +100,20 @@
           <div class="form-group">
             <label for="captcha">Security code</label>
             <div class="captcha-display">
-              <img
-                src="{{ url_for('auth.captcha_image') }}?nonce={{ captcha_nonce }}"
-                alt="Captcha image"
-                class="captcha-image"
-                data-captcha-image
-                width="220"
-                height="70"
-              />
-              <button
-                type="button"
-                class="captcha-refresh"
-                data-captcha-target="captcha"
-                aria-label="Reload captcha"
-                title="Refresh security code image"
-              >
-                &#8635;
-              </button>
+              <div class="captcha-image-wrapper" data-captcha-wrapper>
+                <img
+                  src="{{ url_for('auth.captcha_image') }}?nonce={{ captcha_nonce }}"
+                  alt="Captcha image"
+                  class="captcha-image"
+                  data-captcha-image
+                  width="220"
+                  height="70"
+                />
+                <div class="captcha-hover-overlay">Refresh Captcha</div>
+                <div class="captcha-refresh-toast" data-captcha-toast>
+                  Tap again to refresh (3s)
+                </div>
+              </div>
             </div>
             <input
               type="text"
@@ -142,14 +139,6 @@
           </p>
         </div>
       </div>
-    </div>
-    <div class="captcha-overlay" aria-hidden="true" data-captcha-overlay>
-      <img
-        src=""
-        alt="Captcha enlarged"
-        class="captcha-overlay__image"
-        data-captcha-overlay-image
-      />
     </div>
   </body>
 </html>

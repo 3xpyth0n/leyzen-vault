@@ -1,6 +1,6 @@
 <template>
   <div class="callback-wrapper">
-    <div class="callback-container glass glass-card">
+    <div class="callback-container">
       <div v-if="show2FAModal" class="two-factor-state">
         <h2>Two-Factor Authentication Required</h2>
         <p>Please verify your identity to complete the login.</p>
@@ -175,6 +175,8 @@ const cancel2FA = () => {
   width: 100%;
   padding: 2.5rem;
   text-align: center;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
 }
 
 .loading-state,
@@ -190,8 +192,8 @@ const cancel2FA = () => {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid rgba(148, 163, 184, 0.2);
-  border-top-color: #58a6ff;
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -203,39 +205,37 @@ const cancel2FA = () => {
 }
 
 h2 {
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
   margin: 0;
 }
 
 p {
-  color: #94a3b8;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .error-message {
-  color: #fca5a5;
+  color: var(--error);
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid var(--error);
   margin: 1rem 0;
 }
 
 .back-link {
-  color: #58a6ff;
+  color: var(--accent);
   text-decoration: none;
   font-size: 0.95rem;
   margin-top: 1rem;
   padding: 0.5rem 1rem;
-  border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 6px;
+  border: 1px solid var(--border-color);
   transition: all 0.2s;
 }
 
 .back-link:hover {
-  background: rgba(88, 166, 255, 0.1);
-  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--accent);
 }
 </style>

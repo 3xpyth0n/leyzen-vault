@@ -347,19 +347,12 @@ export default {
   max-height: calc(90vh - 2rem);
   display: flex;
   flex-direction: column;
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--ash-grey);
+
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   box-sizing: border-box;
-  /* Isolation to improve performance */
   isolation: isolate;
 }
 
@@ -376,7 +369,7 @@ export default {
   margin: 0;
   padding: 0;
   font-size: 1.25rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-weight: 600;
 }
 
@@ -408,7 +401,7 @@ export default {
 .properties-section h3 {
   margin: 0 0 1rem 0;
   font-size: 1.1rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 0.5rem;
   font-weight: 600;
@@ -430,7 +423,7 @@ export default {
 
 .property-label {
   font-weight: 600;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   white-space: nowrap;
   flex-shrink: 0;
   width: 140px;
@@ -438,7 +431,7 @@ export default {
 }
 
 .property-value {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   text-align: right;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -457,21 +450,20 @@ export default {
 .error-message {
   color: var(--error, #ef4444);
   background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .btn-icon {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 1.5rem;
   padding: 0.5rem;
   line-height: 1;
 }
 
 .btn-icon:hover {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 </style>

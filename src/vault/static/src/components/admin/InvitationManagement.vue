@@ -1,18 +1,18 @@
 <template>
   <div class="invitation-management">
-    <div class="section-header glass glass-card">
+    <div class="section-header">
       <h2>Invitations</h2>
       <button @click="loadInvitations" class="btn btn-secondary">
         Refresh Invitations
       </button>
     </div>
 
-    <div v-if="loading" class="loading glass glass-card">
+    <div v-if="loading" class="loading">
       <span v-html="getIcon('clock', 24)"></span>
       Loading invitations...
     </div>
-    <div v-else-if="error" class="error glass glass-card">{{ error }}</div>
-    <div v-else class="invitations-container glass glass-card">
+    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else class="invitations-container">
       <div v-if="invitations.length === 0" class="empty-state">
         <p>No pending invitations</p>
       </div>
@@ -309,12 +309,11 @@ export default {
   align-items: center;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -323,11 +322,10 @@ export default {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -335,7 +333,7 @@ export default {
 }
 
 .loading :deep(svg) {
-  color: #8b5cf6;
+  color: #004225;
   animation: spin 1s linear infinite;
 }
 
@@ -351,18 +349,17 @@ export default {
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .invitations-container {
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .empty-state {
   text-align: center;
   padding: 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .invitations-list {
@@ -376,15 +373,14 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 0.75rem;
+  border: 1px solid #004225;
+
   transition: all 0.2s ease;
 }
 
 .invitation-item:hover {
-  background: rgba(30, 41, 59, 0.5);
-  border-color: rgba(148, 163, 184, 0.2);
+  background: var(--bg-modal);
+  border-color: #004225;
 }
 
 .invitation-info {
@@ -396,7 +392,7 @@ export default {
 
 .invitation-email {
   font-weight: 500;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1rem;
 }
 
@@ -404,7 +400,7 @@ export default {
   font-size: 0.85rem;
   font-weight: 500;
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   display: inline-block;
   width: fit-content;
 }
@@ -422,14 +418,14 @@ export default {
 }
 
 .status-expired {
-  background: rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .invitation-date {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .invitation-actions {
@@ -440,7 +436,7 @@ export default {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.75rem;
+
   cursor: pointer;
   font-weight: 500;
   font-size: 0.95rem;
@@ -451,14 +447,14 @@ export default {
 }
 
 .btn-secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: #004225;
+  border-color: #004225;
 }
 
 .btn-danger {
@@ -468,7 +464,7 @@ export default {
     rgba(220, 38, 38, 0.2) 100%
   );
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -477,9 +473,7 @@ export default {
     rgba(239, 68, 68, 0.3) 0%,
     rgba(220, 38, 38, 0.3) 100%
   );
-  border-color: rgba(239, 68, 68, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
 }
 
 .btn-sm {

@@ -128,7 +128,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 		// Save scroll position after viewport update in logs/action views (e.g., mouse wheel)
 		// Skip saving for KeyMsg as it's handled separately in handleKey
-		if (m.viewState == ViewLogs || m.viewState == ViewAction) {
+		if m.viewState == ViewLogs || m.viewState == ViewAction {
 			_, isKeyMsg := msg.(tea.KeyMsg)
 			if !isKeyMsg {
 				if m.logModeRaw {
@@ -230,7 +230,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitConfirm = false
 	}
 
-	switch msg.String() {
+	// Convert key to lowercase for case-insensitive handling of simple actions
+	// but preserve special keys like "ctrl+c", "esc", "up", "down", etc.
+	keyStr := msg.String()
+	// Only convert single character keys (a-z, A-Z) to lowercase, keep special keys as-is
+	if len(keyStr) == 1 && ((keyStr >= "A" && keyStr <= "Z") || (keyStr >= "a" && keyStr <= "z")) {
+		keyStr = strings.ToLower(keyStr)
+	}
+
+	switch keyStr {
 	case "ctrl+c":
 		if m.quitConfirm {
 			// Confirmed, quit
@@ -337,10 +345,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.viewportYOffsetNormal = m.viewport.YOffset
 			}
-			
+
 			// Toggle mode
 			m.logModeRaw = !m.logModeRaw
-			
+
 			// Update content and viewport size based on new mode
 			var logsToDisplay []string
 			if m.logModeRaw {
@@ -361,9 +369,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.viewport.Width = 20
 				}
 			}
-			
+
 			m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
-			
+
 			// Restore saved scroll position for the new mode
 			if m.logModeRaw {
 				if m.viewportYOffsetRaw > 0 {
@@ -553,10 +561,8 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 		m.action = ActionNone
 		m.actionStream = nil
 
-		// Return to dashboard after error
-		m.switchToDashboard()
+		// Stay in action view to allow user to see error logs
 
-		// No success message for errors
 		return m, fetchStatusesCmd()
 	}
 
@@ -602,43 +608,46 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.switchToDashboard()
 		return m, nil
 	case "right", "→":
-		// Move to next field (Next)
-		if m.wizardIndex < len(m.wizardFields)-1 {
-			m.wizardFields[m.wizardIndex].Input.Blur()
-			m.wizardIndex++
-			if m.wizardIndex < len(m.wizardFields) {
-				field := &m.wizardFields[m.wizardIndex]
-				field.Input.Focus()
-				field.Input.CursorEnd()
-			}
-			m.wizardError = ""
+		// Move to next field (Next) - circular navigation
+		m.wizardFields[m.wizardIndex].Input.Blur()
+		m.wizardIndex++
+		if m.wizardIndex >= len(m.wizardFields) {
+			m.wizardIndex = 0
 		}
+		if m.wizardIndex < len(m.wizardFields) {
+			field := &m.wizardFields[m.wizardIndex]
+			field.Input.Focus()
+			field.Input.CursorEnd()
+		}
+		m.wizardError = ""
 		return m, nil
 	case "left", "←":
-		// Move to previous field (Previous)
-		if m.wizardIndex > 0 {
-			m.wizardFields[m.wizardIndex].Input.Blur()
-			m.wizardIndex--
-			if m.wizardIndex >= 0 {
-				field := &m.wizardFields[m.wizardIndex]
-				field.Input.Focus()
-				field.Input.CursorEnd()
-			}
-			m.wizardError = ""
+		// Move to previous field (Previous) - circular navigation
+		m.wizardFields[m.wizardIndex].Input.Blur()
+		m.wizardIndex--
+		if m.wizardIndex < 0 {
+			m.wizardIndex = len(m.wizardFields) - 1
 		}
+		if m.wizardIndex >= 0 {
+			field := &m.wizardFields[m.wizardIndex]
+			field.Input.Focus()
+			field.Input.CursorEnd()
+		}
+		m.wizardError = ""
 		return m, nil
 	case "enter":
-		// Enter: move to next field (like "Next")
-		if m.wizardIndex < len(m.wizardFields)-1 {
-			m.wizardFields[m.wizardIndex].Input.Blur()
-			m.wizardIndex++
-			if m.wizardIndex < len(m.wizardFields) {
-				field := &m.wizardFields[m.wizardIndex]
-				field.Input.Focus()
-				field.Input.CursorEnd()
-			}
-			m.wizardError = ""
+		// Enter: move to next field (like "Next") - circular navigation
+		m.wizardFields[m.wizardIndex].Input.Blur()
+		m.wizardIndex++
+		if m.wizardIndex >= len(m.wizardFields) {
+			m.wizardIndex = 0
 		}
+		if m.wizardIndex < len(m.wizardFields) {
+			field := &m.wizardFields[m.wizardIndex]
+			field.Input.Focus()
+			field.Input.CursorEnd()
+		}
+		m.wizardError = ""
 		return m, nil
 	default:
 		// All other keys (letters, numbers, etc.): pass to active input

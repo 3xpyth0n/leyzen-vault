@@ -1,12 +1,5 @@
 <template>
   <div id="app">
-    <div class="background-bubbles">
-      <div class="bubble bubble-1"></div>
-      <div class="bubble bubble-2"></div>
-      <div class="bubble bubble-3"></div>
-      <div class="bubble bubble-4"></div>
-      <div class="bubble bubble-5"></div>
-    </div>
     <router-view v-slot="{ Component, route: currentRoute }">
       <transition name="page" mode="out-in">
         <AppLayout

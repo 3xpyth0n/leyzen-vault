@@ -573,21 +573,13 @@ export default {
 }
 
 .vaultspaces-section {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.55),
-    rgba(15, 23, 42, 0.4)
-  );
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 1.25rem;
+  background: transparent;
+  border: 1px solid var(--slate-grey);
   padding: 2rem;
-  box-shadow: 0 12px 40px rgba(2, 6, 23, 0.35);
 }
 
 .mobile-mode .vaultspaces-section {
   padding: 1rem;
-  border-radius: 1rem;
 }
 
 .vaultspaces-section-header {
@@ -611,7 +603,7 @@ export default {
 
 .vaultspaces-section h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -621,21 +613,20 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 1.25rem;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e6eef6;
+  background: transparent;
+  border: 1px solid var(--slate-grey);
+  color: #a9b7aa;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .create-vaultspace-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(88, 166, 255, 0.3);
-  transform: translateY(-1px);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--slate-grey);
 }
 
 .create-vaultspace-btn svg {
@@ -653,19 +644,19 @@ export default {
 
 .empty-vaultspaces-content {
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .empty-vaultspaces-content h3 {
   margin: 1.5rem 0 0.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .empty-vaultspaces-content p {
   margin: 0 0 2rem 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.95rem;
 }
 
@@ -674,21 +665,20 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e6eef6;
+  background: transparent;
+  border: 1px solid var(--slate-grey);
+  color: #a9b7aa;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .create-vaultspace-btn-empty:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(88, 166, 255, 0.3);
-  transform: translateY(-1px);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--slate-grey);
 }
 
 .create-vaultspace-btn-empty svg {
@@ -712,12 +702,10 @@ export default {
 }
 
 .vaultspace-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
+  background: transparent;
+  border: 1px solid var(--slate-grey);
   padding: 1.5rem;
-  transition: all 0.3s ease;
+  transition: border-color 0.3s ease;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -729,9 +717,8 @@ export default {
 }
 
 .vaultspace-card:hover {
-  transform: translateY(-4px) scale(1);
-  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.5);
-  border-color: rgba(88, 166, 255, 0.3);
+  border-color: var(--slate-grey);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .vaultspace-card-new {
@@ -864,9 +851,9 @@ export default {
   cursor: pointer;
   font-size: 1rem;
   transition: all 0.2s ease;
-  color: #e6eef6;
+  color: #a9b7aa;
   border: none;
-  border-radius: 0.5rem;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -874,8 +861,8 @@ export default {
 
 .vaultspace-action-btn:hover,
 .vaultspace-menu-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .vaultspace-action-btn-danger:hover {
@@ -885,11 +872,10 @@ export default {
 
 .vaultspace-rename-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(88, 166, 255, 0.5);
-  border-radius: 0.5rem;
+  background: rgba(10, 10, 10, 0.6);
+  border: 1px solid #004225;
   padding: 0.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.25rem;
   font-weight: 600;
   font-family: inherit;
@@ -897,8 +883,8 @@ export default {
 
 .vaultspace-rename-input:focus {
   outline: none;
-  border-color: rgba(88, 166, 255, 0.8);
-  background: rgba(255, 255, 255, 0.15);
+  border-color: #004225;
+  background: rgba(10, 10, 10, 0.8);
 }
 
 .vaultspace-icon {
@@ -907,7 +893,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #e6eef6;
+  color: var(--slate-grey);
 }
 
 .mobile-mode .vaultspace-icon {
@@ -923,25 +909,25 @@ export default {
 
 .vaultspace-info h3 {
   margin: 0 0 0.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .vaultspace-type {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   margin: 0.25rem 0;
   text-transform: capitalize;
 }
 
 .vaultspace-pinned-indicator {
-  color: #8b5cf6;
+  color: #a9b7aa;
   font-weight: 500;
 }
 
 .vaultspace-date {
-  color: #64748b;
+  color: var(--slate-grey);
   font-size: 0.85rem;
   margin: 0.25rem 0;
 }
@@ -949,7 +935,7 @@ export default {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 8px;
+
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
@@ -960,8 +946,8 @@ export default {
 
 .btn-outline {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  color: #e6eef6;
+  border: 1px solid #004225;
+  color: #a9b7aa;
 }
 
 .btn-outline:hover:not(:disabled) {
@@ -984,7 +970,7 @@ body.sidebar-collapsed .modal-overlay {
 .modal h2 {
   margin-top: 0;
   margin-bottom: 1.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   text-align: center !important;
@@ -1010,7 +996,7 @@ body.sidebar-collapsed .modal-overlay {
 .loading {
   padding: 2rem;
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .error {
@@ -1019,6 +1005,5 @@ body.sidebar-collapsed .modal-overlay {
   color: #f85149;
   background-color: rgba(248, 81, 73, 0.1);
   border: 1px solid rgba(248, 81, 73, 0.3);
-  border-radius: 8px;
 }
 </style>

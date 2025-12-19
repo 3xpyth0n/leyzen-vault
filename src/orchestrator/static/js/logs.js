@@ -6,7 +6,7 @@ let pre,
   startDateEl,
   endDateEl,
   applyCustomBtn;
-let autoSwitch, linesMeta, searchInput, emptyState, searchResults, logArea;
+let linesMeta, searchInput, emptyState, searchResults, logArea;
 let btnText, btnSpinner;
 
 function initElements() {
@@ -17,7 +17,6 @@ function initElements() {
   startDateEl = document.getElementById("startDate");
   endDateEl = document.getElementById("endDate");
   applyCustomBtn = document.getElementById("applyCustom");
-  autoSwitch = document.getElementById("autoSwitch");
   linesMeta = document.getElementById("linesMeta");
   searchInput = document.getElementById("searchInput");
   emptyState = document.getElementById("emptyState");
@@ -33,7 +32,6 @@ initElements();
 // State
 let allLogs = pre && pre.textContent ? pre.textContent : "";
 let selectedPeriod = "day"; // default
-let autoRefreshHandle = null;
 let isFetching = false;
 let firstLoad = true;
 let searchTerm = "";
@@ -213,47 +211,71 @@ refreshBtn.addEventListener("click", () => {
 });
 
 periodButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    periodButtons.forEach((b) => {
-      b.classList.remove("active");
-      b.setAttribute("aria-pressed", "false");
-    });
-    btn.classList.add("active");
-    btn.setAttribute("aria-pressed", "true");
+  btn.addEventListener("click", (e) => {
+    const isCustom = btn.dataset.period === "custom";
 
-    selectedPeriod = btn.dataset.period;
-    const shouldShowCustom = selectedPeriod === "custom";
-    customRange.classList.toggle("is-hidden", !shouldShowCustom);
-    // if switching to custom, prefill start/end with sensible defaults
-    if (shouldShowCustom) {
-      const now = new Date();
-      const iso = (d) => d.toISOString().slice(0, 10);
-      // default last 7 days
-      startDateEl.value = iso(
-        new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
-      );
-      endDateEl.value = iso(now);
+    // If clicking on custom, toggle dropdown instead of immediately selecting
+    if (isCustom) {
+      e.stopPropagation();
+      const isActive = btn.classList.contains("active");
+      const isDropdownVisible = !customRange.classList.contains("is-hidden");
+
+      if (!isActive) {
+        // Activate custom period and show dropdown
+        periodButtons.forEach((b) => {
+          b.classList.remove("active");
+          b.setAttribute("aria-pressed", "false");
+        });
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+        selectedPeriod = "custom";
+        customRange.classList.remove("is-hidden");
+
+        // Prefill dates if not already set
+        if (!startDateEl.value || !endDateEl.value) {
+          const now = new Date();
+          const iso = (d) => d.toISOString().slice(0, 10);
+          startDateEl.value = iso(
+            new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
+          );
+          endDateEl.value = iso(now);
+        }
+      } else if (isDropdownVisible) {
+        // If already active and dropdown visible, close it
+        customRange.classList.add("is-hidden");
+      } else {
+        // If active but dropdown hidden, show it
+        customRange.classList.remove("is-hidden");
+      }
+    } else {
+      // For other periods, normal behavior
+      periodButtons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
+      selectedPeriod = btn.dataset.period;
+      customRange.classList.add("is-hidden");
+
+      // apply filter (does not refetch automatically except when you want latest data)
+      displayLogs(true);
     }
-
-    // apply filter (does not refetch automatically except when you want latest data)
-    displayLogs(true);
   });
+});
+
+// Close dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  const customWrapper = document.querySelector(".custom-period-wrapper");
+  if (customWrapper && !customWrapper.contains(e.target)) {
+    customRange.classList.add("is-hidden");
+  }
 });
 
 applyCustomBtn.addEventListener("click", () => {
   displayLogs(true);
-});
-
-// Auto refresh toggle
-autoSwitch.addEventListener("click", () => {
-  autoSwitch.classList.toggle("on");
-  if (autoSwitch.classList.contains("on")) {
-    // start 1s polling without changing scroll position
-    autoRefreshHandle = setInterval(() => fetchLogs(false), 1000);
-  } else {
-    clearInterval(autoRefreshHandle);
-    autoRefreshHandle = null;
-  }
+  // Close dropdown after applying
+  customRange.classList.add("is-hidden");
 });
 
 searchInput.addEventListener("input", (event) => {

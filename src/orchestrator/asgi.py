@@ -34,12 +34,43 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
+from flask import Flask
 from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
 
 # Global references to services for signal handlers
 _rotation_service = None
 _storage_cleanup_service = None
 _logger = None
+
+
+class HealthCheckMiddleware:
+    """Middleware that handles /healthz requests before they reach Flask."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path == "/healthz" or path == "/orchestrator/healthz":
+                # Return health check response directly
+                response_body = b'{"status":"ok"}'
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 200,
+                        "headers": [[b"content-type", b"application/json"]],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": response_body,
+                    }
+                )
+                return
+        # For all other requests, pass to the wrapped app
+        await self.app(scope, receive, send)
 
 
 def _load_orchestrator_module() -> ModuleType:
@@ -99,7 +130,18 @@ def create_app() -> WSGIMiddleware:
     try:
         configured_app = get_configured_app()
     except RuntimeError:
-        return WSGIMiddleware(flask_app)
+        # If app configuration fails, still provide a minimal health check endpoint
+        minimal_app = Flask(__name__)
+
+        @minimal_app.route("/healthz")
+        def healthz():
+            return {"status": "ok"}, 200
+
+        @minimal_app.route("/orchestrator/healthz")
+        def orchestrator_healthz():
+            return {"status": "ok"}, 200
+
+        return WSGIMiddleware(minimal_app)
 
     _rotation_service = configured_app.config["ROTATION_SERVICE"]
     _storage_cleanup_service = configured_app.config.get("STORAGE_CLEANUP_SERVICE")
@@ -150,7 +192,7 @@ def create_app() -> WSGIMiddleware:
     # even if signal handler doesn't execute properly
     atexit.register(log_shutdown)
 
-    return WSGIMiddleware(configured_app)
+    return HealthCheckMiddleware(WSGIMiddleware(configured_app))
 
 
 app = create_app()

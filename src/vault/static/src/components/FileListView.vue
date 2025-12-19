@@ -5,53 +5,40 @@
     @click="handleViewClick"
     tabindex="0"
   >
-    <div class="view-controls glass">
-      <div class="view-controls-grid">
-        <div class="view-toggle-panel" v-if="!isMobileView">
-          <div class="view-toggle">
-            <button
-              @click="$emit('view-change', 'grid')"
-              class="btn-icon"
-              :class="{ active: viewMode !== 'list' }"
-              title="Grid View"
-            >
-              <span v-html="getIcon('grid')"></span>
-            </button>
-            <button
-              @click="$emit('view-change', 'list')"
-              class="btn-icon"
-              :class="{ active: viewMode === 'list' }"
-              title="List View"
-            >
-              <span v-html="getIcon('list')"></span>
-            </button>
-          </div>
-        </div>
-        <div
-          class="controls-right-panel"
-          :class="{ 'mobile-full-width': isMobileView }"
-        >
+    <div class="file-controls">
+      <div class="file-controls-grid">
+        <div class="controls-panel">
+          <CustomSelect
+            ref="viewSelectRef"
+            v-model="localViewMode"
+            :options="[
+              { value: 'grid', label: 'Grid' },
+              { value: 'list', label: 'List' },
+            ]"
+            placeholder="View"
+            @change="handleViewChange"
+            @open="handleSelectOpen('view')"
+            size="small"
+            class="view-select"
+          />
           <div class="sort-controls">
             <CustomSelect
-              v-model="sortBy"
-              :options="sortOptions"
+              ref="sortSelectRef"
+              v-model="currentSortValue"
+              :options="sortOptionsWithOrder"
               @change="handleSortChange"
+              @open="handleSelectOpen('sort')"
               size="small"
               placeholder="Sort by"
             />
-            <button
-              @click="toggleSortOrder"
-              class="btn-icon"
-              :title="sortOrder === 'asc' ? 'Ascending' : 'Descending'"
-            >
-              <span v-html="getSortIcon()"></span>
-            </button>
           </div>
           <div class="filter-controls">
             <CustomSelect
+              ref="filterSelectRef"
               v-model="filterType"
               :options="filterOptions"
               @change="handleFilterChange"
+              @open="handleSelectOpen('filter')"
               size="small"
               placeholder="Filter"
             />
@@ -60,10 +47,10 @@
       </div>
     </div>
 
-    <div v-if="viewMode === 'list' && !isMobileView" class="list-view">
+    <div v-if="localViewMode === 'list' && !isMobileView" class="list-view">
       <div
         ref="tableContainer"
-        class="grid-container glass"
+        class="grid-container"
         :style="{ gridTemplateColumns: getGridTemplateColumns }"
       >
         <!-- Header Row -->
@@ -165,6 +152,7 @@
             @dragstart="handleDragStart(item, $event)"
             @dragover="handleDragOver(item, $event)"
             @dragleave="handleDragLeave(item, $event)"
+            @dragend="handleDragEnd($event)"
             @drop="handleDrop(item, $event)"
             @click="handleRowClick(item, $event)"
             @dblclick="handleRowDoubleClick(item, $event)"
@@ -229,7 +217,7 @@
           v-for="(item, index) in sortedAndFilteredItems"
           :key="item.id"
           :data-item-id="item.id"
-          class="file-card glass"
+          class="file-card"
           :class="{
             selected: isSelected(item.id),
             focused: focusedItemIndex === index,
@@ -250,6 +238,7 @@
           @dragstart="handleDragStart(item, $event)"
           @dragover="handleDragOver(item, $event)"
           @dragleave="handleDragLeave(item, $event)"
+          @dragend="handleDragEnd($event)"
           @drop="handleDrop(item, $event)"
           @click="handleCardClick(item, $event)"
           @dblclick="handleCardDoubleClick(item, $event)"
@@ -412,6 +401,11 @@ export default {
     const draggedItemId = ref(null);
     const focusedItemIndex = ref(-1); // Index of focused element for keyboard navigation
 
+    // Refs for CustomSelect components to control their open/close state
+    const viewSelectRef = ref(null);
+    const sortSelectRef = ref(null);
+    const filterSelectRef = ref(null);
+
     // Helper functions to extract extension and name without extension
     const getExtension = (filename) => {
       if (!filename) return null;
@@ -463,6 +457,78 @@ export default {
       { value: "size", label: "Size" },
       { value: "type", label: "Type" },
     ];
+
+    // Combined sort options with order (Ascending/Descending)
+    const sortOptionsWithOrder = computed(() => {
+      const baseSortOptions = [
+        { value: "name", label: "Name" },
+        { value: "date", label: "Date" },
+        { value: "size", label: "Size" },
+        { value: "type", label: "Type" },
+      ];
+      const options = [];
+      // Add sort by options (Name, Date, Size, Type)
+      baseSortOptions.forEach((option) => {
+        const currentSortOrder = sortOrder.value || "asc";
+        options.push({
+          value: `${option.value}-${currentSortOrder}`,
+          label: option.label,
+          sortBy: option.value,
+          sortOrder: currentSortOrder,
+          isSortBy: true, // Mark as sort by option for border styling
+        });
+      });
+      // Add order options (Ascending/Descending) for current sortBy
+      const currentSortBy = sortBy.value || "name";
+      options.push({
+        value: `${currentSortBy}-asc`,
+        label: "Ascending",
+        sortBy: currentSortBy,
+        sortOrder: "asc",
+        isSortBy: false, // Mark as order option
+      });
+      options.push({
+        value: `${currentSortBy}-desc`,
+        label: "Descending",
+        sortBy: currentSortBy,
+        sortOrder: "desc",
+        isSortBy: false, // Mark as order option
+      });
+      return options;
+    });
+
+    // Current sort value combining sortBy and sortOrder
+    const currentSortValue = computed({
+      get: () => {
+        // Find the option that matches current sortBy and sortOrder
+        const matchingOption = sortOptionsWithOrder.value.find(
+          (opt) =>
+            opt &&
+            opt.sortBy === sortBy.value &&
+            opt.sortOrder === sortOrder.value,
+        );
+        // Prefer the sortBy option (Name, Date, etc.) over Ascending/Descending
+        const sortByOption = sortOptionsWithOrder.value.find(
+          (opt) =>
+            opt &&
+            opt.sortBy === sortBy.value &&
+            opt.label !== "Ascending" &&
+            opt.label !== "Descending",
+        );
+        return sortByOption
+          ? sortByOption.value
+          : matchingOption
+            ? matchingOption.value
+            : `${sortBy.value}-${sortOrder.value}`;
+      },
+      set: (value) => {
+        if (value) {
+          const [newSortBy, newSortOrder] = value.split("-");
+          sortBy.value = newSortBy;
+          sortOrder.value = newSortOrder;
+        }
+      },
+    });
 
     const filterOptions = [
       { value: "all", label: "All" },
@@ -846,18 +912,46 @@ export default {
       return window.Icons.file(iconSize, "currentColor");
     };
 
-    const handleSortChange = debounce(() => {
+    const handleSortChange = () => {
       emit("selection-change", {
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
       });
-    }, 150);
+    };
 
     const handleFilterChange = debounce(() => {
       emit("selection-change", {
         filterType: filterType.value,
       });
     }, 150);
+
+    // Handle select open - close other selects when one opens
+    const handleSelectOpen = (selectName) => {
+      if (selectName !== "view" && viewSelectRef.value) {
+        viewSelectRef.value.closeDropdown();
+      }
+      if (selectName !== "sort" && sortSelectRef.value) {
+        sortSelectRef.value.closeDropdown();
+      }
+      if (selectName !== "filter" && filterSelectRef.value) {
+        filterSelectRef.value.closeDropdown();
+      }
+    };
+
+    const localViewMode = ref(props.viewMode);
+
+    watch(
+      () => props.viewMode,
+      (newMode) => {
+        localViewMode.value = newMode;
+      },
+    );
+
+    const handleViewChange = () => {
+      if (localViewMode.value) {
+        emit("view-change", localViewMode.value);
+      }
+    };
 
     const toggleSortOrder = () => {
       sortOrder.value = sortOrder.value === "asc" ? "desc" : "asc";
@@ -1155,6 +1249,12 @@ export default {
         draggedItemId.value = null;
         emit("drop", item, event);
       }
+    };
+
+    const handleDragEnd = (event) => {
+      dropTargetId.value = null;
+      draggedItemId.value = null;
+      emit("drag-end", event);
     };
 
     const formatSize = (item) => {
@@ -2422,6 +2522,8 @@ export default {
       sortOrder,
       filterType,
       sortOptions,
+      sortOptionsWithOrder,
+      currentSortValue,
       filterOptions,
       sortedAndFilteredItems,
       allSelected,
@@ -2432,6 +2534,8 @@ export default {
       dropTargetId,
       draggedItemId,
       focusedItemIndex,
+      localViewMode,
+      handleViewChange,
       handleSortChange,
       handleFilterChange,
       toggleSortOrder,
@@ -2453,6 +2557,7 @@ export default {
       handleDragStart,
       handleDragOver,
       handleDragLeave,
+      handleDragEnd,
       handleDrop,
       formatSize,
       formatDate,
@@ -2472,6 +2577,7 @@ export default {
       handleViewClick,
       handleGlobalClick,
       handleGlobalScroll,
+      handleSelectOpen,
       // Column resizing
       tableContainer,
       columnWidths,
@@ -2492,104 +2598,30 @@ export default {
   width: 100%;
 }
 
-.view-controls {
-  padding: 0.75rem;
+.file-controls {
   margin-bottom: 1rem;
-  border-radius: var(--radius-md, 8px);
   display: block;
 }
 
-.view-controls-grid {
-  display: grid;
-  grid-template-columns: 0fr 1fr;
-  grid-template-rows: 1fr;
-  gap: 0.5rem;
-  align-items: stretch;
-  min-height: 100px;
-  width: 100%;
-}
-
-.view-toggle-panel {
-  grid-column: 1;
-  grid-row: 1;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  height: 100%;
-}
-
-.view-toggle {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  width: 100%;
-  align-items: stretch;
-  justify-content: stretch;
-}
-
-.controls-right-panel {
-  grid-column: 2;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  height: 100%;
-}
-
-.view-toggle .btn-icon {
-  padding: 0.75rem;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: var(--radius-md, 8px);
-  cursor: pointer;
+.file-controls-grid {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.75rem;
   width: 100%;
-  min-height: 48px;
-  opacity: 0.8;
-  transition: all 0.2s;
-  color: var(--text-secondary, #cbd5e1);
 }
 
-.view-toggle .btn-icon:first-child {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom: none;
-}
-
-.view-toggle .btn-icon:last-child {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-.view-toggle .btn-icon:hover {
-  background: rgba(30, 41, 59, 0.5);
-  border-color: rgba(148, 163, 184, 0.4);
-  opacity: 1;
-}
-
-.view-toggle .btn-icon.active {
-  background: rgba(88, 166, 255, 0.15);
-  border-color: rgba(88, 166, 255, 0.3);
-  opacity: 1;
-  color: #8b5cf6;
-}
-
-.view-toggle .btn-icon svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-  visibility: visible;
-  opacity: 1;
-}
-
-.view-toggle .btn-icon span {
+.controls-panel {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.75rem;
   width: 100%;
-  height: 100%;
+  flex-wrap: nowrap;
+}
+
+.view-select {
+  flex-shrink: 0;
+  min-width: 100px;
+  max-width: 150px;
 }
 
 .sort-controls,
@@ -2597,14 +2629,55 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  width: 100%;
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+@media (max-width: 767px) {
+  .controls-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .view-select {
+    width: 100%;
+    max-width: none;
+    flex: none;
+  }
+
+  .sort-controls,
+  .filter-controls {
+    width: 100%;
+    flex: none;
+    min-width: 0;
+    max-width: none;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .controls-panel {
+    flex-wrap: wrap;
+  }
+
+  .view-select {
+    width: 100%;
+    max-width: none;
+    flex: none;
+  }
+
+  .sort-controls,
+  .filter-controls {
+    flex: 1;
+    min-width: 150px;
+    max-width: none;
+  }
 }
 
 .sort-controls .btn-icon {
   background: transparent;
   border: none;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   padding: 0;
   width: auto;
   height: auto;
@@ -2613,8 +2686,8 @@ export default {
 }
 
 .sort-controls .btn-icon:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary, #f1f5f9);
+  background: rgba(0, 66, 37, 0.1);
+  color: var(--text-primary, #a9b7aa);
   transform: none;
 }
 
@@ -2635,7 +2708,6 @@ export default {
   min-width: 800px;
   display: grid;
   grid-auto-rows: min-content;
-  border-radius: var(--radius-md, 8px);
   overflow: hidden;
   box-sizing: border-box;
   margin: 0;
@@ -2648,9 +2720,7 @@ export default {
 }
 
 .grid-header-row > .grid-cell {
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-right: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  background: var(--bg-primary);
 }
 
 .grid-header-row > .grid-cell:last-child {
@@ -2663,7 +2733,6 @@ export default {
 }
 
 .grid-body-row > .grid-cell {
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.1));
   transition:
     background-color 0.2s,
     transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2675,26 +2744,21 @@ export default {
 
 /* Row states - apply to all cells in the row */
 .grid-body-row:hover > .grid-cell {
-  background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
+  background: var(--bg-primary);
 }
 
 .grid-body-row.selected > .grid-cell {
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .grid-body-row.focused > .grid-cell:first-child {
-  outline: 2px solid var(--accent-blue, #8b5cf6);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
-  border-radius: 2px 0 0 2px;
-}
-
-.grid-body-row.focused > .grid-cell:last-child {
-  border-radius: 0 2px 2px 0;
 }
 
 .grid-body-row.drop-target > .grid-cell {
-  background: rgba(56, 189, 248, 0.2);
-  border: 2px dashed var(--accent-blue, #8b5cf6);
+  background: rgba(0, 66, 37, 0.2);
+  border: 2px dashed var(--accent);
 }
 
 .grid-body-row.dragging > .grid-cell {
@@ -2717,7 +2781,7 @@ export default {
 /* Header Cells */
 .grid-header-row .grid-cell {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   position: relative;
 }
 
@@ -2727,7 +2791,7 @@ export default {
 }
 
 .grid-header-row .grid-cell.sortable:hover {
-  background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .grid-header-row .grid-cell.resizable-header {
@@ -2743,7 +2807,7 @@ export default {
 
 /* Body Cells */
 .grid-body-row .grid-cell {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 /* Column-specific styles */
@@ -2760,14 +2824,17 @@ export default {
 
 .grid-cell-type {
   text-align: left;
+  color: var(--slate-grey);
 }
 
 .grid-cell-size {
   text-align: right;
+  color: var(--slate-grey);
 }
 
 .grid-cell-date {
   text-align: right;
+  color: var(--slate-grey);
 }
 
 .grid-cell-actions {
@@ -2787,28 +2854,28 @@ export default {
   cursor: col-resize;
   user-select: none;
   z-index: 10;
-  background: transparent;
+  background: var(--slate-grey);
   transition: background-color 0.2s ease;
 }
 
 .column-resizer:hover {
-  background: var(--accent-blue, #8b5cf6);
+  background: var(--accent, #004225);
   opacity: 0.6;
 }
 
 .column-resizer:active {
-  background: var(--accent-blue, #8b5cf6);
+  background: var(--accent, #004225);
   opacity: 1;
 }
 
 .sort-indicator {
   margin-left: 0.5rem;
-  color: var(--accent-blue, #8b5cf6);
+  color: var(--accent, #004225);
 }
 
 .file-name {
   font-weight: 500;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2853,11 +2920,10 @@ export default {
 
 .inline-edit-input {
   flex: 1;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border: 1px solid var(--accent-blue, #8b5cf6);
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
   padding: 0.25rem 0.5rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary);
   font-size: inherit;
   font-family: inherit;
   font-weight: inherit;
@@ -2865,8 +2931,8 @@ export default {
 
 .inline-edit-input:focus {
   outline: none;
-  border-color: var(--accent-blue, #8b5cf6);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.2);
 }
 
 .file-actions {
@@ -2917,8 +2983,7 @@ export default {
 }
 
 .file-card {
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-md, 8px);
+  background: var(--bg-modal);
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -2926,6 +2991,7 @@ export default {
   position: relative;
   transition: all var(--transition-base);
   cursor: grab;
+  border: none;
 }
 
 .file-card.file-card-new {
@@ -2933,19 +2999,17 @@ export default {
 }
 
 .file-card:hover {
-  border-color: var(--border-color-hover, rgba(148, 163, 184, 0.4));
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px) scale(1);
+  background: rgba(0, 66, 37, 0.1);
+  border: none;
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #8b5cf6);
-  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid var(--accent);
 }
 
 .file-card.drop-target {
-  background: rgba(56, 189, 248, 0.2);
-  border: 2px dashed var(--accent-blue, #8b5cf6);
+  background: rgba(0, 66, 37, 0.2);
+  border: 2px dashed var(--accent);
 }
 
 .file-card.dragging {
@@ -2961,7 +3025,14 @@ export default {
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
-  z-index: 10;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.file-card:hover .file-checkbox,
+.file-card.selected .file-checkbox {
+  opacity: 1;
 }
 
 .file-icon-large {
@@ -2986,7 +3057,7 @@ export default {
   width: auto;
   height: auto;
   object-fit: contain;
-  border-radius: 8px;
+
   display: block;
   margin: 0 auto;
 }
@@ -3016,7 +3087,7 @@ export default {
   font-size: 1rem;
   font-weight: 600;
   word-break: break-word;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .file-info .inline-edit-container {
@@ -3032,7 +3103,7 @@ export default {
 .file-meta {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
 }
 
 .btn-menu-grid {
@@ -3050,7 +3121,13 @@ export default {
   height: 20px;
   min-width: 20px;
   min-height: 20px;
-  opacity: 0.8;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.file-card:hover .btn-menu-grid,
+.file-card.selected .btn-menu-grid {
+  opacity: 1;
 }
 
 .btn-menu-grid:hover {
@@ -3095,11 +3172,11 @@ export default {
   0% {
     opacity: 0;
     transform: translateX(-30px);
-    background-color: rgba(56, 189, 248, 0.4) !important;
+    background-color: rgba(0, 66, 37, 0.4) !important;
   }
   50% {
     transform: translateX(8px);
-    background-color: rgba(56, 189, 248, 0.2) !important;
+    background-color: rgba(0, 66, 37, 0.2) !important;
   }
   100% {
     opacity: 1;
@@ -3108,35 +3185,15 @@ export default {
   }
 }
 
-/* Mobile Mode Styles */
-.mobile-mode .view-controls {
-  padding: 0.75rem;
-}
-
-.mobile-mode .view-controls-grid {
-  grid-template-columns: 1fr;
-  grid-template-rows: auto;
+.mobile-mode .file-controls-grid {
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.mobile-mode .view-toggle-panel {
-  display: none !important;
-}
-
-.mobile-mode .controls-right-panel {
-  grid-column: 1;
-  grid-row: 1;
+.mobile-mode .controls-panel {
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
-}
-
-.mobile-mode .controls-right-panel.mobile-full-width {
-  grid-column: 1;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 .mobile-mode .sort-controls,

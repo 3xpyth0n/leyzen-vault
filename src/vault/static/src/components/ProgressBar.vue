@@ -138,8 +138,8 @@ export default {
   margin: 1rem 0;
   padding: 1rem;
   background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border-radius: var(--radius-md, 0.5rem);
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+
+  border: 1px solid var(--border-color, #004225);
 }
 
 .progress-container.progress-sticky {
@@ -152,11 +152,11 @@ export default {
   margin: 0;
   padding: 1.25rem 1.5rem;
   z-index: 10002;
-  background: linear-gradient(140deg, #1e293b8c, #0f172a66);
+  background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: none;
-  border-radius: 2rem;
+
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.05) inset;
@@ -212,7 +212,7 @@ export default {
 .progress-file-name {
   font-size: 0.9rem;
   font-weight: 500;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   word-break: break-word;
   flex: 1;
   display: flex;
@@ -229,13 +229,13 @@ export default {
 
 .progress-status-icon {
   flex-shrink: 0;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .progress-cancel-btn {
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   padding: 0.375rem;
   cursor: pointer;
   display: flex;
@@ -260,18 +260,15 @@ export default {
   width: 100%;
   height: 8px;
   background: rgba(15, 23, 42, 0.5);
-  border-radius: 4px;
+
   overflow: hidden;
   margin-bottom: 0.75rem;
 }
 
 .progress-bar {
   height: 100%;
-  background: var(
-    --accent-gradient,
-    linear-gradient(90deg, #8b5cf6 0%, #7c3aed 100%)
-  );
-  border-radius: 4px;
+  background: var(--accent-gradient, transparent);
+
   transition: width 0.3s ease;
 }
 
@@ -280,14 +277,14 @@ export default {
   justify-content: space-between;
   align-items: center;
   font-size: 0.875rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   gap: 1rem;
   flex-wrap: wrap;
 }
 
 .progress-percent {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .progress-speed,

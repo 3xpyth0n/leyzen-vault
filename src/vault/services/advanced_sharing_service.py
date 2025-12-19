@@ -14,6 +14,7 @@ from vault.database.schema import (
     db,
 )
 from vault.services.encryption_service import EncryptionService
+from vault.blueprints.validators import sanitize_string_input
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -283,6 +284,8 @@ class AdvancedSharingService:
         max_downloads: int | None = None,
         max_access_count: int | None = None,
         allow_download: bool | None = None,
+        note: str | None = None,
+        update_note: bool = False,
     ) -> PublicShareLink | None:
         """Update a public share link.
 
@@ -293,6 +296,7 @@ class AdvancedSharingService:
             max_downloads: Optional new max downloads
             max_access_count: Optional new max access count
             allow_download: Optional new allow_download setting
+            note: Optional note text for the share link
 
         Returns:
             Updated PublicShareLink object or None if not found/unauthorized
@@ -322,6 +326,22 @@ class AdvancedSharingService:
 
         if allow_download is not None:
             share_link.allow_download = allow_download
+
+        # Update note only if explicitly requested
+        if update_note:
+            if note is None:
+                # Explicitly set to None to delete the note
+                share_link.note = None
+            else:
+                # Validate and sanitize note input
+                sanitized_note, error = sanitize_string_input(
+                    note,
+                    max_length=500,
+                    allow_empty=True,
+                )
+                if error:
+                    raise ValueError(f"Invalid note: {error}")
+                share_link.note = sanitized_note if sanitized_note else None
 
         db.session.commit()
         return share_link

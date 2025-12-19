@@ -7,6 +7,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Application UI Refactor**: Leyzen Vault’s interface has been fully reworked to improve readability, consistency, and long-term usability across the entire application.
+  - Simplified visual structure by removing decorative effects, excessive borders, and unnecessary styling.
+  - Reworked layouts and navigation to establish clearer hierarchy and reduce visual noise.
+  - This refactor focuses on user comfort, clarity, and maintainability rather than visual embellishment.
+
 ### Fixed
 
 - **CAPTCHA Multi-Worker Synchronization**: Fixed critical issue where CAPTCHA entries were only accessible by the worker that generated them, causing 404 errors and login failures in multi-worker deployments. CAPTCHA storage has been migrated from in-memory store to database-backed storage, ensuring all workers can access the same CAPTCHA entries. Each user session now has its own isolated CAPTCHA, preventing cross-session interference while maintaining proper synchronization across all application workers.

@@ -279,5 +279,41 @@ class FileLogger:
         with self._lock:
             self._handler.flush()
 
+    def info(self, msg: Any, *, context: Any | None = None) -> None:
+        """Log an info message.
+
+        Args:
+            msg: Message to log
+            context: Optional context dictionary to include in the log entry
+        """
+        self.log(msg, context=context)
+
+    def error(self, msg: Any, *, context: Any | None = None) -> None:
+        """Log an error message.
+
+        Args:
+            msg: Message to log
+            context: Optional context dictionary to include in the log entry
+        """
+        self.log(msg, context=context)
+
+    def warning(self, msg: Any, *, context: Any | None = None) -> None:
+        """Log a warning message.
+
+        Args:
+            msg: Message to log
+            context: Optional context dictionary to include in the log entry
+        """
+        self.log(msg, context=context)
+
+    def debug(self, msg: Any, *, context: Any | None = None) -> None:
+        """Log a debug message.
+
+        Args:
+            msg: Message to log
+            context: Optional context dictionary to include in the log entry
+        """
+        self.log(msg, context=context)
+
 
 __all__ = ["FileLogger", "_sanitize_log_value"]

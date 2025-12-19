@@ -1,13 +1,13 @@
 <template>
   <div class="api-key-management">
-    <div class="section-header glass glass-card">
+    <div class="section-header">
       <h2>API Key Management</h2>
       <button @click="openCreateModal" class="btn btn-primary">
         Generate API Key
       </button>
     </div>
 
-    <div class="filters glass glass-card">
+    <div class="filters">
       <CustomSelect
         v-model="filterUserId"
         :options="userFilterOptions"
@@ -16,12 +16,12 @@
       />
     </div>
 
-    <div v-if="loading" class="loading glass glass-card">
+    <div v-if="loading" class="loading">
       <span v-html="getIcon('clock', 24)"></span>
       Loading API keys...
     </div>
-    <div v-else-if="error" class="error glass glass-card">{{ error }}</div>
-    <div v-else class="table-container glass glass-card">
+    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else class="table-container">
       <table class="api-keys-table">
         <thead>
           <tr>
@@ -63,7 +63,7 @@
         class="modal-overlay"
         @click.self="closeModal"
       >
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>Generate API Key</h3>
             <button
@@ -138,7 +138,7 @@
         class="modal-overlay"
         @click.self="closeKeyModal"
       >
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>
               <span v-html="getIcon('key', 20)"></span>
@@ -154,7 +154,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <div class="warning-message glass">
+            <div class="warning-message">
               <span v-html="getIcon('warning', 16)"></span>
               This is the only time you will see this API key. Make sure to copy
               it now and store it securely.
@@ -573,12 +573,11 @@ export default {
   align-items: center;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -588,15 +587,14 @@ export default {
   gap: 1rem;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .filter-select {
   padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
+  border: 1px solid #004225;
+
   background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.95rem;
   transition: all 0.2s ease;
   min-width: 200px;
@@ -610,8 +608,8 @@ export default {
 
 .table-container {
   padding: 1.5rem;
-  border-radius: 1rem;
-  overflow: hidden;
+
+  overflow: auto;
 }
 
 .mobile-mode .table-container {
@@ -629,16 +627,14 @@ export default {
 
 .mobile-mode .table-container::-webkit-scrollbar-track {
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 4px;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 4px;
+  background: #004225;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: #004225;
 }
 
 .api-keys-table {
@@ -651,15 +647,15 @@ export default {
 }
 
 .api-keys-table th {
-  background: rgba(30, 41, 59, 0.4);
+  background: var(--bg-modal);
   padding: 1rem;
   text-align: left;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 2px solid #004225;
 }
 
 .api-keys-table th:last-child {
@@ -671,8 +667,8 @@ export default {
 
 .api-keys-table td {
   padding: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  border-bottom: 1px solid #004225;
+  color: #a9b7aa;
   vertical-align: middle;
 }
 
@@ -694,11 +690,11 @@ export default {
 .key-prefix {
   background: rgba(30, 41, 59, 0.6);
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+
   font-family: "Courier New", monospace;
   font-size: 0.85rem;
-  color: white;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  color: #a9b7aa;
+  border: 1px solid rgba(0, 66, 37, 0.2);
 }
 
 .actions {
@@ -716,15 +712,15 @@ export default {
 
 .btn-icon {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid #004225;
   cursor: pointer;
   padding: 0.5rem;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: #a9b7aa;
   width: 36px;
   height: 36px;
 }
@@ -732,7 +728,7 @@ export default {
 .btn-icon:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.1);
   border-color: rgba(56, 189, 248, 0.3);
-  color: #8b5cf6;
+  color: #004225;
   transform: translateY(-2px);
 }
 
@@ -789,7 +785,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   display: flex;
@@ -798,13 +794,13 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-header h3 :deep(svg) {
-  color: #8b5cf6;
+  color: #004225;
 }
 
 .modal-close-btn {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
+  border: 1px solid #004225;
+  color: #a9b7aa;
   cursor: pointer;
   padding: 0.5rem;
   width: 36px;
@@ -812,7 +808,7 @@ body.mobile-mode .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
 }
 
@@ -870,11 +866,9 @@ body.mobile-mode .modal-overlay {
   padding: 0.75rem 1rem !important;
   padding-right: 2.5rem !important;
   background: rgba(30, 41, 59, 0.4) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
-  border-radius: 0.75rem !important;
-  color: #e6eef6 !important;
+  border: 1px solid #004225 !important;
+
+  color: #a9b7aa !important;
   font-size: 0.95rem !important;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
@@ -888,7 +882,7 @@ body.mobile-mode .modal-overlay {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
-  color: #94a3b8 !important;
+  color: #a9b7aa !important;
   flex: 1 !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
@@ -900,7 +894,7 @@ body.mobile-mode .modal-overlay {
 .modal-form
   .form-group
   :deep(.custom-select.is-placeholder .custom-select-value) {
-  color: #94a3b8 !important;
+  color: #a9b7aa !important;
 }
 
 .modal-form .form-group :deep(.custom-select-arrow) {
@@ -913,7 +907,7 @@ body.mobile-mode .modal-overlay {
   transform: translateY(-50%) !important;
   width: 1rem !important;
   height: 1rem !important;
-  color: #94a3b8 !important;
+  color: #a9b7aa !important;
   transition: transform 0.2s ease !important;
   pointer-events: none !important;
   flex-shrink: 0 !important;
@@ -923,7 +917,7 @@ body.mobile-mode .modal-overlay {
   display: block !important;
   width: 16px !important;
   height: 16px !important;
-  color: #94a3b8 !important;
+  color: #a9b7aa !important;
 }
 
 .form-input:focus,
@@ -943,11 +937,11 @@ body.mobile-mode .modal-overlay {
   flex: 1;
   background: rgba(30, 41, 59, 0.6);
   padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
+
   font-family: "Courier New", monospace;
   font-size: 0.9rem;
-  color: #8b5cf6;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  color: #004225;
+  border: 1px solid rgba(0, 66, 37, 0.2);
   word-break: break-all;
 }
 
@@ -977,7 +971,7 @@ body.mobile-mode .modal-overlay {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.75rem;
+
   cursor: pointer;
   font-weight: 500;
   font-size: 0.95rem;
@@ -988,35 +982,25 @@ body.mobile-mode .modal-overlay {
 }
 
 .btn-primary {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.2) 0%,
-    rgba(129, 140, 248, 0.2) 100%
-  );
-  color: #8b5cf6;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.3) 0%,
-    rgba(129, 140, 248, 0.3) 100%
-  );
-  border-color: rgba(56, 189, 248, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .btn-secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: #004225;
+  border-color: #004225;
 }
 
 .btn:disabled {
@@ -1027,7 +1011,7 @@ body.mobile-mode .modal-overlay {
 
 .warning-message {
   padding: 1rem;
-  border-radius: 0.75rem;
+
   margin: 1rem 0;
   display: flex;
   align-items: flex-start;
@@ -1050,11 +1034,10 @@ body.mobile-mode .modal-overlay {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1062,7 +1045,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .loading :deep(svg) {
-  color: #8b5cf6;
+  color: #004225;
   animation: spin 1s linear infinite;
 }
 
@@ -1078,12 +1061,12 @@ body.mobile-mode .modal-overlay {
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .form-help {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   margin-top: 0.5rem;
   display: block;
 }
@@ -1093,17 +1076,16 @@ body.mobile-mode .modal-overlay {
 }
 
 .form-help-info {
-  color: #94a3b8;
+  color: #a9b7aa;
   padding: 0.5rem;
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
 }
 
 .form-input-loading {
   min-height: 44px;
   display: flex;
   align-items: center;
-  color: #94a3b8;
+  color: #a9b7aa;
   cursor: default;
 }
 </style>

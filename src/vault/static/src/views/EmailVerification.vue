@@ -1,6 +1,6 @@
 <template>
   <div class="verification-wrapper">
-    <div class="verification-container glass glass-card">
+    <div class="verification-container">
       <h1>Email Verification</h1>
       <div v-if="error" class="error">{{ error }}</div>
       <div v-if="success" class="success">{{ success }}</div>
@@ -58,7 +58,7 @@
 
     <!-- Modal for logged-in users -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
-      <div class="modal-content glass glass-card" @click.stop>
+      <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h2>Email Verified</h2>
           <button class="modal-close" @click="closeModal" aria-label="Close">
@@ -221,7 +221,7 @@ const handleResendEmail = async () => {
 h1 {
   text-align: center;
   margin-bottom: 1.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.75rem;
   font-weight: 600;
 }
@@ -229,7 +229,7 @@ h1 {
 h2 {
   text-align: center;
   margin-bottom: 1rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -237,12 +237,12 @@ h2 {
 .info-text {
   text-align: center;
   margin-bottom: 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   line-height: 1.6;
 }
 
 .info-text strong {
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .form-group {
@@ -252,7 +252,7 @@ h2 {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-weight: 500;
 }
 
@@ -262,7 +262,7 @@ h2 {
 }
 
 .verifying-section .info-text {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 1rem;
 }
 
@@ -270,7 +270,7 @@ h2 {
   width: 100%;
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 8px;
+
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
@@ -285,7 +285,7 @@ h2 {
 
 .btn-primary {
   background: rgba(88, 166, 255, 0.2);
-  color: #e6eef6;
+  color: #a9b7aa;
   border: 1px solid rgba(88, 166, 255, 0.3);
 }
 
@@ -296,7 +296,7 @@ h2 {
 
 .btn-secondary {
   background: rgba(255, 255, 255, 0.05);
-  color: #e6eef6;
+  color: #a9b7aa;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -314,7 +314,7 @@ h2 {
 
 .resend-section p {
   margin-bottom: 1rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .back-section {
@@ -347,8 +347,8 @@ h2 {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
 }
 
@@ -357,12 +357,12 @@ h2 {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 8px;
+
   margin-bottom: 1rem;
 }
 
 .verified-section p {
-  color: #94a3b8;
+  color: #a9b7aa;
   margin-bottom: 2rem;
   line-height: 1.6;
 }
@@ -413,7 +413,7 @@ h2 {
 
 .modal-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -421,7 +421,7 @@ h2 {
 .modal-close {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 2rem;
   cursor: pointer;
   padding: 0;
@@ -430,12 +430,12 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+
   transition: all 0.2s ease;
 }
 
 .modal-close:hover {
-  color: #e6eef6;
+  color: #a9b7aa;
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -451,7 +451,7 @@ h2 {
 }
 
 .modal-body p {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 1rem;
   line-height: 1.6;
   margin: 0;

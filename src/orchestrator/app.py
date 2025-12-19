@@ -87,6 +87,12 @@ def _register_runtime_hooks(flask_app: Flask) -> None:
     @flask_app.before_request  # pragma: no cover - Flask hook
     def _ensure_background_workers() -> None:
         """Ensure background workers are started on first request."""
+        # Skip health check endpoint to avoid blocking health checks
+        from flask import request
+
+        if request.path == "/healthz":
+            return
+
         rotation_service = flask_app.config["ROTATION_SERVICE"]
         rotation_service.start_background_workers()
 

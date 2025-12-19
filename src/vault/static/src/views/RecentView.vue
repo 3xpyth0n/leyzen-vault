@@ -137,49 +137,67 @@
     <div
       v-if="showPasswordModal"
       class="password-modal-overlay"
-      @click.self="closePasswordModal"
+      @click="closePasswordModal"
+      role="dialog"
+      aria-labelledby="password-modal-title"
+      aria-modal="true"
     >
-      <div class="password-modal glass glass-card">
-        <h2>Enter Encryption Password</h2>
-        <p class="password-modal-description">
-          Enter your encryption password to access your files. This password is
-          used to decrypt your files and is not stored on the server.
-        </p>
-        <div v-if="passwordModalError" class="error-message">
-          {{ passwordModalError }}
-        </div>
-        <div class="form-group">
-          <label for="password-input">Password</label>
-          <PasswordInput
-            id="password-input"
-            v-model="passwordModalPassword"
-            placeholder="Enter your encryption password"
-            @keyup.enter="handlePasswordSubmit"
-            :disabled="passwordModalLoading"
-          />
-        </div>
-        <div class="form-actions">
-          <button
-            @click="closePasswordModal"
-            class="btn btn-secondary"
-            :disabled="passwordModalLoading"
-          >
-            Cancel
-          </button>
-          <button
-            @click="handlePasswordSubmit"
-            class="btn btn-primary"
-            :disabled="passwordModalLoading || !passwordModalPassword.trim()"
-          >
-            {{ passwordModalLoading ? "Unlocking..." : "Unlock" }}
-          </button>
+      <div class="password-modal-container" @click.stop>
+        <div class="password-modal-content">
+          <div class="password-modal-header">
+            <h2 id="password-modal-title">Enter Encryption Password</h2>
+            <button
+              @click="closePasswordModal"
+              class="password-modal-close"
+              :disabled="passwordModalLoading"
+              aria-label="Close modal"
+            >
+              &times;
+            </button>
+          </div>
+          <div class="password-modal-body">
+            <p class="password-modal-description">
+              Enter your encryption password to access your files. This password
+              is used to decrypt your files and is not stored on the server.
+            </p>
+            <div class="form-group">
+              <label for="password-modal-password">Password</label>
+              <PasswordInput
+                id="password-modal-password"
+                v-model="passwordModalPassword"
+                placeholder="Enter your encryption password"
+                @keyup.enter="handlePasswordSubmit"
+                :disabled="passwordModalLoading"
+                autofocus
+              />
+            </div>
+            <div v-if="passwordModalError" class="password-modal-error">
+              {{ passwordModalError }}
+            </div>
+          </div>
+          <div class="password-modal-footer">
+            <button
+              @click="closePasswordModal"
+              class="password-modal-btn password-modal-btn-cancel"
+              :disabled="passwordModalLoading"
+            >
+              Cancel
+            </button>
+            <button
+              @click="handlePasswordSubmit"
+              class="password-modal-btn password-modal-btn-unlock"
+              :disabled="passwordModalLoading || !passwordModalPassword"
+            >
+              {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </Teleport>
 
   <div
-    class="recent-view glass glass-card"
+    class="recent-view"
     v-if="!showEncryptionOverlay || !isMasterKeyRequired"
   >
     <header class="view-header">
@@ -210,7 +228,7 @@
 
     <main class="view-main">
       <div v-if="loading" class="loading">Loading recent files...</div>
-      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
       <div v-else-if="recentFiles.length === 0" class="empty-state">
         <p>No recent files</p>
         <p class="empty-hint">
@@ -218,7 +236,7 @@
         </p>
       </div>
       <div v-else class="files-list">
-        <div class="files-info glass">
+        <div class="files-info">
           <p>{{ recentFiles.length }} recent file(s)</p>
         </div>
         <FileListView
@@ -256,6 +274,7 @@ import { decryptFileKey, decryptFile } from "../services/encryption.js";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import PasswordInput from "../components/PasswordInput.vue";
 import { zipFiles, generateZipFileName } from "../services/zipService.js";
+import { showShareModal } from "../composables/useShareModal";
 import {
   getUserMasterKey,
   decryptVaultSpaceKeyForUser,
@@ -286,7 +305,25 @@ export default {
     const loading = ref(false);
     const error = ref(null);
     const recentFiles = ref([]);
-    const daysFilter = ref(30);
+    // Load days filter from localStorage or default to 30
+    const loadDaysFilterFromStorage = () => {
+      try {
+        const saved = localStorage.getItem("recentViewDaysFilter");
+        if (saved) {
+          const value = parseInt(saved, 10);
+          // Validate that the value is one of the valid options
+          const validValues = [1, 7, 30, 90];
+          if (validValues.includes(value)) {
+            return value;
+          }
+        }
+      } catch (err) {
+        // Ignore localStorage errors
+      }
+      return 30; // Default value
+    };
+
+    const daysFilter = ref(loadDaysFilterFromStorage());
     const editingItemId = ref(null);
     const showDeleteConfirm = ref(false);
     const pendingDeleteFile = ref(null);
@@ -312,6 +349,7 @@ export default {
     const vaultspaceKeys = ref({});
 
     const daysOptions = [
+      { value: 1, label: "Last 24 hours" },
       { value: 7, label: "Last 7 days" },
       { value: 30, label: "Last 30 days" },
       { value: 90, label: "Last 90 days" },
@@ -327,6 +365,15 @@ export default {
     };
 
     const handleDaysChange = () => {
+      // Save to localStorage
+      try {
+        localStorage.setItem(
+          "recentViewDaysFilter",
+          daysFilter.value.toString(),
+        );
+      } catch (err) {
+        // Ignore localStorage errors
+      }
       loadRecent();
     };
 
@@ -716,42 +763,21 @@ export default {
           return;
         }
 
-        if (window.sharingManager) {
+        try {
           const safeVaultspaceKey =
             vaultspaceKey !== undefined ? vaultspaceKey : null;
-          window.sharingManager.showShareModal(
+          await showShareModal(
             item.id,
             "file",
             item.vaultspace_id,
             safeVaultspaceKey,
           );
-        } else {
-          // Fallback: try to load sharing manager
-          let retries = 0;
-          const maxRetries = 30;
-          const checkInterval = setInterval(() => {
-            retries++;
-            if (window.sharingManager) {
-              clearInterval(checkInterval);
-              // Ensure vaultspaceKey is never undefined - use null if undefined
-              const safeVaultspaceKey =
-                vaultspaceKey !== undefined ? vaultspaceKey : null;
-              window.sharingManager.showShareModal(
-                item.id,
-                "file",
-                item.vaultspace_id,
-                safeVaultspaceKey,
-              );
-            } else if (retries >= maxRetries) {
-              clearInterval(checkInterval);
-              showAlert({
-                type: "error",
-                title: "Error",
-                message:
-                  "Share functionality is not available. Please refresh the page.",
-              });
-            }
-          }, 100);
+        } catch (err) {
+          showAlert({
+            type: "error",
+            title: "Error",
+            message: "Failed to open share dialog.",
+          });
         }
       } else if (action === "properties") {
         // Show properties modal
@@ -1092,7 +1118,7 @@ export default {
       // Load recent files
       loadRecent();
 
-      // Expose showConfirmationModal for sharing.js to use
+      // Expose showConfirmationModal for modals to use
       window.showConfirmationModal = (options) => {
         revokeConfirmMessage.value =
           options.message || "Are you sure you want to proceed?";
@@ -1198,7 +1224,6 @@ export default {
   align-items: center;
   margin-bottom: 2rem;
   padding: 1.5rem 2rem;
-  border-radius: 2rem;
 }
 
 .mobile-mode .view-header {
@@ -1226,6 +1251,7 @@ export default {
   display: inline-flex;
   align-items: center;
   color: currentColor;
+  margin-top: 0.2rem;
 }
 
 .header-actions {
@@ -1259,7 +1285,7 @@ export default {
 }
 
 .filter-group label {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 0.9rem;
 }
 
@@ -1281,19 +1307,18 @@ export default {
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .empty-hint {
   margin-top: 1rem;
   font-size: 0.9rem;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
 }
 
 .files-info {
   padding: 1rem;
   margin-bottom: 1rem;
-  border-radius: var(--radius-md, 8px);
 }
 
 /* Encryption Overlay (Glassmorphic) */
@@ -1303,13 +1328,13 @@ export default {
   justify-content: center;
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.15),
-    rgba(15, 23, 42, 0.12)
+    rgba(0, 66, 37, 0.08),
+    rgba(1, 10, 0, 0.12)
   );
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: none;
-  border-radius: 0 0 0 1rem; /* Rounded bottom-left corner to match sidebar */
+  border: 1px solid var(--border-color); /* Match main-content border */
+  border-radius: 1rem; /* Match main-content border-radius */
   box-shadow: none;
   animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   /* pointer-events is controlled via inline style */
@@ -1373,8 +1398,8 @@ export default {
 }
 
 .encryption-icon {
-  color: rgba(88, 166, 255, 0.9);
-  filter: drop-shadow(0 4px 12px rgba(88, 166, 255, 0.3));
+  color: rgba(0, 66, 37, 0.9);
+  filter: drop-shadow(0 4px 12px rgba(0, 66, 37, 0.3));
   width: 64px;
   height: 64px;
 }
@@ -1382,7 +1407,7 @@ export default {
 .encryption-title {
   font-size: 1.75rem;
   font-weight: 600;
-  color: #e6eef6;
+  color: #a9b7aa;
   margin: 0 0 1rem 0;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   letter-spacing: -0.02em;
@@ -1390,7 +1415,7 @@ export default {
 
 .encryption-description {
   font-size: 1rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   line-height: 1.6;
   margin: 0 0 2rem 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
@@ -1400,20 +1425,20 @@ export default {
   padding: 0.875rem 2rem;
   font-size: 1rem;
   font-weight: 500;
-  color: #ffffff;
+  color: #a9b7aa;
   background: linear-gradient(
     135deg,
-    rgba(88, 166, 255, 0.2),
-    rgba(56, 189, 248, 0.15)
+    rgba(0, 66, 37, 0.2),
+    rgba(0, 66, 37, 0.15)
   );
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 0.75rem;
+  border: 1px solid rgba(0, 66, 37, 0.3);
+
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow:
-    0 4px 16px rgba(88, 166, 255, 0.2),
+    0 4px 16px rgba(0, 66, 37, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   font-family: inherit;
   position: relative;
@@ -1440,12 +1465,12 @@ export default {
   transform: translateY(-2px);
   background: linear-gradient(
     135deg,
-    rgba(88, 166, 255, 0.3),
-    rgba(56, 189, 248, 0.25)
+    rgba(0, 66, 37, 0.3),
+    rgba(0, 66, 37, 0.25)
   );
-  border-color: rgba(88, 166, 255, 0.5);
+  border-color: rgba(0, 66, 37, 0.5);
   box-shadow:
-    0 6px 24px rgba(88, 166, 255, 0.3),
+    0 6px 24px rgba(0, 66, 37, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
@@ -1456,93 +1481,233 @@ export default {
 .encryption-unlock-btn:active {
   transform: translateY(0);
   box-shadow:
-    0 2px 8px rgba(88, 166, 255, 0.2),
+    0 2px 8px rgba(0, 66, 37, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Password Modal */
 .password-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  z-index: 100000 !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  padding: 1rem;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  animation: fadeIn 0.2s ease;
 }
 
-.password-modal {
-  padding: 2rem;
-  min-width: 400px;
-  max-width: 90vw;
-  border-radius: 2rem;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.password-modal h2 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  color: var(--text-primary, #f1f5f9);
-}
-
-.password-modal-description {
-  margin-bottom: 1.5rem;
-  color: var(--text-secondary, #cbd5e1);
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary, #cbd5e1);
-  font-weight: 500;
-}
-
-.form-input {
+.password-modal-container {
+  position: relative;
   width: 100%;
-  padding: 0.75rem;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-md, 8px);
-  color: var(--text-primary, #f1f5f9);
-  font-size: 1rem;
-  font-family: inherit;
+  max-width: 480px;
+  background: var(--bg-modal);
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.form-input:focus {
-  outline: none;
-  border-color: var(--accent-blue, #8b5cf6);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+@keyframes slideUp {
+  from {
+    transform: scale(0.95) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
-.form-input:disabled {
-  opacity: 0.6;
+.password-modal-content {
+  background: linear-gradient(
+    140deg,
+    rgba(30, 41, 59, 0.1),
+    rgba(15, 23, 42, 0.08)
+  );
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.password-modal-content::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+}
+
+.password-modal-header {
+  padding: 2rem 2rem 1.5rem 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.password-modal-header h2 {
+  margin: 0;
+  color: #a9b7aa;
+  font-size: 1.5rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.password-modal-close {
+  background: none;
+  border: none;
+  color: #a9b7aa;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.password-modal-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #a9b7aa;
+}
+
+.password-modal-close:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.form-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  margin-top: 1.5rem;
+.password-modal-body {
+  padding: 2rem;
+  flex: 1;
 }
 
-.error-message {
-  padding: 1rem;
-  margin-bottom: 1rem;
-  color: var(--error, #ef4444);
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md, 8px);
+.password-modal-description {
+  margin: 0 0 1.5rem 0;
+  color: #a9b7aa;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.password-modal-body .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.password-modal-body .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #a9b7aa;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.password-modal-body .form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #004225;
+  color: var(--slate-grey);
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.password-modal-body .form-input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+.password-modal-body .form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-modal-body .form-input::placeholder {
+  color: var(--slate-grey);
+}
+
+.password-modal-error {
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5;
   font-size: 0.9rem;
+  margin-top: 1rem;
+  line-height: 1.5;
+}
+
+.password-modal-footer {
+  padding: 1.5rem 2rem 2rem 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.password-modal-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+  font-family: inherit;
+}
+
+.password-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.password-modal-btn-cancel {
+  background: var(--bg-primary);
+  color: #a9b7aa;
+  border: 1px solid var(--slate-grey);
+}
+
+.password-modal-btn-cancel:hover:not(:disabled) {
+  background: var(--bg-secondary);
+}
+
+.password-modal-btn-unlock {
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid var(--ash-grey);
+}
+
+.password-modal-btn-unlock:hover:not(:disabled) {
+  background: var(--accent);
 }
 
 /* Responsive adjustments for encryption overlay */
@@ -1572,10 +1737,32 @@ export default {
     max-width: 280px;
   }
 
-  .password-modal {
-    min-width: auto;
-    width: 90%;
-    padding: 1.5rem;
+  .password-modal-container {
+    max-width: 100%;
+    margin: 0 1rem;
+  }
+
+  .password-modal-content {
+  }
+
+  .password-modal-header,
+  .password-modal-body,
+  .password-modal-footer {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .password-modal-header {
+    padding-top: 1.5rem;
+  }
+
+  .password-modal-footer {
+    padding-bottom: 1.5rem;
+    flex-direction: column-reverse;
+  }
+
+  .password-modal-btn {
+    width: 100%;
   }
 }
 </style>

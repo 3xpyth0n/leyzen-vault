@@ -206,10 +206,11 @@ export function useFileViewComposable(options = {}) {
 
     try {
       // Get master key salt from server
-      const response = await fetch("/api/auth/master-key-salt", {
+      const response = await fetch("/api/auth/account/master-key-salt", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("jwt_token")}`,
+          "Content-Type": "application/json",
         },
       });
 
@@ -284,26 +285,21 @@ export function useFileViewComposable(options = {}) {
   };
 
   /**
-   * Calculate overlay position to cover page-content
-   * The overlay should cover the entire content area without margins,
-   * starting below the header and next to the sidebar
+   * Calculate overlay position to cover main-content
+   * The overlay should cover the entire main-content area with the same border-radius
    */
   const calculateOverlayPosition = () => {
     nextTick(() => {
-      const header = document.querySelector(".app-header");
-      const pageContent = document.querySelector(".page-content");
+      const mainContent = document.querySelector(".main-content");
       const isMobileMode = document.body.classList.contains("mobile-mode");
-      if (header && pageContent) {
-        const headerRect = header.getBoundingClientRect();
-        const pageContentRect = pageContent.getBoundingClientRect();
-        // Calculate overlay to start exactly below the header
-        // and extend to the right edge of viewport and bottom of viewport
-        const overlayTop = headerRect.bottom; // Start exactly below header
-        const overlayLeft = pageContentRect.left; // Start at page-content left edge
-        const overlayWidth = window.innerWidth - overlayLeft;
-        // In mobile mode, leave space for bottom navigation bar (approximately 100px from bottom)
-        const bottomOffset = isMobileMode ? 100 : 0;
-        const overlayHeight = window.innerHeight - overlayTop - bottomOffset;
+      if (mainContent) {
+        const mainContentRect = mainContent.getBoundingClientRect();
+
+        // Use the exact dimensions and position of main-content
+        const overlayTop = mainContentRect.top;
+        const overlayLeft = mainContentRect.left;
+        const overlayWidth = mainContentRect.width;
+        const overlayHeight = mainContentRect.height;
 
         overlayStyle.value = {
           position: "fixed",
@@ -311,6 +307,7 @@ export function useFileViewComposable(options = {}) {
           left: `${overlayLeft}px`,
           width: `${overlayWidth}px`,
           height: `${overlayHeight}px`,
+          borderRadius: isMobileMode ? "0" : "1rem", // Match main-content border-radius in desktop mode
           zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
           pointerEvents: "auto", // Ensure overlay is interactive
         };

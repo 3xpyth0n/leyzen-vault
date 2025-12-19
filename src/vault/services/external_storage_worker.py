@@ -151,7 +151,17 @@ class ExternalStorageWorker:
                     self._stop_event.wait(60)  # Check every minute
 
             except Exception as e:
-                logger.error(f"[WORKER ERROR] Worker loop error: {e}", exc_info=True)
+                # Use rate-limited logging to avoid log spam
+                error_msg = f"[WORKER ERROR] Worker loop error: {e}"
+                # Only log full traceback occasionally to reduce log volume
+                if (
+                    not hasattr(self, "_last_error_time")
+                    or time.time() - self._last_error_time > 300
+                ):
+                    logger.error(error_msg, exc_info=True)
+                    self._last_error_time = time.time()
+                else:
+                    logger.error(error_msg)
                 # Wait before retrying
                 self._stop_event.wait(60)
 

@@ -1,6 +1,6 @@
 <template>
   <div class="setup-wrapper">
-    <div class="setup-container glass glass-card">
+    <div class="setup-container">
       <div class="slides-container">
         <!-- Slide 1: Setup Form -->
         <transition name="slide" mode="out-in">
@@ -13,7 +13,7 @@
             </div>
 
             <form @submit.prevent="handleSetup" class="setup-form">
-              <div v-if="error" class="error-message glass">
+              <div v-if="error" class="error-message">
                 {{ error }}
               </div>
 
@@ -98,7 +98,7 @@
                 <p>Loading backups...</p>
               </div>
 
-              <div v-else-if="backupsError" class="error-message glass">
+              <div v-else-if="backupsError" class="error-message">
                 {{ backupsError }}
               </div>
 
@@ -115,8 +115,10 @@
                   v-for="backup in backups"
                   :key="backup.id"
                   class="backup-item"
-                  :class="{ selected: selectedBackupId === backup.id }"
-                  @click="selectBackup(backup.id)"
+                  :class="{
+                    selected: String(selectedBackupId) === String(backup.id),
+                  }"
+                  @click.stop="selectBackup(backup.id)"
                 >
                   <div class="backup-info">
                     <div class="backup-header">
@@ -131,7 +133,9 @@
                     </div>
                   </div>
                   <div class="backup-check">
-                    <span v-if="selectedBackupId === backup.id">✓</span>
+                    <span v-if="String(selectedBackupId) === String(backup.id)"
+                      >✓</span
+                    >
                   </div>
                 </div>
               </div>
@@ -584,7 +588,22 @@ export default {
           }
         }
         const response = await admin.listDatabaseBackupsPublic();
-        backups.value = response.backups || [];
+        const allBackups = response.backups || [];
+
+        // Filter duplicates by ID (keep first occurrence)
+        // This handles cases where backups exist in both S3 and local storage
+        const uniqueBackups = [];
+        const seenIds = new Set();
+
+        for (const backup of allBackups) {
+          const backupId = String(backup.id);
+          if (!seenIds.has(backupId)) {
+            seenIds.add(backupId);
+            uniqueBackups.push(backup);
+          }
+        }
+
+        backups.value = uniqueBackups;
       } catch (err) {
         backupsError.value = err.message || "Failed to load backups";
         backups.value = [];
@@ -594,7 +613,10 @@ export default {
     };
 
     const selectBackup = (backupId) => {
-      selectedBackupId.value = backupId;
+      // Ensure we're comparing the same type and only select one backup
+      // Convert both to string for consistent comparison
+      const id = String(backupId);
+      selectedBackupId.value = id;
     };
 
     const timezone = ref("UTC");
@@ -763,14 +785,14 @@ export default {
   align-items: center;
   min-height: 100vh;
   padding: 2rem;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  background: transparent;
 }
 
 .setup-container {
   width: 100%;
   max-width: 480px;
   padding: 3rem;
-  border-radius: 1.5rem;
+
   overflow: hidden;
   position: relative;
 }
@@ -831,14 +853,14 @@ export default {
 
 .setup-header h1 {
   margin: 0 0 0.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 2rem;
   font-weight: 600;
 }
 
 .setup-subtitle {
   margin: 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 1rem;
 }
 
@@ -852,10 +874,11 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .form-group label {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.95rem;
   font-weight: 500;
 }
@@ -863,19 +886,18 @@ export default {
 .form-group input {
   width: 100%;
   padding: 0.875rem 1rem;
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  color: #e6eef6;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 1rem;
   transition: all 0.2s ease;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #8b5cf6;
-  background: rgba(15, 23, 42, 0.7);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  border-color: var(--accent);
+  background: rgba(10, 10, 10, 0.8);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .form-group input:disabled {
@@ -885,15 +907,15 @@ export default {
 
 .password-hint {
   margin: 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
 .error-message {
   padding: 1rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.5rem;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   color: #fca5a5;
   font-size: 0.95rem;
 }
@@ -957,13 +979,13 @@ export default {
 .verification-icon {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
+
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 2rem;
-  color: white;
+  color: #a9b7aa;
   font-weight: bold;
   margin-bottom: 0.5rem;
 }
@@ -973,20 +995,20 @@ export default {
 }
 
 .verification-info p {
-  color: #cbd5e1;
+  color: #a9b7aa;
   line-height: 1.6;
   margin-bottom: 1rem;
   text-align: left;
 }
 
 .verification-info strong {
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .verification-warning {
   background: rgba(251, 191, 36, 0.1);
   border: 1px solid rgba(251, 191, 36, 0.3);
-  border-radius: 0.5rem;
+
   padding: 1rem;
   margin-top: 1rem;
   text-align: left;
@@ -1008,7 +1030,7 @@ export default {
 .btn-verify {
   width: 100%;
   padding: 0.875rem 1rem;
-  border-radius: 0.5rem;
+
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -1017,8 +1039,8 @@ export default {
 }
 
 .btn-continue {
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  color: white;
+  background: transparent;
+  color: #a9b7aa;
 }
 
 .btn-continue:hover {
@@ -1028,24 +1050,24 @@ export default {
 }
 
 .btn-verify {
-  background: rgba(148, 163, 184, 0.2);
-  color: #cbd5e1;
+  background: #004225;
+  color: #a9b7aa;
 }
 
 .btn-verify:hover {
-  background: rgba(148, 163, 184, 0.3);
-  color: #e6eef6;
+  background: #004225;
+  color: #a9b7aa;
 }
 
 /* Restore Section Styles */
 p {
   margin-top: 0rem;
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 p a {
-  color: #58a6ff;
+  color: #d7d7d7;
   text-decoration: none;
 }
 
@@ -1065,14 +1087,14 @@ p a:hover {
   align-items: center;
   gap: 1rem;
   padding: 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(148, 163, 184, 0.2);
-  border-top-color: #8b5cf6;
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1086,13 +1108,13 @@ p a:hover {
 .empty-state {
   text-align: center;
   padding: 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .empty-hint {
   margin-top: 0.5rem;
   font-size: 0.9rem;
-  color: #64748b;
+  color: #a9b7aa;
 }
 
 .backups-list {
@@ -1109,8 +1131,8 @@ p a:hover {
   justify-content: space-between;
   padding: 1rem;
   background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
+  border: 1px solid #004225;
+
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1139,14 +1161,14 @@ p a:hover {
 .backup-type {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #cbd5e1;
+  color: #a9b7aa;
   text-transform: capitalize;
 }
 
 .backup-status {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+
   font-weight: 500;
 }
 
@@ -1158,7 +1180,7 @@ p a:hover {
 
 .backup-details {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .backup-details div {
@@ -1171,7 +1193,7 @@ p a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8b5cf6;
+  color: #004225;
   font-size: 1.2rem;
   font-weight: bold;
 }
@@ -1186,33 +1208,35 @@ p a:hover {
 .btn-restore-confirm {
   flex: 1;
   padding: 0.875rem 1rem;
-  border-radius: 0.5rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  border: none;
   font-size: 1rem;
+  border-radius: 4px;
 }
 
 .btn-back {
-  background: rgba(148, 163, 184, 0.2);
-  color: #cbd5e1;
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid var(--border-color);
 }
 
 .btn-back:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.3);
-  color: #e6eef6;
+  background: rgba(15, 23, 42, 0.3);
+  border-color: rgba(169, 183, 170, 0.5);
 }
 
 .btn-restore-confirm {
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  color: white;
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-restore-confirm:hover:not(:disabled) {
-  opacity: 0.9;
+  background: rgba(0, 66, 37, 0.9);
+  border-color: rgba(0, 66, 37, 0.9);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 66, 37, 0.3);
 }
 
 .btn-back:disabled,
@@ -1233,14 +1257,14 @@ p a:hover {
 .spinner-large {
   width: 64px;
   height: 64px;
-  border: 4px solid rgba(148, 163, 184, 0.2);
-  border-top-color: #8b5cf6;
+  border: 4px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .loading-message {
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 1.1rem;
   text-align: center;
 }

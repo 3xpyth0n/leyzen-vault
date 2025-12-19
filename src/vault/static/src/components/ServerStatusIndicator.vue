@@ -28,12 +28,6 @@ export default {
             if (newStatus) {
               // Server came back online
               window.Notifications.success("Server is back online", 5000);
-            } else {
-              // Server went offline - show persistent notification
-              window.Notifications.error(
-                "Server is offline. All actions are blocked until the server comes back online.",
-                10000,
-              );
             }
           }
         }
@@ -61,9 +55,7 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
   font-size: 0.875rem;
   transition: all 0.3s ease;
 }
@@ -71,9 +63,8 @@ export default {
 .status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
   background: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  border-radius: 50%;
   transition: all 0.3s ease;
   position: relative;
 }
@@ -90,7 +81,7 @@ export default {
   transform: translate(-50%, -50%);
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+
   border: 2px solid currentColor;
   opacity: 0.5;
   animation: ripple 1.5s ease-in-out infinite;
@@ -98,11 +89,10 @@ export default {
 
 .server-status-indicator.offline .status-dot {
   background: #ef4444;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 }
 
 .status-text {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-weight: 500;
   white-space: nowrap;
 }

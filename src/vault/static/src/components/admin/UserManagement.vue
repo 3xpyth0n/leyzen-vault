@@ -1,13 +1,13 @@
 <template>
   <div class="user-management">
-    <div class="section-header glass glass-card">
+    <div class="section-header">
       <h2>User Management</h2>
       <button @click="showInviteModal = true" class="btn btn-primary">
         Invite User
       </button>
     </div>
 
-    <div class="filters glass glass-card">
+    <div class="filters">
       <input
         v-model="searchQuery"
         @input="debouncedSearch"
@@ -29,13 +29,13 @@
       />
     </div>
 
-    <div v-if="loading" class="loading glass glass-card">
+    <div v-if="loading" class="loading">
       <span v-html="getIcon('clock', 24)"></span>
       Loading users...
     </div>
-    <div v-else-if="error" class="error glass glass-card">{{ error }}</div>
+    <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="table-wrapper">
-      <div class="table-container glass glass-card">
+      <div class="table-container">
         <table class="users-table">
           <thead>
             <tr>
@@ -100,7 +100,7 @@
         </table>
       </div>
 
-      <div class="pagination glass glass-card">
+      <div class="pagination">
         <button
           @click="changePage((page || 1) - 1)"
           :disabled="!page || page === 1"
@@ -128,7 +128,7 @@
         class="modal-overlay"
         @click.self="showActionsModal = false"
       >
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>
               <span v-html="getIcon('edit', 20)"></span>
@@ -144,7 +144,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <div v-if="actionsModalUser" class="user-info glass">
+            <div v-if="actionsModalUser" class="user-info">
               <p><strong>User:</strong> {{ actionsModalUser.email }}</p>
               <p>
                 <strong>Current Role:</strong>
@@ -157,10 +157,33 @@
               </p>
             </div>
 
+            <!-- Superadmin self-edit warning -->
+            <div
+              v-if="
+                actionsModalUser &&
+                currentUser &&
+                currentUser.global_role === 'superadmin' &&
+                currentUser.id === actionsModalUser.id
+              "
+              class="danger-message"
+            >
+              <span v-html="getIcon('warning', 16)"></span>
+              You cannot change your role or delete your account because you are
+              the superadmin. Transfer this power to someone else first.
+            </div>
+
             <!-- Change Role Section -->
             <div
-              v-if="actionsModalUser && canChangeRole(actionsModalUser)"
-              class="actions-section glass"
+              v-if="
+                actionsModalUser &&
+                canChangeRole(actionsModalUser) &&
+                !(
+                  currentUser &&
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                )
+              "
+              class="actions-section"
             >
               <h4>Change Role</h4>
 
@@ -176,7 +199,7 @@
 
               <div
                 v-if="actionsForm.newRole === 'superadmin'"
-                class="warning-message glass"
+                class="warning-message"
               >
                 <span v-html="getIcon('warning', 16)"></span>
                 Assigning superadmin role will transfer the role from the
@@ -197,8 +220,16 @@
             </div>
 
             <div
-              v-else-if="actionsModalUser && !canChangeRole(actionsModalUser)"
-              class="info-message glass"
+              v-else-if="
+                actionsModalUser &&
+                !canChangeRole(actionsModalUser) &&
+                !(
+                  currentUser &&
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                )
+              "
+              class="info-message"
             >
               <span v-html="getIcon('info', 16)"></span>
               <span v-if="!currentUser">Unable to determine permissions.</span>
@@ -210,14 +241,6 @@
               >
                 Admins cannot modify superadmin users.
               </span>
-              <span
-                v-else-if="
-                  currentUser.global_role === 'superadmin' &&
-                  currentUser.id === actionsModalUser.id
-                "
-              >
-                You cannot change your own role.
-              </span>
               <span v-else
                 >You do not have permission to change this user's role.</span
               >
@@ -225,12 +248,20 @@
 
             <!-- Delete User Section -->
             <div
-              v-if="actionsModalUser && canDeleteUser(actionsModalUser)"
-              class="actions-section glass"
+              v-if="
+                actionsModalUser &&
+                canDeleteUser(actionsModalUser) &&
+                !(
+                  currentUser &&
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                )
+              "
+              class="actions-section"
             >
               <h4>Delete User</h4>
 
-              <div class="danger-message glass">
+              <div class="danger-message">
                 <span v-html="getIcon('warning', 16)"></span>
                 This action will permanently delete the user and all associated
                 data. This cannot be undone.
@@ -248,8 +279,16 @@
             </div>
 
             <div
-              v-else-if="actionsModalUser && !canDeleteUser(actionsModalUser)"
-              class="info-message glass"
+              v-else-if="
+                actionsModalUser &&
+                !canDeleteUser(actionsModalUser) &&
+                !(
+                  currentUser &&
+                  currentUser.global_role === 'superadmin' &&
+                  currentUser.id === actionsModalUser.id
+                )
+              "
+              class="info-message"
             >
               <span v-html="getIcon('info', 16)"></span>
               <span v-if="!currentUser">Unable to determine permissions.</span>
@@ -260,15 +299,6 @@
                 "
               >
                 Admins cannot delete superadmin users.
-              </span>
-              <span
-                v-else-if="
-                  currentUser.global_role === 'superadmin' &&
-                  currentUser.id === actionsModalUser.id
-                "
-              >
-                You cannot delete your own account. Transfer the superadmin role
-                first.
               </span>
               <span v-else
                 >You do not have permission to delete this user.</span
@@ -286,7 +316,7 @@
         class="modal-overlay"
         @click.self="viewingUserDetails = null"
       >
-        <div class="modal glass glass-card modal-wide modal-view" @click.stop>
+        <div class="modal modal-wide modal-view" @click.stop>
           <div class="modal-header">
             <h3>
               <span v-html="getIcon('eye', 20)"></span>
@@ -306,7 +336,7 @@
               v-if="userDetails && userDetails.user"
               class="user-details-grid"
             >
-              <div class="detail-section glass">
+              <div class="detail-section">
                 <h4>Basic Information</h4>
                 <div class="detail-item">
                   <span class="detail-label">Email:</span>
@@ -352,7 +382,7 @@
                   }}</span>
                 </div>
               </div>
-              <div class="detail-section glass">
+              <div class="detail-section">
                 <h4>Storage</h4>
                 <div class="detail-item">
                   <span class="detail-label">VaultSpaces:</span>
@@ -425,7 +455,7 @@
         class="modal-overlay"
         @click.self="showInviteModal = false"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <div class="modal-header">
             <h3>Invite User</h3>
             <button
@@ -1074,12 +1104,11 @@ export default {
   align-items: center;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -1089,7 +1118,7 @@ export default {
   gap: 1rem;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
+
   flex-wrap: wrap;
 }
 
@@ -1106,10 +1135,10 @@ export default {
 
 .search-input {
   padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
+  border: 1px solid #004225;
+
+  background: var(--bg-modal);
+  color: #a9b7aa;
   font-size: 0.95rem;
   transition: all 0.2s ease;
   flex: 2;
@@ -1118,10 +1147,10 @@ export default {
 
 .filter-select {
   padding: 0.75rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
+  border: 1px solid #004225;
+
   background: rgba(30, 41, 59, 0.4);
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.95rem;
   transition: all 0.2s ease;
   flex: 1;
@@ -1132,11 +1161,11 @@ export default {
 .filter-select:focus {
   outline: none;
   border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(30, 41, 59, 0.6);
+  background: var(--bg-modal);
 }
 
 .search-input::placeholder {
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .table-wrapper {
@@ -1147,8 +1176,8 @@ export default {
 
 .table-container {
   padding: 1.5rem;
-  border-radius: 1rem 1rem 0 0;
-  overflow: hidden;
+
+  overflow: auto;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1169,16 +1198,14 @@ export default {
 
 .mobile-mode .table-container::-webkit-scrollbar-track {
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 4px;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 4px;
+  background: #004225;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: #004225;
 }
 
 .users-table {
@@ -1201,15 +1228,15 @@ export default {
 }
 
 .users-table th {
-  background: rgba(30, 41, 59, 0.4);
+  background: var(--bg-modal);
   padding: 1rem;
   text-align: left;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 2px solid #004225;
 }
 
 .users-table th:last-child {
@@ -1221,8 +1248,8 @@ export default {
 
 .users-table td {
   padding: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  border-bottom: 1px solid #004225;
+  color: #a9b7aa;
   vertical-align: middle;
 }
 
@@ -1248,16 +1275,16 @@ export default {
 
 .role-badge {
   padding: 0.375rem 0.875rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 500;
   display: inline-block;
 }
 
 .role-user {
-  background: rgba(139, 92, 246, 0.2);
-  color: #8b5cf6;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(0, 66, 37, 0.2);
+  color: #a9b7aa;
+  border: 1px solid rgba(0, 66, 37, 0.3);
 }
 
 .role-admin {
@@ -1269,12 +1296,12 @@ export default {
 .role-superadmin {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .status-badge {
   padding: 0.375rem 0.875rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 500;
   display: inline-block;
@@ -1289,7 +1316,7 @@ export default {
 .status-badge.unverified {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .actions {
@@ -1301,15 +1328,15 @@ export default {
 
 .btn-icon {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid #004225;
   cursor: pointer;
   padding: 0.5rem;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: #a9b7aa;
   width: 36px;
   height: 36px;
   margin-right: 0.5rem;
@@ -1322,7 +1349,7 @@ export default {
 .btn-icon:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.1);
   border-color: rgba(56, 189, 248, 0.3);
-  color: #8b5cf6;
+  color: #a9b7aa;
   transform: translateY(-2px);
 }
 
@@ -1341,7 +1368,7 @@ export default {
   align-items: center;
   gap: 1rem;
   padding: 1.5rem;
-  border-radius: 0 0 1rem 1rem;
+
   overflow: hidden;
   flex-wrap: nowrap;
   width: 100%;
@@ -1349,7 +1376,7 @@ export default {
   box-sizing: border-box;
   margin-top: 0;
   position: relative;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid #004225;
 }
 
 .mobile-mode .pagination {
@@ -1361,7 +1388,7 @@ export default {
 }
 
 .page-info {
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 0.9rem;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1385,19 +1412,7 @@ export default {
 
 /* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-/* Remove sidebar padding in mobile mode */
-body.mobile-mode .modal-overlay {
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
+  padding: 1rem;
 }
 
 /* Modal uses global .modal styles from vault.css */
@@ -1424,7 +1439,7 @@ body.mobile-mode .modal-overlay {
   align-items: center;
   margin-bottom: 0;
   padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid #004225;
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -1446,7 +1461,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   display: flex;
@@ -1455,13 +1470,13 @@ body.mobile-mode .modal-overlay {
 }
 
 .modal-header h3 :deep(svg) {
-  color: #8b5cf6;
+  color: #a9b7aa;
 }
 
 .modal-close-btn {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
+  border: 1px solid #004225;
+  color: #a9b7aa;
   cursor: pointer;
   padding: 0.5rem;
   width: 36px;
@@ -1469,7 +1484,7 @@ body.mobile-mode .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
 }
 
@@ -1481,32 +1496,31 @@ body.mobile-mode .modal-overlay {
 
 .user-info {
   padding: 1.25rem;
-  border-radius: 0.75rem;
+  background: var(--bg-primary);
   margin-top: 1rem;
   margin-bottom: 1.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--slate-grey);
   width: 100%;
   box-sizing: border-box;
 }
 
 .user-info p {
   margin: 0.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.95rem;
   width: 100%;
 }
 
 .user-info strong {
-  color: #cbd5e1;
+  color: #a9b7aa;
   margin-right: 0.5rem;
 }
 
 .actions-section {
   padding: 1.5rem;
-  border-radius: 0.75rem;
+  background: var(--bg-primary);
   margin-bottom: 1.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--slate-grey);
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -1516,10 +1530,10 @@ body.mobile-mode .modal-overlay {
 .actions-section h4 {
   margin-top: 0;
   margin-bottom: 1rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--slate-grey);
   padding-bottom: 0.5rem;
   width: 100%;
 }
@@ -1573,7 +1587,7 @@ body.mobile-mode .modal-overlay {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.75rem;
+
   cursor: pointer;
   font-weight: 500;
   font-size: 0.95rem;
@@ -1584,35 +1598,26 @@ body.mobile-mode .modal-overlay {
 }
 
 .btn-primary {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.2) 0%,
-    rgba(129, 140, 248, 0.2) 100%
-  );
-  color: #8b5cf6;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.3) 0%,
-    rgba(129, 140, 248, 0.3) 100%
-  );
-  border-color: rgba(56, 189, 248, 0.5);
-  transform: translateY(-2px);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
   box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
 }
 
 .btn-secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: #004225;
+  border-color: #004225;
 }
 
 .btn-danger {
@@ -1622,7 +1627,7 @@ body.mobile-mode .modal-overlay {
     rgba(220, 38, 38, 0.2) 100%
   );
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -1642,7 +1647,7 @@ body.mobile-mode .modal-overlay {
 .danger-message,
 .info-message {
   padding: 1rem;
-  border-radius: 0.75rem;
+
   margin: 1rem 0;
   display: flex;
   align-items: flex-start;
@@ -1666,9 +1671,9 @@ body.mobile-mode .modal-overlay {
 }
 
 .info-message {
-  background: rgba(148, 163, 184, 0.1);
-  border-color: rgba(148, 163, 184, 0.3);
-  color: #94a3b8;
+  background: #004225;
+  border-color: #004225;
+  color: #a9b7aa;
 }
 
 .warning-message :deep(svg),
@@ -1688,20 +1693,17 @@ body.mobile-mode .modal-overlay {
 
 .detail-section {
   padding: 1.5rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(30, 41, 59, 0.3);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--slate-grey);
+  background: var(--bg-primary);
 }
 
 .detail-section h4 {
   margin-top: 0;
   margin-bottom: 1.25rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--slate-grey);
   padding-bottom: 0.75rem;
 }
 
@@ -1710,7 +1712,7 @@ body.mobile-mode .modal-overlay {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .detail-item:last-child {
@@ -1718,13 +1720,13 @@ body.mobile-mode .modal-overlay {
 }
 
 .detail-label {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 500;
 }
 
 .detail-value {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.95rem;
   text-align: right;
 }
@@ -1733,11 +1735,10 @@ body.mobile-mode .modal-overlay {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1745,7 +1746,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .loading :deep(svg) {
-  color: #8b5cf6;
+  color: #a9b7aa;
   animation: spin 1s linear infinite;
 }
 
@@ -1761,15 +1762,15 @@ body.mobile-mode .modal-overlay {
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .error-message {
   color: #f87171;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
   font-size: 0.9rem;
 }
@@ -1779,7 +1780,7 @@ body.mobile-mode .modal-overlay {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 0.75rem;
+
   margin-bottom: 1rem;
   font-size: 0.9rem;
 }
@@ -1799,6 +1800,7 @@ body.mobile-mode .modal-overlay {
 
 .mobile-mode .form-group {
   width: 100%;
+  margin-bottom: 1rem;
 }
 
 .mobile-mode .form-actions {

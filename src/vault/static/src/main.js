@@ -25,6 +25,8 @@ import { decryptFileKey } from "./services/encryption.js";
 import { getVaultBaseUrl } from "./services/vault-config.js";
 // Import new icon system (replaces static icons.js)
 import "./utils/icons.js";
+// Import share modal composable to expose globally
+import "./composables/useShareModal.js";
 
 // Make available globally for non-module scripts
 if (typeof window !== "undefined") {

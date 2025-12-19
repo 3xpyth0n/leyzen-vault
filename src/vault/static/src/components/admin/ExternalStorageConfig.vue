@@ -1,6 +1,6 @@
 <template>
   <div class="external-storage-config">
-    <div class="integration-card glass glass-card" @click="openModal">
+    <div class="integration-card" @click="openModal">
       <div class="integration-logo">
         <img :src="s3LogoPath" alt="S3 Storage" />
       </div>
@@ -69,7 +69,7 @@
     <!-- Configuration Modal -->
     <teleport to="body">
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
               <img :src="s3LogoPath" alt="S3 Storage" class="modal-logo" />
@@ -149,13 +149,85 @@
 
                 <div class="form-group">
                   <label>Secret Access Key:</label>
-                  <input
-                    v-model="config.secret_access_key"
-                    type="password"
-                    required
-                    placeholder="Your S3 secret key"
-                    class="form-input"
-                  />
+                  <div class="secret-key-input-wrapper">
+                    <input
+                      type="text"
+                      name="fake-username"
+                      autocomplete="username"
+                      style="
+                        position: absolute;
+                        left: -9999px;
+                        width: 1px;
+                        height: 1px;
+                        opacity: 0;
+                        pointer-events: none;
+                      "
+                      tabindex="-1"
+                      aria-hidden="true"
+                    />
+                    <input
+                      v-model="config.secret_access_key"
+                      :type="showSecretKey ? 'text' : 'password'"
+                      required
+                      placeholder="Your S3 secret key"
+                      class="form-input secret-key-input"
+                      autocomplete="new-password"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      data-bwignore="true"
+                      data-dashlane-ignore="true"
+                      data-bitwarden-watching="false"
+                      data-form-type="other"
+                      name="s3-secret-key-field"
+                      id="s3-secret-key-field"
+                      @focus="handleSecretKeyFocus"
+                    />
+                    <button
+                      type="button"
+                      class="secret-key-toggle"
+                      :class="{ 'is-visible': showSecretKey }"
+                      :aria-label="
+                        showSecretKey ? 'Hide secret key' : 'Show secret key'
+                      "
+                      @click="toggleSecretKey"
+                    >
+                      <svg
+                        class="secret-key-toggle-icon secret-key-toggle-icon--hide"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path
+                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                        ></path>
+                        <path
+                          d="M8 12.5c0 .5.5 1.5 4 1.5s4-1 4-1.5"
+                          stroke-linecap="round"
+                        ></path>
+                      </svg>
+                      <svg
+                        class="secret-key-toggle-icon secret-key-toggle-icon--show"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path
+                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                        ></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="form-group">
@@ -277,7 +349,7 @@
         class="modal-overlay"
         @click.self="closeInfoModal"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
               <h3>Synchronization Modes</h3>
@@ -323,8 +395,8 @@
               <div class="info-modal-footer">
                 <p>
                   <strong>How to use:</strong> Select a synchronization mode
-                  from the dropdown menu, then click the blue sync button to
-                  start the synchronization process.
+                  from the dropdown menu, then click the sync button to start
+                  the synchronization process.
                 </p>
               </div>
             </div>
@@ -366,10 +438,11 @@ export default {
     let syncStatusInterval = null; // Interval for polling sync status
     const selectedSyncMode = ref("bidirectional"); // Default sync mode
     const showInfoModal = ref(false); // Control info modal visibility
+    const showSecretKey = ref(false); // Control secret key visibility
 
     // Store the logo path in a variable to avoid Vite treating it as a module import
     // The binding :src in the template should prevent Vite from resolving it at build time
-    const s3LogoPath = "/static/icons/s3-logo.png";
+    const s3LogoPath = "/static/public/s3-logo.png";
 
     // Storage mode options for CustomSelect
     const storageModeOptions = [
@@ -636,6 +709,20 @@ export default {
       showInfoModal.value = false;
     };
 
+    const toggleSecretKey = () => {
+      showSecretKey.value = !showSecretKey.value;
+    };
+
+    const handleSecretKeyFocus = (event) => {
+      const input = event.target;
+      if (input.type === "password") {
+        input.setAttribute("readonly", "readonly");
+        setTimeout(() => {
+          input.removeAttribute("readonly");
+        }, 100);
+      }
+    };
+
     onMounted(() => {
       // Load config on mount to show status in card
       loadConfig();
@@ -720,6 +807,9 @@ export default {
       showInfoModal,
       openInfoModal,
       closeInfoModal,
+      showSecretKey,
+      toggleSecretKey,
+      handleSecretKeyFocus,
     };
   },
 };
@@ -735,10 +825,10 @@ export default {
   align-items: center;
   gap: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
+
   cursor: pointer;
   transition: all 0.2s ease;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--border-color);
   min-height: 120px; /* Ensure minimum height for consistency */
 }
 
@@ -755,7 +845,7 @@ export default {
 .integration-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: var(--slate-grey);
 }
 
 .integration-logo {
@@ -765,8 +855,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(30, 41, 59, 0.4);
-  border-radius: 0.75rem;
+  background: var(--bg-primary);
+
   padding: 0.75rem;
 }
 
@@ -785,14 +875,14 @@ export default {
 
 .integration-content h3 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .integration-description {
   margin: 0;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -804,7 +894,7 @@ export default {
 .status-badge {
   display: inline-block;
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -816,9 +906,9 @@ export default {
 }
 
 .status-badge.inactive {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--accent);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .integration-actions {
@@ -833,12 +923,12 @@ export default {
 
 .integration-arrow {
   flex-shrink: 0;
-  color: #64748b;
+  color: var(--text-primary);
   transition: all 0.2s ease;
 }
 
 .integration-card:hover .integration-arrow {
-  color: #8b5cf6;
+  color: var(--text-primary);
   transform: translateX(4px);
 }
 
@@ -889,10 +979,10 @@ export default {
   width: 2.5rem;
   min-height: 2.5rem;
   height: 2.5rem;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 0.5rem;
-  color: #8b5cf6;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -902,8 +992,8 @@ export default {
 }
 
 .btn-sync-trigger:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.5);
+  background: var(--bg-primary);
+  border-color: var(--slate-grey);
   transform: translateY(-1px);
   z-index: 2;
 }
@@ -924,14 +1014,14 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 0.625rem;
+  padding-right: 0rem;
   min-width: 2.5rem;
   width: 2.5rem;
   min-height: 2.5rem;
   height: 2.5rem;
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  color: #94a3b8;
+  color: var(--ash-grey);
+  background: transparent;
+  border: none;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -941,9 +1031,7 @@ export default {
 }
 
 .btn-info:hover {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.4);
-  color: #cbd5e1;
+  color: var(--text-primary);
   transform: translateY(-1px);
   z-index: 2;
 }
@@ -962,21 +1050,21 @@ export default {
 
 .sync-mode-explanation {
   padding: 1rem;
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
-  border-left: 3px solid rgba(139, 92, 246, 0.5);
+  background: var(--bg-primary);
+
+  border-left: 3px solid var(--accent);
 }
 
 .sync-mode-explanation h4 {
   margin: 0 0 0.5rem 0;
-  color: #8b5cf6;
+  color: var(--text-primary);
   font-size: 1rem;
   font-weight: 600;
 }
 
 .sync-mode-explanation p {
   margin: 0;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.6;
 }
@@ -984,20 +1072,20 @@ export default {
 .info-modal-footer {
   margin-top: 0.5rem;
   padding: 1rem;
-  background: rgba(139, 92, 246, 0.1);
-  border-radius: 0.5rem;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--slate-grey);
 }
 
 .info-modal-footer p {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.6;
 }
 
 .info-modal-footer strong {
-  color: #8b5cf6;
+  color: var(--text-primary);
 }
 
 /* Modal styles use global .modal-overlay and .modal from vault.css */
@@ -1012,7 +1100,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid var(--border-color);
   width: 100%;
   flex-shrink: 0;
 }
@@ -1031,7 +1119,7 @@ export default {
 
 .modal-title h3 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
   line-height: 1.5;
@@ -1040,7 +1128,7 @@ export default {
 .modal-close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 2rem;
   line-height: 1;
   cursor: pointer;
@@ -1050,13 +1138,13 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
 }
 
 .modal-close-btn:hover {
-  background: rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -1080,14 +1168,13 @@ export default {
 
 .s3-config-section {
   padding: 1.5rem;
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
 }
 
 .s3-config-section h3 {
   margin: 0 0 1rem 0;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -1096,21 +1183,22 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .form-group label {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
   font-weight: 500;
 }
 
 .form-input,
 .form-select {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
   padding: 0.75rem;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 0.95rem;
   transition: all 0.2s ease;
 }
@@ -1118,8 +1206,8 @@ export default {
 .form-input:focus,
 .form-select:focus {
   outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .form-checkbox {
@@ -1134,7 +1222,7 @@ export default {
 }
 
 .toggle-label {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
   font-weight: 500;
   margin: 0;
@@ -1162,9 +1250,9 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(148, 163, 184, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 24px;
+  background-color: rgba(0, 66, 37, 0.3);
+  border: 1px solid var(--border-color);
+
   transition: all 0.3s ease;
 }
 
@@ -1175,15 +1263,15 @@ export default {
   width: 18px;
   left: 2px;
   bottom: 2px;
-  background-color: #e6eef6;
-  border-radius: 50%;
+  background-color: #a9b7aa;
+
   transition: all 0.3s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-input:checked + .toggle-slider {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  border-color: rgba(139, 92, 246, 0.5);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle-input:checked + .toggle-slider:before {
@@ -1191,19 +1279,19 @@ export default {
 }
 
 .toggle-input:focus + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .toggle-switch:hover .toggle-slider {
-  border-color: rgba(148, 163, 184, 0.4);
+  border-color: var(--border-color);
 }
 
 .toggle-switch:hover .toggle-input:checked + .toggle-slider {
-  border-color: rgba(139, 92, 246, 0.7);
+  border-color: var(--accent);
 }
 
 .form-help {
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
@@ -1217,6 +1305,79 @@ export default {
   margin: 0.25rem 0;
 }
 
+.secret-key-input-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.secret-key-input {
+  padding-right: 2.5rem !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.secret-key-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  margin-top: -12px;
+  height: 24px;
+  width: 24px;
+  background: transparent;
+  border: none;
+  color: var(--ash-grey);
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease;
+  z-index: 10;
+  box-sizing: border-box;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.secret-key-toggle:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--ash-grey);
+}
+
+.secret-key-toggle:active:not(:disabled) {
+  opacity: 0.8;
+}
+
+.secret-key-toggle:focus {
+  outline: none;
+}
+
+.secret-key-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secret-key-toggle-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.secret-key-toggle-icon--show {
+  display: none;
+}
+
+.secret-key-toggle.is-visible .secret-key-toggle-icon--hide {
+  display: none;
+}
+
+.secret-key-toggle.is-visible .secret-key-toggle-icon--show {
+  display: block;
+}
+
 .form-actions {
   display: flex;
   gap: 1rem;
@@ -1225,7 +1386,7 @@ export default {
 
 .btn {
   padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -1234,25 +1395,26 @@ export default {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: white;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--accent);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 
 .btn-secondary {
-  background: rgba(30, 41, 59, 0.6);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--slate-grey);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(148, 163, 184, 0.4);
+  background: var(--bg-primary);
+  border-color: var(--slate-grey);
 }
 
 .btn:disabled {
@@ -1263,7 +1425,7 @@ export default {
 .test-result,
 .save-result {
   padding: 1rem;
-  border-radius: 0.5rem;
+
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1280,7 +1442,7 @@ export default {
 .test-result.error,
 .save-result.error {
   background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #f87171;
 }
 
@@ -1288,13 +1450,12 @@ export default {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 /* Mobile responsive styles */

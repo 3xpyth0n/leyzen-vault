@@ -32,12 +32,23 @@
         placeholder="Filter by IP or location..."
         class="filter-input"
       />
-      <CustomSelect
-        v-model="filters.success"
-        :options="successFilterOptions"
-        @change="loadLogs"
-        placeholder="All"
-      />
+      <div class="filter-select-wrapper">
+        <CustomSelect
+          v-model="filters.success"
+          :options="successFilterOptions"
+          @change="loadLogs"
+          placeholder="All"
+        />
+      </div>
+      <div class="filter-select-wrapper sort-select-wrapper">
+        <CustomSelect
+          v-model="sortOrder"
+          :options="sortOptions"
+          @change="sortLogsByTimestamp"
+          placeholder="Sort by"
+          class="sort-select"
+        />
+      </div>
       <input
         v-model.number="filters.limit"
         @change="loadLogs"
@@ -49,13 +60,13 @@
       />
     </div>
 
-    <div v-if="loading" class="loading">Loading audit logs...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-if="error" class="error">{{ error }}</div>
     <div v-else>
       <div class="logs-count">
         Showing {{ logs.length }} log{{ logs.length !== 1 ? "s" : "" }}
+        <span v-if="loading" class="loading-indicator">(Loading...)</span>
       </div>
-      <div class="logs-container">
+      <div class="logs-container" :class="{ 'is-loading': loading }">
         <div
           v-for="log in logs"
           :key="log.id || log.timestamp"
@@ -94,13 +105,21 @@
             </div>
             <div class="log-detail">
               <strong>Location:</strong>
-              <span v-if="log.ip_location" class="ip-location">
-                <template v-if="log.ip_location?.country_code">
-                  <span class="location-flag">
-                    {{ getCountryFlag(log.ip_location.country_code) }}
-                  </span>
-                </template>
+              <span v-if="isPrivateIP(log.user_ip)" class="ip-not-found">
+                Private IP address, no location is available
               </span>
+              <span
+                v-else-if="log.ip_location && log.ip_location?.country_code"
+                class="ip-location"
+              >
+                <span class="location-country-name">
+                  {{ getCountryName(log.ip_location.country_code) }}
+                </span>
+                <span class="location-flag">
+                  {{ getCountryFlag(log.ip_location.country_code) }}
+                </span>
+              </span>
+              <span v-else class="ip-not-found"> not found</span>
             </div>
             <div
               v-if="log.details && Object.keys(log.details).length"
@@ -128,6 +147,10 @@ const loading = ref(false);
 const error = ref(null);
 const debounceTimer = ref(null);
 
+const CACHE_TTL = 120000;
+const MAX_CACHE_SIZE = 10;
+const auditLogsCache = ref(new Map());
+
 const filters = ref({
   action: "",
   file_id: "",
@@ -140,6 +163,13 @@ const successFilterOptions = [
   { value: null, label: "All" },
   { value: true, label: "Success" },
   { value: false, label: "Failed" },
+];
+
+const sortOrder = ref("recent");
+
+const sortOptions = [
+  { value: "recent", label: "Recent first" },
+  { value: "oldest", label: "Oldest first" },
 ];
 
 const formatDate = (value) => {
@@ -157,6 +187,33 @@ const getCountryFlag = (countryCode) => {
     .split("")
     .map((char) => String.fromCodePoint(base + char.charCodeAt(0)))
     .join("");
+};
+
+const getCountryName = (countryCode) => {
+  if (!countryCode || countryCode.length !== 2) return "";
+  try {
+    const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
+    return displayNames.of(countryCode.toUpperCase()) || countryCode;
+  } catch (e) {
+    return countryCode;
+  }
+};
+
+const isPrivateIP = (ip) => {
+  if (!ip) return false;
+
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some(isNaN)) return false;
+
+  const [a, b, c, d] = parts;
+
+  if (a === 10) return true;
+
+  if (a === 172 && b >= 16 && b <= 31) return true;
+
+  if (a === 192 && b === 168) return true;
+
+  return false;
 };
 
 const isSecurityEvent = (action, success) => {
@@ -188,12 +245,76 @@ const buildParams = () => {
   return params;
 };
 
+const sortLogsByTimestamp = () => {
+  if (!logs.value || logs.value.length === 0) return;
+
+  logs.value = [...logs.value].sort((a, b) => {
+    const dateA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const dateB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+
+    if (sortOrder.value === "recent") {
+      return dateB - dateA;
+    } else {
+      return dateA - dateB;
+    }
+  });
+};
+
+const getCacheKey = (params) => {
+  return JSON.stringify(params);
+};
+
+const cleanCache = () => {
+  const now = Date.now();
+  const entries = Array.from(auditLogsCache.value.entries());
+
+  entries.forEach(([key, value]) => {
+    if (now - value.timestamp > CACHE_TTL) {
+      auditLogsCache.value.delete(key);
+    }
+  });
+
+  if (auditLogsCache.value.size > MAX_CACHE_SIZE) {
+    const sortedEntries = Array.from(auditLogsCache.value.entries()).sort(
+      (a, b) => a[1].timestamp - b[1].timestamp,
+    );
+    const toRemove = sortedEntries.slice(
+      0,
+      auditLogsCache.value.size - MAX_CACHE_SIZE,
+    );
+    toRemove.forEach(([key]) => auditLogsCache.value.delete(key));
+  }
+};
+
 const loadLogs = async () => {
   loading.value = true;
   error.value = null;
+
+  cleanCache();
+
+  const params = buildParams();
+  const cacheKey = getCacheKey(params);
+
+  const cached = auditLogsCache.value.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    logs.value = cached.data;
+    sortLogsByTimestamp();
+    loading.value = false;
+    return;
+  }
+
   try {
-    const data = await admin.getAuditLogs(buildParams());
-    logs.value = data.logs || [];
+    const data = await admin.getAuditLogs(params);
+    const logsData = data.logs || [];
+    logs.value = logsData;
+
+    auditLogsCache.value.set(cacheKey, {
+      data: logsData,
+      timestamp: Date.now(),
+    });
+
+    cleanCache();
+    sortLogsByTimestamp();
   } catch (err) {
     error.value = err?.message || "Failed to load audit logs";
     logs.value = [];
@@ -209,6 +330,10 @@ const debouncedLoad = () => {
   debounceTimer.value = setTimeout(() => {
     loadLogs();
   }, 300);
+};
+
+const invalidateCache = () => {
+  auditLogsCache.value.clear();
 };
 
 const exportCSV = async () => {
@@ -271,7 +396,7 @@ onBeforeUnmount(() => {
 
 .section-header h2 {
   margin: 0;
-  color: var(--text-primary, #e6eef6);
+  color: var(--text-primary, #a9b7aa);
   font-size: 1.75rem;
   font-weight: 600;
 }
@@ -283,10 +408,10 @@ onBeforeUnmount(() => {
 
 .btn {
   padding: 0.625rem 1.25rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.4);
-  color: var(--text-primary, #e6eef6);
+  border: 1px solid var(--slate-grey);
+
+  background: var(--bg-primary);
+  color: var(--text-primary, #a9b7aa);
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -294,12 +419,12 @@ onBeforeUnmount(() => {
 }
 
 .btn:hover {
-  background: rgba(30, 41, 59, 0.6);
-  border-color: rgba(56, 189, 248, 0.5);
+  background: var(--bg-primary);
+  border-color: var(--accent);
 }
 
 .btn-secondary {
-  background: rgba(30, 41, 59, 0.4);
+  background: var(--bg-primary);
 }
 
 .filters {
@@ -307,17 +432,37 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 0.75rem;
   padding: 1rem;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--slate-grey);
+}
+
+.filter-select-wrapper {
+  min-width: 150px;
+  flex: 0 1 auto;
+}
+
+.filter-select-wrapper :deep(.custom-select) {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .filter-select-wrapper {
+    width: 100%;
+    min-width: unset;
+    flex: 1 1 100%;
+  }
+
+  .sort-select-wrapper {
+    order: 1;
+  }
 }
 
 .filter-input {
   padding: 0.625rem 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  background: rgba(15, 23, 42, 0.4);
-  color: var(--text-primary, #e6eef6);
+  border: 1px solid var(--slate-grey);
+
+  background: var(--bg-primary);
+  color: var(--text-primary, #a9b7aa);
   font-size: 0.9rem;
   transition: all 0.2s ease;
   min-width: 150px;
@@ -325,12 +470,12 @@ onBeforeUnmount(() => {
 
 .filter-input:focus {
   outline: none;
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(15, 23, 42, 0.6);
+  border-color: var(--accent);
+  background: var(--bg-primary);
 }
 
 .filter-input::placeholder {
-  color: rgba(148, 163, 184, 0.6);
+  color: var(--slate-grey);
 }
 
 .filter-limit {
@@ -341,13 +486,13 @@ onBeforeUnmount(() => {
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 0.75rem;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+
+  background: var(--bg-modal);
+  border: 1px solid var(--slate-grey);
 }
 
 .loading {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .error {
@@ -357,30 +502,41 @@ onBeforeUnmount(() => {
 }
 
 .logs-count {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 0.9rem;
   margin-bottom: 1rem;
+}
+
+.loading-indicator {
+  color: var(--accent, #004225);
+  font-style: italic;
+  margin-left: 0.5rem;
 }
 
 .logs-container {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  transition: opacity 0.2s ease;
+}
+
+.logs-container.is-loading {
+  opacity: 0.7;
 }
 
 .log-entry {
   padding: 1.25rem;
-  background: rgba(15, 23, 42, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--slate-grey);
+
   transition: all 0.2s ease;
   width: 100%;
   box-sizing: border-box;
 }
 
 .log-entry:hover {
-  background: rgba(15, 23, 42, 0.5);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: var(--bg-primary);
+  border-color: var(--slate-grey);
 }
 
 .log-entry.security-event {
@@ -393,13 +549,13 @@ onBeforeUnmount(() => {
   align-items: center;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .log-action {
   font-weight: 600;
   font-size: 1.1rem;
-  color: var(--text-primary, #e6eef6);
+  color: var(--text-primary, #a9b7aa);
   text-transform: capitalize;
 }
 
@@ -412,7 +568,7 @@ onBeforeUnmount(() => {
 }
 
 .log-timestamp {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 0.9rem;
 }
 
@@ -429,19 +585,25 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #a9b7aa);
   line-height: 1.5;
 }
 
 .log-detail strong {
-  color: var(--text-primary, #e6eef6);
+  color: var(--text-primary, #a9b7aa);
   font-weight: 600;
   min-width: 100px;
 }
 
 .ip-not-found {
-  color: rgba(148, 163, 184, 0.5);
+  color: var(--slate-grey);
   font-style: italic;
+}
+
+.location-country-name {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  margin-right: 0.5rem;
 }
 
 .location-flag {
@@ -451,7 +613,7 @@ onBeforeUnmount(() => {
 .log-details-json {
   margin-top: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid var(--slate-grey);
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
@@ -460,12 +622,12 @@ onBeforeUnmount(() => {
 .details-code {
   margin: 0.5rem 0 0 0;
   padding: 0.75rem 1rem;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
   font-family: "Courier New", Courier, monospace;
   font-size: 0.85rem;
-  color: var(--text-primary, #e6eef6);
+  color: var(--text-primary, #a9b7aa);
   overflow-x: auto;
   white-space: pre;
   line-height: 1.5;

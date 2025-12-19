@@ -1,5 +1,5 @@
 <template>
-  <div class="quota-alerts-card glass glass-card">
+  <div class="quota-alerts-card">
     <div class="section-header">
       <h3>Quota Alerts</h3>
       <button @click="$emit('view-all')" class="btn-link">View All</button>
@@ -70,7 +70,8 @@ export default {
 <style scoped>
 .quota-alerts-card {
   padding: 1.5rem;
-  border-radius: 1rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
 }
 
 .section-header {
@@ -82,7 +83,7 @@ export default {
 
 .section-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -90,7 +91,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #8b5cf6;
+  color: #004225;
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -99,14 +100,14 @@ export default {
 }
 
 .btn-link:hover {
-  color: #8b5cf6;
+  color: #004225;
 }
 
 .loading,
 .empty-state {
   padding: 2rem;
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .alerts-list {
@@ -121,7 +122,7 @@ export default {
   gap: 0.75rem;
   padding: 0.75rem;
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
+
   border-left: 3px solid #fbbf24;
   transition: background 0.2s ease;
 }
@@ -147,7 +148,6 @@ export default {
   display: block;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
 }
 
 .alert-indicator.critical {
@@ -166,7 +166,7 @@ export default {
 }
 
 .alert-email {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 500;
   margin-bottom: 0.5rem;
@@ -176,7 +176,7 @@ export default {
 }
 
 .alert-usage {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
   margin-bottom: 0.5rem;
 }
@@ -185,21 +185,21 @@ export default {
   width: 100%;
   height: 6px;
   background: rgba(30, 41, 59, 0.6);
-  border-radius: 3px;
+
   overflow: hidden;
 }
 
 .alert-progress-fill {
   height: 100%;
-  border-radius: 3px;
+
   transition: width 0.3s ease;
 }
 
 .alert-progress-fill.warning {
-  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  background: transparent;
 }
 
 .alert-progress-fill.critical {
-  background: linear-gradient(90deg, #f87171, #ef4444);
+  background: transparent;
 }
 </style>

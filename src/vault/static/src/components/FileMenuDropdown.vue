@@ -516,7 +516,7 @@ export default {
   backdrop-filter: blur(40px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  border-radius: 1rem !important;
+
   padding: 0.5rem;
   min-width: 180px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
@@ -533,16 +533,16 @@ export default {
   padding: 0.75rem;
   border: none;
   background: transparent;
-  color: var(--text-primary, #e6eef6);
+  color: var(--text-primary, #a9b7aa);
   cursor: pointer;
-  border-radius: 10px;
+
   font-size: 0.9rem;
   transition: background-color 0.2s;
   text-align: left;
 }
 
 .file-menu-item:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.1);
+  background: #004225;
 }
 
 .file-menu-item:disabled {

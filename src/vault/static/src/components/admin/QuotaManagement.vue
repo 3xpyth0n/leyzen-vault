@@ -1,6 +1,6 @@
 <template>
   <div class="quota-management">
-    <div class="section-header glass glass-card">
+    <div class="section-header">
       <h2>Quota Management</h2>
       <button @click="showCreateModal = true" class="btn btn-primary">
         Set Quota
@@ -8,10 +8,7 @@
     </div>
 
     <!-- Statistics Summary -->
-    <div
-      v-if="!loading && quotas.length > 0"
-      class="stats-summary glass glass-card"
-    >
+    <div v-if="!loading && quotas.length > 0" class="stats-summary">
       <div class="stat-item">
         <span class="stat-label">Total Users:</span>
         <span class="stat-value">{{ quotas.length }}</span>
@@ -26,16 +23,16 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading glass glass-card">
+    <div v-if="loading" class="loading">
       <span v-html="getIcon('clock', 24)"></span>
       Loading quotas...
     </div>
-    <div v-else-if="error" class="error glass glass-card">{{ error }}</div>
-    <div v-else-if="quotas.length === 0" class="empty-state glass glass-card">
+    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="quotas.length === 0" class="empty-state">
       <span v-html="getIcon('info', 48)"></span>
       <p>No users found</p>
     </div>
-    <div v-else class="table-container glass glass-card">
+    <div v-else class="table-container">
       <table class="quotas-table">
         <thead>
           <tr>
@@ -107,7 +104,7 @@
         class="modal-overlay"
         @click.self="closeModal"
       >
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>{{ editingQuota ? "Edit Quota" : "Set Quota" }}</h3>
             <button
@@ -503,20 +500,19 @@ export default {
   align-items: center;
   margin-bottom: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .section-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
 
 .table-container {
   padding: 1.5rem;
-  border-radius: 1rem;
-  overflow: hidden;
+
+  overflow: auto;
 }
 
 .mobile-mode .table-container {
@@ -534,16 +530,14 @@ export default {
 
 .mobile-mode .table-container::-webkit-scrollbar-track {
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 4px;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 4px;
+  background: #004225;
 }
 
 .mobile-mode .table-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: #004225;
 }
 
 .quotas-table {
@@ -557,21 +551,21 @@ export default {
 }
 
 .quotas-table th {
-  background: rgba(30, 41, 59, 0.4);
+  background: var(--bg-modal);
   padding: 1rem;
   text-align: left;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 2px solid #004225;
 }
 
 .quotas-table td {
   padding: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  border-bottom: 1px solid #004225;
+  color: #a9b7aa;
 }
 
 .quotas-table tr:hover {
@@ -579,18 +573,18 @@ export default {
 }
 
 .text-muted {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-style: italic;
 }
 
 .text-unlimited {
-  color: #8b5cf6;
+  color: #a9b7aa;
   font-weight: 500;
 }
 
 .usage-badge {
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 600;
   display: inline-block;
@@ -611,7 +605,7 @@ export default {
 .usage-high {
   color: #f87171;
   background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .loading,
@@ -619,11 +613,10 @@ export default {
 .empty-state {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -631,7 +624,7 @@ export default {
 }
 
 .loading :deep(svg) {
-  color: #8b5cf6;
+  color: #a9b7aa;
   animation: spin 1s linear infinite;
 }
 
@@ -647,11 +640,11 @@ export default {
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .empty-state {
-  color: #94a3b8;
+  color: #a9b7aa;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -659,7 +652,7 @@ export default {
 }
 
 .empty-state :deep(svg) {
-  color: #94a3b8;
+  color: #a9b7aa;
   opacity: 0.5;
 }
 
@@ -673,7 +666,7 @@ export default {
   gap: 2rem;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
-  border-radius: 1rem;
+
   flex-wrap: wrap;
 }
 
@@ -684,14 +677,14 @@ export default {
 }
 
 .stat-label {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .stat-value {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.25rem;
   font-weight: 600;
 }
@@ -699,7 +692,7 @@ export default {
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.75rem;
+
   cursor: pointer;
   font-weight: 500;
   font-size: 0.95rem;
@@ -710,53 +703,35 @@ export default {
 }
 
 .btn-primary {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.2) 0%,
-    rgba(129, 140, 248, 0.2) 100%
-  );
-  color: #8b5cf6;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.3) 0%,
-    rgba(129, 140, 248, 0.3) 100%
-  );
-  border-color: rgba(56, 189, 248, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .btn-secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: #004225;
+  border-color: #004225;
 }
 
 .btn-danger {
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.2) 0%,
-    rgba(220, 38, 38, 0.2) 100%
-  );
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid #ef4444;
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.3) 0%,
-    rgba(220, 38, 38, 0.3) 100%
-  );
+  background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.5);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
@@ -776,12 +751,8 @@ export default {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 2rem;
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 1rem !important;
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.6)) !important;
   opacity: 1 !important;
   visibility: visible !important;
   animation: fadeIn 0.2s ease;
@@ -796,50 +767,19 @@ export default {
   }
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-/* Remove sidebar padding in mobile mode */
-body.mobile-mode .modal-overlay {
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
-}
-
 .modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 2rem;
-  border-radius: 2rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
+  padding: 0;
   min-width: 400px;
   max-width: 90vw;
   max-height: 90vh;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   margin: auto;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   position: relative;
   overflow: hidden;
-  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes slideUp {
-  from {
-    transform: scale(0.95) translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
 }
 
 .modal-wide {
@@ -853,7 +793,7 @@ body.mobile-mode .modal-overlay {
   align-items: center;
   margin-bottom: 0;
   padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -863,7 +803,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
   display: flex;
@@ -873,8 +813,8 @@ body.mobile-mode .modal-overlay {
 
 .modal-close-btn {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   cursor: pointer;
   padding: 0.5rem;
   width: 36px;
@@ -882,14 +822,15 @@ body.mobile-mode .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
   transition: all 0.2s ease;
+  font-size: 1.5rem;
+  line-height: 1;
 }
 
 .modal-close-btn:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -900,6 +841,7 @@ body.mobile-mode .modal-overlay {
   padding-top: 1.5rem;
   width: 100%;
   box-sizing: border-box;
+  color: var(--text-primary);
 }
 
 .modal-form {
@@ -913,10 +855,29 @@ body.mobile-mode .modal-overlay {
 .form-select {
   width: 100%;
   box-sizing: border-box;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(10, 10, 10, 0.6);
+}
+
+.form-group label {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
 }
 
 .form-help {
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.85rem;
   margin-top: 0.5rem;
 }

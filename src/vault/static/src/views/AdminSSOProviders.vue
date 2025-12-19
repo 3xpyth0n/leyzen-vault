@@ -19,7 +19,10 @@
 
       <div class="providers-list">
         <!-- Password Authentication Setting -->
-        <div class="provider-card password-auth-card">
+        <div
+          class="provider-card password-auth-card"
+          :class="{ 'provider-inactive': !passwordAuthEnabled }"
+        >
           <div class="provider-header">
             <div class="provider-info">
               <h3>Password Authentication</h3>
@@ -47,7 +50,10 @@
         </div>
 
         <!-- Allow Public Signup Setting -->
-        <div class="provider-card password-auth-card">
+        <div
+          class="provider-card password-auth-card"
+          :class="{ 'provider-inactive': !allowSignupEnabled }"
+        >
           <div class="provider-header">
             <div class="provider-info">
               <h3>Allow Public Signup</h3>
@@ -187,7 +193,7 @@
     <!-- Create/Edit Modal -->
     <teleport to="body">
       <div v-if="showModal" class="modal-overlay" @click="closeModal">
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h3>
             <button
@@ -716,7 +722,7 @@
         class="modal-overlay"
         @click.self="showDomainRuleModal = false"
       >
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h3>
             <button
@@ -1607,26 +1613,26 @@ onMounted(() => {
 }
 
 h1 {
-  color: #e6eef6;
+  color: #a9b7aa;
   margin-bottom: 2rem;
 }
 
 .loading,
 .error {
   padding: 1rem;
-  border-radius: 8px;
+
   margin-bottom: 1rem;
 }
 
 .error {
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #fca5a5;
 }
 
 .providers-section {
-  background: rgba(30, 41, 59, 0.5);
-  border-radius: 12px;
+  background: var(--bg-modal);
+
   padding: 1.5rem;
 }
 
@@ -1649,14 +1655,14 @@ h1 {
 }
 
 .section-header h2 {
-  color: #e6eef6;
+  color: #a9b7aa;
   margin: 0;
 }
 
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .providers-list {
@@ -1670,9 +1676,9 @@ h1 {
 }
 
 .provider-card {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
+
   padding: 1.5rem;
   width: 100%;
   box-sizing: border-box;
@@ -1713,7 +1719,7 @@ h1 {
 }
 
 .provider-info h3 {
-  color: #e6eef6;
+  color: #a9b7aa;
   margin: 0;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -1724,10 +1730,10 @@ h1 {
 }
 
 .provider-type {
-  background: rgba(88, 166, 255, 0.2);
-  color: #58a6ff;
+  background: rgba(0, 66, 37, 0.2);
+  color: var(--slate-grey);
   padding: 0.25rem 0.75rem;
-  border-radius: 4px;
+
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -1753,7 +1759,7 @@ h1 {
 }
 
 .provider-details {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -1776,7 +1782,7 @@ h1 {
 
 .provider-inactive {
   opacity: 0.6;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--bg-primary);
 }
 
 .toggle-container {
@@ -1795,16 +1801,16 @@ h1 {
   position: relative;
   width: 50px;
   height: 26px;
-  background: rgba(148, 163, 184, 0.2);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 13px;
+  background: rgba(0, 66, 37, 0.3);
+  border: 1px solid var(--border-color);
+
   transition: all 0.3s ease;
   cursor: pointer;
 }
 
 .toggle-switch.active {
-  background: rgba(88, 166, 255, 0.3);
-  border-color: rgba(88, 166, 255, 0.5);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle-slider {
@@ -1813,24 +1819,20 @@ h1 {
   left: 2px;
   width: 20px;
   height: 20px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 50%;
+  background: var(--text-primary);
+
   transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-switch.active .toggle-slider {
   transform: translateX(24px);
-  background: #58a6ff;
+  background: var(--text-primary);
 }
 
 /* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 1rem;
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.6));
   opacity: 1 !important;
   visibility: visible !important;
   animation: fadeIn 0.2s ease;
@@ -1845,15 +1847,6 @@ h1 {
   }
 }
 
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-body.mobile-mode .modal-overlay {
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
-}
-
 /* Modal uses global .modal styles from vault.css */
 .modal-wide {
   width: 90%;
@@ -1866,7 +1859,7 @@ body.mobile-mode .modal-overlay {
   align-items: center;
   margin-bottom: 0;
   padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid #004225;
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -1876,7 +1869,7 @@ body.mobile-mode .modal-overlay {
 
 .modal-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   display: flex;
@@ -1886,8 +1879,8 @@ body.mobile-mode .modal-overlay {
 
 .modal-close-btn {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
+  border: 1px solid #004225;
+  color: #a9b7aa;
   cursor: pointer;
   padding: 0.5rem;
   width: 36px;
@@ -1895,15 +1888,15 @@ body.mobile-mode .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
   font-size: 1.5rem;
   line-height: 1;
 }
 
 .modal-close-btn:hover {
-  background: rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  background: #004225;
+  color: #a9b7aa;
 }
 
 .modal-body {
@@ -1924,7 +1917,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .delete-modal .modal-body p {
-  color: #e6eef6;
+  color: #a9b7aa;
   margin-bottom: 1rem;
   line-height: 1.6;
 }
@@ -1945,34 +1938,34 @@ body.mobile-mode .modal-overlay {
   justify-content: flex-end;
   gap: 1rem;
   padding: 1.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-top: 1px solid #004225;
 }
 
 .config-section {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-top: 1px solid #004225;
 }
 
 .config-section h3 {
-  color: #e6eef6;
+  color: #a9b7aa;
   margin-bottom: 1rem;
   font-size: 1.1rem;
 }
 
 .config-description {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   line-height: 1.5;
   margin-bottom: 1.5rem;
   padding: 1rem;
-  background: rgba(15, 23, 42, 0.4);
-  border-radius: 6px;
-  border-left: 3px solid #58a6ff;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+  border-left: 3px solid var(--accent);
 }
 
 .config-description a {
-  color: #58a6ff;
+  color: var(--slate-grey);
   text-decoration: none;
 }
 
@@ -1981,12 +1974,12 @@ body.mobile-mode .modal-overlay {
 }
 
 .config-description code {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg-primary);
   padding: 0.2rem 0.4rem;
-  border-radius: 3px;
+
   font-family: "Courier New", monospace;
   font-size: 0.85rem;
-  color: #58a6ff;
+  color: var(--slate-grey);
   word-break: break-all;
 }
 
@@ -1996,7 +1989,7 @@ body.mobile-mode .modal-overlay {
 
 .form-group label {
   display: block;
-  color: #e6eef6;
+  color: #a9b7aa;
   margin-bottom: 0.5rem;
   font-weight: 500;
 }
@@ -2008,10 +2001,9 @@ body.mobile-mode .modal-overlay {
 .form-group textarea {
   width: 100%;
   padding: 0.75rem;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 6px;
-  color: #e6eef6;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--slate-grey);
   font-size: 0.95rem;
 }
 
@@ -2021,7 +2013,7 @@ body.mobile-mode .modal-overlay {
 
 .form-group small {
   display: block;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
@@ -2032,13 +2024,13 @@ body.mobile-mode .modal-overlay {
   gap: 1rem;
   margin-top: 2rem;
   padding-top: 1.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-top: 1px solid #004225;
 }
 
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.75rem;
+
   cursor: pointer;
   font-weight: 500;
   font-size: 0.95rem;
@@ -2049,40 +2041,30 @@ body.mobile-mode .modal-overlay {
 }
 
 .btn-primary {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.2) 0%,
-    rgba(129, 140, 248, 0.2) 100%
-  );
-  color: #8b5cf6;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(
-    135deg,
-    rgba(56, 189, 248, 0.3) 0%,
-    rgba(129, 140, 248, 0.3) 100%
-  );
-  border-color: rgba(56, 189, 248, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--accent);
 }
 
 .btn-secondary {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.3);
+  background: #004225;
 }
 
 .btn-danger {
   background: rgba(239, 68, 68, 0.2);
   color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -2103,8 +2085,8 @@ body.mobile-mode .modal-overlay {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
 }
 
@@ -2113,16 +2095,16 @@ body.mobile-mode .modal-overlay {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 6px;
+
   margin-bottom: 1rem;
 }
 
 .smtp-status {
   margin-bottom: 1.5rem;
   padding: 1rem;
-  background: rgba(15, 23, 42, 0.4);
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--border-color);
 }
 
 .smtp-status-header {
@@ -2133,7 +2115,7 @@ body.mobile-mode .modal-overlay {
 }
 
 .smtp-status-label {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-weight: 500;
 }
 
@@ -2142,7 +2124,7 @@ body.mobile-mode .modal-overlay {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem;
-  border-radius: 4px;
+
   font-size: 0.9rem;
 }
 
@@ -2154,7 +2136,7 @@ body.mobile-mode .modal-overlay {
 
 .smtp-status-message.error {
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #fca5a5;
 }
 
@@ -2168,19 +2150,19 @@ body.mobile-mode .modal-overlay {
 }
 
 .password-auth-card {
-  border: 2px solid rgba(88, 166, 255, 0.3);
-  background: rgba(88, 166, 255, 0.05);
+  border: 2px solid var(--accent);
+  background: rgba(0, 66, 37, 0.05);
 }
 
 .password-auth-card .provider-type {
-  background: rgba(88, 166, 255, 0.3);
-  color: #58a6ff;
+  background: rgba(0, 66, 37, 0.2);
+  color: var(--slate-grey);
 }
 
 .domain-rules-section {
   margin-top: 2rem;
-  background: rgba(30, 41, 59, 0.5);
-  border-radius: 12px;
+  background: var(--bg-modal);
+
   padding: 1.5rem;
 }
 
@@ -2216,15 +2198,15 @@ body.mobile-mode .modal-overlay {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+
   transition: all 0.2s ease;
 }
 
 .domain-rule-item:hover {
-  background: rgba(15, 23, 42, 0.8);
-  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--border-color);
 }
 
 .domain-rule-info {
@@ -2236,7 +2218,7 @@ body.mobile-mode .modal-overlay {
 
 .domain-rule-pattern {
   font-weight: 500;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1rem;
 }
 
@@ -2244,7 +2226,7 @@ body.mobile-mode .modal-overlay {
   font-size: 0.85rem;
   font-weight: 500;
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   display: inline-block;
   width: fit-content;
 }
@@ -2256,9 +2238,9 @@ body.mobile-mode .modal-overlay {
 }
 
 .domain-rule-status.inactive {
-  background: rgba(148, 163, 184, 0.2);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #004225;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .domain-rule-actions {

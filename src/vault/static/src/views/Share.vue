@@ -1,12 +1,12 @@
 <template>
   <div class="share-page">
-    <div v-if="loading" class="share-card glass glass-card">
+    <div v-if="loading" class="share-card">
       <div class="loading-state">
         <div class="spinner"></div>
         <p>Loading share information...</p>
       </div>
     </div>
-    <div v-else-if="shareInfo" class="share-card glass glass-card">
+    <div v-else-if="shareInfo" class="share-card">
       <!-- Status Badge -->
       <div
         class="status-badge"
@@ -66,19 +66,19 @@
       </div>
 
       <!-- Error Message (if expired/invalid) -->
-      <div v-if="isExpired && shareInfo.error" class="error-message glass">
+      <div v-if="isExpired && shareInfo.error" class="error-message">
         <p>{{ shareInfo.error }}</p>
       </div>
 
       <!-- Error Message (for download errors) -->
-      <div v-if="error && !isExpired" class="error-message glass">
+      <div v-if="error && !isExpired" class="error-message">
         <p>{{ error }}</p>
       </div>
 
       <!-- Password Input (if password protected) -->
       <div
         v-if="shareInfo?.has_password && isAvailable"
-        class="password-section glass"
+        class="password-section"
       >
         <label for="share-password-input" class="password-label">
           <span class="password-icon" v-html="getIcon('lock', 16)"></span>
@@ -174,7 +174,7 @@
         </p>
       </div>
     </div>
-    <div v-else class="share-card glass glass-card">
+    <div v-else class="share-card">
       <div class="error-state">
         <div class="error-icon" v-html="getIcon('warning', 48)"></div>
         <h2>Error</h2>
@@ -588,14 +588,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  backdrop-filter: var(--blur, blur(16px));
-  -webkit-backdrop-filter: var(--blur, blur(16px));
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: 1.5rem;
-  box-shadow:
-    var(--shadow-lg, 0 10px 15px rgba(0, 0, 0, 0.1)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--bg-modal);
+  border: 1px solid var(--accent, #004225);
 }
 
 .status-badge {
@@ -606,7 +600,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  border-radius: 1rem;
+
   font-size: 0.875rem;
   font-weight: 600;
   backdrop-filter: blur(10px);
@@ -621,7 +615,7 @@ onMounted(() => {
 .status-expired {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .status-icon {
@@ -648,12 +642,12 @@ onMounted(() => {
 
 .loading-state p,
 .error-state p {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 1rem;
 }
 
 .error-state h2 {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   margin: 0;
 }
 
@@ -668,8 +662,8 @@ onMounted(() => {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(148, 163, 184, 0.2);
-  border-top-color: var(--accent-blue, #8b5cf6);
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -677,8 +671,8 @@ onMounted(() => {
 .spinner-small {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 2px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   display: inline-block;
@@ -704,10 +698,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(56, 189, 248, 0.1);
-  border-radius: 1rem;
-  color: var(--accent-blue, #8b5cf6);
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: var(--accent, #004225);
 }
 
 .file-title-section {
@@ -718,7 +709,7 @@ onMounted(() => {
 .file-name {
   font-size: 1.75rem;
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   margin: 0 0 1rem 0;
   word-break: break-word;
   line-height: 1.3;
@@ -738,25 +729,20 @@ onMounted(() => {
 }
 
 .meta-label {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .meta-value {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-weight: 500;
 }
 
 .error-message {
   padding: 1rem 1.5rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.75rem;
-  color: #ef4444;
-}
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 
-.error-message.glass {
-  backdrop-filter: var(--blur, blur(16px));
-  -webkit-backdrop-filter: var(--blur, blur(16px));
+  color: #ef4444;
 }
 
 .error-message p {
@@ -775,7 +761,7 @@ onMounted(() => {
   padding: 1rem 2rem;
   font-size: 1.125rem;
   font-weight: 600;
-  border-radius: 0.75rem;
+
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -799,7 +785,7 @@ onMounted(() => {
   justify-content: center;
   gap: 0.5rem;
   text-align: center;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
   font-size: 0.875rem;
   margin: 0;
 }
@@ -814,7 +800,7 @@ onMounted(() => {
   padding: 1.5rem;
   background: rgba(56, 189, 248, 0.1);
   border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 0.75rem;
+
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -824,7 +810,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-size: 0.9rem;
   font-weight: 500;
   margin: 0;
@@ -833,7 +819,7 @@ onMounted(() => {
 .password-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--accent-blue, #8b5cf6);
+  color: var(--accent, #004225);
 }
 
 .password-input-wrapper {
@@ -846,21 +832,21 @@ onMounted(() => {
   width: 100%;
   padding: 0.75rem 2.5rem 0.75rem 1rem;
   background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 0.5rem;
-  color: var(--text-primary, #f1f5f9);
+  border: 1px solid #004225;
+
+  color: var(--slate-grey);
   font-size: 1rem;
   transition: all 0.2s ease;
 }
 
 .password-input:focus {
   outline: none;
-  border-color: var(--accent-blue, #8b5cf6);
+  border-color: var(--accent, #004225);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
 }
 
 .password-input::placeholder {
-  color: var(--text-muted, #94a3b8);
+  color: var(--slate-grey);
 }
 
 .password-toggle {
@@ -870,7 +856,7 @@ onMounted(() => {
   margin-top: -12px;
   background: transparent;
   border: none;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
   opacity: 0.7;
   cursor: pointer;
   padding: 0;
@@ -890,7 +876,7 @@ onMounted(() => {
 
 .password-toggle:hover {
   opacity: 1;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   margin-top: -12px;
 }
 

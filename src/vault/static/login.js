@@ -12,46 +12,11 @@
     }
   }
 
-  function syncCaptchaOverlayImage(overlay, overlayImage, sourceImage) {
-    if (
-      overlay &&
-      overlayImage &&
-      overlay.classList.contains("captcha-overlay--visible") &&
-      sourceImage &&
-      sourceImage.src
-    ) {
-      overlayImage.src = sourceImage.src;
-    }
-  }
-
-  function showCaptchaOverlay(overlay, overlayImage, sourceImage) {
-    if (!overlay || !overlayImage || !sourceImage) {
-      return;
-    }
-
-    overlayImage.src = sourceImage.src;
-    overlay.classList.add("captcha-overlay--visible");
-    overlay.removeAttribute("aria-hidden");
-    document.body.classList.add("captcha-overlay-open");
-  }
-
-  function hideCaptchaOverlay(overlay) {
-    if (!overlay) {
-      return;
-    }
-
-    overlay.classList.remove("captcha-overlay--visible");
-    overlay.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("captcha-overlay-open");
-  }
-
   function requestCaptchaRefresh(
     image,
     nonceInput,
     captchaInput,
     loginCsrfInput,
-    overlay,
-    overlayImage,
   ) {
     if (!image) {
       return;
@@ -108,7 +73,6 @@
             const fallback = image.dataset.baseUrl || image.src;
             image.src = withCacheBuster(fallback);
           }
-          syncCaptchaOverlayImage(overlay, overlayImage, image);
           if (captchaInput) {
             captchaInput.value = "";
             captchaInput.focus();
@@ -120,7 +84,6 @@
           if (retryCount >= maxRetries) {
             const fallback = image.dataset.baseUrl || image.src;
             image.src = withCacheBuster(fallback);
-            syncCaptchaOverlayImage(overlay, overlayImage, image);
           }
         });
     }
@@ -129,19 +92,80 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    const refreshButton = document.querySelector(".captcha-refresh");
+    const captchaWrapper = document.querySelector("[data-captcha-wrapper]");
     const captchaImage = document.querySelector(".captcha-image");
     const captchaInput = document.querySelector("#captcha");
     const nonceInput = document.querySelector("input[data-captcha-nonce]");
     const loginCsrfInput = document.querySelector("input[data-login-csrf]");
-    const overlay = document.querySelector("[data-captcha-overlay]");
-    const overlayImage = overlay
-      ? overlay.querySelector("[data-captcha-overlay-image]")
-      : null;
     const loginForm = document.querySelector("form[method='post']");
     const submitButton = document.getElementById("login-submit-btn");
     const btnText = submitButton?.querySelector(".btn-text");
     const btnSpinner = submitButton?.querySelector(".btn-spinner");
+    const toast = document.querySelector("[data-captcha-toast]");
+
+    let pendingRefresh = false;
+    let toastTimeout = null;
+    let countdownInterval = null;
+    let toastCountdown = 3;
+
+    const hideToast = () => {
+      if (toast) {
+        toast.classList.remove("show");
+        setTimeout(() => {
+          if (toast) {
+            toast.style.display = "none";
+          }
+        }, 500);
+      }
+      pendingRefresh = false;
+      toastCountdown = 3;
+      if (toast) {
+        toast.textContent = "Tap again to refresh (3s)";
+      }
+      if (toastTimeout) {
+        clearTimeout(toastTimeout);
+        toastTimeout = null;
+      }
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    };
+
+    const startCountdown = () => {
+      toastCountdown = 3;
+      if (toast) {
+        toast.textContent = `Tap again to refresh (${toastCountdown}s)`;
+      }
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+      countdownInterval = setInterval(() => {
+        toastCountdown--;
+        if (toast) {
+          toast.textContent = `Tap again to refresh (${toastCountdown}s)`;
+        }
+        if (toastCountdown <= 0) {
+          hideToast();
+        }
+      }, 1000);
+    };
+
+    const showToast = () => {
+      if (toast) {
+        toast.style.display = "flex";
+        requestAnimationFrame(() => {
+          if (toast) {
+            toast.classList.add("show");
+          }
+        });
+      }
+      pendingRefresh = true;
+      startCountdown();
+      toastTimeout = setTimeout(() => {
+        hideToast();
+      }, 3000);
+    };
 
     if (captchaImage) {
       captchaImage.dataset.baseUrl = captchaImage.getAttribute("src") || "";
@@ -171,44 +195,45 @@
       });
     }
 
-    if (refreshButton && captchaImage) {
-      refreshButton.addEventListener("click", (event) => {
+    // Handle captcha refresh on click/touch
+    if (captchaWrapper && captchaImage) {
+      const handleCaptchaClick = (event) => {
         event.preventDefault();
-        requestCaptchaRefresh(
-          captchaImage,
-          nonceInput,
-          captchaInput,
-          loginCsrfInput,
-          overlay,
-          overlayImage,
-        );
-      });
-    }
-
-    if (captchaImage && overlay && overlayImage) {
-      captchaImage.addEventListener("click", (event) => {
-        event.preventDefault();
-        showCaptchaOverlay(overlay, overlayImage, captchaImage);
-      });
-
-      overlay.addEventListener("click", (event) => {
-        if (event.target === overlay) {
-          hideCaptchaOverlay(overlay);
-        }
-      });
-
-      overlayImage.addEventListener("click", (event) => {
         event.stopPropagation();
-      });
 
-      document.addEventListener("keydown", (event) => {
-        if (
-          event.key === "Escape" &&
-          overlay.classList.contains("captcha-overlay--visible")
-        ) {
-          hideCaptchaOverlay(overlay);
+        // Uniform behavior: double tap/click for everyone
+        if (pendingRefresh) {
+          // Second tap/click: confirm refresh
+          hideToast();
+          requestCaptchaRefresh(
+            captchaImage,
+            nonceInput,
+            captchaInput,
+            loginCsrfInput,
+          );
+        } else {
+          // First tap/click: show toast with countdown
+          showToast();
         }
-      });
+      };
+
+      captchaWrapper.addEventListener("click", handleCaptchaClick);
+
+      // Show/hide hover overlay with fade
+      const hoverOverlay = captchaWrapper.querySelector(
+        ".captcha-hover-overlay",
+      );
+      if (hoverOverlay) {
+        captchaWrapper.addEventListener("mouseenter", () => {
+          hoverOverlay.style.opacity = "0";
+          requestAnimationFrame(() => {
+            hoverOverlay.style.opacity = "1";
+          });
+        });
+        captchaWrapper.addEventListener("mouseleave", () => {
+          hoverOverlay.style.opacity = "0";
+        });
+      }
     }
   });
 

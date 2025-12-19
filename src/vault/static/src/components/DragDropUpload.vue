@@ -87,8 +87,8 @@ export default {
 
 <style scoped>
 .drag-drop-zone {
-  border: 2px dashed var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: 2rem;
+  border: 2px dashed var(--border-color, #004225);
+
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
@@ -98,12 +98,12 @@ export default {
 }
 
 .drag-drop-zone:hover {
-  border-color: var(--accent-blue, #8b5cf6);
+  border-color: var(--accent, #004225);
   background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
 }
 
 .drag-drop-zone.drag-over {
-  border-color: var(--accent-blue, #8b5cf6);
+  border-color: var(--accent, #004225);
   background: rgba(56, 189, 248, 0.1);
   transform: scale(1.02);
 }
@@ -124,13 +124,13 @@ export default {
 .drop-text {
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   margin: 0;
 }
 
 .drop-hint {
   font-size: 0.9rem;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
   margin: 0;
 }
 </style>

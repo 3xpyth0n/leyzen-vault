@@ -199,7 +199,7 @@ body.sidebar-collapsed .modal-overlay {
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+
   padding: 3rem 2.5rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
@@ -271,21 +271,22 @@ body.sidebar-collapsed .modal-overlay {
   position: absolute;
   width: 100%;
   height: 100%;
-  border: 3px solid transparent;
-  border-top-color: rgba(88, 166, 255, 0.8);
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   border-radius: 50%;
   animation: spin 1.5s linear infinite;
-  box-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
 }
 
 .spinner-ring:nth-child(1) {
   animation-delay: 0s;
-  border-top-color: rgba(88, 166, 255, 0.8);
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
 }
 
 .spinner-ring:nth-child(2) {
   animation-delay: 0.5s;
-  border-top-color: rgba(136, 206, 255, 0.6);
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   width: 70%;
   height: 70%;
   top: 15%;
@@ -294,7 +295,8 @@ body.sidebar-collapsed .modal-overlay {
 
 .spinner-ring:nth-child(3) {
   animation-delay: 1s;
-  border-top-color: rgba(56, 189, 248, 0.4);
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
   width: 40%;
   height: 40%;
   top: 30%;
@@ -330,11 +332,11 @@ body.sidebar-collapsed .modal-overlay {
 
 .modal-title {
   margin: 0 0 1rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.75rem;
   font-weight: 600;
   text-align: center;
-  background: linear-gradient(135deg, #58a6ff 0%, #88ceff 100%);
+  background: transparent;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -342,7 +344,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .current-step {
   margin: 0 0 1rem 0;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 500;
   text-align: center;
@@ -352,7 +354,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .vaultspace-name {
   margin: 0 0 1.5rem 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.95rem;
   font-style: italic;
   text-align: center;
@@ -375,7 +377,7 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .progress-count {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 500;
 }
@@ -388,8 +390,8 @@ body.sidebar-collapsed .modal-overlay {
   line-height: 1.5;
   padding: 1rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.5rem;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   width: 100%;
 }
 
@@ -401,19 +403,19 @@ body.sidebar-collapsed .modal-overlay {
 
 .cancel-btn {
   padding: 0.75rem 1.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 0.5rem;
+  border: 1px solid #004225;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  background: #004225;
+  color: #a9b7aa;
 }
 
 .cancel-btn:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.5);
+  background: #004225;
+  border-color: #004225;
   transform: translateY(-1px);
 }
 

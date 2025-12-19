@@ -1,5 +1,5 @@
 <template>
-  <div class="trash-view glass glass-card">
+  <div class="trash-view">
     <header class="view-header">
       <h1>
         <span class="header-icon" v-html="getIcon('trash', 28)"></span>
@@ -25,19 +25,19 @@
 
     <main class="view-main">
       <div v-if="loading" class="loading">Loading trash...</div>
-      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
       <div v-else-if="trashFiles.length === 0" class="empty-state">
         <p>Trash is empty</p>
       </div>
       <div v-else class="trash-list">
-        <div class="trash-info glass">
+        <div class="trash-info">
           <p>{{ trashFiles.length }} item(s) in trash</p>
         </div>
         <div class="files-grid">
           <div
             v-for="file in trashFiles"
             :key="file.id"
-            class="file-card trash-item glass"
+            class="file-card trash-item"
             :class="{ selected: isSelected(file.id) }"
             @click="handleItemClick(file, $event)"
           >
@@ -83,14 +83,14 @@
         class="modal-overlay"
         @click="showRestoreConfirm = false"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <h2>Restore File</h2>
           <p>
             Are you sure you want to restore "{{
               itemToRestore?.original_name
             }}"?
           </p>
-          <div v-if="restoreError" class="error-message glass">
+          <div v-if="restoreError" class="error-message">
             {{ restoreError }}
           </div>
           <div class="form-actions">
@@ -124,14 +124,14 @@
         class="modal-overlay"
         @click="showDeleteConfirm = false"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <h2>Permanently Delete File</h2>
           <p>
             Are you sure you want to permanently delete "{{
               itemToDelete?.original_name
             }}"? This action cannot be undone.
           </p>
-          <div v-if="deleteError" class="error-message glass">
+          <div v-if="deleteError" class="error-message">
             {{ deleteError }}
           </div>
           <div class="form-actions">
@@ -172,7 +172,7 @@
             {{ trashFiles.length }} item(s) in trash? This action cannot be
             undone.
           </p>
-          <div v-if="emptyTrashError" class="error-message glass">
+          <div v-if="emptyTrashError" class="error-message">
             {{ emptyTrashError }}
           </div>
           <div class="form-actions">
@@ -552,7 +552,6 @@ export default {
   align-items: center;
   margin-bottom: 2rem;
   padding: 1.5rem 2rem;
-  border-radius: 2rem;
 }
 
 .view-header h1 {
@@ -568,6 +567,7 @@ export default {
   display: inline-flex;
   align-items: center;
   color: currentColor;
+  margin-top: 0.2rem;
 }
 
 .header-actions {
@@ -588,13 +588,12 @@ export default {
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .trash-info {
   padding: 1rem;
   margin-bottom: 1rem;
-  border-radius: var(--radius-md, 8px);
 }
 
 .files-grid {
@@ -604,20 +603,20 @@ export default {
 }
 
 .file-card {
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color, #004225);
+
   padding: 1.5rem;
   transition: all var(--transition-base, 0.2s);
   cursor: pointer;
 }
 
 .file-card:hover {
-  border-color: var(--border-color-hover, rgba(148, 163, 184, 0.4));
+  border-color: var(--border-color-hover, #004225);
   background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #8b5cf6);
+  border-color: var(--accent, #004225);
   background: rgba(56, 189, 248, 0.1);
 }
 
@@ -648,7 +647,7 @@ export default {
 .file-info p {
   margin: 0.25rem 0;
   font-size: 0.85rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .file-actions {
@@ -661,10 +660,10 @@ export default {
 .btn-icon {
   background: transparent;
   border: none;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   cursor: pointer;
   padding: 0.5rem;
-  border-radius: var(--radius-md, 8px);
+
   transition: all var(--transition-base, 0.2s);
   display: inline-flex;
   align-items: center;
@@ -673,7 +672,7 @@ export default {
 
 .btn-icon:hover {
   background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .btn-icon svg {
@@ -710,7 +709,7 @@ body.sidebar-collapsed .modal-overlay {
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+
   padding: 2rem;
   max-width: 500px;
   width: 60%;
@@ -725,13 +724,13 @@ body.sidebar-collapsed .modal-overlay {
 .modal h2 {
   margin: 0 0 1rem 0;
   font-size: 1.5rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-weight: 600;
 }
 
 .modal p {
   margin: 0 0 1.5rem 0;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .form-actions {
@@ -747,6 +746,5 @@ body.sidebar-collapsed .modal-overlay {
 .error-message {
   padding: 1rem;
   margin-bottom: 1rem;
-  border-radius: var(--radius-md, 8px);
 }
 </style>

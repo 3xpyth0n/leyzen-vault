@@ -1,6 +1,6 @@
 <template>
   <div class="search-bar">
-    <div class="search-input-wrapper glass">
+    <div class="search-input-wrapper">
       <input
         v-model="query"
         @input="handleSearch"
@@ -20,112 +20,10 @@
       >
         ✕
       </button>
-      <button
-        @click="showFilters = !showFilters"
-        class="search-filter-btn"
-        :class="{ active: showFilters }"
-        aria-label="Toggle filters"
-        v-html="getIcon('funnel', 20)"
-      ></button>
-    </div>
-
-    <!-- Filters Panel -->
-    <div v-if="showFilters" class="search-filters glass glass-card">
-      <div class="filter-group">
-        <label>Type:</label>
-        <CustomSelect
-          v-model="filters.mimeType"
-          :options="mimeTypeOptions"
-          @change="applyFiltersAuto"
-          placeholder="All types"
-        />
-      </div>
-
-      <div class="filter-group">
-        <label>Size:</label>
-        <div class="size-range">
-          <input
-            v-model.number="filters.minSize"
-            @input="applyFiltersAuto"
-            type="number"
-            placeholder="Min (bytes)"
-            class="input"
-          />
-          <span>to</span>
-          <input
-            v-model.number="filters.maxSize"
-            @input="applyFiltersAuto"
-            type="number"
-            placeholder="Max (bytes)"
-            class="input"
-          />
-        </div>
-      </div>
-
-      <div class="filter-group">
-        <label>Sort by:</label>
-        <div class="sort-controls-group">
-          <CustomSelect
-            v-model="filters.sortBy"
-            :options="sortByOptions"
-            @change="applyFiltersAuto"
-            placeholder="Sort by"
-          />
-          <CustomSelect
-            v-model="filters.sortOrder"
-            :options="sortOrderOptions"
-            @change="applyFiltersAuto"
-            placeholder="Order"
-          />
-        </div>
-      </div>
-
-      <div class="filter-group">
-        <label>Type filter:</label>
-        <div class="toggle-switch">
-          <button
-            @click="
-              filters.fileTypeFilter = 'folders';
-              applyFiltersAuto();
-            "
-            :class="{ active: filters.fileTypeFilter === 'folders' }"
-            class="toggle-option"
-          >
-            Folders only
-          </button>
-          <button
-            @click="
-              filters.fileTypeFilter = 'all';
-              applyFiltersAuto();
-            "
-            :class="{ active: filters.fileTypeFilter === 'all' }"
-            class="toggle-option"
-          >
-            All
-          </button>
-          <button
-            @click="
-              filters.fileTypeFilter = 'files';
-              applyFiltersAuto();
-            "
-            :class="{ active: filters.fileTypeFilter === 'files' }"
-            class="toggle-option"
-          >
-            Files only
-          </button>
-        </div>
-      </div>
-
-      <div class="filter-actions">
-        <button @click="resetFilters" class="btn btn-secondary">Reset</button>
-      </div>
     </div>
 
     <!-- Search Results -->
-    <div
-      v-if="showResults && results.length > 0"
-      class="search-results glass glass-card"
-    >
+    <div v-if="showResults && results.length > 0" class="search-results">
       <div class="results-header">
         <h3>{{ results.length }} result(s)</h3>
         <button @click="closeResults" class="btn-icon">✕</button>
@@ -137,18 +35,13 @@
           class="result-item"
           @click="handleResultClick(item)"
         >
-          <div class="result-icon">
-            {{ item.mime_type === "application/x-directory" ? "📁" : "📄" }}
-          </div>
           <div class="result-info">
-            <h4 v-html="highlightText(item.original_name, query)"></h4>
-            <p
-              v-if="item.full_path"
-              class="result-path"
-              v-html="highlightText(item.full_path, query)"
-            ></p>
-            <p class="result-meta">
-              {{ formatSize(item.size) }} • {{ formatDate(item.created_at) }}
+            <h4>{{ item.original_name }}</h4>
+            <p v-if="item.full_path" class="result-path">
+              {{ item.full_path }}
+            </p>
+            <p class="result-size">
+              {{ formatSize(item.size) }}
             </p>
           </div>
         </div>
@@ -160,7 +53,7 @@
 
     <div
       v-if="showResults && results.length === 0 && !searching"
-      class="search-results glass glass-card"
+      class="search-results"
     >
       <p class="no-results">No results found</p>
     </div>
@@ -207,7 +100,6 @@ export default {
     const results = ref([]);
     const searching = ref(false);
     const showResults = ref(false);
-    const showFilters = ref(false);
     const hasMore = ref(false);
     const offset = ref(0);
     const limit = 20;
@@ -218,30 +110,8 @@ export default {
       maxSize: null,
       sortBy: "relevance",
       sortOrder: "desc",
-      fileTypeFilter: "all", // "all", "files", "folders"
+      fileTypeFilter: "all",
     });
-
-    const mimeTypeOptions = [
-      { value: "", label: "All types" },
-      { value: "image", label: "Images" },
-      { value: "video", label: "Videos" },
-      { value: "audio", label: "Audio" },
-      { value: "application/pdf", label: "PDFs" },
-      { value: "text", label: "Text files" },
-      { value: "application/x-directory", label: "Folders" },
-    ];
-
-    const sortByOptions = [
-      { value: "relevance", label: "Relevance" },
-      { value: "name", label: "Name" },
-      { value: "date", label: "Date" },
-      { value: "size", label: "Size" },
-    ];
-
-    const sortOrderOptions = [
-      { value: "desc", label: "Descending" },
-      { value: "asc", label: "Ascending" },
-    ];
 
     let searchTimeout = null;
 
@@ -364,27 +234,6 @@ export default {
       showResults.value = false;
     };
 
-    const applyFiltersAuto = () => {
-      // Apply filters automatically when they change
-      if (query.value.trim()) {
-        performSearch();
-      }
-    };
-
-    const resetFilters = () => {
-      filters.value = {
-        mimeType: "",
-        minSize: null,
-        maxSize: null,
-        sortBy: "relevance",
-        sortOrder: "desc",
-        fileTypeFilter: "all",
-      };
-      if (query.value.trim()) {
-        performSearch();
-      }
-    };
-
     const handleResultClick = (item) => {
       emit("result-click", item);
 
@@ -400,49 +249,6 @@ export default {
       return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
     };
 
-    const formatDate = (dateString) => {
-      if (!dateString) return "";
-      const date = new Date(dateString);
-      return date.toLocaleDateString();
-    };
-
-    const highlightText = (text, query) => {
-      if (!text || !query) return escapeHtml(text || "");
-      const queryLower = query.toLowerCase();
-      const textLower = text.toLowerCase();
-
-      // Find all occurrences (case-insensitive)
-      const parts = [];
-      let lastIndex = 0;
-      let index = textLower.indexOf(queryLower, lastIndex);
-
-      while (index !== -1) {
-        // Add text before match
-        if (index > lastIndex) {
-          parts.push(escapeHtml(text.substring(lastIndex, index)));
-        }
-        // Add highlighted match
-        parts.push(
-          `<mark class="search-highlight">${escapeHtml(text.substring(index, index + query.length))}</mark>`,
-        );
-        lastIndex = index + query.length;
-        index = textLower.indexOf(queryLower, lastIndex);
-      }
-
-      // Add remaining text
-      if (lastIndex < text.length) {
-        parts.push(escapeHtml(text.substring(lastIndex)));
-      }
-
-      return parts.length > 0 ? parts.join("") : escapeHtml(text);
-    };
-
-    const escapeHtml = (text) => {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
-    };
-
     const getIcon = (iconName, size = 24) => {
       if (!window.Icons || !window.Icons[iconName]) {
         return "";
@@ -455,23 +261,14 @@ export default {
       results,
       searching,
       showResults,
-      showFilters,
       hasMore,
-      filters,
-      mimeTypeOptions,
-      sortByOptions,
-      sortOrderOptions,
       handleSearch,
       performSearch,
       loadMore,
       clearSearch,
       closeResults,
-      applyFiltersAuto,
-      resetFilters,
       handleResultClick,
       formatSize,
-      formatDate,
-      highlightText,
       getIcon,
     };
   },
@@ -488,9 +285,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .search-input {
@@ -505,13 +300,12 @@ export default {
   outline: none;
 }
 
-.search-clear-btn,
-.search-filter-btn {
+.search-clear-btn {
   background: none;
   border: none;
   cursor: pointer;
   padding: 0.25rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 1rem;
   transition: color 0.2s;
   display: inline-flex;
@@ -520,104 +314,8 @@ export default {
   margin-left: 0.3rem;
 }
 
-.search-filter-btn svg {
-  display: block;
-  vertical-align: middle;
-}
-
-.search-clear-btn:hover,
-.search-filter-btn:hover {
-  color: var(--text-primary, #f1f5f9);
-}
-
-.search-filter-btn.active {
-  color: var(--accent-blue, #8b5cf6);
-}
-
-.search-filters {
-  margin-top: 1rem;
-  padding: 1.5rem;
-  border-radius: var(--radius-md, 8px);
-}
-
-.filter-group {
-  margin-bottom: 1rem;
-}
-
-.filter-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary, #cbd5e1);
-  font-size: 0.9rem;
-}
-
-.filter-group .custom-select,
-.filter-group input[type="number"] {
-  width: 100%;
-  margin-bottom: 0.5rem;
-}
-
-.sort-controls-group {
-  display: flex;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.sort-controls-group .custom-select {
-  flex: 1;
-}
-
-.size-range {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.size-range input {
-  flex: 1;
-}
-
-.filter-group label input[type="checkbox"] {
-  margin-right: 0.5rem;
-}
-
-.toggle-switch {
-  display: flex;
-  gap: 0.5rem;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
-  border-radius: var(--radius-md, 8px);
-  padding: 0.25rem;
-}
-
-.toggle-option {
-  flex: 1;
-  padding: 0.5rem 1rem;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  color: var(--text-secondary, #cbd5e1);
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.toggle-option:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary, #f1f5f9);
-}
-
-.toggle-option.active {
-  background: var(--accent-blue, #8b5cf6);
-  color: var(--text-primary, #f1f5f9);
-  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
-}
-
-.filter-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+.search-clear-btn:hover {
+  color: var(--text-primary, #a9b7aa);
 }
 
 .search-results {
@@ -629,7 +327,8 @@ export default {
   max-height: 500px;
   overflow-y: auto;
   z-index: 1000;
-  border-radius: var(--radius-md, 8px);
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
 }
 
 .results-header {
@@ -637,13 +336,13 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .results-header h3 {
   margin: 0;
   font-size: 1rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .results-list {
@@ -658,71 +357,59 @@ export default {
   padding: 1rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  border-bottom: 1px solid var(--border-color, rgba(148, 163, 184, 0.1));
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .result-item:hover {
-  background-color: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
-}
-
-.result-icon {
-  font-size: 1.5rem;
+  background-color: rgba(0, 66, 37, 0.1);
 }
 
 .result-info {
   flex: 1;
+  width: 100%;
 }
 
 .result-info h4 {
   margin: 0 0 0.25rem 0;
   font-size: 0.95rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .result-path {
   margin: 0.25rem 0;
   font-size: 0.8rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--slate-grey);
   font-family: monospace;
-  opacity: 0.8;
 }
 
-.result-meta {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted, #94a3b8);
+.result-size {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--slate-grey);
 }
 
 .results-footer {
   padding: 1rem;
   text-align: center;
-  border-top: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  border-top: 1px solid var(--slate-grey);
 }
 
 .no-results {
   padding: 2rem;
   text-align: center;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
 }
 
 .btn-icon {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
   font-size: 1rem;
   padding: 0.25rem;
 }
 
 .btn-icon:hover {
-  color: var(--text-primary, #f1f5f9);
-}
-
-.search-highlight {
-  background-color: var(--accent-blue, #8b5cf6);
-  color: var(--text-primary, #f1f5f9);
-  padding: 0.1em 0.2em;
-  border-radius: 0.2em;
-  font-weight: 600;
+  color: var(--text-primary, #a9b7aa);
 }
 </style>

@@ -64,6 +64,15 @@ export function useHealthCheck() {
           if (typeof window !== "undefined" && window._serverStatus) {
             window._serverStatus.consecutiveErrors = 0;
           }
+
+          if (typeof window !== "undefined" && window.clear503Errors) {
+            window.clear503Errors();
+          }
+
+          isOnline.value = true;
+          if (typeof window !== "undefined" && window.updateServerStatus) {
+            window.updateServerStatus(true);
+          }
         }
 
         if (reconnectInterval) {
@@ -71,13 +80,6 @@ export function useHealthCheck() {
           reconnectInterval = null;
         }
         stopHealthCheckPolling();
-
-        if (!isOnline.value) {
-          isOnline.value = true;
-          if (typeof window !== "undefined" && window.updateServerStatus) {
-            window.updateServerStatus(true);
-          }
-        }
       };
 
       eventSource.onmessage = (event) => {
@@ -96,6 +98,10 @@ export function useHealthCheck() {
               isOnline.value = true;
               if (typeof window !== "undefined" && window.updateServerStatus) {
                 window.updateServerStatus(true);
+              }
+
+              if (typeof window !== "undefined" && window.clear503Errors) {
+                window.clear503Errors();
               }
             }
 
@@ -203,6 +209,11 @@ export function useHealthCheck() {
               if (typeof window !== "undefined" && window.updateServerStatus) {
                 window.updateServerStatus(true);
               }
+
+              if (typeof window !== "undefined" && window.clear503Errors) {
+                window.clear503Errors();
+              }
+
               stopHealthCheckPolling();
               reconnectAttempts = 0;
               connectSSE();
@@ -450,5 +461,44 @@ if (typeof window !== "undefined") {
     if (window._resetErrorCounter) {
       window._resetErrorCounter();
     }
+  };
+
+  window._503Errors = [];
+
+  if (!window._originalConsoleError) {
+    window._originalConsoleError = console.error;
+    console.error = function (...args) {
+      const message = args
+        .map((arg) => {
+          if (typeof arg === "string") {
+            return arg;
+          }
+          if (arg && typeof arg.toString === "function") {
+            return arg.toString();
+          }
+          return JSON.stringify(arg);
+        })
+        .join(" ")
+        .toLowerCase();
+
+      if (
+        message.includes("503") ||
+        message.includes("service unavailable") ||
+        message.includes("failed to fetch") ||
+        (args[0] && typeof args[0] === "object" && args[0].status === 503)
+      ) {
+        window._503Errors.push({
+          args: args,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      window._originalConsoleError.apply(console, args);
+    };
+  }
+
+  window.clear503Errors = function () {
+    window._503Errors = [];
   };
 }

@@ -83,8 +83,8 @@
 
     <main class="view-main">
       <div v-if="loading" class="loading">Loading shared files...</div>
-      <div v-else-if="error" class="error glass">{{ error }}</div>
-      <div v-else-if="files.length === 0" class="empty-state glass">
+      <div v-else-if="error" class="error">{{ error }}</div>
+      <div v-else-if="files.length === 0" class="empty-state">
         <p>No shared files yet</p>
         <p class="empty-hint">
           Share a file to generate a download link that others can use
@@ -119,20 +119,7 @@
                 {{ formatDate(file.created_at) }}
               </p>
             </div>
-            <div class="file-actions">
-              <button
-                v-if="
-                  file.share_links &&
-                  file.share_links.length > 0 &&
-                  hasAvailableLink(file.share_links)
-                "
-                @click="openSendEmailModalForFile(file)"
-                class="btn btn-small btn-primary"
-                :title="'Send share link via email'"
-              >
-                Send Email
-              </button>
-            </div>
+            <div class="file-actions"></div>
           </div>
           <div class="share-links-info">
             <div
@@ -156,10 +143,13 @@
                   </span>
                 </div>
                 <div class="link-meta">
-                  <span v-if="link.expires_at">
-                    Expires: {{ formatDate(link.expires_at) }}
+                  <span v-if="link.created_at">
+                    Created: {{ formatDate(link.created_at) }}
                   </span>
-                  <span v-else>No expiration</span>
+                  <span v-if="link.expires_at">
+                    • Expires: {{ formatDate(link.expires_at) }}
+                  </span>
+                  <span v-else> • No expiration</span>
                   <span v-if="link.max_downloads">
                     • {{ link.download_count || 0 }}/{{ link.max_downloads }}
                     downloads
@@ -187,13 +177,23 @@
               </div>
               <div class="link-actions">
                 <button
+                  v-if="
+                    isLinkAvailable(link) && hasDecryptionKey(link, file.id)
+                  "
                   @click="copyLink(link, file.id)"
                   class="btn btn-small btn-primary"
-                  :disabled="
-                    !isLinkAvailable(link) || !hasDecryptionKey(link, file.id)
-                  "
                 >
                   Copy Link
+                </button>
+                <button
+                  v-if="
+                    isLinkAvailable(link) && hasDecryptionKey(link, file.id)
+                  "
+                  @click="openSendEmailModal(link, file.id, file.original_name)"
+                  class="btn btn-small btn-primary"
+                  :title="'Send share link via email'"
+                >
+                  Send Email
                 </button>
                 <button
                   @click="revokeLink(link.link_id, file.id)"
@@ -201,6 +201,46 @@
                 >
                   Revoke
                 </button>
+                <div class="link-note">
+                  <span
+                    v-if="editingNoteLinkId !== link.link_id"
+                    @click="startNoteEdit(link)"
+                    class="note-display"
+                  >
+                    <span v-if="link.note" class="note-content"
+                      >Note: {{ link.note }}</span
+                    >
+                    <span v-else class="note-placeholder">Add a note...</span>
+                    <button
+                      v-if="link.note"
+                      @click.stop="deleteNote(link.link_id, file.id)"
+                      class="note-delete-btn"
+                      title="Delete note"
+                    >
+                      <span v-html="getIcon('x', 14)"></span>
+                    </button>
+                  </span>
+                  <div v-else class="note-input-wrapper">
+                    <input
+                      v-model="editingNoteText"
+                      @keyup.enter="saveNote(link.link_id, file.id)"
+                      @keyup.esc="cancelNoteEdit"
+                      @blur="saveNote(link.link_id, file.id)"
+                      class="note-input"
+                      ref="noteInput"
+                      autofocus
+                      placeholder="Add a note..."
+                    />
+                    <button
+                      v-if="editingNoteText"
+                      @click.stop="deleteNote(link.link_id, file.id)"
+                      class="note-delete-btn note-delete-btn-editing"
+                      title="Delete note"
+                    >
+                      <span v-html="getIcon('x', 14)"></span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -262,6 +302,9 @@ export default {
       shareUrlKeyStatus: new Map(), // Cache for key availability status
       thumbnailUrls: {}, // Cache blob URLs for thumbnails
       thumbnailUpdateTrigger: 0, // Force reactivity trigger
+      editingNoteLinkId: null,
+      editingNoteText: "",
+      savingNote: false,
     };
   },
   async mounted() {
@@ -329,22 +372,9 @@ export default {
         const shareLinks = data.share_links || [];
 
         const filesMap = new Map();
-        const now = new Date();
 
         for (const link of shareLinks) {
           if (link.resource_type !== "file" || !link.resource) {
-            continue;
-          }
-
-          if (link.is_available === false) {
-            continue;
-          }
-
-          const expiredFlag =
-            typeof link.is_expired === "boolean"
-              ? link.is_expired
-              : link.expires_at && new Date(link.expires_at) <= now;
-          if (expiredFlag) {
             continue;
           }
 
@@ -927,6 +957,190 @@ export default {
       this.alertMessage = message;
       this.showAlertModal = true;
     },
+    startNoteEdit(link) {
+      this.editingNoteLinkId = link.link_id;
+      this.editingNoteText = link.note || "";
+      this.$nextTick(() => {
+        const input = this.$refs.noteInput;
+        let inputElement = null;
+        if (Array.isArray(input)) {
+          inputElement = input[0];
+        } else if (input) {
+          inputElement = input;
+        }
+        if (inputElement) {
+          inputElement.focus();
+          inputElement.select();
+        }
+      });
+    },
+    cancelNoteEdit() {
+      this.editingNoteLinkId = null;
+      this.editingNoteText = "";
+    },
+    async saveNote(linkId, fileId) {
+      // Prevent double call (from both Enter key and blur event)
+      if (this.savingNote) {
+        return;
+      }
+
+      this.savingNote = true;
+      const noteText = this.editingNoteText.trim();
+      // Don't convert empty string to null - keep it as empty string to preserve existing note
+      const newNoteValue = noteText;
+
+      // Get current note from the link to compare BEFORE canceling edit
+      const file = this.files.find((f) => f.id === fileId);
+      let shouldSkipUpdate = false;
+      if (file && file.share_links) {
+        const link = file.share_links.find((l) => l.link_id === linkId);
+        if (link) {
+          // Normalize current note: handle null, undefined, empty string, or string with only whitespace
+          let currentNote = null;
+          if (link.note != null && typeof link.note === "string") {
+            const trimmed = link.note.trim();
+            currentNote = trimmed || null;
+          } else if (link.note == null || link.note === "") {
+            currentNote = null;
+          }
+
+          // Normalize new note for comparison
+          const normalizedNewNote =
+            newNoteValue && newNoteValue.trim() ? newNoteValue.trim() : null;
+
+          // Compare notes - if they're the same, don't do anything
+          if (currentNote === normalizedNewNote) {
+            shouldSkipUpdate = true;
+          }
+        }
+      }
+
+      // Cancel edit after comparison
+      this.cancelNoteEdit();
+
+      // Skip update if note hasn't changed
+      if (shouldSkipUpdate) {
+        this.savingNote = false;
+        return;
+      }
+
+      // If new note is empty, don't update (preserve existing note)
+      // Only update if there's actual content
+      if (!newNoteValue || !newNoteValue.trim()) {
+        this.savingNote = false;
+        return;
+      }
+
+      try {
+        const jwtToken = localStorage.getItem("jwt_token");
+        if (!jwtToken) {
+          throw new Error("Not authenticated");
+        }
+
+        const response = await fetch(`/api/v2/sharing/public-links/${linkId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${jwtToken}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            note: newNoteValue.trim(),
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to update note");
+        }
+
+        const data = await response.json();
+        const updatedLink = data.share_link;
+
+        // Update the link in the local state
+        if (file && file.share_links) {
+          const linkIndex = file.share_links.findIndex(
+            (l) => l.link_id === linkId,
+          );
+          if (linkIndex >= 0) {
+            // Ensure null/empty string is properly handled
+            const newNote =
+              updatedLink.note && updatedLink.note.trim()
+                ? updatedLink.note.trim()
+                : null;
+            // Update the note and force reactivity by reassigning
+            file.share_links[linkIndex] = {
+              ...file.share_links[linkIndex],
+              note: newNote,
+            };
+          }
+        }
+
+        if (window.Notifications) {
+          window.Notifications.success("Note updated");
+        }
+      } catch (err) {
+        if (window.Notifications) {
+          window.Notifications.error(`Failed to update note: ${err.message}`);
+        }
+      } finally {
+        this.savingNote = false;
+      }
+    },
+    async deleteNote(linkId, fileId) {
+      // Cancel any ongoing edit
+      this.cancelNoteEdit();
+
+      try {
+        const jwtToken = localStorage.getItem("jwt_token");
+        if (!jwtToken) {
+          throw new Error("Not authenticated");
+        }
+
+        const response = await fetch(`/api/v2/sharing/public-links/${linkId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${jwtToken}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            note: null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to delete note");
+        }
+
+        const data = await response.json();
+        const updatedLink = data.share_link;
+
+        // Update the link in the local state
+        const file = this.files.find((f) => f.id === fileId);
+        if (file && file.share_links) {
+          const linkIndex = file.share_links.findIndex(
+            (l) => l.link_id === linkId,
+          );
+          if (linkIndex >= 0) {
+            // Update the note to null
+            file.share_links[linkIndex] = {
+              ...file.share_links[linkIndex],
+              note: null,
+            };
+          }
+        }
+
+        if (window.Notifications) {
+          window.Notifications.success("Note deleted");
+        }
+      } catch (err) {
+        if (window.Notifications) {
+          window.Notifications.error(`Failed to delete note: ${err.message}`);
+        }
+      }
+    },
     // Check if file is an image based on mime_type or file extension
     isImageFile(file) {
       // Check mime_type first
@@ -1344,14 +1558,14 @@ export default {
 
 .view-header h1 {
   margin: 0 0 0.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 2rem;
   font-weight: 600;
 }
 
 .view-description {
   margin: 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.95rem;
 }
 
@@ -1364,7 +1578,7 @@ export default {
 .shared-file-item {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
+
   padding: 1.5rem;
   transition: all 0.2s ease;
 }
@@ -1425,7 +1639,6 @@ export default {
   width: auto;
   height: auto;
   object-fit: cover;
-  border-radius: 0.25rem;
 }
 
 .file-details {
@@ -1435,7 +1648,7 @@ export default {
 
 .file-name {
   margin: 0 0 0.25rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
   word-break: break-word;
@@ -1443,7 +1656,7 @@ export default {
 
 .file-meta {
   margin: 0;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
@@ -1459,7 +1672,7 @@ export default {
 .share-link-card {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0.75rem;
+
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -1489,7 +1702,7 @@ export default {
 
 .link-url {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   word-break: break-all;
   margin-bottom: 0;
   font-family: monospace;
@@ -1497,7 +1710,6 @@ export default {
   padding: 0.5rem 0.75rem;
   background: rgba(15, 23, 42, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0.375rem;
 }
 
 .mobile-mode .link-url {
@@ -1515,7 +1727,7 @@ export default {
   margin-bottom: 0.5rem;
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 0.5rem;
+
   color: #fbbf24;
   font-size: 0.875rem;
 }
@@ -1532,7 +1744,7 @@ export default {
 
 .link-meta {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #a9b7aa;
   margin-bottom: 0.25rem;
 }
 
@@ -1587,12 +1799,132 @@ export default {
 .btn-small {
   padding: 0.375rem 0.75rem;
   font-size: 0.85rem;
+  border: solid 1px var(--accent);
+}
+
+.link-note {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  min-width: 150px;
+  max-width: 300px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.mobile-mode .link-note {
+  margin-left: 0;
+  margin-top: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+  justify-content: flex-start;
+}
+
+.note-display {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #a9b7aa;
+  padding: 0.25rem 0.5rem;
+  padding-right: 2rem;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+  word-break: break-word;
+  text-align: right;
+  background: var(--bg-modal);
+  position: relative;
+}
+
+.mobile-mode .note-display {
+  text-align: left;
+  padding-right: 0.5rem;
+}
+
+.note-display:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.note-content {
+  color: #a9b7aa;
+}
+
+.note-placeholder {
+  color: var(--slate-grey);
+  font-style: italic;
+}
+
+.note-input-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.note-input {
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  padding-right: 2rem;
+  background: rgba(10, 10, 10, 0.6);
+  border: 1px solid #004225;
+  color: #a9b7aa;
+  font-size: 0.85rem;
+  font-family: inherit;
+  border-radius: 4px;
+}
+
+.note-input:focus {
+  outline: none;
+  border-color: #004225;
+  background: rgba(10, 10, 10, 0.8);
+}
+
+.note-delete-btn {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #a9b7aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.note-display:hover .note-delete-btn,
+.note-input-wrapper:hover .note-delete-btn,
+.note-delete-btn-editing {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.note-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+}
+
+.note-delete-btn:active {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.note-delete-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .empty-state p {
@@ -1601,13 +1933,13 @@ export default {
 
 .empty-hint {
   font-size: 0.9rem;
-  color: #64748b;
+  color: #a9b7aa;
 }
 
 .loading {
   text-align: center;
   padding: 4rem 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .error {
@@ -1616,7 +1948,6 @@ export default {
   color: #f85149;
   background-color: rgba(248, 81, 73, 0.1);
   border: 1px solid rgba(248, 81, 73, 0.3);
-  border-radius: 0.5rem;
 }
 
 /* Copy Animation Overlay */
@@ -1629,7 +1960,7 @@ export default {
   background: rgba(16, 185, 129, 0.3);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  border-radius: 0.375rem;
+
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1650,7 +1981,7 @@ export default {
 
 .copy-animation-checkmark {
   font-size: 1.5rem;
-  color: white;
+  color: #a9b7aa;
   font-weight: bold;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   opacity: 0;
@@ -1679,10 +2010,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(7, 14, 28, 0.4);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  animation: fadeIn 0.2s ease;
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.6));
 }
 
 .email-modal .modal-container {
@@ -1693,17 +2021,9 @@ export default {
 }
 
 .email-modal .modal-content-email {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
   padding: 2rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
 }
@@ -1717,7 +2037,7 @@ export default {
 
 .email-modal .modal-title {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -1725,7 +2045,7 @@ export default {
 .email-modal .modal-close {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 2rem;
   line-height: 1;
   cursor: pointer;
@@ -1735,17 +2055,17 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
   transition: all 0.2s ease;
 }
 
 .email-modal .modal-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e6eef6;
+  background: rgba(0, 66, 37, 0.1);
+  color: var(--text-primary);
 }
 
 .email-modal .modal-body {
   margin-bottom: 1.5rem;
+  color: var(--text-primary);
 }
 
 .email-modal .form-group {
@@ -1755,7 +2075,7 @@ export default {
 .email-modal .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-weight: 500;
   font-size: 0.9rem;
 }
@@ -1763,10 +2083,9 @@ export default {
 .email-modal .form-input {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: rgba(15, 23, 42, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
-  color: #e6eef6;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 1rem;
   transition: all 0.2s ease;
   box-sizing: border-box;
@@ -1774,8 +2093,9 @@ export default {
 
 .email-modal .form-input:focus {
   outline: none;
-  border-color: rgba(88, 166, 255, 0.5);
-  background: rgba(15, 23, 42, 0.5);
+  border-color: var(--accent);
+  background: rgba(10, 10, 10, 0.6);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .email-modal .form-input:disabled {
@@ -1789,8 +2109,7 @@ export default {
   margin-top: 0.5rem;
   padding: 0.5rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.375rem;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .email-modal .modal-footer {
@@ -1798,13 +2117,13 @@ export default {
   gap: 1rem;
   justify-content: flex-end;
   padding-top: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-color);
 }
 
 .email-modal .btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.5rem;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -1818,22 +2137,24 @@ export default {
 }
 
 .email-modal .btn-primary {
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  color: white;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
 }
 
 .email-modal .btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: var(--accent);
 }
 
 .email-modal .btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .email-modal .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(10, 10, 10, 0.8);
+  border-color: var(--border-color);
 }
 </style>

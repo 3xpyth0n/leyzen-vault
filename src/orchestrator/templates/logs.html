@@ -36,7 +36,7 @@
               title="Reload logs (scroll to bottom)"
             >
               <span class="btn-text">Refresh</span>
-              <span class="btn-spinner hidden">⏳</span>
+              <span class="btn-spinner hidden"></span>
             </button>
 
             <div class="periods" role="tablist" aria-label="Period filters">
@@ -61,24 +61,25 @@
               >
                 Year
               </button>
-              <button
-                class="period-btn"
-                data-period="custom"
-                aria-pressed="false"
-              >
-                Custom
-              </button>
-            </div>
-
-            <div id="customRange" class="custom-range is-hidden">
-              <input type="date" id="startDate" />
-              <input type="date" id="endDate" />
-              <button id="applyCustom" class="btn">Apply</button>
-            </div>
-
-            <div id="autoSwitch" class="switch" title="Auto refresh (1s)">
-              <div class="track"><div class="thumb"></div></div>
-              <span class="switch-label">Auto Refresh</span>
+              <div class="custom-period-wrapper">
+                <button
+                  class="period-btn"
+                  data-period="custom"
+                  aria-pressed="false"
+                  id="customPeriodBtn"
+                >
+                  Custom
+                </button>
+                <div id="customRange" class="custom-range-dropdown is-hidden">
+                  <div class="custom-range-content">
+                    <label for="startDate">Start Date</label>
+                    <input type="date" id="startDate" />
+                    <label for="endDate">End Date</label>
+                    <input type="date" id="endDate" />
+                    <button id="applyCustom" class="btn">Apply</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

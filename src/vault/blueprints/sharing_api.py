@@ -164,7 +164,8 @@ def update_public_link(link_id: str):
             "expires_in_days": 7 (optional),
             "max_downloads": 10 (optional),
             "max_access_count": 100 (optional),
-            "allow_download": true (optional)
+            "allow_download": true (optional),
+            "note": "Optional note text" (optional)
         }
 
     Returns:
@@ -179,6 +180,9 @@ def update_public_link(link_id: str):
     sharing_service = _get_sharing_service()
 
     try:
+        # Check if note key exists in request (even if value is null)
+        update_note = "note" in data
+        note_value = data.get("note") if update_note else None
         updated_link = sharing_service.update_public_link(
             link_id=link_id,
             user_id=user.id,
@@ -186,6 +190,8 @@ def update_public_link(link_id: str):
             max_downloads=data.get("max_downloads"),
             max_access_count=data.get("max_access_count"),
             allow_download=data.get("allow_download"),
+            note=note_value,
+            update_note=update_note,
         )
 
         if not updated_link:

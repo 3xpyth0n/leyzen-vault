@@ -455,23 +455,66 @@ class FilePromotionService:
             True if lock was acquired, False otherwise
         """
         try:
-            # Check if lock file exists and is stale
+            # Check if lock file exists
             if lock_file.exists():
                 lock_age = time.time() - lock_file.stat().st_mtime
-                if lock_age > timeout:
-                    # Lock is stale, remove it
+
+                # Try to read PID from lock file
+                pid = None
+                try:
+                    with open(lock_file, "r") as f:
+                        pid_str = f.read().strip()
+                        if pid_str:
+                            pid = int(pid_str)
+                except (ValueError, IOError, OSError):
+                    # Lock file exists but can't read PID - treat as stale
+                    pid = None
+
+                # Check if process is still alive
+                process_alive = False
+                if pid is not None:
+                    try:
+                        # Signal 0 doesn't kill the process, just checks if it exists
+                        os.kill(pid, 0)
+                        process_alive = True
+                    except (OSError, ProcessLookupError):
+                        # Process doesn't exist or we don't have permission
+                        process_alive = False
+
+                if process_alive:
+                    # Process is alive - check if lock is stale
+                    if lock_age > timeout:
+                        # Lock is stale, remove it
+                        self._logger.warning(
+                            f"[CLEANUP] Removing stale lock file (age: {lock_age:.0f}s, PID: {pid})"
+                        )
+                        try:
+                            lock_file.unlink()
+                        except Exception as e:
+                            self._logger.error(
+                                f"[CLEANUP] Failed to remove stale lock: {e}"
+                            )
+                            return False
+                    else:
+                        # Process is alive and lock is not stale - another cleanup is running
+                        self._logger.info(
+                            f"[CLEANUP] Lock file exists and process {pid} is still running, skipping"
+                        )
+                        return False
+                else:
+                    # Process is dead - remove the lock even if not stale
                     self._logger.warning(
-                        f"[CLEANUP] Removing stale lock file (age: {lock_age:.0f}s)"
+                        f"[CLEANUP] Removing lock file from dead process (PID: {pid}, age: {lock_age:.0f}s)"
                     )
                     try:
                         lock_file.unlink()
                     except Exception as e:
                         self._logger.error(
-                            f"[CLEANUP] Failed to remove stale lock: {e}"
+                            f"[CLEANUP] Failed to remove lock from dead process: {e}"
                         )
                         return False
 
-            # Create lock file
+            # Create lock file (only if it doesn't exist or has been removed)
             lock_file.parent.mkdir(parents=True, exist_ok=True)
             lock_fd = os.open(str(lock_file), os.O_CREAT | os.O_WRONLY | os.O_EXCL)
 

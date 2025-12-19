@@ -171,44 +171,19 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.6));
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 .two-factor-verify-modal {
-  background: rgba(13, 17, 23, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
   max-width: 450px;
   width: 90%;
-  animation: slideUp 0.3s;
   overflow: hidden;
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
 }
 
 .fa-modal-title {
@@ -216,13 +191,13 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 1.25rem;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -231,7 +206,7 @@ export default {
   border: none;
   font-size: 1.75rem;
   line-height: 1;
-  color: #b8c5d6;
+  color: var(--text-primary);
   cursor: pointer;
   padding: 0;
   margin: 0;
@@ -242,7 +217,7 @@ export default {
 }
 
 .close-button:hover {
-  color: #e6eef6;
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -251,7 +226,7 @@ export default {
 
 .description {
   margin-bottom: 1.5rem;
-  color: #b8c5d6;
+  color: var(--text-primary);
   text-align: center;
   line-height: 1.5;
   font-size: 0.95rem;
@@ -259,7 +234,7 @@ export default {
 
 .backup-description {
   margin-bottom: 1rem;
-  color: #b8c5d6;
+  color: var(--text-primary);
   font-size: 0.9rem;
   text-align: center;
 }
@@ -273,14 +248,14 @@ export default {
   max-width: 200px;
   width: 100%;
   padding: 0.75rem;
+  margin-top: 1rem;
   font-size: 1.5rem;
   text-align: center;
   letter-spacing: 0.3em;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid var(--border-color);
   font-family: "Courier New", monospace;
-  background: rgba(0, 0, 0, 0.3);
-  color: #e6eef6;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   transition:
     border-color 0.2s,
     background 0.2s;
@@ -289,8 +264,8 @@ export default {
 
 .verification-input:focus {
   outline: none;
-  border-color: #58a6ff;
-  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  background: var(--bg-primary);
 }
 
 .backup-input {
@@ -300,11 +275,10 @@ export default {
   font-size: 1.2rem;
   text-align: center;
   letter-spacing: 0.2em;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border: 1px solid var(--border-color);
   font-family: "Courier New", monospace;
-  background: rgba(0, 0, 0, 0.3);
-  color: #e6eef6;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   transition:
     border-color 0.2s,
     background 0.2s;
@@ -314,8 +288,8 @@ export default {
 
 .backup-input:focus {
   outline: none;
-  border-color: #58a6ff;
-  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  background: var(--bg-primary);
 }
 
 .backup-input-section .link-button {
@@ -326,7 +300,7 @@ export default {
 .link-button {
   background: none;
   border: none;
-  color: #58a6ff;
+  color: var(--accent);
   cursor: pointer;
   padding: 0;
   font-size: 0.9rem;
@@ -335,18 +309,17 @@ export default {
 }
 
 .link-button:hover {
-  color: #79b8ff;
+  color: var(--accent);
 }
 
 .error-message {
-  color: #ff6b6b;
+  color: var(--error);
   margin-top: 1rem;
   font-size: 0.9rem;
   text-align: center;
-  background: rgba(255, 107, 107, 0.1);
+  background: rgba(239, 68, 68, 0.1);
   padding: 0.75rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  border: 1px solid var(--error);
 }
 
 .modal-footer {
@@ -354,6 +327,6 @@ export default {
   gap: 1rem;
   justify-content: flex-end;
   padding: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--border-color);
 }
 </style>

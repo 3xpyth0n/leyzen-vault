@@ -1,5 +1,5 @@
 <template>
-  <div class="quota-display glass glass-card" v-if="quotaInfo">
+  <div class="quota-display" v-if="quotaInfo">
     <div class="quota-header">
       <h3>Storage Quota</h3>
     </div>
@@ -251,8 +251,10 @@ export default {
 <style scoped>
 .quota-display {
   padding: 1rem 1.5rem;
-  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  border: 1px solid var(--slate-grey);
   margin-bottom: 1rem;
+  margin-top: 1.5rem;
 }
 
 .mobile-mode .quota-display {
@@ -271,7 +273,7 @@ export default {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .quota-unlimited {
@@ -289,19 +291,18 @@ export default {
 .quota-bar-container {
   width: 100%;
   height: 8px;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-  border-radius: 4px;
+  background: rgba(10, 10, 10, 0.3);
+  border: 1px solid var(--slate-grey);
   overflow: hidden;
   margin-bottom: 0.25rem;
 }
 
 .quota-bar {
   height: 100%;
-  background: var(--accent-blue, #8b5cf6);
+  background: var(--accent, #004225);
   transition:
     width 0.3s ease,
     background-color 0.3s ease;
-  border-radius: 4px;
 }
 
 .quota-bar.quota-warning {
@@ -320,26 +321,26 @@ export default {
 }
 
 .quota-used {
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
   font-weight: 600;
 }
 
 .quota-separator {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .quota-limit {
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .quota-percentage {
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted, #a9b7aa);
   font-size: 0.85rem;
 }
 
 .quota-available {
   font-size: 0.85rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .quota-full {
@@ -349,20 +350,22 @@ export default {
 
 .quota-alert {
   padding: 0.75rem;
-  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  border: 1px solid #004225;
   font-size: 0.9rem;
   margin-top: 0.5rem;
+  color: #a9b7aa;
 }
 
 .quota-alert-warning {
-  background: rgba(249, 115, 22, 0.1);
-  border: 1px solid rgba(249, 115, 22, 0.3);
-  color: var(--accent-orange, #f97316);
+  background: transparent;
+  border: 1px solid #f97316;
+  color: #a9b7aa;
 }
 
 .quota-alert-danger {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: var(--accent-red, #ef4444);
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #a9b7aa;
 }
 </style>

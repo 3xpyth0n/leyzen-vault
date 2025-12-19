@@ -33,7 +33,7 @@
       v-if="!isMobileMode"
       class="sidebar"
       :class="{ collapsed: isCollapsed }"
-      :style="{ width: sidebarWidth + 'px' }"
+      @click="toggleSidebar"
     >
       <!-- Sidebar Header: Title -->
       <div class="sidebar-header">
@@ -47,27 +47,11 @@
                 class="app-logo"
                 key="logo"
               />
-              <h1
-                v-else
-                class="app-title"
-                @click="$router.push('/dashboard')"
-                style="cursor: pointer"
-                key="title"
-              >
-                Leyzen Vault
-              </h1>
+              <h1 v-else class="app-title" key="title">Leyzen Vault</h1>
             </transition>
           </div>
         </div>
       </div>
-
-      <!-- Resize Handle -->
-      <div
-        class="sidebar-resize-handle"
-        @mousedown="startResize"
-        @mouseenter="handleMouseEnter"
-        @mouseleave="handleMouseLeave"
-      ></div>
 
       <!-- Sidebar Navigation -->
       <nav class="sidebar-nav">
@@ -90,15 +74,6 @@
           <span class="sidebar-label">Starred</span>
         </button>
         <button
-          @click="handleNavigation('/shared')"
-          class="sidebar-item"
-          :class="{ 'router-link-active': $route.path === '/shared' }"
-          :disabled="isServerOffline"
-        >
-          <span v-html="getIcon('link', 20)" class="sidebar-icon"></span>
-          <span class="sidebar-label">Shared</span>
-        </button>
-        <button
           @click="handleNavigation('/recent')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/recent' }"
@@ -106,6 +81,15 @@
         >
           <span v-html="getIcon('clock', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Recent</span>
+        </button>
+        <button
+          @click="handleNavigation('/shared')"
+          class="sidebar-item"
+          :class="{ 'router-link-active': $route.path === '/shared' }"
+          :disabled="isServerOffline"
+        >
+          <span v-html="getIcon('link', 20)" class="sidebar-icon"></span>
+          <span class="sidebar-label">Shared</span>
         </button>
         <button
           @click="handleNavigation('/trash')"
@@ -187,6 +171,8 @@
           :is-super-admin="isSuperAdmin"
           :orchestrator-enabled="orchestratorEnabled"
           @logout="handleLogout"
+          @menu-open="handleMenuOpen"
+          @menu-close="handleMenuClose"
         />
       </div>
     </aside>
@@ -197,16 +183,71 @@
       :class="{
         'mobile-active': isMobileMode,
       }"
-      :style="{ marginLeft: sidebarWidth + 'px' }"
     >
       <!-- Page Content -->
-      <main class="page-content">
+      <main
+        class="page-content"
+        ref="pageContentRef"
+        @scroll="updateScrollProgress"
+      >
         <transition name="page" mode="out-in">
           <div :key="$route.path" class="page-transition-wrapper">
             <slot />
           </div>
         </transition>
       </main>
+
+      <!-- Circular Scroll Progress Indicator -->
+      <div v-if="!isMobileMode" class="scroll-progress-indicator">
+        <svg class="progress-circle" viewBox="0 0 36 36">
+          <circle
+            class="progress-circle-bg"
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            stroke="var(--border-color)"
+            stroke-width="2"
+          />
+          <circle
+            class="progress-circle-fill"
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            stroke="var(--accent)"
+            stroke-width="2"
+            :stroke-dasharray="circumference"
+            :stroke-dashoffset="
+              circumference - (scrollProgress * circumference) / 100
+            "
+            transform="rotate(-90 18 18)"
+          />
+        </svg>
+        <!-- Scroll to Top Button -->
+        <button
+          v-if="scrollProgress > 0"
+          class="scroll-to-top-button"
+          @click="scrollToTop"
+          aria-label="Scroll to top"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 19V5M5 12L12 5L19 12"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Bottom Navigation (Mobile Only) -->
@@ -219,7 +260,7 @@
       message="Are you sure you want to logout?"
       confirm-text="Logout"
       :icon="logoutIcon"
-      :dangerous="false"
+      :dangerous="true"
       @confirm="performLogout"
       @close="showLogoutModal = false"
     />
@@ -253,8 +294,6 @@ export default {
   emits: ["logout"],
   data() {
     return {
-      sidebarWidth: 250,
-      isResizing: false,
       showLogoutModal: false,
       isAdmin: false,
       isSuperAdmin: false,
@@ -272,11 +311,16 @@ export default {
       dragOverPosition: null, // 'top' or 'bottom'
       isMobileMode: false,
       mobileModeChangeHandler: null,
-      resizeStartX: 0,
-      resizeStartWidth: 0,
+      sidebarExpanded: true,
+      menuOpen: false,
+      scrollProgress: 0,
+      scrollResizeObserver: null,
     };
   },
   computed: {
+    circumference() {
+      return 2 * Math.PI * 14;
+    },
     faviconUrl() {
       // Construct URL at runtime to avoid Vite bundling
       // Using template literal to prevent static analysis
@@ -301,10 +345,56 @@ export default {
       return false; // Default to online if status not available
     },
     isCollapsed() {
-      return this.sidebarWidth < 175;
+      return !this.sidebarExpanded;
+    },
+  },
+  watch: {
+    isMobileMode(newVal, oldVal) {
+      if (oldVal === true && newVal === false) {
+        this.sidebarExpanded = false;
+      }
+    },
+    isCollapsed: {
+      handler(newVal) {
+        if (newVal) {
+          document.body.classList.add("sidebar-collapsed");
+        } else {
+          document.body.classList.remove("sidebar-collapsed");
+        }
+      },
+      immediate: true,
     },
   },
   methods: {
+    updateScrollProgress() {
+      if (!this.$refs.pageContentRef || this.isMobileMode) {
+        return;
+      }
+      const pageContent = this.$refs.pageContentRef;
+      const scrollHeight = pageContent.scrollHeight;
+      const clientHeight = pageContent.clientHeight;
+      const scrollTop = pageContent.scrollTop;
+
+      if (scrollHeight <= clientHeight) {
+        this.scrollProgress = 0;
+        return;
+      }
+
+      const maxScroll = scrollHeight - clientHeight;
+      this.scrollProgress = Math.min(
+        100,
+        Math.max(0, (scrollTop / maxScroll) * 100),
+      );
+    },
+    scrollToTop() {
+      if (!this.$refs.pageContentRef) {
+        return;
+      }
+      this.$refs.pageContentRef.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    },
     getIcon(iconName, size = 24) {
       if (!window.Icons) {
         return "";
@@ -547,59 +637,23 @@ export default {
       }
       this.$router.push(path);
     },
-    startResize(e) {
-      this.isResizing = true;
-      this.resizeStartX = e.clientX;
-      this.resizeStartWidth = this.sidebarWidth;
-      const sidebar = document.querySelector(".sidebar");
-      if (sidebar) {
-        sidebar.style.transition = "none";
-      }
-      document.addEventListener("mousemove", this.handleResize);
-      document.addEventListener("mouseup", this.stopResize);
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "col-resize";
-      e.preventDefault();
+    handleMenuOpen() {
+      this.menuOpen = true;
     },
-    handleResize(e) {
-      if (!this.isResizing) return;
-      const deltaX = e.clientX - this.resizeStartX;
-      const newWidth = this.resizeStartWidth + deltaX;
-      this.setSidebarWidth(newWidth);
+    handleMenuClose() {
+      this.menuOpen = false;
     },
-    stopResize() {
-      this.isResizing = false;
-      document.removeEventListener("mousemove", this.handleResize);
-      document.removeEventListener("mouseup", this.stopResize);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      const sidebar = document.querySelector(".sidebar");
-      if (sidebar) {
-        sidebar.style.transition = "";
-      }
-    },
-    setSidebarWidth(width) {
-      const minWidth = 70;
-      const maxWidth = 250;
-      this.sidebarWidth = Math.max(minWidth, Math.min(maxWidth, width));
-      localStorage.setItem("sidebarWidth", this.sidebarWidth);
-      this.updateBodyClass();
-    },
-    updateBodyClass() {
-      if (this.isCollapsed) {
-        document.body.classList.add("sidebar-collapsed");
-      } else {
-        document.body.classList.remove("sidebar-collapsed");
-      }
-    },
-    handleMouseEnter() {
-      if (!this.isResizing) {
-        document.body.style.cursor = "col-resize";
-      }
-    },
-    handleMouseLeave() {
-      if (!this.isResizing) {
-        document.body.style.cursor = "";
+    toggleSidebar(event) {
+      const target = event.target;
+      const isInteractiveElement =
+        target.closest("button") ||
+        target.closest("a") ||
+        target.closest(".sidebar-item") ||
+        target.closest(".user-menu-wrapper") ||
+        target.closest(".server-status-indicator") ||
+        target.closest(".pinned-section");
+      if (!isInteractiveElement) {
+        this.sidebarExpanded = !this.sidebarExpanded;
       }
     },
     updateHeaderHeight() {
@@ -621,18 +675,13 @@ export default {
         e.stopPropagation();
       }
 
-      // Show logout confirmation modal
+      this.menuOpen = false;
       this.showLogoutModal = true;
     },
     async performLogout() {
-      // Close modal first for smooth transition
       this.showLogoutModal = false;
 
-      // Wait for modal to close before navigating
-      await this.$nextTick();
-
       try {
-        // Clear service worker cache if available
         if (
           "serviceWorker" in navigator &&
           navigator.serviceWorker.controller
@@ -663,28 +712,24 @@ export default {
     };
     window.addEventListener("mobile-mode-changed", handleMobileModeChange);
 
-    // Store handler for cleanup
     this.mobileModeChangeHandler = handleMobileModeChange;
 
-    // Calculate and set header height for sidebar positioning
     this.$nextTick(() => {
       this.updateHeaderHeight();
-      // Recalculate on resize
       window.addEventListener("resize", this.updateHeaderHeight);
-      // Also recalculate when window loads to ensure accuracy
       window.addEventListener("load", this.updateHeaderHeight);
-    });
 
-    // Load sidebar width from localStorage
-    const savedWidth = localStorage.getItem("sidebarWidth");
-    if (savedWidth !== null) {
-      const width = parseInt(savedWidth, 10);
-      if (!isNaN(width) && width >= 70 && width <= 250) {
-        this.sidebarWidth = width;
+      // Setup scroll progress indicator
+      if (this.$refs.pageContentRef && !this.isMobileMode) {
+        this.updateScrollProgress();
+        // Update on content changes
+        const resizeObserver = new ResizeObserver(() => {
+          this.updateScrollProgress();
+        });
+        resizeObserver.observe(this.$refs.pageContentRef);
+        this.scrollResizeObserver = resizeObserver;
       }
-    }
-    // Update body class based on initial sidebar state
-    this.updateBodyClass();
+    });
 
     // Check if user is admin or superadmin
     try {
@@ -797,6 +842,16 @@ export default {
     // Clean up resize and load listeners
     window.removeEventListener("resize", this.updateHeaderHeight);
     window.removeEventListener("load", this.updateHeaderHeight);
+
+    if (this.scrollResizeObserver) {
+      this.scrollResizeObserver.disconnect();
+      this.scrollResizeObserver = null;
+    }
+    if (this.scrollResizeObserver) {
+      this.scrollResizeObserver.disconnect();
+      this.scrollResizeObserver = null;
+    }
+
     // Remove document event listeners
     if (this.pinnedVaultSpacesChangedHandler) {
       document.removeEventListener(
@@ -818,8 +873,6 @@ export default {
     }
     // Clean up body class
     document.body.classList.remove("sidebar-collapsed");
-    // Clean up resize event listeners
-    this.stopResize();
   },
 };
 </script>
@@ -830,6 +883,7 @@ export default {
   flex-direction: column;
   min-height: 100vh;
   position: relative;
+  background: var(--bg-secondary);
 }
 
 /* Sidebar */
@@ -839,25 +893,24 @@ export default {
   top: 0;
   bottom: 0;
   height: 100vh;
-  background: linear-gradient(
-    180deg,
-    rgba(30, 41, 59, 0.7),
-    rgba(15, 23, 42, 0.6)
-  );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0 1rem 1rem 0;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  width: 70px;
+  min-width: 70px;
+  max-width: 250px;
+  background: var(--bg-secondary, #0a0a0a);
+  border: none;
   transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 99;
+  z-index: 100;
   overflow-y: auto;
   overflow-x: hidden;
-  display: flex;
+  display: flex !important;
   flex-direction: column;
-  visibility: visible;
-  opacity: 1;
-  contain: layout style paint;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Sidebar width controlled by collapsed class, not hover */
+.sidebar:not(.collapsed) {
+  width: 250px;
 }
 
 .mobile-mode .sidebar {
@@ -874,12 +927,11 @@ export default {
 }
 
 .sidebar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: #004225;
 }
 
 .sidebar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #004225;
 }
 
 .sidebar.collapsed {
@@ -888,13 +940,14 @@ export default {
   visibility: visible !important;
   opacity: 1 !important;
   transform: none !important;
+  width: 70px !important;
 }
 
 /* Sidebar Header */
 .sidebar-header {
   position: relative;
-  padding: 0rem 0.75rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1rem 0.75rem 1rem;
+  border-bottom: 1px solid var(--slate-grey);
   flex-shrink: 0;
 }
 
@@ -923,36 +976,41 @@ export default {
   overflow: visible;
 }
 
+.sidebar:not(.collapsed) .sidebar-header .app-title-wrapper {
+  justify-content: center;
+  gap: 0.75rem;
+}
+
 .sidebar-header .app-logo {
   height: 1.75rem;
   width: 1.75rem;
   object-fit: contain;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .sidebar-header .app-title {
   margin: 0;
+  padding: 0;
+  font-family: var(--font-family-branding);
   font-size: 1.5rem;
   font-weight: 600;
-  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  transition:
-    background 0.3s ease,
-    transform 0.2s ease;
+  line-height: 1.75rem;
+  color: #a9b7aa;
+  transition: color var(--transition-base);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
 }
 
 .sidebar-header .app-title:hover {
-  background: linear-gradient(120deg, #c5b0ffff, #a575ffff, #818cf8ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  transform: scale(1.03);
+  color: #a9b7aa;
 }
 
 .title-fade-enter-active,
@@ -971,7 +1029,11 @@ export default {
 }
 
 .sidebar.collapsed .sidebar-header {
-  padding: 1.5rem 0.5rem 1rem 0.5rem;
+  padding: 1rem 0.5rem 1rem 0.5rem;
+}
+
+.sidebar:not(.collapsed) .sidebar-header {
+  padding: 0rem 0.5rem 1rem 0.5rem;
 }
 
 .sidebar.collapsed .sidebar-title-section {
@@ -979,29 +1041,6 @@ export default {
   justify-content: center;
   width: 100%;
   overflow: visible;
-}
-
-/* Resize Handle */
-.sidebar-resize-handle {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  cursor: col-resize;
-  z-index: 101;
-  background: transparent;
-  transition: background 0.2s ease;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.sidebar-resize-handle:hover {
-  background: rgba(88, 166, 255, 0.3);
-}
-
-.sidebar-resize-handle:active {
-  background: rgba(88, 166, 255, 0.5);
 }
 
 .sidebar-nav {
@@ -1021,19 +1060,24 @@ export default {
   gap: 0.625rem;
 }
 
+.sidebar:not(.collapsed) .sidebar-nav {
+  padding: 1rem 0.75rem;
+  align-items: flex-start;
+}
+
 .sidebar-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.875rem 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(10px);
+  background: transparent;
   border: none;
-  border-radius: 10px;
-  color: #e6eef6;
+  color: #a9b7aa;
   text-decoration: none;
   cursor: pointer;
-  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background var(--transition-base),
+    color var(--transition-base);
   font-size: 0.95rem;
   text-align: left;
   width: 100%;
@@ -1041,7 +1085,6 @@ export default {
   position: relative;
   z-index: 1;
   pointer-events: auto;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .sidebar.collapsed .sidebar-item {
@@ -1053,25 +1096,26 @@ export default {
   min-height: 2.75rem;
 }
 
+.sidebar:not(.collapsed) .sidebar-item {
+  padding: 0.875rem 0.75rem;
+  justify-content: flex-start;
+  gap: 0.75rem;
+}
+
 .sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateX(4px);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.15);
+  color: #a9b7aa;
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .sidebar.collapsed .sidebar-item:hover {
-  transform: scale(1.08);
-  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.25);
+  color: #a9b7aa;
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .sidebar-item.router-link-active {
-  background: linear-gradient(
-    135deg,
-    rgba(88, 166, 255, 0.2),
-    rgba(56, 189, 248, 0.15)
-  );
-  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.2);
-  color: #8b5cf6;
+  background: rgba(0, 66, 37, 0.2);
+  color: #a9b7aa;
+  border-bottom: solid 1px var(--accent);
 }
 
 .sidebar-icon {
@@ -1079,21 +1123,19 @@ export default {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: currentColor;
+  color: var(--slate-grey);
   pointer-events: none;
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  will-change: transform;
   width: 20px;
   height: 20px;
   margin: 0;
 }
 
 .sidebar-item:hover .sidebar-icon {
-  transform: scale(1.15) rotate(5deg);
+  color: var(--slate-grey);
 }
 
 .sidebar.collapsed .sidebar-item:hover .sidebar-icon {
-  transform: scale(1.2) rotate(0deg);
+  color: var(--slate-grey);
 }
 
 .sidebar-label {
@@ -1117,6 +1159,15 @@ export default {
   pointer-events: none;
 }
 
+.sidebar:not(.collapsed) .sidebar-label {
+  opacity: 1;
+  transform: translateX(0);
+  max-width: 200px;
+  margin: 0;
+  padding: 0;
+  pointer-events: auto;
+}
+
 .pinned-item .sidebar-label {
   white-space: nowrap;
   overflow: hidden;
@@ -1126,46 +1177,75 @@ export default {
 
 /* Pinned Section */
 .pinned-section {
-  margin-top: 0.25rem;
-  padding-top: 0;
+  position: relative;
+  margin-top: 0.5rem;
+  padding: 0.75rem 0.5rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
   width: 100%;
   min-width: 0;
+  border: 1px solid var(--accent);
 }
 
 .pinned-section-header {
-  padding: 0.25rem 0.75rem 0.75rem 0.25rem;
+  position: absolute;
+  top: -0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0;
   margin-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .sidebar.collapsed .pinned-section-header {
-  padding: 0rem;
+  padding: 0;
+}
+
+.sidebar:not(.collapsed) .pinned-section-header {
+  padding: 0;
 }
 
 .pinned-section-title {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #a9b7aa;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  background: var(--bg-secondary);
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
 
 .pinned-section-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: auto;
+  min-width: 20px;
   height: 20px;
-  color: #94a3b8;
+  color: #a9b7aa;
+  background: var(--bg-secondary);
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  pointer-events: auto;
 }
 
 .pinned-section-icon svg {
   width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: inherit;
+  stroke: currentColor;
+}
+
+.sidebar.collapsed .pinned-section-icon {
+  width: auto;
+  min-width: 20px;
   height: 20px;
 }
 
@@ -1187,7 +1267,7 @@ export default {
 .pinned-items-container {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0;
   width: 100%;
 }
 
@@ -1220,6 +1300,13 @@ button.sidebar-item.pinned-item,
   min-width: 0 !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
+}
+
+.sidebar:not(.collapsed) .pinned-item,
+.sidebar:not(.collapsed) .sidebar-item.pinned-item,
+.sidebar:not(.collapsed) button.sidebar-item.pinned-item {
+  padding: 0.875rem 0.75rem;
+  padding-left: 0.75rem;
 }
 
 .pinned-icon {
@@ -1325,12 +1412,12 @@ button.sidebar-item.pinned-item,
 }
 
 .pinned-item.drag-over-top {
-  border-top: 2px solid #3b82f6;
+  border-top: 2px solid #004225;
   margin-top: -2px;
 }
 
 .pinned-item.drag-over-bottom {
-  border-bottom: 2px solid #3b82f6;
+  border-bottom: 2px solid #004225;
   margin-bottom: -2px;
 }
 
@@ -1349,9 +1436,11 @@ button.sidebar-item.pinned-item,
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 0.75rem 1.5rem 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--slate-grey);
   flex-shrink: 0;
   margin-top: auto;
+  justify-content: space-between;
+  position: relative;
 }
 
 .sidebar.collapsed .sidebar-footer {
@@ -1361,14 +1450,41 @@ button.sidebar-item.pinned-item,
   gap: 0.5rem;
 }
 
+.sidebar:not(.collapsed) .sidebar-footer,
+.sidebar.menu-open .sidebar-footer {
+  padding: 1rem 0.75rem 1.5rem 0.75rem;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+  transition:
+    padding 400ms cubic-bezier(0.4, 0, 0.2, 1),
+    gap 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .sidebar-footer :deep(.server-status-indicator) {
-  flex: 1;
-  width: 100% !important;
+  flex: 0 0 auto;
+  width: auto !important;
   min-width: 0;
-  max-width: 100%;
+  max-width: 60%;
   display: flex !important;
   justify-content: center;
   box-sizing: border-box;
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(0) translateY(0);
+  position: relative;
+}
+
+.sidebar:not(.collapsed) .sidebar-footer :deep(.server-status-indicator),
+.sidebar.menu-open .sidebar-footer :deep(.server-status-indicator) {
+  flex: 0 0 auto;
+  width: auto !important;
+  max-width: 60%;
+  min-width: 0;
+  transform: translateY(0) translateX(0);
+  position: relative;
+  top: 0;
+  left: 0;
 }
 
 .sidebar.collapsed .sidebar-footer :deep(.server-status-indicator) {
@@ -1376,6 +1492,10 @@ button.sidebar-item.pinned-item,
   width: 100% !important;
   padding: 0.5rem;
   justify-content: center;
+  transform: translateY(0) translateX(0);
+  position: relative;
+  top: 0;
+  left: 0;
 }
 
 .sidebar.collapsed
@@ -1384,13 +1504,33 @@ button.sidebar-item.pinned-item,
   display: none;
 }
 
+.sidebar:not(.collapsed)
+  .sidebar-footer
+  :deep(.server-status-indicator .status-text),
+.sidebar.menu-open
+  .sidebar-footer
+  :deep(.server-status-indicator .status-text) {
+  display: block;
+}
+
 .sidebar-footer :deep(.user-menu-wrapper) {
-  flex: 1;
-  width: 100% !important;
+  flex: 1 1 auto;
+  width: auto !important;
   min-width: 0;
-  max-width: 100%;
+  max-width: none;
   display: block !important;
   box-sizing: border-box;
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(0) translateY(0);
+  position: relative;
+}
+
+.sidebar:not(.collapsed) .sidebar-footer :deep(.user-menu-wrapper),
+.sidebar.menu-open .sidebar-footer :deep(.user-menu-wrapper) {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+  max-width: none;
 }
 
 .sidebar-footer :deep(.user-menu-button) {
@@ -1399,6 +1539,13 @@ button.sidebar-item.pinned-item,
   max-width: 100%;
   justify-content: flex-start;
   box-sizing: border-box;
+}
+
+.sidebar:not(.collapsed) .sidebar-footer :deep(.user-menu-button),
+.sidebar.menu-open .sidebar-footer :deep(.user-menu-button) {
+  width: auto !important;
+  min-width: 0;
+  max-width: none;
 }
 
 .sidebar.collapsed .sidebar-footer :deep(.user-menu-button) {
@@ -1413,27 +1560,59 @@ button.sidebar-item.pinned-item,
   display: none;
 }
 
+.sidebar.collapsed .sidebar-footer :deep(.user-menu-wrapper) {
+  transform: translateX(0) translateY(0);
+  position: relative;
+  top: 0;
+  left: 0;
+}
+
+.sidebar:not(.collapsed) .sidebar-footer :deep(.user-menu-chevron),
+.sidebar.menu-open .sidebar-footer :deep(.user-menu-chevron) {
+  display: block;
+}
+
 /* Main Content */
 .main-content {
   flex: 1;
   padding-top: 0;
-  transition: none;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.main-content:not(.mobile-active) {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  left: calc(250px + 0px);
+  margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  transition: left 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  width: auto;
+  height: auto;
+  z-index: 1;
+}
+
+body.sidebar-collapsed .main-content:not(.mobile-active) {
+  left: calc(70px + 0px);
 }
 
 .mobile-mode .main-content {
   margin-left: 0 !important;
   margin-top: 0 !important;
   padding-top: var(--header-height, 100px);
+  border: none;
+  border-radius: 0;
 }
 
 /* Header */
 .app-header {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: #0a0a0a;
+  border-bottom: 1px solid #004225;
   padding: 1.5rem 2rem;
   position: fixed;
   top: 0;
@@ -1443,7 +1622,6 @@ button.sidebar-item.pinned-item,
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 20px rgba(2, 6, 23, 0.2);
   width: 100%;
   margin-left: 0;
   flex-shrink: 0;
@@ -1470,28 +1648,21 @@ button.sidebar-item.pinned-item,
 
 .app-title {
   margin: 0;
+  font-family: var(--font-family-branding);
   font-size: 1.75rem;
   font-weight: 600;
-  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  transition:
-    background 0.3s ease,
-    transform 0.2s ease;
+  color: #a9b7aa;
+  transition: color 0.2s ease;
 }
 
 .app-title:hover {
-  background: linear-gradient(120deg, #c5b0ffff, #a575ffff, #818cf8ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  transform: scale(1.03);
+  color: #a9b7aa;
 }
 
 .app-slogan {
   margin: 0;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-weight: 400;
 }
 
@@ -1509,9 +1680,85 @@ button.sidebar-item.pinned-item,
 .page-content {
   flex: 1;
   padding: 2rem;
+  padding-top: 0rem;
   overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
   z-index: 1;
+  background: #0a0a0a;
+  min-height: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-to-top-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 36px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--ash-grey);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+  opacity: 1;
+  padding: 0;
+}
+
+.scroll-to-top-button:hover {
+  transform: translate(-50%, calc(-50% - 2px));
+}
+
+.scroll-to-top-button:active {
+  transform: translate(-50%, calc(-50% - 1px));
+}
+
+.scroll-to-top-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  filter: drop-shadow(0 1px 2px var(--slate-grey));
+}
+
+.scroll-progress-indicator {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  width: 36px;
+  height: 36px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-circle {
+  width: 100%;
+  height: 100%;
+}
+
+.progress-circle-bg {
+  opacity: 0.3;
+}
+
+.progress-circle-fill {
+  transition: stroke-dashoffset 0.1s ease-out;
+  stroke-linecap: round;
 }
 
 .page-transition-wrapper {
@@ -1532,10 +1779,7 @@ button.sidebar-item.pinned-item,
 
 .mobile-mode .app-title {
   font-size: 1.25rem;
-  background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #a9b7aa;
 }
 
 .mobile-mode .app-slogan {
@@ -1563,22 +1807,18 @@ button.sidebar-item.pinned-item,
 
 .sidebar-item:disabled:hover,
 .sidebar-item.disabled:hover {
-  background: rgba(255, 255, 255, 0.04);
-  transform: none;
-  box-shadow: none;
+  color: #a9b7aa;
 }
 
 @media (max-width: 768px) {
   .sidebar {
     width: 70px;
+    min-width: 70px;
+    max-width: 250px;
   }
 
   .sidebar:not(.collapsed) {
     width: 250px;
-  }
-
-  .main-content {
-    margin-left: 70px;
   }
 
   .app-header {
@@ -1587,10 +1827,7 @@ button.sidebar-item.pinned-item,
 
   .app-title {
     font-size: 1.5rem;
-    background: linear-gradient(120deg, #ba9cfff2, #9465ffe6, #6366f1f2);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #a9b7aa;
   }
 
   .app-slogan {

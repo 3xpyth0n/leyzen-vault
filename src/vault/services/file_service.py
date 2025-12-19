@@ -869,6 +869,19 @@ class AdvancedFileService:
             f"Invalidated {invalidated_count} cache entries for vaultspace {vaultspace_id} after folder creation"
         )
 
+        # Emit folder creation event
+        self._emit_file_event(
+            event_type=FileEventType.CREATE,
+            file_id=folder.id,
+            vaultspace_id=vaultspace_id,
+            user_id=user_id,
+            data={
+                "original_name": name,
+                "parent_id": parent_id,
+                "mime_type": "application/x-directory",
+            },
+        )
+
         return folder
 
     @staticmethod

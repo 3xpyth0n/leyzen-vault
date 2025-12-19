@@ -3197,6 +3197,83 @@ export const config = {
   },
 };
 
+/**
+ * Sharing API methods
+ */
+export const sharing = {
+  /**
+   * List public share links for a resource.
+   *
+   * @param {string} resourceId - Resource ID (file ID)
+   * @returns {Promise<object>} Response with share_links array
+   */
+  async listPublicLinks(resourceId) {
+    const response = await apiRequest(
+      `/v2/sharing/public-links?resource_id=${resourceId}`,
+      {
+        method: "GET",
+      },
+    );
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to load share links");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Create a new public share link.
+   *
+   * @param {object} params - Share link parameters
+   * @param {string} params.resource_id - Resource ID (file ID)
+   * @param {string} params.resource_type - Resource type (e.g., "file")
+   * @param {string|null} params.password - Optional password
+   * @param {number|null} params.expires_in_days - Optional expiration in days
+   * @param {number|null} params.max_downloads - Optional max downloads limit
+   * @param {boolean} params.allow_download - Allow download flag
+   * @returns {Promise<object>} Response with share_link object
+   */
+  async createPublicLink(params) {
+    const response = await apiRequest("/v2/sharing/public-links", {
+      method: "POST",
+      body: JSON.stringify({
+        resource_id: params.resource_id,
+        resource_type: params.resource_type || "file",
+        password: params.password || null,
+        expires_in_days: params.expires_in_days || null,
+        max_downloads: params.max_downloads || null,
+        allow_download: params.allow_download !== false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to create share link");
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Delete a public share link.
+   *
+   * @param {string} linkId - Share link ID
+   * @returns {Promise<void>}
+   */
+  async deletePublicLink(linkId) {
+    const response = await apiRequest(`/v2/sharing/public-links/${linkId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to delete share link");
+    }
+  },
+};
+
 export default {
   auth,
   account,
@@ -3205,6 +3282,7 @@ export default {
   config,
   admin,
   sso,
+  sharing,
 };
 
 // Export search service

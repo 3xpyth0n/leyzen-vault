@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
+from collections import defaultdict
+from threading import Lock
 from typing import Any
 
 import boto3
@@ -15,6 +18,58 @@ from vault.services.external_storage_config_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _RateLimitedLogger:
+    """Helper class to limit repetitive error logs."""
+
+    def __init__(self, max_logs_per_minute: int = 5):
+        """Initialize rate-limited logger.
+
+        Args:
+            max_logs_per_minute: Maximum number of identical error messages to log per minute
+        """
+        self._max_logs_per_minute = max_logs_per_minute
+        self._log_counts: dict[str, list[float]] = defaultdict(list)
+        self._lock = Lock()
+
+    def should_log(self, message: str) -> bool:
+        """Check if a message should be logged based on rate limiting.
+
+        Args:
+            message: The error message to potentially log
+
+        Returns:
+            True if the message should be logged, False otherwise
+        """
+        current_time = time.time()
+        one_minute_ago = current_time - 60
+
+        with self._lock:
+            # Clean old entries
+            self._log_counts[message] = [
+                t for t in self._log_counts[message] if t > one_minute_ago
+            ]
+
+            # Check if we've exceeded the limit
+            if len(self._log_counts[message]) >= self._max_logs_per_minute:
+                return False
+
+            # Record this log attempt
+            self._log_counts[message].append(current_time)
+            return True
+
+    def log_error(self, message: str) -> None:
+        """Log an error message if rate limiting allows it.
+
+        Args:
+            message: The error message to log
+        """
+        if self.should_log(message):
+            logger.error(message)
+
+
+_rate_limited_logger = _RateLimitedLogger(max_logs_per_minute=5)
 
 
 class ExternalStorageService:
@@ -322,7 +377,7 @@ class ExternalStorageService:
             raise IOError(error_msg) from e
         except Exception as e:
             error_msg = f"Unexpected error downloading file {file_id} from S3: {e}"
-            logger.error(error_msg)
+            _rate_limited_logger.log_error(error_msg)
             raise IOError(error_msg) from e
 
     def delete_file(self, file_id: str, is_thumbnail: bool = False) -> bool:
@@ -352,7 +407,7 @@ class ExternalStorageService:
             return False
         except Exception as e:
             error_msg = f"Unexpected error deleting file {file_id} from S3: {e}"
-            logger.error(error_msg)
+            _rate_limited_logger.log_error(error_msg)
             return False
 
     def file_exists(self, file_id: str, is_thumbnail: bool = False) -> bool:

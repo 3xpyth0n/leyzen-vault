@@ -1,6 +1,6 @@
 <template>
   <div class="invitation-wrapper">
-    <div class="invitation-container glass glass-card">
+    <div class="invitation-container">
       <h1>Accept Invitation</h1>
       <div v-if="error" class="error">{{ error }}</div>
       <div v-if="success" class="success">{{ success }}</div>
@@ -195,7 +195,7 @@ const handleAcceptInvitation = async () => {
 h1 {
   text-align: center;
   margin-bottom: 1.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.75rem;
   font-weight: 600;
 }
@@ -203,7 +203,7 @@ h1 {
 h2 {
   text-align: center;
   margin-bottom: 1rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -211,7 +211,7 @@ h2 {
 .info-text {
   text-align: center;
   margin-bottom: 2rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   line-height: 1.6;
 }
 
@@ -222,25 +222,25 @@ h2 {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-weight: 500;
 }
 
 .form-group input {
   width: 100%;
   padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e6eef6;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 1rem;
   transition: all 0.2s ease;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: rgba(88, 166, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+  background: rgba(10, 10, 10, 0.8);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .form-group input:disabled {
@@ -252,7 +252,7 @@ h2 {
   width: 100%;
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 8px;
+
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
@@ -266,14 +266,14 @@ h2 {
 }
 
 .btn-primary {
-  background: rgba(88, 166, 255, 0.2);
-  color: #e6eef6;
-  border: 1px solid rgba(88, 166, 255, 0.3);
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid #004225;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: rgba(88, 166, 255, 0.3);
-  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .accepted-section {
@@ -291,8 +291,8 @@ h2 {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
 }
 
@@ -301,18 +301,18 @@ h2 {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 8px;
+
   margin-bottom: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   text-align: center;
   padding: 2rem;
 }
 
 .accepted-section p {
-  color: #94a3b8;
+  color: #a9b7aa;
   margin-bottom: 2rem;
   line-height: 1.6;
 }

@@ -138,9 +138,7 @@ export default {
   align-items: center !important;
   justify-content: center !important;
   padding: 1rem !important;
-  background: rgba(7, 14, 28, 0.4) !important;
-  backdrop-filter: blur(15px) !important;
-  -webkit-backdrop-filter: blur(15px) !important;
+  background: rgba(10, 10, 10, 0.8) !important;
   opacity: 1 !important;
   visibility: visible !important;
   animation: fadeIn 0.2s ease;
@@ -178,46 +176,22 @@ export default {
 }
 
 .modal-content-confirm {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  border-radius: 2rem !important;
+  background: var(--bg-modal) !important;
+  border: 1px solid var(--border-color) !important;
   padding: 2rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   position: relative;
   overflow: hidden;
-}
-
-.modal-content-confirm::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
 }
 
 .modal-icon {
   font-size: 3rem;
   text-align: center;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
 }
 
 .modal-title {
   margin: 0 0 1rem 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
   text-align: center;
@@ -225,7 +199,7 @@ export default {
 
 .modal-message {
   margin: 0 0 2rem 0;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 1rem;
   text-align: center;
   line-height: 1.5;
@@ -240,7 +214,7 @@ export default {
 .modal-btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.5rem;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -254,17 +228,18 @@ export default {
 }
 
 .modal-btn-cancel {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
+  background: var(--bg-primary);
+  color: var(--ash-grey);
+  border: solid 1px var(--slate-grey);
 }
 
 .modal-btn-cancel:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.3);
+  background: var(--bg-secondary);
 }
 
 .modal-btn-confirm {
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  color: white;
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .modal-btn-confirm:hover:not(:disabled) {
@@ -272,12 +247,16 @@ export default {
   transform: translateY(-1px);
 }
 
-.modal-btn-danger {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+.modal-btn-confirm.modal-btn-danger {
+  background: transparent;
+  border: 1px solid var(--error, #ef4444);
+  color: var(--error, #ef4444);
 }
 
-.modal-btn-danger:hover:not(:disabled) {
-  opacity: 0.9;
+.modal-btn-confirm.modal-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--error, #ef4444);
+  color: var(--error, #ef4444);
   transform: translateY(-1px);
 }
 </style>

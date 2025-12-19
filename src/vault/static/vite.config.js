@@ -65,9 +65,6 @@ function flaskStaticPlugin() {
         id === "/static/cleanup-modal.js" ||
         id === "cleanup-modal.js" ||
         id.endsWith("/cleanup-modal.js") ||
-        id === "/static/sharing.js" ||
-        id === "sharing.js" ||
-        id.endsWith("/sharing.js") ||
         id === "/static/unregister-service-worker.js" ||
         id === "unregister-service-worker.js" ||
         id.endsWith("/unregister-service-worker.js") ||
@@ -79,9 +76,9 @@ function flaskStaticPlugin() {
       }
       // Mark static icon files as external to prevent bundling
       if (
-        id.includes("/static/icons/") ||
+        id.includes("/static/public/") ||
         id.includes("s3-logo.png") ||
-        (id.endsWith(".png") && id.includes("/icons/"))
+        (id.endsWith(".png") && id.includes("/public/"))
       ) {
         return { id, external: true };
       }
@@ -184,9 +181,6 @@ export default defineConfig({
           id === "/static/cleanup-modal.js" ||
           id === "cleanup-modal.js" ||
           id.endsWith("/cleanup-modal.js") ||
-          id === "/static/sharing.js" ||
-          id === "sharing.js" ||
-          id.endsWith("/sharing.js") ||
           id === "/static/unregister-service-worker.js" ||
           id === "unregister-service-worker.js" ||
           id.endsWith("/unregister-service-worker.js") ||
@@ -209,7 +203,6 @@ export default defineConfig({
             warning.message.includes("trusted-types-init") ||
             warning.message.includes("icons.js") ||
             warning.message.includes("cleanup-modal.js") ||
-            warning.message.includes("sharing.js") ||
             warning.message.includes("unregister-service-worker.js") ||
             warning.message.includes("notifications.js"))
         ) {
@@ -246,7 +239,6 @@ export default defineConfig({
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
-          msg.includes("sharing.js") ||
           msg.includes("unregister-service-worker.js") ||
           msg.includes("notifications.js"))
       ) {
@@ -264,7 +256,6 @@ export default defineConfig({
         msg.includes('can\'t be bundled without type="module"') &&
         (msg.includes("trusted-types-init") ||
           msg.includes("cleanup-modal.js") ||
-          msg.includes("sharing.js") ||
           msg.includes("unregister-service-worker.js") ||
           msg.includes("notifications.js"))
       ) {

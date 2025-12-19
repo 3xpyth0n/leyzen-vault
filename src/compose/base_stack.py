@@ -392,7 +392,7 @@ def build_base_services(
             "healthcheck": {
                 "test": [
                     "CMD-SHELL",
-                    "curl -f http://localhost/orchestrator || exit 1",
+                    "curl -f http://localhost/orchestrator/healthz || exit 1",
                 ],
                 "interval": "2s",
                 "timeout": "5s",

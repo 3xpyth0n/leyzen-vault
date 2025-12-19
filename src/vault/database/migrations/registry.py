@@ -160,6 +160,9 @@ def run_migrations(app_logger: Any | None = None) -> None:
     from vault.database.migrations.database_backup_migration import (
         DatabaseBackupMigration,
     )
+    from vault.database.migrations.public_share_links_note_migration import (
+        PublicShareLinksNoteMigration,
+    )
 
     registry = MigrationRegistry()
 
@@ -173,6 +176,7 @@ def run_migrations(app_logger: Any | None = None) -> None:
     registry.register(ExternalStorageMetadataMigration)
     registry.register(DatabaseBackupMigration)
     registry.register(CaptchaEntriesMigration)
+    registry.register(PublicShareLinksNoteMigration)
 
     migrations = registry.get_all_migrations()
 

@@ -246,60 +246,34 @@ func (m *Model) buildConfigContent() string {
 	rows = append(rows, m.theme.Accent.Render(header))
 	rows = append(rows, strings.Repeat("─", 80))
 
-	// Organize variables by category
-	categorized := m.categorizeConfigPairs(m.configPairs)
-
-	// Category order
-	categoryOrder := []string{
-		"General",
-		"Authentication & Security",
-		"Vault",
-		"Orchestrator",
-		"PostgreSQL",
-		"Email (SMTP)",
-		"HAProxy/SSL",
-		"Docker Proxy",
-		"CSP",
-		"Proxy",
-		"Development",
+	// Collect and sort all keys alphabetically (like CLI)
+	keys := make([]string, 0, len(m.configPairs))
+	for k := range m.configPairs {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 
-	// Display each category
-	for _, category := range categoryOrder {
-		if vars, ok := categorized[category]; ok && len(vars) > 0 {
-			// Category title
-			if len(rows) > 2 { // If there's already content, add a space
-				rows = append(rows, "")
+	// Display all variables in alphabetical order
+	for _, key := range keys {
+		value := m.configPairs[key]
+		isPassword := strings.Contains(strings.ToLower(key), "password") ||
+			strings.Contains(strings.ToLower(key), "secret") ||
+			strings.Contains(strings.ToLower(key), "pass") ||
+			strings.Contains(strings.ToLower(key), "token")
+		isVisible := m.configShowPasswords[key]
+
+		// Hide sensitive values (passwords) unless requested
+		if isPassword && !isVisible {
+			// Display with an indicator that it can be clicked
+			maskedValue := strings.Repeat("•", len(value))
+			if len(value) == 0 {
+				maskedValue = "(empty)"
 			}
-			rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("── %s ──", category)))
-
-			// Variables in this category
-			for _, key := range vars {
-				value := m.configPairs[key]
-				isPassword := strings.Contains(strings.ToLower(key), "password") ||
-					strings.Contains(strings.ToLower(key), "secret") ||
-					strings.Contains(strings.ToLower(key), "pass") ||
-					strings.Contains(strings.ToLower(key), "token")
-				isVisible := m.configShowPasswords[key]
-
-				if isPassword {
-					hasPasswords = true
-				}
-
-				// Hide sensitive values (passwords) unless requested
-				if isPassword && !isVisible {
-					// Display with an indicator that it can be clicked
-					maskedValue := strings.Repeat("•", len(value))
-					if len(value) == 0 {
-						maskedValue = "(empty)"
-					}
-					value = m.theme.WarningStatus.Render(maskedValue)
-				} else if isPassword && isVisible {
-					value = m.theme.SuccessStatus.Render(value)
-				}
-				rows = append(rows, fmt.Sprintf("%-32s  %s", m.theme.Accent.Render(key), value))
-			}
+			value = m.theme.WarningStatus.Render(maskedValue)
+		} else if isPassword && isVisible {
+			value = m.theme.SuccessStatus.Render(value)
 		}
+		rows = append(rows, fmt.Sprintf("%-32s  %s", m.theme.Accent.Render(key), value))
 	}
 
 	return strings.Join(rows, "\n")
@@ -571,78 +545,6 @@ func (m *Model) renderWizardPanel() string {
 		rows = append(rows, m.theme.ErrorStatus.Render("❌ "+m.wizardError))
 		rows = append(rows, "")
 	}
-
-	// Navigation and action buttons
-	rows = append(rows, "")
-	rows = append(rows, strings.Repeat("─", 60))
-	rows = append(rows, "")
-
-	// Previous button (left)
-	prevDisabled := m.wizardIndex == 0
-	var prevButton string
-	if prevDisabled {
-		prevButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Render("← Previous (disabled)")
-	} else {
-		prevButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("81")).
-			Bold(true).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("81")).
-			Render("← Previous (←)")
-	}
-
-	// Next button (right)
-	nextDisabled := m.wizardIndex >= len(m.wizardFields)-1
-	var nextButton string
-	if nextDisabled {
-		nextButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Render("Next → (disabled)")
-	} else {
-		nextButton = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("81")).
-			Bold(true).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("81")).
-			Render("Next → (→)")
-	}
-
-	// Save button
-	saveButton := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("42")).
-		Bold(true).
-		Padding(0, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("42")).
-		Render("✓ Save (Ctrl+S)")
-
-	// Cancel button
-	cancelButton := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Bold(true).
-		Padding(0, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Render("✗ Cancel (Esc)")
-
-	// First line: Previous and Next
-	navButtons := lipgloss.JoinHorizontal(lipgloss.Left, prevButton, "  ", nextButton)
-	rows = append(rows, navButtons)
-	rows = append(rows, "")
-
-	// Second line: Save and Cancel
-	actionButtons := lipgloss.JoinHorizontal(lipgloss.Left, saveButton, "  ", cancelButton)
-	rows = append(rows, actionButtons)
 
 	return m.theme.Pane.Render(strings.Join(rows, "\n"))
 }

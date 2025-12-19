@@ -112,7 +112,7 @@ export default {
       default: true,
     },
   },
-  emits: ["logout"],
+  emits: ["logout", "menu-open", "menu-close"],
   data() {
     return {
       showMenu: false,
@@ -170,16 +170,19 @@ export default {
     toggleMenu() {
       this.showMenu = !this.showMenu;
       if (this.showMenu) {
+        this.$emit("menu-open");
         this.$nextTick(() => {
           this.positionMenu();
           this.setupEventListeners();
         });
       } else {
+        this.$emit("menu-close");
         this.removeEventListeners();
       }
     },
     closeMenu() {
       this.showMenu = false;
+      this.$emit("menu-close");
       this.removeEventListeners();
     },
     positionMenu() {
@@ -297,24 +300,25 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border: 1px solid #004225;
   background: transparent;
-  color: #e6eef6;
+  color: #a9b7aa;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
   font-family: inherit;
   font-size: 0.95rem;
 }
 
 .user-menu-button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .user-menu-button[aria-expanded="true"] {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(0, 66, 37, 0.1);
+  border-color: #004225;
 }
 
 .user-menu-icon {
@@ -342,14 +346,8 @@ export default {
   position: fixed;
   z-index: 1000 !important; /* Above header (100) and encryption overlay (50) */
   min-width: 180px;
-  background: linear-gradient(140deg, #1e293b8c, #0f172a66);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: #141414;
+  border: 1px solid #004225;
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -362,9 +360,9 @@ export default {
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border: none;
-  border-radius: 8px;
+
   background: transparent;
-  color: #e6eef6;
+  color: #a9b7aa;
   text-decoration: none;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -375,13 +373,14 @@ export default {
 }
 
 .user-menu-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #8b5cf6;
+  background: rgba(0, 66, 37, 0.1);
+  color: #a9b7aa;
 }
 
 .user-menu-item.router-link-active {
-  background: rgba(88, 166, 255, 0.15);
-  color: #8b5cf6;
+  background: rgba(0, 66, 37, 0.2);
+  color: #a9b7aa;
+  border-left: 2px solid #004225;
 }
 
 .user-menu-item-icon {
@@ -398,17 +397,18 @@ export default {
 }
 
 .user-menu-item-logout {
-  color: #ef4444;
+  color: #a9b7aa;
 }
 
 .user-menu-item-logout:hover {
   background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: #a9b7aa;
+  border-left: 2px solid #ef4444;
 }
 
 .user-menu-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #004225;
   margin: 0.25rem 0;
 }
 
@@ -419,7 +419,7 @@ export default {
 
 .user-menu-item-toggle:hover {
   background: transparent;
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .toggle-switch {
@@ -443,9 +443,9 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(10, 10, 10, 0.3);
+  border: 1px solid #004225;
   transition: 0.3s;
-  border-radius: 24px;
 }
 
 .toggle-slider:before {
@@ -455,21 +455,22 @@ export default {
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: #e6eef6;
+  background-color: #a9b7aa;
   transition: 0.3s;
-  border-radius: 50%;
 }
 
 .toggle-input:checked + .toggle-slider {
-  background-color: rgba(88, 166, 255, 0.5);
+  background-color: rgba(0, 66, 37, 0.3);
+  border-color: #004225;
 }
 
 .toggle-input:checked + .toggle-slider:before {
   transform: translateX(20px);
+  background-color: #004225;
 }
 
 .toggle-input:focus + .toggle-slider {
-  box-shadow: 0 0 1px rgba(88, 166, 255, 0.5);
+  border-color: #004225;
 }
 
 /* Transition animations */

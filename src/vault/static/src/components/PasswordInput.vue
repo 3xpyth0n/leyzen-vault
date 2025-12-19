@@ -130,9 +130,9 @@ const togglePassword = () => {
   /* Apply form-input styles when used in modals */
   padding: 0.75rem 1rem;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  color: #e6eef6;
+  border: 1px solid #004225;
+
+  color: var(--slate-grey);
   font-size: 0.95rem;
   font-family: inherit;
   transition: all 0.2s ease;
@@ -151,7 +151,7 @@ const togglePassword = () => {
 }
 
 .password-input-wrapper :deep(.password-input)::placeholder {
-  color: rgba(148, 163, 184, 0.6);
+  color: var(--slate-grey);
 }
 
 .password-toggle {
@@ -163,7 +163,7 @@ const togglePassword = () => {
   width: 24px;
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: #a9b7aa;
   opacity: 0.7;
   cursor: pointer;
   padding: 0;
@@ -188,7 +188,7 @@ const togglePassword = () => {
 
 .password-toggle:hover:not(:disabled) {
   opacity: 1;
-  color: #e6eef6;
+  color: #a9b7aa;
   /* Maintain exact same position on hover */
   margin-top: -12px;
 }

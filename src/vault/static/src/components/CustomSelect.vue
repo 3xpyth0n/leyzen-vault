@@ -39,25 +39,34 @@
         >
           <div class="custom-select-dropdown" ref="dropdown">
             <div class="custom-select-options">
-              <button
-                v-for="option in options"
-                :key="getOptionValue(option)"
-                type="button"
-                class="custom-select-option"
-                :class="{ 'is-selected': isSelected(option) }"
-                @click="selectOption(option)"
-                @mouseenter="handleOptionMouseEnter(option)"
-              >
-                <span class="custom-select-option-text">{{
-                  getOptionLabel(option)
-                }}</span>
-                <span
-                  v-if="isSelected(option)"
-                  class="custom-select-option-check"
+              <template v-if="validOptions && validOptions.length > 0">
+                <button
+                  v-for="(option, index) in validOptions"
+                  :key="getOptionValue(option)"
+                  type="button"
+                  class="custom-select-option"
+                  :class="{
+                    'is-selected': isSelected(option),
+                    'has-border-bottom':
+                      option.isSortBy &&
+                      index < validOptions.length - 1 &&
+                      validOptions[index + 1] &&
+                      !validOptions[index + 1].isSortBy,
+                  }"
+                  @click="selectOption(option)"
+                  @mouseenter="handleOptionMouseEnter(option)"
                 >
-                  <span v-html="getIcon('check')"></span>
-                </span>
-              </button>
+                  <span class="custom-select-option-text">{{
+                    getOptionLabel(option)
+                  }}</span>
+                  <span
+                    v-if="isSelected(option)"
+                    class="custom-select-option-check"
+                  >
+                    <span v-html="getIcon('check')"></span>
+                  </span>
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -79,6 +88,7 @@ export default {
     options: {
       type: Array,
       required: true,
+      default: () => [],
     },
     optionLabel: {
       type: String,
@@ -106,7 +116,7 @@ export default {
       validator: (value) => ["small", "medium", "large"].includes(value),
     },
   },
-  emits: ["update:modelValue", "change"],
+  emits: ["update:modelValue", "change", "open", "close"],
   setup(props, { emit }) {
     const isOpen = ref(false);
     const selectContainer = ref(null);
@@ -120,21 +130,59 @@ export default {
     const dropdownTop = ref(0);
     const dropdownLeft = ref(0);
     const dropdownWidth = ref(0);
+    const selectId = ref(`select-${Math.random().toString(36).substr(2, 9)}`);
+
+    // Listen for close events from other selects
+    const handleCloseEvent = (event) => {
+      if (event.detail && event.detail.selectId !== selectId.value) {
+        if (isOpen.value) {
+          closeDropdown();
+        }
+      }
+    };
+
+    onMounted(() => {
+      window.addEventListener("custom-select-open", handleCloseEvent);
+    });
+
+    onUnmounted(() => {
+      window.removeEventListener("custom-select-open", handleCloseEvent);
+    });
+
+    const getOptionLabel = (option) => {
+      if (!option) return "";
+      if (typeof option === "string") return option;
+      return option[props.optionLabel] || option.label || option || "";
+    };
+
+    const getOptionValue = (option) => {
+      if (!option) return "";
+      if (typeof option === "string") return option;
+      if (option[props.optionValue] !== undefined)
+        return option[props.optionValue];
+      if (option.value !== undefined) return option.value;
+      return option || "";
+    };
 
     const displayValue = computed(() => {
-      if (
-        props.modelValue === null ||
-        props.modelValue === undefined ||
-        props.modelValue === ""
-      ) {
-        return props.placeholder;
+      if (!props.options || !Array.isArray(props.options)) {
+        return null;
       }
-      const selectedOption = props.options.find(
-        (opt) => getOptionValue(opt) === props.modelValue,
-      );
-      return selectedOption
-        ? getOptionLabel(selectedOption)
-        : props.placeholder;
+
+      const selectedOption = props.options.find((option) => {
+        if (!option) return false;
+        const optionValue = getOptionValue(option);
+        if (optionValue === null || optionValue === undefined) {
+          return props.modelValue === null || props.modelValue === undefined;
+        }
+        return optionValue === props.modelValue;
+      });
+
+      if (selectedOption) {
+        return getOptionLabel(selectedOption);
+      }
+
+      return null;
     });
 
     const triggerClass = computed(() => {
@@ -162,18 +210,13 @@ export default {
       };
     });
 
-    const getOptionLabel = (option) => {
-      if (typeof option === "string") return option;
-      return option[props.optionLabel] || option.label || option;
-    };
-
-    const getOptionValue = (option) => {
-      if (typeof option === "string") return option;
-      return option[props.optionValue] || option.value || option;
-    };
-
     const isSelected = (option) => {
-      return getOptionValue(option) === props.modelValue;
+      if (!option) return false;
+      const optionValue = getOptionValue(option);
+      if (optionValue === null || optionValue === undefined) {
+        return props.modelValue === null || props.modelValue === undefined;
+      }
+      return optionValue === props.modelValue;
     };
 
     const getIcon = (iconName) => {
@@ -215,13 +258,17 @@ export default {
 
       // Find the maximum text width among all options
       let maxTextWidth = 0;
-      props.options.forEach((option) => {
-        textMeasure.textContent = getOptionLabel(option);
-        const width = textMeasure.offsetWidth;
-        if (width > maxTextWidth) {
-          maxTextWidth = width;
-        }
-      });
+      if (props.options && Array.isArray(props.options)) {
+        props.options.forEach((option) => {
+          if (option && !option.separator) {
+            textMeasure.textContent = getOptionLabel(option);
+            const width = textMeasure.offsetWidth;
+            if (width > maxTextWidth) {
+              maxTextWidth = width;
+            }
+          }
+        });
+      }
 
       document.body.removeChild(textMeasure);
 
@@ -338,22 +385,24 @@ export default {
 
     const toggleDropdown = () => {
       if (props.disabled) return;
-      isOpen.value = !isOpen.value;
       if (isOpen.value) {
-        calculateDropdownPosition();
-        nextTick(() => {
-          setupClickOutside();
-          setupKeyboardNavigation();
-          setupPositionListeners();
-        });
+        closeDropdown();
       } else {
-        removePositionListeners();
+        openDropdown();
       }
     };
 
     const openDropdown = () => {
       if (props.disabled) return;
       if (!isOpen.value) {
+        // Dispatch global event to close other selects
+        window.dispatchEvent(
+          new CustomEvent("custom-select-open", {
+            detail: { selectId: selectId.value },
+          }),
+        );
+        // Emit local event
+        emit("open");
         isOpen.value = true;
         calculateDropdownPosition();
         nextTick(() => {
@@ -365,10 +414,13 @@ export default {
     };
 
     const closeDropdown = () => {
-      isOpen.value = false;
-      highlightedIndex.value = -1;
-      removeEventListeners();
-      removePositionListeners();
+      if (isOpen.value) {
+        isOpen.value = false;
+        emit("close");
+        highlightedIndex.value = -1;
+        removeEventListeners();
+        removePositionListeners();
+      }
     };
 
     const setupPositionListeners = () => {
@@ -398,10 +450,12 @@ export default {
     };
 
     const handleOptionMouseEnter = (option) => {
+      if (!props.options || !Array.isArray(props.options) || !option) return;
       highlightedIndex.value = props.options.indexOf(option);
     };
 
     const selectOption = (option) => {
+      if (!option) return;
       const value = getOptionValue(option);
       emit("update:modelValue", value);
       emit("change", value);
@@ -451,17 +505,19 @@ export default {
     watch(
       () => props.modelValue,
       () => {
-        highlightedIndex.value = props.options.findIndex(
-          (opt) => getOptionValue(opt) === props.modelValue,
-        );
+        if (props.options && Array.isArray(props.options)) {
+          highlightedIndex.value = props.options.findIndex(
+            (opt) => opt && getOptionValue(opt) === props.modelValue,
+          );
+        }
       },
     );
 
     onMounted(() => {
       // Set initial highlighted index
-      if (props.modelValue) {
+      if (props.modelValue && props.options && Array.isArray(props.options)) {
         highlightedIndex.value = props.options.findIndex(
-          (opt) => getOptionValue(opt) === props.modelValue,
+          (opt) => opt && getOptionValue(opt) === props.modelValue,
         );
       }
     });
@@ -471,8 +527,26 @@ export default {
       removePositionListeners();
     });
 
+    const validOptions = computed(() => {
+      const opts = props.options;
+      if (!opts) return [];
+      if (!Array.isArray(opts)) return [];
+      return opts.filter((opt) => {
+        // Allow objects with value/label properties or string options
+        if (typeof opt === "string") return true;
+        if (!opt || typeof opt !== "object") return false;
+        if (opt.separator) return false;
+        // Check if it has at least a value or label property
+        return (
+          opt.value !== undefined ||
+          opt.label !== undefined ||
+          Object.keys(opt).length > 0
+        );
+      });
+    });
+
     return {
-      options: computed(() => props.options),
+      validOptions,
       isOpen,
       selectContainer,
       dropdown,
@@ -506,12 +580,10 @@ export default {
   width: 100%;
   padding: 0.75rem 1rem;
   padding-right: 2.5rem;
-  background: rgba(30, 41, 59, 0.4);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.75rem;
-  color: #e6eef6;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
+  color: var(--text-primary);
   font-size: 0.95rem;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
@@ -528,15 +600,15 @@ export default {
 }
 
 .custom-select-trigger:hover:not(:disabled) {
-  border-color: var(--border-color-hover);
-  background: var(--bg-glass-hover);
+  border-color: var(--slate-grey);
+  background: var(--bg-primary);
 }
 
 .custom-select-trigger:focus {
   outline: none;
-  border-color: var(--accent-blue);
-  background: var(--bg-glass-hover);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+  border-color: var(--accent);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .custom-select-trigger:disabled {
@@ -567,7 +639,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #e6eef6;
+  color: var(--text-primary);
   padding-right: 0.5rem;
   min-height: 1.2em;
   line-height: 1.5;
@@ -575,7 +647,7 @@ export default {
 }
 
 .custom-select.is-placeholder .custom-select-value {
-  color: #94a3b8;
+  color: var(--text-primary);
 }
 
 .custom-select-arrow {
@@ -587,7 +659,7 @@ export default {
   align-items: center;
   justify-content: center;
   transition: transform 0.2s ease;
-  color: #94a3b8;
+  color: var(--slate-grey);
   flex-shrink: 0;
   width: 1rem;
   height: 1rem;
@@ -615,11 +687,8 @@ export default {
 
 .custom-select-dropdown {
   width: 100%;
-  background: rgba(30, 41, 59, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   max-height: 300px;
@@ -637,7 +706,7 @@ export default {
   padding: var(--space-2) var(--space-3);
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+
   color: var(--text-primary);
   font-size: var(--font-size-base);
   font-family: var(--font-family-base);
@@ -651,12 +720,12 @@ export default {
 }
 
 .custom-select-option:hover {
-  background: rgba(30, 41, 59, 0.6);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .custom-select-option.is-selected {
-  background: rgba(56, 189, 248, 0.1);
-  color: #8b5cf6;
+  background: rgba(0, 66, 37, 0.1);
+  color: var(--text-primary);
 }
 
 .custom-select-option-text {
@@ -664,11 +733,17 @@ export default {
   flex-shrink: 0;
 }
 
+.custom-select-option.has-border-bottom {
+  border-bottom: 1px solid var(--slate-grey);
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.5rem;
+}
+
 .custom-select-option-check {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-blue);
+  color: var(--accent);
   flex-shrink: 0;
 }
 

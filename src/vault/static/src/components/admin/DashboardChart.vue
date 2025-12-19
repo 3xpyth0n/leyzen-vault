@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-chart glass glass-card">
+  <div class="dashboard-chart">
     <div class="chart-header">
       <h3>{{ title }}</h3>
       <div class="chart-legend" v-if="legend">
@@ -46,7 +46,7 @@ export default {
     },
     color: {
       type: String,
-      default: "#8b5cf6",
+      default: "#004225",
     },
     legend: {
       type: Array,
@@ -76,7 +76,7 @@ export default {
       const minValue = Math.min(...values, 0);
 
       // Draw grid
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.1)";
+      ctx.strokeStyle = "#004225";
       ctx.lineWidth = 1;
       for (let i = 0; i <= 5; i++) {
         const y = padding.top + (chartHeight / 5) * i;
@@ -87,7 +87,7 @@ export default {
       }
 
       // Draw axes
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.3)";
+      ctx.strokeStyle = "#004225";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padding.left, padding.top);
@@ -135,7 +135,7 @@ export default {
       });
 
       // Draw labels
-      ctx.fillStyle = "#94a3b8";
+      ctx.fillStyle = "#A9B7AA";
       ctx.font = "10px sans-serif";
       ctx.textAlign = "center";
 
@@ -185,7 +185,6 @@ export default {
 <style scoped>
 .dashboard-chart {
   padding: 1.5rem;
-  border-radius: 1rem;
 }
 
 .chart-header {
@@ -197,7 +196,7 @@ export default {
 
 .chart-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -217,11 +216,10 @@ export default {
 .legend-color {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
 }
 
 .legend-label {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 

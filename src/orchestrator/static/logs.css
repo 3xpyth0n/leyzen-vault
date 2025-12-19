@@ -1,11 +1,12 @@
 @import "./tailwind.css";
 
 :root {
-  --muted: #94a3b8;
+  --muted: #a9b7aa;
   --bg: #0a0f1c;
   --panel: rgba(255, 255, 255, 0.04);
   --accent1: #2dd4bf;
-  --accent2: #60a5fa;
+  --accent: #004225;
+  --ash-grey: #a9b7aa;
   --text: #e6eef8;
   --muted-2: #9aa6b2;
 }
@@ -31,7 +32,7 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-radius: 16px;
+
   backdrop-filter: blur(12px);
   box-shadow: 0 6px 40px rgba(0, 0, 0, 0.5);
   overflow: hidden;
@@ -44,7 +45,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 2px solid var(--muted);
 }
 .header-left {
   display: flex;
@@ -86,7 +87,7 @@ footer {
   padding: 0;
   margin: 0;
   font: inherit;
-  color: #94a3b8;
+  color: #a9b7aa;
   text-decoration: underline;
   cursor: pointer;
 }
@@ -105,10 +106,10 @@ footer {
 /* Footer buttons */
 .footer-btn-logout {
   background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #fca5a5;
   padding: 6px 14px;
-  border-radius: 8px;
+
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -140,7 +141,7 @@ footer {
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #cbd5f5;
   padding: 6px 14px;
-  border-radius: 8px;
+
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -186,7 +187,7 @@ footer {
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text);
   padding: 8px 12px;
-  border-radius: 10px;
+
   min-width: 200px;
   transition:
     border-color 0.15s ease,
@@ -224,7 +225,7 @@ footer {
   border: 1px solid rgba(255, 255, 255, 0.04);
   color: var(--text);
   padding: 8px 12px;
-  border-radius: 10px;
+
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -262,7 +263,7 @@ footer {
 }
 .period-btn {
   padding: 8px 12px;
-  border-radius: 10px;
+
   border: 1px solid rgba(255, 255, 255, 0.03);
   background: transparent;
   color: var(--text);
@@ -274,7 +275,7 @@ footer {
   border-color: rgba(255, 255, 255, 0.06);
 }
 .period-btn.active {
-  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  background: var(--accent);
   color: #04121a;
   box-shadow: 0 8px 30px rgba(45, 212, 191, 0.08);
   border: 2px solid rgba(45, 212, 191, 0.3);
@@ -286,67 +287,73 @@ footer {
   outline-offset: 2px;
 }
 
-/* Custom range inputs */
-.custom-range {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-left: 8px;
+.custom-period-wrapper {
+  position: relative;
+  display: inline-block;
 }
-.custom-range.is-hidden {
+
+.custom-range-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1000;
+  min-width: 280px;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 1rem;
+}
+
+.custom-range-dropdown.is-hidden {
   display: none;
 }
-.custom-range input[type="date"] {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+
+.custom-range-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.custom-range-content label {
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--text);
-  padding: 6px 8px;
-  border-radius: 8px;
+  margin-bottom: 0.25rem;
+}
+
+.custom-range-content input[type="date"] {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.custom-range-content input[type="date"]:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+.custom-range-content input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+.custom-range-content #applyCustom {
+  margin-top: 0.25rem;
+  width: 100%;
+  justify-content: center;
 }
 .help {
   font-size: 0.85rem;
   color: var(--muted-2);
   margin-left: 0.5rem;
-}
-
-/* Auto refresh switch (simple) */
-.switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-  user-select: none;
-  cursor: pointer;
-}
-.switch-label {
-  color: var(--muted);
-  font-weight: 600;
-  margin-left: 6px;
-}
-.track {
-  width: 44px;
-  height: 26px;
-  border-radius: 999px;
-  padding: 4px;
-  display: inline-flex;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.03);
-}
-.thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: #fff;
-  transform: translateX(0);
-  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.45);
-}
-.switch.on .track {
-  background: linear-gradient(90deg, var(--accent1), var(--accent2));
-}
-.switch.on .thumb {
-  transform: translateX(17px);
 }
 
 /* Info: number of lines */
@@ -402,15 +409,14 @@ footer {
 }
 .log-area pre::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
-  border-radius: 10px;
 }
 .log-area pre::-webkit-scrollbar-thumb {
-  background: linear-gradient(45deg, var(--accent1), var(--accent2));
-  border-radius: 10px;
+  background: var(--accent);
+
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .log-area pre::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(45deg, #3ae9d2, #7eb4ff);
+  background: transparent;
 }
 
 /* Small responsive */
@@ -465,7 +471,12 @@ footer {
 
 .btn-spinner {
   display: inline-block;
-  animation: spin 1s linear infinite;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  border-top-color: var(--ash-grey);
+  animation: spin 0.9s linear infinite;
 }
 
 .btn-spinner.hidden {

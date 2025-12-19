@@ -268,6 +268,7 @@ const handleSSOLogin = async (providerId) => {
   padding: 2rem;
   position: relative;
   z-index: 1;
+  background: var(--bg-primary);
 }
 
 .register-content {
@@ -277,22 +278,20 @@ const handleSSOLogin = async (providerId) => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 3rem;
 }
 
 h1 {
+  font-family: var(--font-family-branding);
   text-align: center;
   margin-bottom: 3rem;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 3rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.2;
-  background: linear-gradient(135deg, #e6eef6 0%, #cbd5e1 50%, #94a3b8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 4px 20px rgba(230, 238, 246, 0.3);
   margin-top: 0;
+  opacity: 1;
 }
 
 form {
@@ -306,17 +305,24 @@ input {
   width: 100%;
   box-sizing: border-box;
   padding: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 8px;
-  background: rgba(13, 17, 23, 0.5);
-  color: #e6eef6;
+  border: 1px solid #004225;
+  background: rgba(10, 10, 10, 0.6);
+  color: #a9b7aa;
   font-size: 0.95rem;
-  transition: border-color 0.2s;
+  font-weight: 500;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+input::placeholder {
+  color: rgba(169, 183, 170, 0.6);
+  opacity: 1;
 }
 
 input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: #004225;
 }
 
 input:disabled {
@@ -327,20 +333,22 @@ input:disabled {
 button[type="submit"] {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
+  background: transparent;
+  border: 1px solid #004225;
+  color: var(--text-primary);
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
 button[type="submit"]:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+  border-color: #004225;
+  color: var(--text-primary);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 button[type="submit"]:disabled {
@@ -351,13 +359,15 @@ button[type="submit"]:disabled {
 p {
   text-align: center;
   margin-top: 1.5rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   width: 100%;
+  font-weight: 500;
 }
 
 p a {
-  color: #58a6ff;
+  color: var(--slate-grey);
   text-decoration: none;
+  font-weight: 600;
 }
 
 p a:hover {
@@ -368,8 +378,8 @@ p a:hover {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
   width: 100%;
   text-align: center;
@@ -379,7 +389,7 @@ p a:hover {
   padding: 1rem;
   background: rgba(88, 166, 255, 0.1);
   border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 8px;
+
   margin-bottom: 1.5rem;
   text-align: center;
   width: 100%;
@@ -394,19 +404,22 @@ p a:hover {
 .sso-button {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: rgba(88, 166, 255, 0.2);
-  border: 1px solid rgba(88, 166, 255, 0.5);
-  border-radius: 8px;
-  color: #58a6ff;
+  background: transparent;
+  border: 1px solid #004225;
+  color: var(--text-primary);
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
 .sso-button:hover:not(:disabled) {
-  background: rgba(88, 166, 255, 0.3);
-  border-color: rgba(88, 166, 255, 0.7);
+  border-color: #004225;
+  color: var(--text-primary);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .sso-button:disabled {

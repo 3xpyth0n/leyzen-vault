@@ -38,6 +38,16 @@ def _rotation_service() -> RotationService:
     return current_app.config["ROTATION_SERVICE"]
 
 
+@dashboard_bp.route("/healthz", strict_slashes=False)
+def healthz():
+    """Health check endpoint that doesn't require authentication."""
+    try:
+        rotation = _rotation_service()
+        return jsonify({"status": "ok"}), 200
+    except Exception:
+        return jsonify({"status": "error"}), 503
+
+
 @dashboard_bp.route("/", strict_slashes=False)
 @login_required
 def dashboard():

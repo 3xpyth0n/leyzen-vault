@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import timedelta
 
-from flask import Flask, url_for
+from flask import Flask, jsonify, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from common.constants import SESSION_MAX_AGE_SECONDS
@@ -59,6 +59,11 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
+
+    @app.route("/healthz")
+    def healthz():
+        """Health check endpoint that doesn't require authentication or trigger before_request hooks."""
+        return jsonify({"status": "ok"}), 200
 
     @app.after_request
     def add_csp_headers(response):

@@ -4,31 +4,62 @@
       v-if="!showEncryptionOverlay || !isMasterKeyRequired"
       class="view-header"
     >
-      <div class="header-top">
+      <div class="breadcrumb-text">
         <button
-          @click="$router.push('/dashboard')"
-          class="btn btn-back"
-          :disabled="isServerOffline"
+          @click="navigateToBreadcrumb(null)"
+          @dragover.prevent="handleBreadcrumbDragOver(null, $event)"
+          @dragleave="handleBreadcrumbDragLeave(null, $event)"
+          @drop.prevent="handleBreadcrumbDrop(null, $event)"
+          class="breadcrumb-item"
+          :class="{
+            'breadcrumb-current': currentParentId === null,
+            'breadcrumb-drop-target':
+              breadcrumbDropTargetId === null && isDragging,
+          }"
         >
-          ← Back
+          <span
+            class="breadcrumb-icon"
+            v-html="getIcon(vaultspace?.icon_name || 'folder', 16)"
+          ></span>
+          {{ vaultspace?.name || "Loading..." }}
         </button>
-        <h1>{{ vaultspace?.name || "Loading..." }}</h1>
+        <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
+          <span class="breadcrumb-separator"> > </span>
+          <button
+            @click="navigateToBreadcrumb(crumb.id)"
+            @dragover.prevent="handleBreadcrumbDragOver(crumb, $event)"
+            @dragleave="handleBreadcrumbDragLeave(crumb, $event)"
+            @drop.prevent="handleBreadcrumbDrop(crumb, $event)"
+            class="breadcrumb-item"
+            :class="{
+              'breadcrumb-current': currentParentId === crumb.id,
+              'breadcrumb-drop-target': breadcrumbDropTargetId === crumb.id,
+            }"
+          >
+            {{ crumb.name }}
+          </button>
+        </template>
       </div>
-      <div class="header-actions">
-        <button
-          @click="createFolderDirect"
-          class="btn btn-primary"
+      <div class="header-actions-row">
+        <SearchBar
+          :vaultspaceId="$route.params.id"
+          :parentId="currentParentId"
+          placeholder="Search files and folders..."
+          @result-click="handleSearchResultClick"
+          class="header-search"
+        />
+        <CustomSelect
+          :model-value="selectedAction"
+          :options="[
+            { value: 'new-folder', label: 'New Folder' },
+            { value: 'upload-file', label: 'Upload File' },
+          ]"
+          placeholder="New"
+          @change="handleActionSelect"
+          size="small"
           :disabled="isServerOffline"
-        >
-          New Folder
-        </button>
-        <button
-          @click="handleUploadClick"
-          class="btn btn-primary"
-          :disabled="isServerOffline"
-        >
-          Upload File
-        </button>
+          class="header-actions-select"
+        />
       </div>
     </header>
 
@@ -36,54 +67,10 @@
       v-if="!showEncryptionOverlay || !isMasterKeyRequired"
       class="view-main"
     >
-      <!-- Breadcrumbs -->
-      <!-- Search Bar -->
-      <div class="search-container">
-        <SearchBar
-          :vaultspaceId="$route.params.id"
-          :parentId="currentParentId"
-          placeholder="Search files and folders..."
-          @result-click="handleSearchResultClick"
-        />
-      </div>
-
-      <div
-        v-if="breadcrumbs.length > 0 || currentParentId"
-        class="breadcrumbs glass"
-      >
-        <button
-          @click="navigateToFolder(null)"
-          class="breadcrumb-link"
-          :disabled="isServerOffline"
-        >
-          {{ vaultspace?.name || "Home" }}
-        </button>
-        <template v-if="breadcrumbs.length > 0">
-          <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
-            <span class="breadcrumb-separator">/</span>
-            <button
-              v-if="index < breadcrumbs.length - 1"
-              @click="navigateToFolder(crumb.id)"
-              class="breadcrumb-link"
-              :disabled="isServerOffline"
-            >
-              {{ crumb.name }}
-            </button>
-            <span v-else class="breadcrumb-active">
-              {{ crumb.name }}
-            </span>
-          </template>
-        </template>
-        <template v-else-if="currentParentId">
-          <span class="breadcrumb-separator">/</span>
-          <span class="breadcrumb-active">Loading...</span>
-        </template>
-      </div>
-
       <div v-if="loading" class="loading">Loading files...</div>
-      <div v-else-if="error" class="error glass">{{ error }}</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
 
-      <div v-else class="files-list glass">
+      <div v-else class="files-list">
         <div
           v-if="folders.length === 0 && filesList.length === 0"
           class="empty-state"
@@ -127,6 +114,7 @@
           @drag-start="handleDragStart"
           @drag-over="handleDragOver"
           @drag-leave="handleDragLeave"
+          @drag-end="handleDragEnd"
           @drop="handleDrop"
         />
       </div>
@@ -419,6 +407,7 @@ import ConfirmationModal from "../components/ConfirmationModal.vue";
 import ProgressBar from "../components/ProgressBar.vue";
 import SearchBar from "../components/SearchBar.vue";
 import { clipboardManager } from "../utils/clipboard";
+import { showShareModal } from "../composables/useShareModal";
 import {
   generateFileKey,
   encryptFile,
@@ -449,6 +438,7 @@ import {
 } from "../services/zipService.js";
 import { trash } from "../services/trash.js";
 import PasswordInput from "../components/PasswordInput.vue";
+import CustomSelect from "../components/CustomSelect.vue";
 
 export default {
   name: "VaultSpaceView",
@@ -464,6 +454,7 @@ export default {
     AlertModal,
     ConflictResolutionModal,
     PasswordInput,
+    CustomSelect,
   },
   data() {
     return {
@@ -473,6 +464,9 @@ export default {
       filesList: [],
       currentParentId: null,
       breadcrumbs: [], // Array of { id, name } for breadcrumb path
+      breadcrumbDropTargetId: null,
+      isDragging: false,
+      selectedAction: null,
       loading: false,
       error: null,
       showDeleteConfirmModal: false,
@@ -657,7 +651,7 @@ export default {
     // Setup keyboard shortcuts
     this.setupKeyboardShortcuts();
 
-    // Expose showConfirmationModal for sharing.js to use
+    // Expose showConfirmationModal for modals to use
     window.showConfirmationModal = (options) => {
       this.revokeConfirmMessage =
         options.message || "Are you sure you want to proceed?";
@@ -786,6 +780,19 @@ export default {
     },
   },
   methods: {
+    getIcon(iconName, size = 24) {
+      if (!window.Icons) {
+        return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(iconName, size, "currentColor");
+      }
+      const iconFn = window.Icons[iconName];
+      if (typeof iconFn === "function") {
+        return iconFn.call(window.Icons, size, "currentColor");
+      }
+      return "";
+    },
     async loadVaultSpace() {
       try {
         this.vaultspace = await vaultspaces.get(this.$route.params.id);
@@ -1433,6 +1440,13 @@ export default {
       }
     },
 
+    navigateToBreadcrumb(folderId) {
+      if (this.isServerOffline) {
+        return;
+      }
+      this.navigateToFolder(folderId);
+    },
+
     async handleUploadClick() {
       // Load VaultSpace key if not already loaded
       if (!this.vaultspaceKey) {
@@ -1631,6 +1645,19 @@ export default {
 
         return newName;
       }
+    },
+    handleActionSelect(value) {
+      if (!value) return;
+
+      if (value === "new-folder") {
+        this.createFolderDirect();
+      } else if (value === "upload-file") {
+        this.handleUploadClick();
+      }
+
+      this.$nextTick(() => {
+        this.selectedAction = null;
+      });
     },
     async createFolderDirect() {
       // Block action if server is offline
@@ -2829,39 +2856,12 @@ export default {
     },
     async initSharingManager(fileId) {
       try {
-        // Check if sharing manager is already available
-        if (window.sharingManager) {
-          window.sharingManager.showShareModal(fileId, "file");
-          return;
-        }
-
-        // Try to use the showShareModalAdvanced function if available
-        if (window.showShareModalAdvanced) {
-          window.showShareModalAdvanced(fileId, "file");
-          return;
-        }
-
-        // Wait for SharingManager to initialize (it's loaded in index.html)
-        let retries = 0;
-        const maxRetries = 30; // 3 seconds max
-        const checkInterval = setInterval(() => {
-          retries++;
-          if (window.sharingManager) {
-            clearInterval(checkInterval);
-            window.sharingManager.showShareModal(fileId, "file");
-          } else if (window.showShareModalAdvanced) {
-            clearInterval(checkInterval);
-            window.showShareModalAdvanced(fileId, "file");
-          } else if (retries >= maxRetries) {
-            clearInterval(checkInterval);
-            this.showAlert({
-              type: "error",
-              title: "Error",
-              message:
-                "Share functionality is not available. Please refresh the page.",
-            });
-          }
-        }, 100);
+        await showShareModal(
+          fileId,
+          "file",
+          this.$route.params.id,
+          this.vaultspaceKey,
+        );
       } catch (err) {
         this.showAlert({
           type: "error",
@@ -3039,7 +3039,7 @@ export default {
       }
     },
 
-    handleFileAction(action, item, newName = null) {
+    async handleFileAction(action, item, newName = null) {
       if (action === "download") {
         this.downloadFile(item);
       } else if (action === "preview") {
@@ -3061,17 +3061,20 @@ export default {
       } else if (action === "copy") {
         this.handleCopyAction(item);
       } else if (action === "share") {
-        // Open share modal using SharingManager
-        if (window.sharingManager) {
-          window.sharingManager.showShareModal(
+        // Open share modal using composable
+        try {
+          await showShareModal(
             item.id,
             "file",
             this.$route.params.id,
             this.vaultspaceKey,
           );
-        } else {
-          // Fallback: try to load sharing manager
-          this.initSharingManager(item.id);
+        } catch (err) {
+          this.showAlert({
+            type: "error",
+            title: "Error",
+            message: "Failed to open share dialog.",
+          });
         }
       } else if (action === "zip-folder") {
         this.handleZipFolder(item);
@@ -3233,25 +3236,18 @@ export default {
       this.showPasswordModal = true;
     },
     calculateOverlayPosition() {
-      // Calculate position to cover page-content (which contains view-header and view-main)
-      // but not app-header (which is outside page-content)
-      // The overlay should cover the entire content area without margins,
-      // starting below the header and next to the sidebar
+      // Calculate position to cover main-content with the same border-radius
       this.$nextTick(() => {
-        const header = document.querySelector(".app-header");
-        const pageContent = document.querySelector(".page-content");
+        const mainContent = document.querySelector(".main-content");
         const isMobileMode = document.body.classList.contains("mobile-mode");
-        if (header && pageContent) {
-          const headerRect = header.getBoundingClientRect();
-          const pageContentRect = pageContent.getBoundingClientRect();
-          // Calculate overlay to start exactly below the header
-          // and extend to the right edge of viewport and bottom of viewport
-          const overlayTop = headerRect.bottom; // Start exactly below header
-          const overlayLeft = pageContentRect.left; // Start at page-content left edge
-          const overlayWidth = window.innerWidth - overlayLeft;
-          // In mobile mode, leave space for bottom navigation bar (approximately 100px from bottom)
-          const bottomOffset = isMobileMode ? 100 : 0;
-          const overlayHeight = window.innerHeight - overlayTop - bottomOffset;
+        if (mainContent) {
+          const mainContentRect = mainContent.getBoundingClientRect();
+
+          // Use the exact dimensions and position of main-content
+          const overlayTop = mainContentRect.top;
+          const overlayLeft = mainContentRect.left;
+          const overlayWidth = mainContentRect.width;
+          const overlayHeight = mainContentRect.height;
 
           this.overlayStyle = {
             position: "fixed",
@@ -3259,6 +3255,7 @@ export default {
             left: `${overlayLeft}px`,
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
+            borderRadius: isMobileMode ? "0" : "1rem", // Match main-content border-radius in desktop mode
             zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
             pointerEvents: "auto", // Ensure overlay is interactive
           };
@@ -4247,6 +4244,7 @@ export default {
 
     handleDragStart(item, event) {
       // Drag data is already set in FileListView
+      this.isDragging = true;
     },
 
     handleDragOver(item, event) {
@@ -4255,6 +4253,100 @@ export default {
 
     handleDragLeave(item, event) {
       // Visual feedback handled in FileListView
+    },
+
+    handleDragEnd(event) {
+      this.isDragging = false;
+      this.breadcrumbDropTargetId = null;
+    },
+
+    handleBreadcrumbDragOver(breadcrumbItem, event) {
+      try {
+        const dragData = event.dataTransfer.getData("application/json");
+        if (dragData) {
+          const parsed = JSON.parse(dragData);
+          if (parsed && parsed.id) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            this.breadcrumbDropTargetId = breadcrumbItem
+              ? breadcrumbItem.id
+              : null;
+          }
+        } else {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          this.breadcrumbDropTargetId = breadcrumbItem
+            ? breadcrumbItem.id
+            : null;
+        }
+      } catch (e) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        this.breadcrumbDropTargetId = breadcrumbItem ? breadcrumbItem.id : null;
+      }
+    },
+
+    handleBreadcrumbDragLeave(breadcrumbItem, event) {
+      this.breadcrumbDropTargetId = null;
+    },
+
+    async handleBreadcrumbDrop(breadcrumbItem, event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      try {
+        const dragData = JSON.parse(
+          event.dataTransfer.getData("application/json"),
+        );
+        if (!dragData || !dragData.id) {
+          this.breadcrumbDropTargetId = null;
+          return;
+        }
+
+        const targetFolderId = breadcrumbItem ? breadcrumbItem.id : null;
+        const sourceItem =
+          this.files.find((f) => f.id === dragData.id) ||
+          this.folders.find((f) => f.id === dragData.id) ||
+          this.filesList.find((f) => f.id === dragData.id);
+
+        if (!sourceItem) {
+          this.breadcrumbDropTargetId = null;
+          return;
+        }
+
+        if (sourceItem.id === targetFolderId) {
+          this.breadcrumbDropTargetId = null;
+          return; // Can't drop on itself
+        }
+
+        // Clear clipboard to prevent copy operation
+        if (clipboardManager) {
+          clipboardManager.clear();
+        }
+
+        // Perform move (not copy)
+        try {
+          await this.handleMove(sourceItem, targetFolderId);
+
+          // Show success notification
+          if (window.Notifications) {
+            window.Notifications.success(
+              `${sourceItem.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
+            );
+          }
+        } catch (moveErr) {
+          if (window.Notifications) {
+            window.Notifications.error(
+              `Failed to move ${sourceItem.mime_type === "application/x-directory" ? "folder" : "file"}: ${moveErr.message || "Unknown error"}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Error handling breadcrumb drop:", err);
+      } finally {
+        this.breadcrumbDropTargetId = null;
+        this.isDragging = false;
+      }
     },
 
     async handleDrop(targetFolder, event) {
@@ -4549,18 +4641,17 @@ export default {
 }
 
 .view-header {
-  background: var(--bg-glass);
-  backdrop-filter: var(--blur);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem 2rem;
+  border-bottom: 2px solid var(--slate-gray);
+  background: var(--bg-primary);
+  padding: 1rem 1.5rem;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-  box-shadow: var(--shadow-md);
-  position: relative;
-  z-index: 2;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  position: sticky;
+  top: 0rem;
+  z-index: 10;
+  overflow: visible;
 }
 
 .mobile-mode .view-header {
@@ -4568,86 +4659,133 @@ export default {
   align-items: flex-start;
   gap: 0.75rem;
   padding: 1rem;
-  margin-bottom: 1rem;
-  border-radius: 0;
+  top: 1rem;
+  margin: 0 1rem;
 }
 
-.header-top {
+.breadcrumb-text {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  gap: 0.25rem;
   width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(169, 183, 170, 0.3) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 
-.mobile-mode .header-top {
-  width: 100%;
+.breadcrumb-text::-webkit-scrollbar {
+  height: 3px;
+}
+
+.breadcrumb-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.breadcrumb-text::-webkit-scrollbar-thumb {
+  background-color: rgba(169, 183, 170, 0.3);
+  border-radius: 2px;
+}
+
+.breadcrumb-text::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(169, 183, 170, 0.5);
+}
+
+.breadcrumb-icon {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  margin-right: 0.375rem;
+  flex-shrink: 0;
+  vertical-align: middle;
+  line-height: 1;
 }
 
-.view-header h1 {
-  margin: 0;
-  flex: 1;
-  text-align: center;
+.breadcrumb-icon :deep(svg) {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  display: block;
+  vertical-align: middle;
+}
+
+.breadcrumb-item {
+  background: transparent;
+  border: none;
   color: var(--text-primary);
-  font-size: 1.75rem;
+  font-size: 0.95rem;
+  padding: 0.25rem 0.25rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.breadcrumb-item:hover {
+  background: rgba(0, 66, 37, 0.1);
+}
+
+.breadcrumb-item.breadcrumb-current {
   font-weight: 600;
 }
 
-.mobile-mode .view-header h1 {
-  text-align: right;
-  font-size: 1.25rem;
-  width: auto;
-  flex: 1;
-  margin: 0;
-  margin-left: auto;
-  margin-right: 0.5rem;
+.breadcrumb-item.breadcrumb-drop-target {
+  background: rgba(0, 66, 37, 0.2);
+  border: 1px solid var(--accent);
 }
 
-.search-container {
-  margin-bottom: 1.5rem;
-  width: 100%;
+.breadcrumb-separator {
+  color: var(--slate-grey);
+  user-select: none;
 }
 
-.header-actions {
+.header-actions-row {
   display: flex;
-  gap: 0.75rem;
-  position: relative;
-  z-index: 3;
-}
-
-.mobile-mode .header-actions {
+  align-items: center;
+  gap: 1rem;
   width: 100%;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.mobile-mode .header-actions .btn {
+@media (max-width: 768px) {
+  .header-actions-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.header-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+.header-actions-select {
+  flex-shrink: 0;
+  min-width: 100px;
+  max-width: 150px;
+  width: auto;
+}
+
+@media (max-width: 768px) {
+  .header-actions-select {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.header-actions-select :deep(.custom-select) {
   width: 100%;
-  font-size: 0.9rem;
-  padding: 0.625rem 1rem;
 }
 
-.header-actions .btn {
-  position: relative;
-  z-index: 3;
-  pointer-events: auto;
-}
-
-/* Button overrides specific to view header - keep these as they override global styles */
-.view-header .btn-primary,
-.header-actions .btn-primary {
-  background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: var(--text-primary, #e6eef6);
-  box-shadow: none;
-}
-
-.view-header .btn-primary:hover,
-.header-actions .btn-primary:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(148, 163, 184, 0.4);
-  transform: translateY(0);
+.header-actions-select :deep(.custom-select-trigger) {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .view-main {
@@ -4660,43 +4798,10 @@ export default {
   padding: 0;
 }
 
-.breadcrumbs {
-  padding: 0.75rem 1.5rem;
-  border-radius: var(--radius-md);
-  margin-bottom: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.breadcrumb-link {
-  background: none;
-  border: none;
-  color: var(--accent-blue);
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 0;
-  font-size: 0.9rem;
-}
-
-.breadcrumb-link:hover {
-  color: var(--accent-blue-dark);
-}
-
-.breadcrumb-active {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.breadcrumb-separator {
-  color: var(--text-muted);
-}
-
 .files-list {
-  padding: 2rem;
-  border-radius: var(--radius-lg);
+  padding: 0 1rem;
   min-height: 400px;
+  margin-top: 3rem;
 }
 
 .empty-state {
@@ -4720,7 +4825,7 @@ export default {
 
 .file-card {
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+
   padding: 1.5rem;
   display: flex;
   flex-direction: row;
@@ -4731,7 +4836,7 @@ export default {
 }
 
 .file-card.selected {
-  border-color: var(--accent-blue, #8b5cf6);
+  border-color: var(--accent, #004225);
   background: rgba(56, 189, 248, 0.1);
 }
 
@@ -4739,7 +4844,7 @@ export default {
 .grid-body-row.search-highlighted {
   position: relative;
   animation: searchHighlight 0.5s ease-in-out;
-  border-color: var(--accent-blue, #8b5cf6) !important;
+  border-color: var(--accent, #004225) !important;
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
 }
 
@@ -4752,7 +4857,7 @@ export default {
   right: 0;
   bottom: 0;
   background: rgba(56, 189, 248, 0.2);
-  border-radius: inherit;
+
   z-index: -1;
   animation: searchPulse 2s ease-in-out;
 }
@@ -4794,12 +4899,11 @@ export default {
   align-items: center;
   padding: 1rem;
   margin-bottom: 1rem;
-  border-radius: var(--radius-md, 8px);
 }
 
 .selection-count {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .file-card:hover {
@@ -4839,7 +4943,7 @@ export default {
 .file-type {
   margin: 0.25rem 0;
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: var(--slate-grey);
 }
 
 .file-type {
@@ -4857,7 +4961,7 @@ export default {
   background: var(--bg-glass);
   backdrop-filter: var(--blur);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0.5rem;
@@ -4875,25 +4979,6 @@ export default {
   transform: scale(1.1);
 }
 
-.btn-back {
-  background: var(--bg-glass);
-  flex-shrink: 0;
-  backdrop-filter: var(--blur);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-}
-
-.mobile-mode .btn-back {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
-  margin-left: 0.5rem;
-}
-
-.btn-back:hover {
-  background: var(--bg-glass-hover);
-  color: var(--text-primary);
-}
-
 .loading,
 .error {
   padding: 3rem;
@@ -4905,8 +4990,7 @@ export default {
 .error {
   color: var(--error);
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 /* Modal styles use global .modal-overlay and .modal from vault.css with sidebar-specific padding */
@@ -4984,7 +5068,7 @@ body.sidebar-collapsed .modal-overlay {
   margin: 1rem 0;
   padding: 1rem;
   background: var(--bg-glass);
-  border-radius: var(--radius-md);
+
   text-align: center;
   color: var(--text-secondary);
 }
@@ -4992,8 +5076,8 @@ body.sidebar-collapsed .modal-overlay {
 .error-message {
   padding: 1rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   color: var(--error);
   margin-bottom: 1.5rem;
 }
@@ -5017,7 +5101,7 @@ body.sidebar-collapsed .modal-overlay {
   background: var(--bg-glass);
   backdrop-filter: var(--blur);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+
   color: var(--text-primary);
   padding: var(--space-2) var(--space-3);
   margin-right: var(--space-3);
@@ -5033,20 +5117,19 @@ body.sidebar-collapsed .modal-overlay {
 .selected-files {
   margin-top: 1rem;
   padding: 1rem;
-  border-radius: var(--radius-md, 8px);
 }
 
 .selected-files ul {
   margin: 0.5rem 0 0 0;
   padding-left: 1.5rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .selected-files li {
   margin: 0.25rem 0;
   font-size: 0.9rem;
 }
-/* Password Modal Styles */
+
 .password-modal-overlay {
   position: fixed;
   inset: 0;
@@ -5055,7 +5138,6 @@ body.sidebar-collapsed .modal-overlay {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.2s ease;
@@ -5074,6 +5156,7 @@ body.sidebar-collapsed .modal-overlay {
   position: relative;
   width: 100%;
   max-width: 480px;
+  background: var(--bg-modal);
   animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -5097,7 +5180,7 @@ body.sidebar-collapsed .modal-overlay {
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+
   padding: 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
@@ -5132,7 +5215,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .password-modal-header h2 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   flex: 1;
@@ -5141,7 +5224,7 @@ body.sidebar-collapsed .modal-overlay {
 .password-modal-close {
   background: none;
   border: none;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 2rem;
   line-height: 1;
   cursor: pointer;
@@ -5151,14 +5234,14 @@ body.sidebar-collapsed .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .password-modal-close:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .password-modal-close:disabled {
@@ -5173,7 +5256,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .password-modal-description {
   margin: 0 0 1.5rem 0;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-size: 1rem;
   line-height: 1.6;
 }
@@ -5185,7 +5268,7 @@ body.sidebar-collapsed .modal-overlay {
 .password-modal-body .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   font-weight: 500;
   font-size: 0.95rem;
 }
@@ -5194,9 +5277,9 @@ body.sidebar-collapsed .modal-overlay {
   width: 100%;
   padding: 0.75rem 1rem;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
-  color: #e6eef6;
+  border: 1px solid #004225;
+
+  color: var(--slate-grey);
   font-size: 0.95rem;
   font-family: inherit;
   box-sizing: border-box;
@@ -5216,14 +5299,14 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .password-modal-body .form-input::placeholder {
-  color: rgba(148, 163, 184, 0.6);
+  color: var(--slate-grey);
 }
 
 .password-modal-error {
   padding: 0.75rem 1rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 0.5rem;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   color: #fca5a5;
   font-size: 0.9rem;
   margin-top: 1rem;
@@ -5241,7 +5324,7 @@ body.sidebar-collapsed .modal-overlay {
 .password-modal-btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.5rem;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -5257,26 +5340,25 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .password-modal-btn-cancel {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
+  background: var(--bg-primary);
+  color: #a9b7aa;
+  border: 1px solid var(--slate-grey);
 }
 
 .password-modal-btn-cancel:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.3);
+  background: var(--bg-secondary);
 }
 
 .password-modal-btn-unlock {
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  color: white;
+  background: transparent;
+  color: #a9b7aa;
+  border: 1px solid var(--ash-grey);
 }
 
 .password-modal-btn-unlock:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+  background: var(--accent);
 }
 
-/* Responsive adjustments */
 @media (max-width: 768px) {
   .password-modal-container {
     max-width: 100%;
@@ -5284,7 +5366,6 @@ body.sidebar-collapsed .modal-overlay {
   }
 
   .password-modal-content {
-    border-radius: 1rem;
   }
 
   .password-modal-header,
@@ -5315,13 +5396,13 @@ body.sidebar-collapsed .modal-overlay {
   justify-content: center !important;
   background: linear-gradient(
     140deg,
-    rgba(30, 41, 59, 0.15),
-    rgba(15, 23, 42, 0.12)
+    rgba(0, 66, 37, 0.08),
+    rgba(1, 10, 0, 0.12)
   ) !important;
   backdrop-filter: blur(40px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: none !important;
-  border-radius: 0 0 0 1rem !important; /* Rounded bottom-left corner to match sidebar */
+  border: 1px solid var(--border-color) !important; /* Match main-content border */
+  border-radius: 1rem !important; /* Match main-content border-radius */
   box-shadow: none !important;
   animation: overlayFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) !important;
   /* pointer-events is controlled via inline style */
@@ -5387,8 +5468,8 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .encryption-icon {
-  color: rgba(88, 166, 255, 0.9);
-  filter: drop-shadow(0 4px 12px rgba(88, 166, 255, 0.3));
+  color: rgba(0, 66, 37, 0.9);
+  filter: drop-shadow(0 4px 12px rgba(0, 66, 37, 0.3));
   width: 64px;
   height: 64px;
 }
@@ -5396,7 +5477,7 @@ body.sidebar-collapsed .modal-overlay {
 .encryption-title {
   font-size: 1.75rem;
   font-weight: 600;
-  color: #e6eef6;
+  color: #a9b7aa;
   margin: 0 0 1rem 0;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   letter-spacing: -0.02em;
@@ -5404,7 +5485,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .encryption-description {
   font-size: 1rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   line-height: 1.6;
   margin: 0 0 2rem 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
@@ -5414,16 +5495,16 @@ body.sidebar-collapsed .modal-overlay {
   padding: 0.875rem 2rem !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  color: #ffffff !important;
+  color: #a9b7aa !important;
   background: linear-gradient(
     135deg,
-    rgba(88, 166, 255, 0.2),
-    rgba(56, 189, 248, 0.15)
+    rgba(0, 66, 37, 0.2),
+    rgba(0, 66, 37, 0.15)
   ) !important;
   backdrop-filter: blur(20px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
-  border: 1px solid rgba(88, 166, 255, 0.3) !important;
-  border-radius: 0.75rem !important;
+  border: 1px solid rgba(0, 66, 37, 0.3) !important;
+
   cursor: pointer !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   box-shadow:
@@ -5458,12 +5539,12 @@ body.sidebar-collapsed .modal-overlay {
   transform: translateY(-2px);
   background: linear-gradient(
     135deg,
-    rgba(88, 166, 255, 0.3),
-    rgba(56, 189, 248, 0.25)
+    rgba(0, 66, 37, 0.3),
+    rgba(0, 66, 37, 0.25)
   );
-  border-color: rgba(88, 166, 255, 0.5);
+  border-color: rgba(0, 66, 37, 0.5);
   box-shadow:
-    0 6px 24px rgba(88, 166, 255, 0.3),
+    0 6px 24px rgba(0, 66, 37, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
@@ -5474,7 +5555,7 @@ body.sidebar-collapsed .modal-overlay {
 .encryption-unlock-btn:active {
   transform: translateY(0);
   box-shadow:
-    0 2px 8px rgba(88, 166, 255, 0.2),
+    0 2px 8px rgba(0, 66, 37, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 

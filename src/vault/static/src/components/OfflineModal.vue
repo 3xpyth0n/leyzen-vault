@@ -17,7 +17,7 @@
                   width="48"
                   height="48"
                   viewBox="0 0 24 24"
-                  fill="#ef4444"
+                  fill="var(--error)"
                   xmlns="http://www.w3.org/2000/svg"
                 >
                   <path
@@ -65,9 +65,7 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.6));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,19 +83,9 @@ export default {
 }
 
 .offline-modal-content {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.95),
-    rgba(15, 23, 42, 0.95)
-  );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 1rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--error);
   padding: 2rem;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(239, 68, 68, 0.1);
   width: 100%;
   text-align: center;
 }
@@ -140,32 +128,19 @@ export default {
   width: 64px;
   height: 64px;
   background: rgba(239, 68, 68, 0.1);
-  border-radius: 50%;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
 }
 
 .offline-modal-title {
   margin: 0 0 0.75rem 0;
   font-size: 1.5rem;
   font-weight: 600;
-  color: #ef4444;
-  text-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  color: var(--error);
 }
 
 .offline-modal-message {
   margin: 0;
   font-size: 0.95rem;
-  color: #cbd5e1;
+  color: var(--text-primary);
   line-height: 1.5;
 }
 

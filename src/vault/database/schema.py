@@ -1014,6 +1014,9 @@ class PublicShareLink(db.Model):
     last_accessed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    note: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )  # Optional note for the share link
 
     # Relationships
     creator: Mapped["User"] = relationship("User", foreign_keys=[created_by])
@@ -1044,6 +1047,7 @@ class PublicShareLink(db.Model):
             "last_accessed_at": (
                 self.last_accessed_at.isoformat() if self.last_accessed_at else None
             ),
+            "note": self.note,
             "is_expired": self.is_expired(),
             "is_download_limit_reached": self.is_download_limit_reached(),
             "is_access_limit_reached": self.is_access_limit_reached(),

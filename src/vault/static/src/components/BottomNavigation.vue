@@ -37,17 +37,6 @@
         <span class="bottom-nav-label">Starred</span>
       </button>
       <button
-        @click.stop="handleNavClickToPath('/shared')"
-        class="bottom-nav-item"
-        data-path="/shared"
-        :class="{ 'router-link-active': $route.path === '/shared' }"
-        :disabled="!isClickable || isOffline"
-        aria-label="Shared"
-      >
-        <span v-html="getIcon('link', 24)" class="bottom-nav-icon"></span>
-        <span class="bottom-nav-label">Shared</span>
-      </button>
-      <button
         @click.stop="handleNavClickToPath('/recent')"
         class="bottom-nav-item"
         data-path="/recent"
@@ -57,6 +46,17 @@
       >
         <span v-html="getIcon('clock', 24)" class="bottom-nav-icon"></span>
         <span class="bottom-nav-label">Recent</span>
+      </button>
+      <button
+        @click.stop="handleNavClickToPath('/shared')"
+        class="bottom-nav-item"
+        data-path="/shared"
+        :class="{ 'router-link-active': $route.path === '/shared' }"
+        :disabled="!isClickable || isOffline"
+        aria-label="Shared"
+      >
+        <span v-html="getIcon('link', 24)" class="bottom-nav-icon"></span>
+        <span class="bottom-nav-label">Shared</span>
       </button>
       <button
         @click.stop="handleNavClickToPath('/trash')"
@@ -319,20 +319,7 @@ export default {
       }
     };
 
-    return {
-      isExpanded,
-      isClickable,
-      isOffline,
-      toggleExpanded,
-      onMouseEnter,
-      onMouseLeave,
-      onTouchStart,
-      handleNavClick,
-      handleNavClickToPath,
-    };
-  },
-  methods: {
-    getIcon(iconName, size = 24) {
+    const getIcon = (iconName, size = 24) => {
       if (!window.Icons) {
         return "";
       }
@@ -344,7 +331,20 @@ export default {
         return iconFn.call(window.Icons, size, "currentColor");
       }
       return "";
-    },
+    };
+
+    return {
+      isExpanded,
+      isClickable,
+      isOffline,
+      toggleExpanded,
+      onMouseEnter,
+      onMouseLeave,
+      onTouchStart,
+      handleNavClick,
+      handleNavClickToPath,
+      getIcon,
+    };
   },
 };
 </script>
@@ -357,20 +357,13 @@ export default {
   transform: translateX(-50%);
   height: auto;
   min-height: 64px;
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.15),
-    rgba(15, 23, 42, 0.12)
-  );
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 2rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 99999 !important; /* Above encryption overlay (9999) but below modals (100000) */
+  z-index: 99999 !important;
   padding: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   width: 95%;
@@ -379,25 +372,25 @@ export default {
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  position: fixed; /* Ensure it's in the correct stacking context */
+  position: fixed;
 }
 
 .bottom-navigation:not(.expanded) {
   width: 80px;
   height: 40px;
   min-height: 40px;
-  border-radius: 20px;
+  border-radius: 1.5rem;
   padding: 0;
-  z-index: 99999 !important; /* Ensure z-index is applied in collapsed state */
+  z-index: 99999 !important;
 }
 
 .bottom-navigation.expanded {
   width: 95%;
   min-height: 64px;
-  border-radius: 2rem;
+  border-radius: 1.5rem;
   padding: 0.75rem 1rem;
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-  z-index: 99999 !important; /* Ensure z-index is applied in expanded state */
+  z-index: 99999 !important;
 }
 
 .bottom-nav-content {
@@ -412,7 +405,7 @@ export default {
 }
 
 .bottom-navigation:not(.expanded) .bottom-nav-content {
-  pointer-events: none !important; /* Prevent clicks on nav items when collapsed */
+  pointer-events: none !important;
 }
 
 .bottom-navigation.expanded .bottom-nav-content {
@@ -458,17 +451,17 @@ export default {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: #94a3b8;
+  color: #a9b7aa;
   transition: color 0.2s ease;
 }
 
 .bottom-navigation:hover .bottom-nav-collapsed-icon span {
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .mobile-mode .bottom-navigation {
   display: flex !important;
-  z-index: 99999 !important; /* Ensure z-index is applied when displayed in mobile mode */
+  z-index: 99999 !important;
 }
 
 .bottom-nav-item {
@@ -480,8 +473,8 @@ export default {
   padding: 0.5rem 0.75rem;
   background: transparent;
   border: none;
-  border-radius: 12px;
-  color: #94a3b8;
+
+  color: #a9b7aa;
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
@@ -494,12 +487,11 @@ export default {
 
 .bottom-nav-item:hover {
   background: rgba(255, 255, 255, 0.05);
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .bottom-nav-item.router-link-active {
-  background: rgba(88, 166, 255, 0.15);
-  color: #8b5cf6;
+  color: #004225;
 }
 
 .bottom-nav-item:disabled {
@@ -510,7 +502,7 @@ export default {
 
 .bottom-nav-item:disabled:hover {
   background: transparent;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .bottom-nav-icon {

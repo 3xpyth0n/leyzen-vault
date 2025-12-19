@@ -1,5 +1,5 @@
 <template>
-  <div class="top-users-card glass glass-card">
+  <div class="top-users-card">
     <div class="section-header">
       <h3>Top Users by Storage</h3>
       <button @click="$emit('view-all')" class="btn-link">View All</button>
@@ -65,7 +65,8 @@ export default {
 <style scoped>
 .top-users-card {
   padding: 1.5rem;
-  border-radius: 1rem;
+  background: var(--bg-modal, #141414);
+  border: 1px solid var(--border-color);
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -85,7 +86,7 @@ export default {
 
 .section-header h3 {
   margin: 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -93,7 +94,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #8b5cf6;
+  color: #004225;
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -102,14 +103,14 @@ export default {
 }
 
 .btn-link:hover {
-  color: #8b5cf6;
+  color: #004225;
 }
 
 .loading,
 .empty-state {
   padding: 2rem;
   text-align: center;
-  color: #94a3b8;
+  color: #a9b7aa;
 }
 
 .users-list {
@@ -138,11 +139,11 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(56, 189, 248, 0.2);
-  border-radius: 50%;
-  color: #8b5cf6;
-  font-weight: 600;
-  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.3rem;
+  font-family: "TT Alientz Serif";
+  margin-top: 0.3rem;
 }
 
 .user-info {
@@ -162,7 +163,7 @@ export default {
 }
 
 .user-email {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 0.9rem;
   font-weight: 500;
   overflow: hidden;
@@ -178,7 +179,7 @@ export default {
 }
 
 .user-storage {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.85rem;
 }
 
@@ -191,7 +192,7 @@ export default {
   flex: 1;
   height: 6px;
   background: rgba(30, 41, 59, 0.6);
-  border-radius: 3px;
+
   overflow: hidden;
   min-width: 100px;
 }
@@ -211,8 +212,8 @@ export default {
 
 .user-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
-  border-radius: 3px;
+  background: transparent;
+
   transition: width 0.3s ease;
 }
 </style>

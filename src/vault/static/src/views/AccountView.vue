@@ -217,7 +217,7 @@
       class="modal-overlay"
       @click="showDeleteModal = false"
     >
-      <div class="modal glass glass-card" @click.stop>
+      <div class="modal" @click.stop>
         <h2>Confirm Account Deletion</h2>
         <p class="warning-text">
           This action cannot be undone. All your data will be permanently
@@ -285,7 +285,7 @@
         class="modal-overlay"
         @click.self="show2FASetupModal = false"
       >
-        <div class="modal glass glass-card modal-large" @click.stop>
+        <div class="modal modal-large" @click.stop>
           <TwoFactorSetup
             @success="handle2FASetupSuccess"
             @cancel="show2FASetupModal = false"
@@ -301,7 +301,7 @@
         class="modal-overlay"
         @click.self="showDisable2FAModal = false"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <h2>Disable 2FA</h2>
           <p class="warning-text">
             Are you sure you want to disable 2FA? Your account will be less
@@ -352,7 +352,7 @@
         class="modal-overlay"
         @click.self="closeRegenerateBackupModal"
       >
-        <div class="modal glass glass-card" @click.stop>
+        <div class="modal" @click.stop>
           <h2>Regenerate Backup Codes</h2>
 
           <div v-if="!regeneratedBackupCodes">
@@ -1218,14 +1218,14 @@ export default {
 
 .account-view h1 {
   margin-bottom: 2rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 2rem;
 }
 
 .account-section {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
+
   padding: 1.5rem;
   margin-bottom: 2rem;
 }
@@ -1238,7 +1238,7 @@ export default {
 .account-section h2 {
   margin-top: 0;
   margin-bottom: 1.5rem;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
 }
 
@@ -1266,12 +1266,12 @@ export default {
 
 .info-item label {
   font-weight: 600;
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
 }
 
 .info-item span {
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1rem;
 }
 
@@ -1281,8 +1281,8 @@ export default {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
 }
 
@@ -1291,12 +1291,12 @@ export default {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 8px;
+
   margin-bottom: 1rem;
 }
 
 .loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   text-align: center;
   padding: 2rem;
 }
@@ -1305,31 +1305,15 @@ export default {
   color: #fca5a5;
   padding: 1rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
 }
 
-/* Modal overlay uses global styles from vault.css with sidebar-specific padding adjustments */
-.modal-overlay {
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
-}
-
 .modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--ash-grey);
+
   padding: 2rem;
   min-width: 400px;
   max-width: 500px;
@@ -1344,14 +1328,14 @@ body.sidebar-collapsed .modal-overlay {
 .modal h2 {
   margin-top: 0;
   margin-bottom: 1rem;
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .modal p {
-  color: #94a3b8;
+  color: #a9b7aa;
   margin-bottom: 1.5rem;
 }
-/* Two-Factor Authentication Styles */
+
 .section-header-with-badge {
   display: flex;
   justify-content: space-between;
@@ -1376,7 +1360,7 @@ body.sidebar-collapsed .modal-overlay {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+
   font-weight: 500;
   font-size: 0.9rem;
   white-space: nowrap;
@@ -1428,19 +1412,18 @@ body.sidebar-collapsed .modal-overlay {
   margin: 1.5rem 0;
   padding: 1rem;
   background: rgba(0, 0, 0, 0.2);
-  border-radius: 8px;
 }
 
 .backup-codes-display .backup-code {
   padding: 0.5rem;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
+
   text-align: center;
 }
 
 .backup-codes-display .backup-code code {
   font-family: "Courier New", monospace;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1rem;
   letter-spacing: 0.1em;
 }

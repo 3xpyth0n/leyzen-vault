@@ -1,6 +1,6 @@
 <template>
   <div class="database-backup-config">
-    <div class="integration-card glass glass-card" @click="openModal">
+    <div class="integration-card" @click="openModal">
       <div class="integration-logo">
         <img :src="dbLogoPath" alt="Database Backup" />
       </div>
@@ -58,7 +58,7 @@
     <!-- Configuration Modal -->
     <teleport to="body">
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-        <div class="modal glass glass-card modal-wide" @click.stop>
+        <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
               <img :src="dbLogoPath" alt="Database Backup" class="modal-logo" />
@@ -208,7 +208,7 @@
                   <div class="form-actions">
                     <button
                       type="submit"
-                      class="btn-primary"
+                      class="btn btn-primary"
                       :disabled="saving"
                     >
                       {{ saving ? "Saving..." : "Save Configuration" }}
@@ -515,7 +515,7 @@
                   <div class="restore-actions">
                     <button
                       @click="restoreBackup"
-                      class="btn-warning restore-btn"
+                      class="btn btn-warning restore-btn"
                       :disabled="!selectedBackupId || restoreRunning"
                     >
                       {{ restoreRunning ? "Restoring..." : "Restore Backup" }}
@@ -679,7 +679,7 @@ export default {
     let resizeObserver = null;
 
     // Store the logo path in a variable to avoid Vite treating it as a module import
-    const dbLogoPath = "/static/icons/database-backup.png";
+    const dbLogoPath = "/static/public/database-backup.png";
 
     const config = ref({
       enabled: false,
@@ -723,7 +723,7 @@ export default {
     const restoreSortBy = ref("created_at");
     const restoreSortOrder = ref("desc");
     const restorePage = ref(1);
-    const restorePageSize = ref(10);
+    const restorePageSize = ref(5);
 
     const backupTypeFilterOptions = [
       { label: "All types", value: "all" },
@@ -747,6 +747,7 @@ export default {
     ];
 
     const pageSizeOptions = [
+      { label: "5", value: 5 },
       { label: "10", value: 10 },
       { label: "25", value: 25 },
       { label: "50", value: 50 },
@@ -1577,10 +1578,10 @@ export default {
   align-items: center;
   gap: 1.5rem;
   padding: 1.5rem;
-  border-radius: 1rem;
+
   cursor: pointer;
   transition: all 0.2s ease;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--border-color);
   min-height: 120px;
 }
 
@@ -1605,7 +1606,7 @@ export default {
 .integration-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: var(--slate-grey);
 }
 
 .integration-logo {
@@ -1615,8 +1616,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(30, 41, 59, 0.4);
-  border-radius: 0.75rem;
+  background: var(--bg-primary);
+
   padding: 0.75rem;
 }
 
@@ -1637,14 +1638,14 @@ export default {
 
 .integration-content h3 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .integration-description {
   margin: 0;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -1656,7 +1657,7 @@ export default {
 .status-badge {
   display: inline-block;
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -1668,9 +1669,9 @@ export default {
 }
 
 .status-badge.inactive {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--accent);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .integration-actions {
@@ -1725,10 +1726,10 @@ export default {
   width: 2.5rem;
   min-height: 2.5rem;
   height: 2.5rem;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 0.5rem;
-  color: #8b5cf6;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -1738,8 +1739,8 @@ export default {
 }
 
 .btn-backup-trigger:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.5);
+  background: var(--bg-primary);
+  border-color: var(--slate-grey);
   transform: translateY(-1px);
   z-index: 2;
 }
@@ -1757,12 +1758,12 @@ export default {
 
 .integration-arrow {
   flex-shrink: 0;
-  color: #64748b;
+  color: var(--text-primary);
   transition: all 0.2s ease;
 }
 
 .integration-card:hover .integration-arrow {
-  color: #8b5cf6;
+  color: var(--text-primary);
   transform: translateX(4px);
 }
 
@@ -1777,13 +1778,13 @@ export default {
   position: relative;
   justify-content: center;
   align-items: center;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid var(--slate-grey);
   margin-bottom: 1.5rem;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+  scrollbar-color: var(--accent) transparent;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1797,18 +1798,17 @@ export default {
 }
 
 .tabs-header::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
+  background: var(--accent);
 }
 
 .tabs-header::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: var(--accent);
 }
 
 .tab-button {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--text-primary);
   padding: 0.75rem 1.25rem;
   cursor: pointer;
   font-size: 0.95rem;
@@ -1816,7 +1816,7 @@ export default {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   z-index: 1;
-  border-radius: 0.5rem;
+
   flex: 1;
   min-width: 0;
   white-space: nowrap;
@@ -1824,27 +1824,20 @@ export default {
 }
 
 .tab-button:hover {
-  color: #cbd5e1;
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.05);
 }
 
 .tab-button.active {
-  color: #8b5cf6;
-  background: rgba(88, 166, 255, 0.1);
+  color: var(--text-primary);
+  background: rgba(0, 66, 37, 0.1);
 }
 
-/* Liquid glass indicator */
+/* Tab indicator */
 .tab-indicator {
   position: absolute;
   height: 2.5px;
-  background: var(--accent-gradient);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-radius: 999px;
-  box-shadow:
-    0 0 8px rgba(139, 92, 246, 0.6),
-    0 0 16px rgba(139, 92, 246, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.3);
+  background: var(--accent);
   transition:
     left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -1861,15 +1854,15 @@ export default {
 
 .config-section {
   padding: 1.5rem;
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--slate-grey);
   margin-bottom: 1.5rem;
 }
 
 .config-section h4 {
   margin: 0 0 1rem 0;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -1881,7 +1874,7 @@ export default {
 }
 
 .form-help {
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
@@ -1896,12 +1889,12 @@ export default {
 }
 
 .form-help code {
-  background: rgba(30, 41, 59, 0.5);
+  background: var(--bg-primary);
   padding: 0.125rem 0.375rem;
-  border-radius: 3px;
+
   font-family: monospace;
   font-size: 0.85em;
-  color: #cbd5e1;
+  color: var(--text-primary);
 }
 
 .toggle-group {
@@ -1912,7 +1905,7 @@ export default {
 }
 
 .toggle-label {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
   font-weight: 500;
   margin: 0;
@@ -1940,9 +1933,9 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(148, 163, 184, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 24px;
+  background-color: rgba(0, 66, 37, 0.3);
+  border: 1px solid var(--border-color);
+
   transition: all 0.3s ease;
 }
 
@@ -1953,15 +1946,15 @@ export default {
   width: 18px;
   left: 2px;
   bottom: 2px;
-  background-color: #e6eef6;
-  border-radius: 50%;
+  background-color: var(--text-primary);
+
   transition: all 0.3s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-input:checked + .toggle-slider {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  border-color: rgba(139, 92, 246, 0.5);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle-input:checked + .toggle-slider:before {
@@ -1969,15 +1962,15 @@ export default {
 }
 
 .toggle-input:focus + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .toggle-switch:hover .toggle-slider {
-  border-color: rgba(148, 163, 184, 0.4);
+  border-color: var(--border-color);
 }
 
 .toggle-switch:hover .toggle-input:checked + .toggle-slider {
-  border-color: rgba(139, 92, 246, 0.7);
+  border-color: var(--accent);
 }
 
 /* Button styles use global .btn, .btn-primary, .btn-secondary, .btn-danger, .btn-warning from vault.css */
@@ -1998,12 +1991,12 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
   margin-bottom: 1rem;
   font-size: 0.9rem;
-  color: #93c5fd;
+  color: var(--text-primary);
 }
 
 .backups-count-info svg {
@@ -2016,9 +2009,9 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--slate-grey);
   overflow: hidden;
   width: 100%;
   box-sizing: border-box;
@@ -2044,13 +2037,13 @@ export default {
 
 .backup-type {
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--text-primary);
   text-transform: capitalize;
 }
 
 .backup-status {
   padding: 0.25rem 0.75rem;
-  border-radius: 0.5rem;
+
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -2058,12 +2051,12 @@ export default {
 .storage-badge {
   display: inline-block;
   padding: 0.25rem 0.65rem;
-  border-radius: 0.5rem;
+
   font-size: 0.8rem;
   font-weight: 500;
-  background: rgba(139, 92, 246, 0.15);
-  color: #c4b5fd;
-  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: var(--bg-primary);
+  color: var(--ash-grey);
+  border: 1px solid var(--slate-grey);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -2075,26 +2068,26 @@ export default {
 }
 
 .status-running {
-  background: rgba(139, 92, 246, 0.15);
-  color: #8b5cf6;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(0, 66, 37, 0.15);
+  color: var(--text-primary);
+  border: 1px solid rgba(0, 66, 37, 0.3);
 }
 
 .status-failed {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .status-pending {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--accent);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .backup-details {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--text-primary);
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -2114,7 +2107,7 @@ export default {
 
 .checksum-label {
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
   flex-shrink: 0;
 }
@@ -2124,13 +2117,13 @@ export default {
   font-family: "Courier New", monospace;
   font-size: 0.85rem;
   padding: 0.5rem;
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
-  color: #cbd5e1;
+  color: var(--text-primary);
   word-break: keep-all;
   width: 100%;
   max-width: 100%;
@@ -2146,7 +2139,7 @@ export default {
 
 .save-result {
   padding: 1rem;
-  border-radius: 0.5rem;
+
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2161,14 +2154,14 @@ export default {
 
 .save-result.error {
   background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #ef4444;
 }
 
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #94a3b8;
+  color: var(--text-primary);
 }
 
 .empty-state span {
@@ -2190,21 +2183,21 @@ export default {
 .restore-header h4 {
   margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .restore-header p {
   margin: 0;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.5;
 }
 
 .restore-filters {
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--slate-grey);
   padding: 1rem;
 }
 
@@ -2224,17 +2217,17 @@ export default {
 }
 
 .filter-group label {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
 }
 
 .filter-input {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
+
   padding: 0.75rem;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 0.95rem;
   transition: all 0.2s ease;
   width: 100%;
@@ -2243,15 +2236,15 @@ export default {
 
 .filter-input:focus {
   outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  border-color: var(--border-color);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
 .restore-table-container {
   overflow-x: auto;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(30, 41, 59, 0.3);
+
+  border: 1px solid var(--slate-grey);
+  background: var(--bg-primary);
 }
 
 .restore-table {
@@ -2261,16 +2254,16 @@ export default {
 }
 
 .restore-table thead {
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--bg-primary);
 }
 
 .restore-table th {
   padding: 0.75rem 1rem;
   text-align: left;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 600;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .restore-table th.sortable {
@@ -2280,20 +2273,20 @@ export default {
 }
 
 .restore-table th.sortable:hover {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--accent);
 }
 
 .sort-indicator {
   margin-left: 0.5rem;
-  color: #8b5cf6;
+  color: var(--text-primary);
   font-weight: bold;
 }
 
 .restore-table td {
   padding: 0.75rem 1rem;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.9rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+  border-bottom: 1px solid var(--slate-grey);
 }
 
 .restore-table tbody tr {
@@ -2302,12 +2295,12 @@ export default {
 }
 
 .restore-table tbody tr:hover:not(.empty-row):not(.row-disabled) {
-  background: rgba(148, 163, 184, 0.05);
+  background: var(--bg-secondary);
 }
 
 .restore-table tbody tr.row-selected {
-  background: rgba(139, 92, 246, 0.1);
-  border-left: 3px solid #8b5cf6;
+  background: var(--bg-primary);
+  border-left: 3px solid var(--slate-grey);
 }
 
 .restore-table tbody tr.row-disabled {
@@ -2326,7 +2319,7 @@ export default {
 .restore-table .text-center {
   text-align: center;
   padding: 2rem;
-  color: #94a3b8;
+  color: var(--text-primary);
 }
 
 .col-select {
@@ -2357,9 +2350,9 @@ export default {
 .backup-type-badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  background: rgba(139, 92, 246, 0.1);
-  color: #c4b5fd;
+
+  background: var(--bg-primary);
+  color: var(--ash-grey);
   font-size: 0.8rem;
   font-weight: 500;
   text-transform: capitalize;
@@ -2368,7 +2361,7 @@ export default {
 .backup-status-badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+
   font-size: 0.8rem;
   font-weight: 500;
 }
@@ -2380,29 +2373,29 @@ export default {
 }
 
 .backup-status-badge.status-running {
-  background: rgba(139, 92, 246, 0.15);
-  color: #8b5cf6;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--slate-grey);
 }
 
 .backup-status-badge.status-failed {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .backup-status-badge.status-pending {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--accent);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .storage-badge-small {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  background: rgba(139, 92, 246, 0.1);
-  color: #c4b5fd;
+
+  background: var(--bg-primary);
+  color: var(--ash-grey);
   font-size: 0.8rem;
   font-weight: 500;
 }
@@ -2414,16 +2407,16 @@ export default {
   flex-wrap: wrap;
   gap: 1rem;
   padding: 1rem;
-  background: rgba(30, 41, 59, 0.3);
-  border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--bg-primary);
+
+  border: 1px solid var(--slate-grey);
 }
 
 .pagination-info {
   display: flex;
   align-items: center;
   gap: 1rem;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 0.9rem;
   flex-wrap: nowrap;
 }
@@ -2438,7 +2431,7 @@ export default {
 }
 
 .pagination-size label {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.85rem;
   white-space: nowrap;
   flex-shrink: 0;
@@ -2451,7 +2444,7 @@ export default {
 }
 
 .page-numbers {
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.9rem;
 }
 
@@ -2460,21 +2453,20 @@ export default {
   flex-direction: column;
   gap: 0.75rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid var(--slate-grey);
+  align-items: flex-end;
 }
 
 .restore-btn {
-  align-self: flex-start;
+  align-self: flex-end;
 }
 
-/* Modal styles use global .modal-overlay and .modal from vault.css */
 .modal {
-  max-width: 800px;
+  max-width: 90%;
   width: 100%;
   max-height: 90vh;
   overflow: hidden;
-  border-radius: 1rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+
   display: flex;
   flex-direction: column;
 }
@@ -2489,7 +2481,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid var(--slate-grey);
   width: 100%;
   flex-shrink: 0;
 }
@@ -2508,7 +2500,7 @@ export default {
 
 .modal-title h3 {
   margin: 0;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 1.5rem;
   font-weight: 600;
   line-height: 1.5;
@@ -2517,7 +2509,7 @@ export default {
 .modal-close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-primary);
   font-size: 2rem;
   line-height: 1;
   cursor: pointer;
@@ -2527,13 +2519,13 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+
   transition: all 0.2s ease;
 }
 
 .modal-close-btn:hover {
-  background: rgba(148, 163, 184, 0.1);
-  color: #e6eef6;
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -2558,11 +2550,19 @@ export default {
   box-sizing: border-box;
 }
 
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--slate-grey);
+}
+
 .loading,
 .error {
   padding: 2rem;
   text-align: center;
-  border-radius: 1rem;
 }
 
 .loading {
@@ -2570,19 +2570,19 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: #94a3b8;
+  color: var(--text-primary);
 }
 
 .error {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
 .test-result,
 .save-result {
   padding: 1rem;
-  border-radius: 0.5rem;
+
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2599,7 +2599,7 @@ export default {
 .test-result.error,
 .save-result.error {
   background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
   color: #f87171;
 }
 

@@ -251,7 +251,7 @@ body.sidebar-collapsed .modal-overlay {
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 2rem;
+
   padding: 2rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
@@ -278,7 +278,7 @@ body.sidebar-collapsed .modal-overlay {
 
 .modal-title {
   margin: 0 0 1.5rem 0;
-  color: #e6eef6;
+  color: #a9b7aa;
   font-size: 1.5rem;
   font-weight: 600;
   text-align: center;
@@ -291,10 +291,10 @@ body.sidebar-collapsed .modal-overlay {
 .icon-search-input {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-modal);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
-  color: #e6eef6;
+
+  color: #a9b7aa;
   font-size: 0.95rem;
   transition: all 0.2s ease;
 }
@@ -302,7 +302,7 @@ body.sidebar-collapsed .modal-overlay {
 .icon-search-input:focus {
   outline: none;
   border-color: rgba(88, 166, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-modal);
   box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
 }
 
@@ -333,12 +333,10 @@ body.sidebar-collapsed .modal-overlay {
 
 .icon-grid::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
 }
 
 .icon-grid::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
 }
 
 .icon-grid::-webkit-scrollbar-thumb:hover {
@@ -348,7 +346,7 @@ body.sidebar-collapsed .modal-overlay {
 .icon-button {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
+
   padding: 1rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -356,7 +354,7 @@ body.sidebar-collapsed .modal-overlay {
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
-  color: #e6eef6;
+  color: #a9b7aa;
 }
 
 .icon-button:hover {
@@ -398,7 +396,7 @@ body.sidebar-collapsed .modal-overlay {
 .modal-btn {
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 0.5rem;
+
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -406,11 +404,11 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .modal-btn-cancel {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e6eef6;
+  background: #004225;
+  color: #a9b7aa;
 }
 
 .modal-btn-cancel:hover {
-  background: rgba(148, 163, 184, 0.3);
+  background: #004225;
 }
 </style>

@@ -267,7 +267,7 @@ def _get_or_generate_internal_api_token(
     # If not set, try to get from database or generate new one
     if not secret_key:
         if logger:
-            logger.log(
+            logger.warning(
                 "[WARNING] INTERNAL_API_TOKEN not set and SECRET_KEY not available. "
                 "Internal API endpoints will be disabled."
             )
@@ -283,7 +283,7 @@ def _get_or_generate_internal_api_token(
         except RuntimeError:
             # Not in app context - cannot access database
             if logger:
-                logger.log(
+                logger.warning(
                     "[WARNING] Cannot access database for INTERNAL_API_TOKEN. "
                     "Internal API endpoints will be disabled."
                 )
@@ -324,17 +324,17 @@ def _get_or_generate_internal_api_token(
             if not table_exists:
                 # Table doesn't exist - create it
                 if logger:
-                    logger.log(
+                    logger.info(
                         "[INFO] SystemSecrets table does not exist. Creating it..."
                     )
                 try:
                     SystemSecrets.__table__.create(db.engine, checkfirst=True)
                     if logger:
-                        logger.log("[INFO] SystemSecrets table created successfully.")
+                        logger.info("[INFO] SystemSecrets table created successfully.")
                 except Exception as create_error:
                     # Creation failed - might already exist or other issue
                     if logger:
-                        logger.log(
+                        logger.warning(
                             f"[WARNING] Failed to create SystemSecrets table: {create_error}"
                         )
                 secret_record = None
@@ -351,7 +351,7 @@ def _get_or_generate_internal_api_token(
                     error_str = str(query_error).lower()
                     if "does not exist" in error_str or "undefinedtable" in error_str:
                         if logger:
-                            logger.log(
+                            logger.info(
                                 "[INFO] SystemSecrets table does not exist (detected via query error). Creating it..."
                             )
                         try:
@@ -362,7 +362,7 @@ def _get_or_generate_internal_api_token(
                     else:
                         # Other query error - log and continue
                         if logger:
-                            logger.log(
+                            logger.warning(
                                 f"[WARNING] Query failed for SystemSecrets: {query_error}"
                             )
                         secret_record = None
@@ -372,11 +372,11 @@ def _get_or_generate_internal_api_token(
         if logger:
             error_str = str(e).lower()
             if "does not exist" in error_str or "undefinedtable" in error_str:
-                logger.log(
+                logger.info(
                     "[INFO] SystemSecrets table does not exist. Will be created when storing token."
                 )
             else:
-                logger.log(
+                logger.warning(
                     f"[WARNING] Database not available for INTERNAL_API_TOKEN: {e}. "
                     "Internal API endpoints will be disabled."
                 )
@@ -392,7 +392,7 @@ def _get_or_generate_internal_api_token(
         except Exception as e:
             # Decryption failed - log error and generate new token
             if logger:
-                logger.log(
+                logger.warning(
                     f"[WARNING] Failed to decrypt stored INTERNAL_API_TOKEN: {e}. "
                     "Generating new token."
                 )
@@ -477,7 +477,7 @@ def _get_or_generate_internal_api_token(
 
                     if not table_exists:
                         if logger:
-                            logger.log(
+                            logger.info(
                                 f"[INFO] SystemSecrets table does not exist. Creating it... (attempt {table_attempt}/{max_table_attempts})"
                             )
                         SystemSecrets.__table__.create(db.engine, checkfirst=True)
@@ -487,13 +487,13 @@ def _get_or_generate_internal_api_token(
                         if table_exists:
                             table_created = True
                             if logger:
-                                logger.log(
+                                logger.info(
                                     "[INFO] SystemSecrets table created successfully."
                                 )
                             break
                         else:
                             if logger and table_attempt < max_table_attempts:
-                                logger.log(
+                                logger.warning(
                                     f"[WARNING] Table creation attempt {table_attempt} failed. Retrying..."
                                 )
                             import time
@@ -511,11 +511,11 @@ def _get_or_generate_internal_api_token(
                             table_created = True
                             break
                         elif table_attempt < max_table_attempts:
-                            logger.log(
+                            logger.warning(
                                 f"[WARNING] SystemSecrets table creation failed (attempt {table_attempt}/{max_table_attempts}): {create_error}. Retrying..."
                             )
                         else:
-                            logger.log(
+                            logger.error(
                                 f"[ERROR] Failed to create SystemSecrets table after {max_table_attempts} attempts: {create_error}"
                             )
                     if table_attempt < max_table_attempts:
@@ -539,7 +539,7 @@ def _get_or_generate_internal_api_token(
             if existing_record:
                 # Token already exists - decrypt and return it
                 if logger:
-                    logger.log(
+                    logger.info(
                         "[INFO] INTERNAL_API_TOKEN already exists in database. Using existing token."
                     )
                 try:
@@ -550,7 +550,7 @@ def _get_or_generate_internal_api_token(
                 except Exception as decrypt_error:
                     # Existing token is corrupted - replace it
                     if logger:
-                        logger.log(
+                        logger.warning(
                             f"[WARNING] Existing INTERNAL_API_TOKEN is corrupted: {decrypt_error}. Replacing it."
                         )
                     db.session.delete(existing_record)
@@ -578,7 +578,7 @@ def _get_or_generate_internal_api_token(
 
             if verify_record and verify_record.encrypted_value == encrypted_token:
                 if logger:
-                    logger.log(
+                    logger.info(
                         "[INIT] Generated and stored new INTERNAL_API_TOKEN in database (verified after commit)"
                     )
                 # Also verify we can decrypt it
@@ -588,7 +588,7 @@ def _get_or_generate_internal_api_token(
                     ).decode()
                     if test_decrypt == new_token:
                         if logger:
-                            logger.log(
+                            logger.info(
                                 "[INIT] INTERNAL_API_TOKEN encryption/decryption verified successfully"
                             )
                         return new_token
@@ -613,7 +613,7 @@ def _get_or_generate_internal_api_token(
                 )
                 if verify_record and verify_record.encrypted_value == encrypted_token:
                     if logger:
-                        logger.log(
+                        logger.info(
                             "[INIT] Generated and stored new INTERNAL_API_TOKEN in database (verified after retry)"
                         )
                     return new_token
@@ -635,7 +635,7 @@ def _get_or_generate_internal_api_token(
         if logger:
             import traceback
 
-            logger.log(
+            logger.error(
                 f"[ERROR] Failed to store INTERNAL_API_TOKEN in database: {e}\n{traceback.format_exc()}"
             )
         # Re-raise to allow retry mechanism in create_app()
@@ -754,7 +754,17 @@ def _log_once_with_lock(
 
             if lock_acquired:
                 try:
-                    logger.log(message)
+                    # Determine log level based on message prefix
+                    if message.startswith("[ERROR]") or message.startswith(
+                        "[CRITICAL]"
+                    ):
+                        logger.error(message)
+                    elif message.startswith("[WARNING]"):
+                        logger.warning(message)
+                    elif message.startswith("[DEBUG]"):
+                        logger.debug(message)
+                    else:
+                        logger.info(message)
                     logger.flush()
                     if also_stdout:
                         print(message, flush=True)
@@ -773,6 +783,9 @@ def _log_once_with_lock(
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
+                    finally:
+                        # Always remove session to prevent connection leaks
+                        db.session.remove()
 
                     return True
                 except Exception:
@@ -790,9 +803,14 @@ def _log_once_with_lock(
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
+                    finally:
+                        # Always remove session to prevent connection leaks
+                        db.session.remove()
                     return False
             else:
                 # Another worker is logging, return False
+                # Still remove session to prevent connection leaks
+                db.session.remove()
                 return False
     except Exception:
         # If database is not available, use file-based lock as fallback
@@ -805,7 +823,17 @@ def _log_once_with_lock(
                 lock_file.seek(0, 2)  # Seek to end
                 if lock_file.tell() == 0:
                     # First worker to acquire lock, log the message
-                    logger.log(message)
+                    # Determine log level based on message prefix
+                    if message.startswith("[ERROR]") or message.startswith(
+                        "[CRITICAL]"
+                    ):
+                        logger.error(message)
+                    elif message.startswith("[WARNING]"):
+                        logger.warning(message)
+                    elif message.startswith("[DEBUG]"):
+                        logger.debug(message)
+                    else:
+                        logger.info(message)
                     logger.flush()
                     if also_stdout:
                         print(message, flush=True)
@@ -825,7 +853,15 @@ def _log_once_with_lock(
                 return False
         except Exception:
             # If file lock fails, log anyway to ensure message is shown
-            logger.log(message)
+            # Determine log level based on message prefix
+            if message.startswith("[ERROR]") or message.startswith("[CRITICAL]"):
+                logger.error(message)
+            elif message.startswith("[WARNING]"):
+                logger.warning(message)
+            elif message.startswith("[DEBUG]"):
+                logger.debug(message)
+            else:
+                logger.info(message)
             logger.flush()
             if also_stdout:
                 print(message, flush=True)
@@ -1033,7 +1069,7 @@ def create_app(
                 # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
 
                 if db_initialized_by_this_worker:
-                    logger.log("[INIT] PostgreSQL database initialized")
+                    logger.info("[INIT] PostgreSQL database initialized")
                     logger.flush()
                     # jti column is already verified in init_db() - no need to check again
             except Exception as db_exc:
@@ -1042,7 +1078,7 @@ def create_app(
                 import traceback
 
                 error_details = f"Failed to initialize PostgreSQL: {db_exc}\n{traceback.format_exc()}"
-                logger.log(f"[ERROR] {error_details}")
+                logger.error(f"[ERROR] {error_details}")
 
                 # In production, fail startup if PostgreSQL is unavailable
                 # In development mode, allow fallback for testing
@@ -1055,7 +1091,7 @@ def create_app(
                     ) from db_exc
                 else:
                     # Development mode: log warning but continue
-                    logger.log(
+                    logger.warning(
                         "[WARNING] Continuing without PostgreSQL (development mode only). "
                         "This is not recommended for production use."
                     )
@@ -1063,7 +1099,7 @@ def create_app(
         except Exception as db_config_exc:
             # If database configuration fails completely, log and continue
             # (this should not happen in normal operation)
-            logger.log(
+            logger.error(
                 f"[ERROR] Database configuration failed: {db_config_exc}. "
                 "Application may not function correctly."
             )
@@ -1084,7 +1120,7 @@ def create_app(
             # If not explicitly set, derive from SECRET_KEY
             if not internal_api_token:
                 if not settings or not settings.secret_key:
-                    logger.log(
+                    logger.error(
                         "[ERROR] Cannot derive INTERNAL_API_TOKEN: SECRET_KEY not available in settings"
                     )
                     internal_api_token = ""
@@ -1093,18 +1129,18 @@ def create_app(
 
                     internal_api_token = derive_internal_api_token(settings.secret_key)
                     if db_initialized_by_this_worker:
-                        logger.log(
+                        logger.info(
                             f"[INIT] INTERNAL_API_TOKEN derived from SECRET_KEY (deterministic, no database required): {internal_api_token[:16]}..."
                         )
             else:
                 if db_initialized_by_this_worker:
-                    logger.log(
+                    logger.info(
                         "[INIT] INTERNAL_API_TOKEN set from environment variable (explicit override)"
                     )
         except Exception as token_error:
             import traceback
 
-            logger.log(
+            logger.error(
                 f"[ERROR] Failed to set INTERNAL_API_TOKEN: {token_error}\n"
                 f"{traceback.format_exc()}"
             )
@@ -1114,19 +1150,19 @@ def create_app(
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
         if internal_api_token:
             if db_initialized_by_this_worker:
-                logger.log(
+                logger.info(
                     f"[INIT] INTERNAL_API_TOKEN configured successfully (length: {len(internal_api_token)})"
                 )
         else:
             # Error logs should always be shown
-            logger.log(
+            logger.error(
                 "[ERROR] INTERNAL_API_TOKEN is empty - internal API will be disabled"
             )
 
         # SECURITY: Verify production mode detection at startup
         if is_production:
             if db_initialized_by_this_worker:
-                logger.log(
+                logger.info(
                     "[INIT] Running in PRODUCTION mode - security checks enabled"
                 )
         else:
@@ -1140,10 +1176,10 @@ def create_app(
                     "This should never be used in production. "
                     "Set LEYZEN_ENVIRONMENT=production for production deployments."
                 )
-                logger.log(
+                logger.warning(
                     "[INIT] Running in DEVELOPMENT mode - permissive security checks"
                 )
-                logger.log(warning_msg)
+                logger.warning(warning_msg)
                 logger.flush()
                 # Also print to stdout for docker logs visibility
                 print(
@@ -1162,15 +1198,17 @@ def create_app(
         try:
             if not is_setup_complete(app, quiet=True):
                 if db_initialized_by_this_worker:
-                    logger.log(
+                    logger.warning(
                         "[WARNING] Setup not complete. Visit /setup to create superadmin account."
                     )
             else:
                 if db_initialized_by_this_worker:
-                    logger.log("[INIT] Setup complete - users exist in database")
+                    logger.info("[INIT] Setup complete - users exist in database")
                     logger.flush()
         except Exception as setup_check_error:
-            logger.log(f"[WARNING] Failed to check setup status: {setup_check_error}")
+            logger.warning(
+                f"[WARNING] Failed to check setup status: {setup_check_error}"
+            )
             logger.flush()
     except Exception as exc:
         # Fallback for development/testing only - NOT allowed in production
@@ -1247,7 +1285,7 @@ def create_app(
         if not allowed_origins:
             # In production, log warning but allow startup with empty origins
             # This allows the application to start and CORS can be configured later
-            logger.log(
+            logger.warning(
                 "[WARNING] ALLOWED_ORIGINS is empty in production. "
                 "CORS is not configured. Set VAULT_ALLOWED_ORIGINS or ALLOWED_ORIGINS in your .env file. "
                 "Application will start but CORS requests may be blocked."
@@ -1445,11 +1483,17 @@ def create_app(
                 time.sleep(3600)  # Run every hour
                 # Use application context for database operations
                 with app.app_context():
-                    deleted_count = audit_service.cleanup_old_logs()
-                    if deleted_count > 0:
-                        logger.log(f"Cleaned up {deleted_count} old audit log entries")
+                    try:
+                        deleted_count = audit_service.cleanup_old_logs()
+                        if deleted_count > 0:
+                            logger.info(
+                                f"Cleaned up {deleted_count} old audit log entries"
+                            )
+                    finally:
+                        # Always remove session to prevent connection leaks
+                        db.session.remove()
             except Exception as e:
-                logger.log(f"Error during audit log cleanup: {e}")
+                logger.error(f"Error during audit log cleanup: {e}", exc_info=True)
 
     # Import threading here to avoid importing at module level if cleanup thread is not started
     import threading
@@ -1503,10 +1547,16 @@ def create_app(
                                 )
                     except Exception as cleanup_error:
                         logger.error(
-                            f"Error during orphaned files cleanup: {cleanup_error}"
+                            f"Error during orphaned files cleanup: {cleanup_error}",
+                            exc_info=True,
                         )
+                    finally:
+                        # Always remove session to prevent connection leaks
+                        db.session.remove()
             except Exception as e:
-                logger.error(f"Error in orphaned files cleanup worker: {e}")
+                logger.error(
+                    f"Error in orphaned files cleanup worker: {e}", exc_info=True
+                )
 
     orphaned_cleanup_thread = threading.Thread(
         target=_orphaned_files_cleanup_worker, daemon=True
@@ -1554,59 +1604,92 @@ def create_app(
                         # Load whitelist
                         validation_service.load_whitelist()
 
-                        # Get all files from database
-                        files = (
-                            db.session.query(File)
-                            .filter(File.deleted_at.is_(None))
-                            .all()
+                        # Process files in batches to avoid loading all files in memory
+                        # and prevent long-running transactions
+                        batch_size = 100
+                        offset = 0
+                        promoted_count = 0
+                        max_iterations = (
+                            100  # Limit total iterations to prevent infinite loops
                         )
 
-                        promoted_count = 0
-                        for file_obj in files:
-                            storage_ref = file_obj.storage_ref
-                            # Normalize storage_ref
-                            if "/" in storage_ref:
-                                storage_ref = storage_ref.split("/")[-1]
+                        for iteration in range(max_iterations):
+                            # Get files in batches
+                            files = (
+                                db.session.query(File)
+                                .filter(File.deleted_at.is_(None))
+                                .offset(offset)
+                                .limit(batch_size)
+                                .all()
+                            )
 
-                            # Check if file exists in tmpfs but not in persistent storage
-                            tmpfs_path = storage.get_file_path(storage_ref)
-                            source_path = storage.get_source_file_path(storage_ref)
+                            if not files:
+                                break
 
-                            if tmpfs_path.exists() and (
-                                not source_path or not source_path.exists()
-                            ):
-                                # File is in tmpfs but not in persistent storage - promote it
-                                try:
-                                    success, error_msg = promotion_service.promote_file(
-                                        file_id=storage_ref,
-                                        source_path=tmpfs_path,
-                                        target_dir=storage.source_dir,
-                                        base_dir=storage.storage_dir / "files",
-                                    )
-                                    if success:
-                                        promoted_count += 1
-                                        logger.log(
-                                            f"[PERIODIC PROMOTION] Promoted file {storage_ref} to persistent storage"
+                            for file_obj in files:
+                                storage_ref = file_obj.storage_ref
+                                # Normalize storage_ref
+                                if "/" in storage_ref:
+                                    storage_ref = storage_ref.split("/")[-1]
+
+                                # Check if file exists in tmpfs but not in persistent storage
+                                tmpfs_path = storage.get_file_path(storage_ref)
+                                source_path = storage.get_source_file_path(storage_ref)
+
+                                if tmpfs_path.exists() and (
+                                    not source_path or not source_path.exists()
+                                ):
+                                    # File is in tmpfs but not in persistent storage - promote it
+                                    try:
+                                        success, error_msg = (
+                                            promotion_service.promote_file(
+                                                file_id=storage_ref,
+                                                source_path=tmpfs_path,
+                                                target_dir=storage.source_dir,
+                                                base_dir=storage.storage_dir / "files",
+                                            )
                                         )
-                                    else:
-                                        logger.log(
-                                            f"[PERIODIC PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                                        if success:
+                                            promoted_count += 1
+                                            logger.info(
+                                                f"[PERIODIC PROMOTION] Promoted file {storage_ref} to persistent storage"
+                                            )
+                                        else:
+                                            logger.warning(
+                                                f"[PERIODIC PROMOTION] Failed to promote file {storage_ref}: {error_msg}"
+                                            )
+                                    except Exception as e:
+                                        logger.error(
+                                            f"[PERIODIC PROMOTION ERROR] Exception promoting {storage_ref}: {e}",
+                                            exc_info=True,
                                         )
-                                except Exception as e:
-                                    logger.log(
-                                        f"[PERIODIC PROMOTION ERROR] Exception promoting {storage_ref}: {e}"
-                                    )
+
+                            # Remove session after each batch to prevent connection leaks
+                            db.session.remove()
+
+                            # If we got fewer files than batch_size, we're done
+                            if len(files) < batch_size:
+                                break
+
+                            offset += batch_size
+
+                            # Small delay between batches to avoid overwhelming the system
+                            time.sleep(0.1)
 
                         if promoted_count > 0:
-                            logger.log(
+                            logger.info(
                                 f"[PERIODIC PROMOTION] Promoted {promoted_count} files to persistent storage"
                             )
                     except Exception as promotion_error:
-                        logger.log(
-                            f"Error during periodic file promotion: {promotion_error}"
+                        logger.error(
+                            f"Error during periodic file promotion: {promotion_error}",
+                            exc_info=True,
                         )
+                    finally:
+                        # Always remove session to prevent connection leaks
+                        db.session.remove()
             except Exception as e:
-                logger.log(f"Error in periodic promotion worker: {e}")
+                logger.error(f"Error in periodic promotion worker: {e}", exc_info=True)
 
     periodic_promotion_thread = threading.Thread(
         target=_periodic_promotion_worker, daemon=True
@@ -1638,9 +1721,9 @@ def create_app(
             if ExternalStorageConfigService.is_enabled(secret_key, app):
                 external_storage_worker.start()
                 if db_initialized_by_this_worker:
-                    logger.log("[INIT] External storage worker started")
+                    logger.info("[INIT] External storage worker started")
     except Exception as e:
-        logger.log(f"[INIT] Failed to initialize external storage worker: {e}")
+        logger.error(f"[INIT] Failed to initialize external storage worker: {e}")
 
     # Initialize database backup worker
     try:
@@ -1660,9 +1743,9 @@ def create_app(
             if DatabaseBackupConfigService.is_enabled(secret_key, app):
                 database_backup_worker.start()
                 if db_initialized_by_this_worker:
-                    logger.log("[INIT] Database backup worker started")
+                    logger.info("[INIT] Database backup worker started")
     except Exception as e:
-        logger.log(f"[INIT] Failed to initialize database backup worker: {e}")
+        logger.error(f"[INIT] Failed to initialize database backup worker: {e}")
 
     # Continue with external storage worker logging
     try:
@@ -1683,24 +1766,24 @@ def create_app(
                     if source_files_dir.exists() and not any(
                         source_files_dir.iterdir()
                     ):
-                        logger.log(
+                        logger.info(
                             "[INIT] S3-only mode is enabled. No files will be written to local disk. "
                             "You can modify this setting from the admin interface, Integrations tab."
                         )
                     elif not source_files_dir.exists() or not any(
                         source_files_dir.iterdir()
                     ):
-                        logger.log(
+                        logger.info(
                             "[INIT] S3-only mode is enabled. No files will be written to local disk. "
                             "You can modify this setting from the admin interface, Integrations tab."
                         )
                 else:
-                    logger.log(
+                    logger.info(
                         "[INIT] S3-only mode is enabled. No files will be written to local disk. "
                         "You can modify this setting from the admin interface, Integrations tab."
                     )
     except Exception as worker_error:
-        logger.log(
+        logger.warning(
             f"[WARNING] Failed to initialize external storage worker: {worker_error}"
         )
         # Don't fail startup if worker initialization fails
@@ -1768,7 +1851,7 @@ def create_app(
         try:
             app.register_blueprint(file_events_api_bp)  # File events API (SSE)
         except Exception as e:
-            logger.log(f"Failed to register file_events_api_bp: {e}")
+            logger.error(f"Failed to register file_events_api_bp: {e}")
             # Don't fail startup if file events API fails to register
             # This allows the application to continue running without real-time sync
 
@@ -1816,7 +1899,7 @@ def create_app(
                     # File doesn't exist in dist/assets/, continue to next check
                     pass
                 except Exception as e:
-                    logger.log(f"Error serving asset {filename}: {e}")
+                    logger.error(f"Error serving asset {filename}: {e}")
                     abort(500)
 
         # Try dist/ first (for Vue.js build assets and index.html)
@@ -1832,7 +1915,7 @@ def create_app(
             # File doesn't exist in dist/, try static/ fallback
             pass
         except Exception as e:
-            logger.log(f"Error serving file {filename} from dist: {e}")
+            logger.error(f"Error serving file {filename} from dist: {e}")
             abort(500)
 
         # Fallback to original static/ (for legacy files like vault.css, vault.js, etc.)
@@ -1848,7 +1931,7 @@ def create_app(
             # File not found anywhere
             abort(404)
         except Exception as e:
-            logger.log(f"Error serving file {filename} from static: {e}")
+            logger.error(f"Error serving file {filename} from static: {e}")
             abort(500)
 
     @app.after_request
@@ -2072,7 +2155,7 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static" / "icons"), "favicon.ico", mimetype="image/x-icon"
+            str(vault_dir / "static" / "public"), "favicon.ico", mimetype="image/x-icon"
         )
 
     @app.route("/site.webmanifest")
@@ -2081,7 +2164,7 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static" / "icons"),
+            str(vault_dir / "static" / "public"),
             "site.webmanifest",
             mimetype="application/manifest+json",
         )
@@ -2092,7 +2175,7 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static" / "icons"),
+            str(vault_dir / "static" / "public"),
             "apple-touch-icon.png",
             mimetype="image/png",
         )
@@ -2103,7 +2186,9 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static" / "icons"), "favicon.svg", mimetype="image/svg+xml"
+            str(vault_dir / "static" / "public"),
+            "favicon.svg",
+            mimetype="image/svg+xml",
         )
 
     @app.route("/favicon-96x96.png")
@@ -2112,7 +2197,7 @@ def create_app(
         from flask import send_from_directory
 
         return send_from_directory(
-            str(vault_dir / "static" / "icons"),
+            str(vault_dir / "static" / "public"),
             "favicon-96x96.png",
             mimetype="image/png",
         )
@@ -2137,7 +2222,7 @@ def create_app(
         required_content = "User-agent: *\nDisallow: /\n"
 
         # Try to serve the physical file first, but validate its content
-        robots_file = vault_dir / "static" / "icons" / "robots.txt"
+        robots_file = vault_dir / "static" / "public" / "robots.txt"
         if robots_file.exists():
             try:
                 # Validate file content to ensure it contains "Disallow: /"
@@ -2145,13 +2230,13 @@ def create_app(
                 if "Disallow: /" in file_content:
                     # File is valid, serve it
                     return send_from_directory(
-                        str(vault_dir / "static" / "icons"),
+                        str(vault_dir / "static" / "public"),
                         "robots.txt",
                         mimetype="text/plain",
                     )
                 else:
                     # File exists but is invalid - log warning and use safe content
-                    logger.log(
+                    logger.warning(
                         "CRITICAL: robots.txt file exists but does not contain 'Disallow: /'. "
                         "Serving correct content to comply with license requirements. "
                         f"File location: {robots_file}"
@@ -2167,7 +2252,7 @@ def create_app(
         # License requirement: must refuse all indexing
         logger.debug(
             "robots.txt file not found or invalid, serving generated content. "
-            "Please ensure src/vault/static/icons/robots.txt exists with 'Disallow: /'."
+            "Please ensure src/vault/static/public/robots.txt exists with 'Disallow: /'."
         )
         return Response(required_content, mimetype="text/plain")
 
@@ -2217,8 +2302,8 @@ def create_app(
                 }
                 yield f"data: {json.dumps(initial_data)}\n\n"
 
-                # Send heartbeats every 25 seconds to keep connection alive
-                heartbeat_interval = 25.0
+                # Send heartbeats every 15 seconds to keep connection alive
+                heartbeat_interval = 15.0
                 last_heartbeat = time.time()
                 # Check for restore status changes more frequently (every 1 second)
                 status_check_interval = 1.0
@@ -2301,7 +2386,7 @@ def create_app(
             # If setup check fails, log error but allow access to setup page
             logger = app.config.get("LOGGER", None)
             if logger:
-                logger.log(
+                logger.warning(
                     f"[WARNING] Failed to check setup status in root route: {setup_error}"
                 )
             # On error, redirect to setup to be safe
@@ -2590,7 +2675,7 @@ def create_app(
 
     # CRITICAL LICENSE VALIDATION: Verify robots.txt is present and correct
     # This file is legally required to prevent external indexing/resale
-    robots_file = vault_dir / "static" / "icons" / "robots.txt"
+    robots_file = vault_dir / "static" / "public" / "robots.txt"
     try:
         # Get logger from app config if available
         validation_logger = app.config.get("LOGGER")
@@ -2598,19 +2683,53 @@ def create_app(
             # Fallback to standard logging if FileLogger not yet initialized
             import logging
 
-            validation_logger = logging.getLogger(__name__)
+            std_logger = logging.getLogger(__name__)
 
             # Create a wrapper to match FileLogger interface
             class LoggerWrapper:
                 def log(self, msg: str) -> None:
-                    logging.getLogger(__name__).info(msg)
+                    std_logger.info(msg)
+
+                def info(self, msg: str) -> None:
+                    std_logger.info(msg)
+
+                def warning(self, msg: str) -> None:
+                    std_logger.warning(msg)
+
+                def error(self, msg: str) -> None:
+                    std_logger.error(msg)
+
+                def debug(self, msg: str) -> None:
+                    std_logger.debug(msg)
 
             validation_logger = LoggerWrapper()
+        else:
+            # FileLogger only has log() method, so add wrapper methods
+            class FileLoggerWrapper:
+                def __init__(self, file_logger):
+                    self._logger = file_logger
+
+                def log(self, msg: str) -> None:
+                    self._logger.log(msg)
+
+                def info(self, msg: str) -> None:
+                    self._logger.log(msg)
+
+                def warning(self, msg: str) -> None:
+                    self._logger.log(msg)
+
+                def error(self, msg: str) -> None:
+                    self._logger.log(msg)
+
+                def debug(self, msg: str) -> None:
+                    self._logger.log(msg)
+
+            validation_logger = FileLoggerWrapper(validation_logger)
 
         if robots_file.exists():
             file_content = robots_file.read_text(encoding="utf-8")
             if "Disallow: /" not in file_content:
-                validation_logger.log(
+                validation_logger.error(
                     "[ERROR] CRITICAL LICENSE VIOLATION: robots.txt exists but does not contain 'Disallow: /'. "
                     "This violates license terms prohibiting external indexing. "
                     f"File location: {robots_file}. "
@@ -2618,11 +2737,11 @@ def create_app(
                 )
             else:
                 if db_initialized_by_this_worker:
-                    validation_logger.log(
+                    validation_logger.info(
                         "[INIT] robots.txt validated: properly configured to disallow all indexing"
                     )
         else:
-            validation_logger.log(
+            validation_logger.warning(
                 "[WARNING] robots.txt file not found at expected location. "
                 "Route will serve generated content, but please create the file: "
                 f"{robots_file}"

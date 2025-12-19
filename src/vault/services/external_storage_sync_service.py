@@ -757,7 +757,7 @@ class ExternalStorageSyncService:
 
                     else:
                         # Neither exists: file is orphaned
-                        logger.warning(
+                        logger.debug(
                             f"[SYNC] File {file_id} (storage_ref: {storage_ref}) exists in neither local nor S3, will be cleaned up"
                         )
                         skipped.append(file_id)

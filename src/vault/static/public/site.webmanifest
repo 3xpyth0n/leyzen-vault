@@ -3,13 +3,13 @@
   "short_name": "Leyzen Vault",
   "icons": [
     {
-      "src": "/static/icons/web-app-manifest-192x192.png",
+      "src": "/static/public/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/static/icons/web-app-manifest-512x512.png",
+      "src": "/static/public/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

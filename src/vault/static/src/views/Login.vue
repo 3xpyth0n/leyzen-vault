@@ -84,11 +84,7 @@
           :disabled="loading"
         ></PasswordInput>
         <div class="captcha-section">
-          <div
-            class="captcha-image-wrapper"
-            :class="{ 'captcha-clickable': captchaImageUrl && captchaNonce }"
-            @click="showCaptchaOverlay"
-          >
+          <div class="captcha-image-wrapper" @click="handleCaptchaClick">
             <img
               v-if="captchaImageUrl && captchaNonce"
               :key="captchaNonce"
@@ -97,14 +93,11 @@
               class="captcha-image"
             />
             <div v-else class="captcha-loading">Loading Captcha</div>
-            <button
-              type="button"
-              class="captcha-refresh"
-              @click.stop="refreshCaptcha"
-              :disabled="loading"
+            <div
+              :class="{ 'captcha-refresh-toast': true, show: showRefreshToast }"
             >
-              ↻
-            </button>
+              Tap again to refresh ({{ toastCountdown }}s)
+            </div>
           </div>
           <input
             v-model="captchaResponse"
@@ -123,22 +116,6 @@
         Don't have an account?
         <router-link to="/register">Register here</router-link>
       </p>
-    </div>
-    <div
-      class="captcha-overlay"
-      :class="{ 'captcha-overlay--visible': showOverlay }"
-      :aria-hidden="!showOverlay"
-      data-captcha-overlay
-      @click="handleOverlayClick"
-    >
-      <img
-        v-if="captchaImageUrl && captchaNonce"
-        :src="captchaImageUrl"
-        alt="Captcha enlarged"
-        class="captcha-overlay__image"
-        data-captcha-overlay-image
-        @click.stop
-      />
     </div>
 
     <!-- Two-Factor Authentication Modal -->
@@ -188,31 +165,13 @@ const setupSuccessMessage = ref("");
 const restoreSuccessMessage = ref("");
 
 const captchaImageUrl = ref("");
-const showOverlay = ref(false);
 const show2FAModal = ref(false);
 const twoFactorError = ref("");
-
-// Handle Escape key to close overlay
-let handleKeyDown = null;
-
-const showCaptchaOverlay = () => {
-  // Only show overlay if both image URL and nonce are available
-  if (captchaImageUrl.value && captchaNonce.value) {
-    showOverlay.value = true;
-    document.body.classList.add("captcha-overlay-open");
-  }
-};
-
-const hideCaptchaOverlay = () => {
-  showOverlay.value = false;
-  document.body.classList.remove("captcha-overlay-open");
-};
-
-const handleOverlayClick = (event) => {
-  if (event.target === event.currentTarget) {
-    hideCaptchaOverlay();
-  }
-};
+const showRefreshToast = ref(false);
+const pendingRefresh = ref(false);
+const toastCountdown = ref(3);
+let toastTimeout = null;
+let countdownInterval = null;
 
 /**
  * Refresh CAPTCHA by calling the refresh endpoint.
@@ -315,23 +274,66 @@ onMounted(async () => {
     logger.error("Failed to load SSO providers:", err);
     // Don't show error to user, just log it
   }
-
-  // Handle Escape key to close overlay
-  handleKeyDown = (event) => {
-    if (event.key === "Escape" && showOverlay.value) {
-      hideCaptchaOverlay();
-    }
-  };
-  document.addEventListener("keydown", handleKeyDown);
 });
 
 onUnmounted(() => {
-  // Clean up event listener and body class
-  if (handleKeyDown) {
-    document.removeEventListener("keydown", handleKeyDown);
+  // Component cleanup
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
   }
-  document.body.classList.remove("captcha-overlay-open");
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
 });
+
+const hideToast = () => {
+  showRefreshToast.value = false;
+  pendingRefresh.value = false;
+  toastCountdown.value = 3;
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+};
+
+const startCountdown = () => {
+  toastCountdown.value = 3;
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+  }
+  countdownInterval = setInterval(() => {
+    toastCountdown.value--;
+    if (toastCountdown.value <= 0) {
+      hideToast();
+    }
+  }, 1000);
+};
+
+const handleCaptchaClick = () => {
+  if (loading.value) return;
+
+  // Uniform behavior: double tap/click for everyone
+  if (pendingRefresh.value) {
+    // Second tap/click: confirm refresh
+    hideToast();
+    refreshCaptcha();
+  } else {
+    // First tap/click: show toast with countdown
+    pendingRefresh.value = true;
+    showRefreshToast.value = true;
+    startCountdown();
+    // Auto-hide after 3 seconds
+    toastTimeout = setTimeout(() => {
+      hideToast();
+    }, 3000);
+  }
+};
 
 const handleLogin = async () => {
   error.value = "";
@@ -561,6 +563,7 @@ const handleMagicLinkLogin = async (providerId) => {
   padding: 2rem;
   position: relative;
   z-index: 1;
+  background: var(--bg-primary);
 }
 
 .login-content {
@@ -570,22 +573,20 @@ const handleMagicLinkLogin = async (providerId) => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 3rem;
 }
 
 h1 {
+  font-family: var(--font-family-branding);
   text-align: center;
   margin-bottom: 3rem;
-  color: #e6eef6;
+  color: var(--text-primary);
   font-size: 3rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.2;
-  background: linear-gradient(135deg, #e6eef6 0%, #cbd5e1 50%, #94a3b8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 4px 20px rgba(230, 238, 246, 0.3);
   margin-top: 0;
+  opacity: 1;
 }
 
 form {
@@ -599,17 +600,24 @@ input {
   width: 100%;
   box-sizing: border-box;
   padding: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 8px;
-  background: rgba(13, 17, 23, 0.5);
-  color: #e6eef6;
+  border: 1px solid #004225;
+  background: rgba(10, 10, 10, 0.6);
+  color: #a9b7aa;
   font-size: 0.95rem;
-  transition: border-color 0.2s;
+  font-weight: 500;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+input::placeholder {
+  color: rgba(169, 183, 170, 0.6);
+  opacity: 1;
 }
 
 input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: #004225;
 }
 
 input:disabled {
@@ -620,20 +628,22 @@ input:disabled {
 button[type="submit"] {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #8b5cf6 0%, #818cf8 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
+  background: transparent;
+  border: 1px solid #004225;
+  color: var(--text-primary);
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
 button[type="submit"]:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
+  border-color: #004225;
+  color: var(--text-primary);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 button[type="submit"]:disabled {
@@ -647,6 +657,8 @@ button[type="submit"]:disabled {
   align-items: flex-start;
   gap: 0.75rem;
   width: 100%;
+  position: relative;
+  overflow: visible;
 }
 
 .captcha-image-wrapper {
@@ -658,48 +670,49 @@ button[type="submit"]:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(13, 17, 23, 0.3);
-}
-
-.captcha-image-wrapper.captcha-clickable {
+  background: rgba(10, 10, 10, 0.6);
   cursor: pointer;
+  overflow: visible;
 }
 
 .captcha-image {
   height: 70px;
   width: 230px;
   object-fit: contain;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
   display: block;
 }
 
-.captcha-refresh {
+.captcha-refresh-toast {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  background: rgba(0, 0, 0, 0.6);
-  color: #e6eef6;
-  border: none;
-  border-radius: 999px;
-  width: 2rem;
-  height: 2rem;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  font-size: 1.25rem;
-  padding: 0;
+  background: rgba(0, 66, 37, 0.9);
+  color: #a9b7aa;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  box-sizing: border-box;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s ease,
+    visibility 0.5s ease;
 }
 
-.captcha-refresh:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.8);
+.captcha-refresh-toast.show {
+  opacity: 1;
+  visibility: visible;
 }
 
 .captcha-loading {
-  color: #94a3b8;
+  color: #a9b7aa;
   font-size: 0.9rem;
   text-align: center;
   width: 100%;
@@ -730,16 +743,23 @@ button[type="submit"]:disabled {
   max-width: 100%;
 }
 
+.captcha-section .captcha-input::placeholder {
+  color: rgba(169, 183, 170, 0.6);
+  opacity: 1;
+}
+
 p {
   text-align: center;
   margin-top: 1.5rem;
-  color: #94a3b8;
+  color: #a9b7aa;
   width: 100%;
+  font-weight: 500;
 }
 
 p a {
-  color: #58a6ff;
+  color: var(--slate-grey);
   text-decoration: none;
+  font-weight: 600;
 }
 
 p a:hover {
@@ -750,8 +770,8 @@ p a:hover {
   color: #fca5a5;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+
   margin-bottom: 1rem;
   width: 100%;
   text-align: center;
@@ -764,7 +784,7 @@ p a:hover {
 }
 
 .verification-link a {
-  color: #58a6ff;
+  color: #004225;
   text-decoration: none;
   font-size: 0.9rem;
 }
@@ -781,7 +801,6 @@ p a:hover {
   text-align: center;
   background: rgba(74, 222, 128, 0.1);
   border: 1px solid rgba(74, 222, 128, 0.3);
-  border-radius: 8px;
 }
 
 .sso-section {
@@ -799,19 +818,22 @@ p a:hover {
 .sso-button {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: rgba(88, 166, 255, 0.1);
-  border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 8px;
-  color: #58a6ff;
+  background: transparent;
+  border: 1px solid #004225;
+  color: var(--text-primary);
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
 .sso-button:hover:not(:disabled) {
-  background: rgba(88, 166, 255, 0.2);
-  border-color: rgba(88, 166, 255, 0.5);
+  border-color: #004225;
+  color: var(--text-primary);
+  background: rgba(0, 66, 37, 0.1);
 }
 
 .sso-button:disabled {
@@ -828,7 +850,8 @@ p a:hover {
   margin-top: 0.5rem;
   margin-bottom: 1rem;
   font-size: 1.1rem;
-  color: #e6eef6;
+  color: #a9b7aa;
+  font-weight: 600;
 }
 
 .magic-link-form form {
@@ -839,17 +862,26 @@ p a:hover {
 
 .magic-link-input {
   padding: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 6px;
-  background: rgba(13, 17, 23, 0.5);
-  color: #e6eef6;
+  border: 1px solid #004225;
+  background: rgba(10, 10, 10, 0.6);
+  color: #a9b7aa;
   font-size: 0.95rem;
-  transition: border-color 0.2s;
+  font-weight: 500;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.magic-link-input::placeholder {
+  color: rgba(169, 183, 170, 0.6);
+  opacity: 1;
 }
 
 .magic-link-input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: #004225;
+  background: rgba(10, 10, 10, 0.8);
+  color: #a9b7aa;
 }
 
 .magic-link-input:disabled {
@@ -866,7 +898,7 @@ p a:hover {
   padding: 0.75rem;
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 6px;
+
   color: #4ade80;
   font-size: 0.9rem;
   text-align: center;
@@ -877,59 +909,41 @@ p a:hover {
   align-items: center;
   text-align: center;
   margin: 1.5rem 0;
-  color: #94a3b8;
+  color: #a9b7aa;
+  font-weight: 500;
 }
 
 .separator::before,
 .separator::after {
   content: "";
   flex: 1;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+  border-bottom: 1px solid #004225;
+  opacity: 0.5;
 }
 
 .separator span {
   padding: 0 1rem;
   font-size: 0.9rem;
+  font-weight: 500;
 }
 
-/* Captcha overlay styles - matching orchestrator */
-:global(.captcha-overlay) {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1.25rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 500ms ease;
-  z-index: 1050;
-}
+@media (max-width: 600px) {
+  .captcha-section {
+    flex-direction: column !important;
+  }
 
-:global(.captcha-overlay--visible) {
-  opacity: 1;
-  pointer-events: auto;
-}
+  .captcha-image-wrapper {
+    width: 100%;
+    margin-bottom: 0.75rem;
+  }
 
-:global(.captcha-overlay__image) {
-  max-width: min(90vw, 480px);
-  max-height: 80vh;
-  width: auto;
-  border-radius: 0.75rem;
-  border: 2px solid rgba(56, 189, 248, 0.8);
-  background: rgba(30, 41, 59, 0.4);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
-  transform: scale(0.95);
-  transition: transform 500ms ease;
-}
+  .captcha-image-wrapper .captcha-image {
+    width: 100%;
+    height: auto;
+  }
 
-:global(.captcha-overlay--visible .captcha-overlay__image) {
-  transform: scale(1.5);
-}
-
-:global(body.captcha-overlay-open) {
-  overflow: hidden;
+  .captcha-section .captcha-input {
+    width: 100% !important;
+  }
 }
 </style>

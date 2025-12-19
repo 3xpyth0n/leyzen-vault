@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="selectedCount > 0" class="batch-actions-bar glass glass-card">
+    <div v-if="selectedCount > 0" class="batch-actions-bar">
       <div class="batch-info">
         <span class="batch-count">{{ selectedCount }} item(s) selected</span>
       </div>
@@ -150,11 +150,12 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  border-radius: 2rem;
+  background: var(--bg-primary);
+  border: solid 1px var(--slate-grey);
   z-index: 100001 !important;
   min-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  gap: 1.5rem; /* Add gap between info and buttons */
+  gap: 1.5rem;
 }
 
 .mobile-mode .batch-actions-bar {
@@ -175,7 +176,7 @@ export default {
 
 .batch-count {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .batch-buttons {
@@ -220,13 +221,12 @@ body.sidebar-collapsed .modal-overlay {
   padding: 2rem;
   min-width: 400px;
   max-width: 90vw;
-  border-radius: 2rem;
 }
 
 .modal h2 {
   margin-top: 0;
   margin-bottom: 1.5rem;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .form-group {
@@ -236,7 +236,7 @@ body.sidebar-collapsed .modal-overlay {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--text-secondary, #a9b7aa);
 }
 
 .form-actions {
@@ -251,7 +251,6 @@ body.sidebar-collapsed .modal-overlay {
   margin-bottom: 1rem;
   color: var(--error, #ef4444);
   background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 </style>

@@ -91,7 +91,7 @@ export default {
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 1rem;
+
   padding: 2rem;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
@@ -138,7 +138,7 @@ export default {
   width: 64px;
   height: 64px;
   background: rgba(245, 158, 11, 0.1);
-  border-radius: 50%;
+
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -163,7 +163,7 @@ export default {
 .maintenance-modal-message {
   margin: 0;
   font-size: 0.95rem;
-  color: #cbd5e1;
+  color: #a9b7aa;
   line-height: 1.5;
 }
 

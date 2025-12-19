@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="selectedCount > 0" class="batch-actions-bar glass glass-card">
+    <div v-if="selectedCount > 0" class="batch-actions-bar">
       <div class="batch-info">
         <span class="batch-count">{{ selectedCount }} item(s) selected</span>
       </div>
@@ -82,7 +82,7 @@ export default {
   justify-content: space-between !important;
   align-items: center !important;
   padding: 1rem 1.5rem !important;
-  border-radius: 2rem !important;
+
   z-index: 100001 !important;
   min-width: 500px !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
@@ -108,7 +108,7 @@ export default {
 
 .batch-count {
   font-weight: 600;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #a9b7aa);
 }
 
 .batch-buttons {
