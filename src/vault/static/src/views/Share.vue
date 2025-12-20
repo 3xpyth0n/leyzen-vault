@@ -758,14 +758,70 @@ onMounted(() => {
 
 .download-btn {
   width: 100%;
-  padding: 1rem 2rem;
-  font-size: 1.125rem;
-  font-weight: 600;
-
-  transition: all 0.2s ease;
+  padding: 0.875rem 2rem !important;
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  color: #a9b7aa !important;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 66, 37, 0.2),
+    rgba(0, 66, 37, 0.15)
+  ) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border: 1px solid rgba(0, 66, 37, 0.3) !important;
+  cursor: pointer !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-family: inherit !important;
+  position: relative !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  z-index: 10001 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.download-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.download-btn:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(
+    135deg,
+    rgba(0, 66, 37, 0.3),
+    rgba(0, 66, 37, 0.25)
+  );
+  border-color: rgba(0, 66, 37, 0.5);
+  box-shadow:
+    0 6px 24px rgba(0, 66, 37, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.download-btn:hover::before {
+  left: 100%;
+}
+
+.download-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 8px rgba(0, 66, 37, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .download-btn.btn-disabled {

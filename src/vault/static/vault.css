@@ -3241,7 +3241,7 @@ body.sidebar-collapsed .logout-modal-overlay {
   position: fixed;
   top: 1rem;
   right: 1rem;
-  z-index: 10000;
+  z-index: 100000;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -3598,15 +3598,15 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .folder-picker-list::-webkit-scrollbar-track {
-  background: #004225;
+  background: var(--bg-primary);
 }
 
 .folder-picker-list::-webkit-scrollbar-thumb {
-  background: #004225;
+  background: var(--slate-grey);
 }
 
 .folder-picker-list::-webkit-scrollbar-thumb:hover {
-  background: #004225;
+  background: var(--ash-grey);
 }
 
 .folder-picker-option {
@@ -3617,11 +3617,11 @@ body.sidebar-collapsed .logout-modal-overlay {
   padding: 0.5rem 0.75rem;
 
   margin-bottom: 0.25rem;
-  background: #004225;
+  background: transparent;
   transition: background 0.2s ease;
   min-height: 40px;
   border: none;
-  color: #a9b7aa;
+  color: var(--text-primary);
   cursor: pointer;
   text-align: left;
   box-sizing: border-box;
@@ -3713,12 +3713,12 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .folder-picker-option:hover {
-  background: #004225;
+  background: rgba(111, 122, 130, 0.1);
 }
 
 .folder-picker-option.selected {
-  background: rgba(88, 166, 255, 0.15);
-  border: 1px solid rgba(88, 166, 255, 0.4);
+  background: rgba(111, 122, 130, 0.15);
+  border: 1px solid rgba(111, 122, 130, 0.4);
 }
 
 .folder-picker-option.folder-clickable {
@@ -3727,7 +3727,7 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .folder-picker-option.folder-clickable:hover {
-  background: #004225;
+  background: rgba(111, 122, 130, 0.1);
 }
 
 .folder-expand-icon {
@@ -3761,7 +3761,7 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .folder-picker-option.selected .folder-icon {
-  color: var(--accent, #004225);
+  color: var(--text-primary);
 }
 
 .folder-picker-option .folder-name {
@@ -3775,27 +3775,27 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .folder-picker-option.folder-picker-root {
-  background: rgba(88, 166, 255, 0.08);
-  border: 1px solid rgba(88, 166, 255, 0.2);
+  background: rgba(111, 122, 130, 0.08);
+  border: 1px solid rgba(111, 122, 130, 0.2);
 }
 
 .folder-picker-option.folder-picker-root:hover {
-  background: rgba(88, 166, 255, 0.12);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(111, 122, 130, 0.12);
+  border-color: rgba(111, 122, 130, 0.3);
 }
 
 .folder-picker-option.folder-picker-root.selected {
-  background: rgba(88, 166, 255, 0.2);
-  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(169, 183, 170, 0.2);
+  border-color: rgba(169, 183, 170, 0.5);
 }
 
 .folder-picker-option .folder-picker-vaultspace-icon {
-  color: var(--accent, #004225);
+  color: var(--text-primary);
 }
 
 .folder-picker-empty {
   text-align: center;
-  color: #a9b7aa;
+  color: var(--text-primary);
   padding: 2rem;
   font-size: 0.9rem;
 }
@@ -3806,7 +3806,7 @@ body.sidebar-collapsed .logout-modal-overlay {
   justify-content: flex-end;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #004225;
+  border-top: 1px solid var(--slate-grey);
 }
 
 .modal-close {
@@ -3815,7 +3815,7 @@ body.sidebar-collapsed .logout-modal-overlay {
   right: 1rem;
   background: none;
   border: none;
-  color: #a9b7aa;
+  color: var(--text-primary);
   font-size: 1.5rem;
   cursor: pointer;
   width: 2rem;
@@ -3827,8 +3827,8 @@ body.sidebar-collapsed .logout-modal-overlay {
 }
 
 .modal-close:hover {
-  background: #a9b7aa;
-  color: #a9b7aa;
+  background: var(--slate-grey);
+  color: var(--text-primary);
 }
 
 /* Share Modal Styles */

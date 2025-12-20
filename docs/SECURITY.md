@@ -11,7 +11,7 @@ The `main` branch and tagged releases receive security patches. When in doubt, u
 
 If you discover a security vulnerability, please report it privately using one of the channels below:
 
-- [GitHub Security Advisories](https://github.com/3xpyth0n/leyzen-vault/security/advisories/new) — preferred for providing
+- [GitHub Security Advisories](https://github.com/3xpyth0n/leyzen-vault/security/advisories/new) - preferred for providing
   encrypted communication and tracking remediation.
 
 Please do not open public GitHub issues, pull requests, or discussions for security reports. We will coordinate with you on

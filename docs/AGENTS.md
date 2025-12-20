@@ -1,4 +1,4 @@
-# Leyzen Vault — Agent Guidelines
+# Leyzen Vault - Agent Guidelines
 
 Welcome! This repository powers the Leyzen Vault proof-of-concept stack. Use this
 reference to understand the layout, preferred coding styles, and the sanity
@@ -15,25 +15,25 @@ checks we expect before shipping changes.
 - When referencing files in code examples or documentation, paths starting with `src/` or `infra/` are relative to the repository root
 - When referencing files within Python code (e.g., imports), paths are relative to the Python module structure (e.g., `from common.env import ...` refers to `src/common/env.py`)
 
-- `src/orchestrator/` — Flask application that exposes the admin dashboard and  
+- `src/orchestrator/` - Flask application that exposes the admin dashboard and  
   coordinates container rotation. Houses most Python code, HTML templates, JS,  
   and CSS.
-- `infra/docker-proxy/` — Minimal Flask service that brokers authenticated, allowlisted
+- `infra/docker-proxy/` - Minimal Flask service that brokers authenticated, allowlisted
   requests to the Docker Engine socket.
-- `infra/haproxy/` — Static HAProxy configuration and error pages that front every
+- `infra/haproxy/` - Static HAProxy configuration and error pages that front every
   HTTP service.
-- `src/vault/` — Leyzen Vault secure file storage application with end-to-end encryption.
+- `src/vault/` - Leyzen Vault secure file storage application with end-to-end encryption.
   Vue.js SPA frontend with Flask REST API backend. Uses PostgreSQL for metadata storage.
-- `src/common/` — Shared Python modules (`env.py`, `exceptions.py`) used across
+- `src/common/` - Shared Python modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
-- `src/compose/` — Python build scripts that generate `docker-generated.yml` and HAProxy
+- `src/compose/` - Python build scripts that generate `docker-generated.yml` and HAProxy
   configuration from environment variables.
-- `tools/cli/` — Go source code for the `leyzenctl` CLI tool. The CLI provides an
+- `tools/cli/` - Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
-- `infra/monitoring/` — Monitoring infrastructure components (currently empty, reserved for future use).
-- `infra/queue/` — Queue infrastructure components (currently empty, reserved for future use).
-- `leyzenctl` — Deployment helper (Go CLI binary compiled by `install.sh`).
+- `infra/monitoring/` - Monitoring infrastructure components (currently empty, reserved for future use).
+- `infra/queue/` - Queue infrastructure components (currently empty, reserved for future use).
+- `leyzenctl` - Deployment helper (Go CLI binary compiled by `install.sh`).
 
 ## Python guidelines
 
@@ -64,7 +64,7 @@ checks we expect before shipping changes.
 - **Error handling**: Raise custom exceptions that inherit from the local error
   base classes (e.g., `DockerProxyError`) and surface human-readable messages to
   the dashboard. Guard asynchronous worker loops with targeted `try/except`
-  blocks—see `_orchestrator_loop()` for reference.
+  blocks-see `_orchestrator_loop()` for reference.
 - **Unit boundaries**: Keep background threads, SSE streaming, and rotation
   mechanics inside `RotationService`. Blueprints should remain thin adapters
   between Flask routes and service methods.
@@ -101,11 +101,11 @@ checks we expect before shipping changes.
 
 The `src/common/services/` directory contains shared services used across multiple components:
 
-- **`file_promotion_service.py`** — `FilePromotionService` — Unified service for promoting validated files from tmpfs (`/data`) to persistent storage (`/data-source`) with strict validation. This service validates files using `SyncValidationService` (checks file ID exists in database AND hash matches) before promoting them. It also handles cleanup of orphaned files (files that don't exist in database). Used by both the vault (after each upload) and the orchestrator (during rotation).
+- **`file_promotion_service.py`** - `FilePromotionService` - Unified service for promoting validated files from tmpfs (`/data`) to persistent storage (`/data-source`) with strict validation. This service validates files using `SyncValidationService` (checks file ID exists in database AND hash matches) before promoting them. It also handles cleanup of orphaned files (files that don't exist in database). Used by both the vault (after each upload) and the orchestrator (during rotation).
 
-- **`sync_validation_service.py`** — `SyncValidationService` — Service for validating files before synchronization to prevent malware persistence. Validates that files exist in the database and that their hash matches before allowing promotion to persistent storage. Maintains a whitelist of legitimate files and thumbnails loaded from the database.
+- **`sync_validation_service.py`** - `SyncValidationService` - Service for validating files before synchronization to prevent malware persistence. Validates that files exist in the database and that their hash matches before allowing promotion to persistent storage. Maintains a whitelist of legitimate files and thumbnails loaded from the database.
 
-- **`logging.py`** — `FileLogger` — Shared logging service used across services. Provides structured logging with file rotation and timezone awareness. Routes operational logs through `FileLogger` and keeps secrets out of log messages. Prefer `.log()` for structured entries; use `.warning()` only for noteworthy anomalies.
+- **`logging.py`** - `FileLogger` - Shared logging service used across services. Provides structured logging with file rotation and timezone awareness. Routes operational logs through `FileLogger` and keeps secrets out of log messages. Prefer `.log()` for structured entries; use `.warning()` only for noteworthy anomalies.
 
 ### Vault Application (`src/vault/`)
 
@@ -143,8 +143,8 @@ The Vault application follows similar Python guidelines with additional consider
 
 **Current blueprints:**
 
-- `auth_bp` — Authentication and CAPTCHA routes
-- `dashboard_bp` — Dashboard and API routes for container management
+- `auth_bp` - Authentication and CAPTCHA routes
+- `dashboard_bp` - Dashboard and API routes for container management
 
 ### Vault Blueprints (`src/vault/blueprints`)
 
@@ -152,24 +152,24 @@ The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Bl
 
 **API Blueprints (JWT-based authentication):**
 
-- `admin_api_bp` — Admin API endpoints
-- `auth_api_bp` — JWT-based authentication API
-- `config_api_bp` — Configuration API for exposing public vault settings to frontend (endpoint `/api/v2/config`)
-- `files_api_bp` — Advanced files API v2 (upload, download, metadata)
-- `file_events_api_bp` — File events API for real-time file synchronization via SSE (Server-Sent Events), endpoint `/api/v2/files/events`
-- `internal_api_bp` — Internal API for orchestrator operations
-- `search_api_bp` — Search API endpoints
-- `sso_api_bp` — SSO API (SAML, OAuth2, OIDC)
-- `trash_api_bp` — Trash API v2
-- `quota_api_v2_bp` — Quota API v2
-- `sharing_api_bp` — Advanced Sharing API v2
-- `thumbnail_api_bp` — Thumbnail API v2
-- `vaultspace_api_bp` — VaultSpaces API
+- `admin_api_bp` - Admin API endpoints
+- `auth_api_bp` - JWT-based authentication API
+- `config_api_bp` - Configuration API for exposing public vault settings to frontend (endpoint `/api/v2/config`)
+- `files_api_bp` - Advanced files API v2 (upload, download, metadata)
+- `file_events_api_bp` - File events API for real-time file synchronization via SSE (Server-Sent Events), endpoint `/api/v2/files/events`
+- `internal_api_bp` - Internal API for orchestrator operations
+- `search_api_bp` - Search API endpoints
+- `sso_api_bp` - SSO API (SAML, OAuth2, OIDC)
+- `trash_api_bp` - Trash API v2
+- `quota_api_v2_bp` - Quota API v2
+- `sharing_api_bp` - Advanced Sharing API v2
+- `thumbnail_api_bp` - Thumbnail API v2
+- `vaultspace_api_bp` - VaultSpaces API
 
 **Legacy Blueprints:**
 
-- `auth_bp` — Legacy session-based authentication (for CAPTCHA/logout until fully migrated)
-- `security_bp` — Security statistics endpoints
+- `auth_bp` - Legacy session-based authentication (for CAPTCHA/logout until fully migrated)
+- `security_bp` - Security statistics endpoints
 
 **Additional blueprints** (may be used internally or for specific features):
 
@@ -187,24 +187,24 @@ The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Bl
 
 The Vault application uses middleware components for authentication, authorization, and input validation:
 
-- **`jwt_auth.py`** — JWT authentication middleware providing:
+- **`jwt_auth.py`** - JWT authentication middleware providing:
   - `@jwt_required` decorator for protecting routes with JWT authentication
   - `get_current_user()` function to retrieve the authenticated user from the JWT token
   - Origin/Referer validation for additional security
   - JWT token validation and replay protection via `jti` (JWT ID) tracking
 
-- **`rbac.py`** — Role-Based Access Control (RBAC) middleware providing:
+- **`rbac.py`** - Role-Based Access Control (RBAC) middleware providing:
   - `@require_role(role_name)` decorator for role-based authorization
   - `@require_permission(permission_name)` decorator for permission-based authorization
   - Integration with user roles and permissions stored in the database
 
-- **`input_validation.py`** — Input validation middleware providing validation decorators and helpers:
-  - `validate_uuid_param()` — Validates UUID parameters
-  - `validate_file_id_param()` — Validates file ID parameters
-  - `validate_vaultspace_id_param()` — Validates VaultSpace ID parameters
-  - `validate_pagination()` — Validates pagination parameters (page, per_page)
-  - `validate_email_param()` — Validates email parameters
-  - `validate_json_request()` — Validates JSON request body structure
+- **`input_validation.py`** - Input validation middleware providing validation decorators and helpers:
+  - `validate_uuid_param()` - Validates UUID parameters
+  - `validate_file_id_param()` - Validates file ID parameters
+  - `validate_vaultspace_id_param()` - Validates VaultSpace ID parameters
+  - `validate_pagination()` - Validates pagination parameters (page, per_page)
+  - `validate_email_param()` - Validates email parameters
+  - `validate_json_request()` - Validates JSON request body structure
 
 All middleware components are imported from `vault.middleware` and used as decorators on blueprint routes.
 
@@ -219,7 +219,7 @@ All middleware components are imported from `vault.middleware` and used as decor
 - **Styling**: Tailwind utilities are compiled from `src/orchestrator/styles/tailwind.css` via
   `npm run build:css`. Update source styles there rather than editing the
   generated `static/tailwind.css`. Custom component styles live in
-  `static/index.css`, `static/dashboard.css`, etc.—keep selectors BEM-like and
+  `static/index.css`, `static/dashboard.css`, etc.-keep selectors BEM-like and
   responsive.
 - **Assets**: In templates, reference files using the Flask static URL path `/orchestrator/static/...`
   (this is the HTTP URL path, not the filesystem path). The Flask app is configured with
@@ -287,13 +287,13 @@ See [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#service-startup-order) for detailed
 
 The orchestrator uses a service-oriented architecture where business logic is encapsulated in service classes:
 
-- `docker_proxy.py` — `DockerProxyService` — Manages communication with the Docker proxy service
-- `rotation.py` — `RotationService` — Handles container rotation, health checks, and lifecycle management
-- `storage_cleanup.py` — `StorageCleanupService` — Manages cleanup of orphaned storage
-- `file_promotion_service.py` — Handles file promotion from temporary to persistent storage
-- `rotation_telemetry.py` — Collects and reports rotation metrics
-- `security_metrics_service.py` — Collects security-related metrics
-- `sync_service.py` — Handles synchronization operations
+- `docker_proxy.py` - `DockerProxyService` - Manages communication with the Docker proxy service
+- `rotation.py` - `RotationService` - Handles container rotation, health checks, and lifecycle management
+- `storage_cleanup.py` - `StorageCleanupService` - Manages cleanup of orphaned storage
+- `file_promotion_service.py` - Handles file promotion from temporary to persistent storage
+- `rotation_telemetry.py` - Collects and reports rotation metrics
+- `security_metrics_service.py` - Collects security-related metrics
+- `sync_service.py` - Handles synchronization operations
 
 Services are registered in `app.config` and accessed via `current_app.config` in blueprints.
 
@@ -303,50 +303,50 @@ The Vault application has an extensive service layer covering various functional
 
 **Core Services:**
 
-- `audit.py` — `AuditService` — Audit logging and retention with IP enrichment
-- `file_service.py` — `FileService` — File operations and metadata
-- `file_event_service.py` — `FileEventService` — File events service for real-time file synchronization, manages event streams and SSE connections
-- `encryption_service.py` — End-to-end encryption operations
-- `key_management.py` — Key management and rotation
-- `ip_enrichment.py` — `IPEnrichmentService` — IP enrichment service using free public APIs to enrich IP addresses with geolocation and threat intelligence data
+- `audit.py` - `AuditService` - Audit logging and retention with IP enrichment
+- `file_service.py` - `FileService` - File operations and metadata
+- `file_event_service.py` - `FileEventService` - File events service for real-time file synchronization, manages event streams and SSE connections
+- `encryption_service.py` - End-to-end encryption operations
+- `key_management.py` - Key management and rotation
+- `ip_enrichment.py` - `IPEnrichmentService` - IP enrichment service using free public APIs to enrich IP addresses with geolocation and threat intelligence data
 
 **Storage Layer:**
 
-- `storage.py` (in `src/vault/`) — `FileStorage` — Storage abstraction layer for file operations
+- `storage.py` (in `src/vault/`) - `FileStorage` - Storage abstraction layer for file operations
 
 **Authentication & Authorization:**
 
-- `auth_service.py` — Authentication logic
-- `sso_service.py` — SSO integration (SAML, OAuth2, OIDC)
-- `totp_service.py` — TOTP-based 2FA
-- `api_key_service.py` — API key management
-- `device_service.py` — Device management
-- `db_password_service.py` — Database password management for the `leyzen_app` role, handles encrypted password storage in SystemSecrets table
+- `auth_service.py` - Authentication logic
+- `sso_service.py` - SSO integration (SAML, OAuth2, OIDC)
+- `totp_service.py` - TOTP-based 2FA
+- `api_key_service.py` - API key management
+- `device_service.py` - Device management
+- `db_password_service.py` - Database password management for the `leyzen_app` role, handles encrypted password storage in SystemSecrets table
 
 **Sharing & Collaboration:**
 
-- `share_link_service.py` — `ShareService` — Share link generation and management
-- `advanced_sharing_service.py` — Advanced sharing features
-- `invitation_service.py` — User invitations
+- `share_link_service.py` - `ShareService` - Share link generation and management
+- `advanced_sharing_service.py` - Advanced sharing features
+- `invitation_service.py` - User invitations
 
 **Search & Indexing:**
 
-- `search_service.py` — Search functionality
-- `search_index_service.py` — Search index management
+- `search_service.py` - Search functionality
+- `search_index_service.py` - Search index management
 
 **Quota & Storage:**
 
-- `quota_service.py` — Quota management
-- `cache_service.py` — Caching layer
-- `cache_promotion_service.py` — Cache promotion logic
-- `storage_reconciliation_service.py` — Storage reconciliation
+- `quota_service.py` - Quota management
+- `cache_service.py` - Caching layer
+- `cache_promotion_service.py` - Cache promotion logic
+- `storage_reconciliation_service.py` - Storage reconciliation
 
 **Security & Compliance:**
 
-- `zero_trust_service.py` — Zero-trust security model
-- `behavioral_analysis_service.py` — Behavioral analysis
-- `rate_limiter.py` — `RateLimiter` — Rate limiting
-- `security_bp` — Security statistics
+- `zero_trust_service.py` - Zero-trust security model
+- `behavioral_analysis_service.py` - Behavioral analysis
+- `rate_limiter.py` - `RateLimiter` - Rate limiting
+- `security_bp` - Security statistics
 
 **Additional Services:**
 
@@ -365,14 +365,14 @@ and accessed via `current_app.config` in blueprints.
 
 The Vault application includes utility modules for common operations:
 
-- **`constant_time.py`** — Constant-time comparison functions for security-critical operations (prevents timing attacks)
-- **`file_validation.py`** — File validation utilities for validating file types, sizes, and content
-- **`log_sanitizer.py`** — Log sanitization utilities to prevent information leakage in logs (removes sensitive data)
-- **`mime_type_detection.py`** — MIME type detection utilities for identifying file types
-- **`password_validator.py`** — Password validation utilities with strength checking
-- **`safe_json.py`** — Safe JSON parsing utilities with error handling and validation
-- **`valid_icons.py`** — Icon validation utilities for validating icon names and formats
-- **`validate_db_schema.py`** — Database schema validation utilities for verifying database structure
+- **`constant_time.py`** - Constant-time comparison functions for security-critical operations (prevents timing attacks)
+- **`file_validation.py`** - File validation utilities for validating file types, sizes, and content
+- **`log_sanitizer.py`** - Log sanitization utilities to prevent information leakage in logs (removes sensitive data)
+- **`mime_type_detection.py`** - MIME type detection utilities for identifying file types
+- **`password_validator.py`** - Password validation utilities with strength checking
+- **`safe_json.py`** - Safe JSON parsing utilities with error handling and validation
+- **`valid_icons.py`** - Icon validation utilities for validating icon names and formats
+- **`validate_db_schema.py`** - Database schema validation utilities for verifying database structure
 
 These utilities are used throughout the Vault application for common operations and should be imported from `vault.utils`.
 
@@ -406,7 +406,7 @@ The orchestrator service uses a multi-stage Dockerfile because it requires build
 
 ### Single-Stage Builds (Docker Proxy, Vault)
 
-Minimal services like `docker-proxy` and infrastructure components use single-stage Dockerfiles because they have no build-time dependencies—they're pure Python applications that can run directly from source.
+Minimal services like `docker-proxy` and infrastructure components use single-stage Dockerfiles because they have no build-time dependencies-they're pure Python applications that can run directly from source.
 
 **Why single-stage for minimal services:**
 
@@ -448,10 +448,10 @@ Entrypoint scripts handle container initialization and user privilege management
 
 - **TUI Architecture**: The CLI uses Bubbletea for the interactive interface with
   a view-based architecture. Core components are:
-  - `tools/cli/ui/model.go` — State management and model definition
-  - `tools/cli/ui/view.go` — Lipgloss rendering and layout
-  - `tools/cli/ui/update.go` — Message handling and state transitions
-  - `tools/cli/ui/runner.go` — Bubbletea program initialization
+  - `tools/cli/ui/model.go` - State management and model definition
+  - `tools/cli/ui/view.go` - Lipgloss rendering and layout
+  - `tools/cli/ui/update.go` - Message handling and state transitions
+  - `tools/cli/ui/runner.go` - Bubbletea program initialization
 - **Commands**: Business logic lives in `tools/cli/cmd/*.go` subcommands. Keep TUI
   code separate from command logic.
 - **Styling**: Use Lipgloss for consistent terminal styling. Follow the existing

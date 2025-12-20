@@ -108,6 +108,34 @@ export function useFileSync(options = {}) {
         }
         break;
 
+      case "share":
+        if (onFileUpdate) {
+          onFileUpdate({ fileId: file_id, data });
+        } else if (onRefresh) {
+          onRefresh();
+        }
+        break;
+
+      case "zip_created":
+        if (onFileCreate) {
+          onFileCreate({ fileId: file_id, data });
+        } else if (onRefresh) {
+          onRefresh();
+        }
+        break;
+
+      case "zip_extraction_started":
+        if (onRefresh) {
+          onRefresh();
+        }
+        break;
+
+      case "zip_extraction_completed":
+        if (onRefresh) {
+          onRefresh();
+        }
+        break;
+
       default:
         logger.warn(`Unknown file event type: ${event_type}`);
     }

@@ -1500,6 +1500,20 @@ class AdvancedFileService:
         # Re-index copied file
         self.search_service.index_file(new_file)
 
+        # Emit file creation event for copied file
+        self._emit_file_event(
+            event_type=FileEventType.CREATE,
+            file_id=new_file.id,
+            vaultspace_id=target_vaultspace_id,
+            user_id=user_id,
+            data={
+                "original_name": new_file_name,
+                "parent_id": new_parent_id,
+                "mime_type": new_file.mime_type,
+                "copied_from": file_id,
+            },
+        )
+
         return new_file
 
     def copy_folder(
@@ -1652,10 +1666,34 @@ class AdvancedFileService:
             "files", vaultspace_id, user_id, parent_id, page, per_page
         )
 
-        # Try to get from cache
+        # Recalculate parent folder size if parent_id is provided
+        # This ensures the parent folder size is accurate when viewing its contents
+        if parent_id:
+            try:
+                parent_folder = (
+                    db.session.query(File)
+                    .filter_by(id=parent_id, vaultspace_id=vaultspace_id)
+                    .first()
+                )
+                if (
+                    parent_folder
+                    and parent_folder.mime_type == "application/x-directory"
+                ):
+                    parent_size = self.calculate_folder_size(parent_id)
+                    if parent_folder.size != parent_size:
+                        parent_folder.size = parent_size
+                        db.session.commit()
+                        # Invalidate cache when parent size changes
+                        cache.invalidate_pattern(f"files:{vaultspace_id}:")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to recalculate parent folder size for {parent_id}: {e}"
+                )
+                db.session.rollback()
+
+        # Try to get from cache (but folder sizes are recalculated below, so cache may be stale)
+        # We'll invalidate cache after recalculating folder sizes
         cached_result = cache.get(cache_key_str)
-        if cached_result is not None:
-            return cached_result
 
         query = db.session.query(File).filter_by(vaultspace_id=vaultspace_id)
         if parent_id:
@@ -1677,6 +1715,8 @@ class AdvancedFileService:
 
         # Build result with permissions
         result_files = []
+        folder_ids_to_update = []
+
         for file_obj in files:
             # Check permissions: only show files owned by user
             if file_obj.owner_user_id == user_id:
@@ -1684,16 +1724,38 @@ class AdvancedFileService:
                 file_dict["permission_level"] = "owner"
 
                 # Calculate folder size if it's a directory
-                # OPTIMIZATION: Skip recursive calculation for now to prevent blocking
-                # This is expensive and can cause timeouts. Consider caching or async calculation.
-                # For now, use the stored size or 0 for directories
                 if file_obj.mime_type == "application/x-directory":
-                    # Use stored size if available, otherwise 0 (will be calculated on demand)
-                    folder_size = file_obj.size if file_obj.size else 0
-                    file_dict["total_size"] = folder_size
-                    file_dict["size"] = folder_size
+                    # Recalculate folder size to ensure accuracy
+                    # This is done for visible folders to keep sizes up to date
+                    try:
+                        folder_size = self.calculate_folder_size(file_obj.id)
+                        # Update in database if size changed
+                        if file_obj.size != folder_size:
+                            file_obj.size = folder_size
+                            db.session.flush()
+                            folder_ids_to_update.append(file_obj.id)
+                        file_dict["total_size"] = folder_size
+                        file_dict["size"] = folder_size
+                    except Exception as e:
+                        # Fallback to stored size if calculation fails
+                        logger.warning(
+                            f"Failed to calculate size for folder {file_obj.id}: {e}"
+                        )
+                        folder_size = file_obj.size if file_obj.size else 0
+                        file_dict["total_size"] = folder_size
+                        file_dict["size"] = folder_size
 
                 result_files.append(file_dict)
+
+        # Commit folder size updates if any
+        if folder_ids_to_update:
+            try:
+                db.session.commit()
+                # Invalidate cache for this vaultspace to ensure fresh data
+                cache.invalidate_pattern(f"files:{vaultspace_id}:")
+            except Exception as e:
+                logger.warning(f"Failed to commit folder size updates: {e}")
+                db.session.rollback()
 
         result = {
             "files": result_files,

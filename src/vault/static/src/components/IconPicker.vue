@@ -195,23 +195,15 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(7, 14, 28, 0.4);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   animation: fadeIn 0.2s ease;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Remove sidebar padding in mobile mode */
 .mobile-mode .modal-overlay {
-  padding-left: 1rem !important;
-  padding-right: 1rem !important;
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
+  padding: 1rem !important;
 }
 
 @keyframes fadeIn {
@@ -243,15 +235,8 @@ body.sidebar-collapsed .modal-overlay {
 }
 
 .modal-content-icon-picker {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey);
   padding: 2rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;

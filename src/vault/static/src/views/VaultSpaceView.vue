@@ -322,7 +322,7 @@
     @unzip="handlePreviewUnzip"
   />
 
-  <!-- Encryption Overlay (Glassmorphic) - Fixed position covering page-content -->
+  <!-- Encryption Overlay -->
   <Teleport to="body">
     <div
       v-if="showEncryptionOverlay && isMasterKeyRequired"
@@ -952,7 +952,10 @@ export default {
           switch (event_type) {
             case "create":
               // File created - refresh if in the same parent folder
-              if (!data.parent_id || data.parent_id === this.currentParentId) {
+              // Only refresh if parent_id matches currentParentId (both null or both equal)
+              const createParentId = data.parent_id || null;
+              const currentParent = this.currentParentId || null;
+              if (createParentId === currentParent) {
                 this.loadFiles(this.currentParentId);
               }
               break;
@@ -990,7 +993,39 @@ export default {
 
             case "restore":
               // File restored - refresh if in the same parent folder
-              if (!data.parent_id || data.parent_id === this.currentParentId) {
+              // Only refresh if parent_id matches currentParentId (both null or both equal)
+              const restoreParentId = data.parent_id || null;
+              const restoreCurrentParent = this.currentParentId || null;
+              if (restoreParentId === restoreCurrentParent) {
+                this.loadFiles(this.currentParentId);
+              }
+              break;
+
+            case "share":
+              // File shared - refresh to show updated share status
+              this.loadFiles(this.currentParentId);
+              break;
+
+            case "zip_created":
+              // ZIP file created from folder - refresh if in the same parent folder
+              // Only refresh if parent_id matches currentParentId (both null or both equal)
+              const zipParentId = data.parent_id || null;
+              const zipCurrentParent = this.currentParentId || null;
+              if (zipParentId === zipCurrentParent) {
+                this.loadFiles(this.currentParentId);
+              }
+              break;
+
+            case "zip_extraction_started":
+              // ZIP extraction started - no action needed, but log for debugging
+              break;
+
+            case "zip_extraction_completed":
+              // ZIP extraction completed - refresh to show extracted files
+              if (
+                !data.extracted_folder_id ||
+                data.extracted_folder_id === this.currentParentId
+              ) {
                 this.loadFiles(this.currentParentId);
               }
               break;
@@ -1816,19 +1851,32 @@ export default {
             }
           } else if (resolution === "keep-both") {
             // Generate unique name and retry
-            const existingNames = new Set(
-              this.folders
+            // Reload files first to ensure we have the latest state including the conflicting folder
+            await this.loadFilesInternal(normalizedParentId, true, false);
+
+            // Use the same approach as for files: check both folders and files
+            const existingNames = new Set([
+              ...this.folders
                 .filter(
                   (f) =>
                     f &&
                     f.mime_type === "application/x-directory" &&
-                    f.name &&
+                    (f.name || f.original_name) &&
                     (f.parent_id === normalizedParentId ||
                       (!f.parent_id && !normalizedParentId)),
                 )
-                .map((f) => (f.name || "").trim())
+                .map((f) => (f.name || f.original_name || "").trim())
                 .filter((name) => name.length > 0),
-            );
+              ...this.filesList
+                .filter(
+                  (f) =>
+                    f &&
+                    (f.parent_id === normalizedParentId ||
+                      (!f.parent_id && !normalizedParentId)),
+                )
+                .map((f) => (f.original_name || f.name || "").trim())
+                .filter((name) => name.length > 0),
+            ]);
             const uniqueName = this.generateUniqueName(
               "New Folder",
               existingNames,
@@ -4993,16 +5041,8 @@ export default {
   border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
-/* Modal styles use global .modal-overlay and .modal from vault.css with sidebar-specific padding */
 .modal-overlay {
-  padding-left: calc(
-    2rem + 250px
-  ) !important; /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
+  padding: 2rem;
 }
 
 .modal-header {
@@ -5507,9 +5547,6 @@ body.sidebar-collapsed .modal-overlay {
 
   cursor: pointer !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  box-shadow:
-    0 4px 16px rgba(88, 166, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   font-family: inherit !important;
   position: relative !important;
   overflow: hidden !important;

@@ -55,7 +55,7 @@ The pre-commit configuration (`.pre-commit-config.yaml`) includes:
 - **Large files**: Warns if files exceed 500KB
 - **Merge conflicts**: Detects merge conflict markers
 
-If any hook fails, the commit will be blocked. Fix the issues and try committing again. Some hooks (like Ruff) can automatically fix issues—if they do, you'll need to stage the fixed files and commit again.
+If any hook fails, the commit will be blocked. Fix the issues and try committing again. Some hooks (like Ruff) can automatically fix issues-if they do, you'll need to stage the fixed files and commit again.
 
 ## Verification Expectations
 
@@ -74,10 +74,10 @@ We follow a lightweight format to keep history readable:
 
 - A short, English subject line (<= 72 characters).
 - A body of up to four lines that answers:
-  1. **Context** — why the change is needed.
-  2. **Change** — what was done.
-  3. **Verification** — which `./leyzenctl` actions or other checks were run.
-  4. **Impact** — anything reviewers or operators should watch for.
+  1. **Context** - why the change is needed.
+  2. **Change** - what was done.
+  3. **Verification** - which `./leyzenctl` actions or other checks were run.
+  4. **Impact** - anything reviewers or operators should watch for.
 
 Example:
 
@@ -114,7 +114,7 @@ Security issues should be reported privately following the [Security Policy](doc
 
 ## Additional Resources
 
-- [Developer Guide](https://docs.leyzen.com/developer-guide) — contributing to Leyzen Vault.
-- [CI/CD Workflows](https://docs.leyzen.com/ci-cd) — triage, reviews, and releases.
-- [Architecture Overview](https://docs.leyzen.com/architecture/overview) — runtime internals.
-- [Quickstart](https://docs.leyzen.com/getting-started/quickstart) — operating the stack with `leyzenctl`.
+- [Developer Guide](https://docs.leyzen.com/developer-guide) - contributing to Leyzen Vault.
+- [CI/CD Workflows](https://docs.leyzen.com/ci-cd) - triage, reviews, and releases.
+- [Architecture Overview](https://docs.leyzen.com/architecture/overview) - runtime internals.
+- [Quickstart](https://docs.leyzen.com/getting-started/quickstart) - operating the stack with `leyzenctl`.

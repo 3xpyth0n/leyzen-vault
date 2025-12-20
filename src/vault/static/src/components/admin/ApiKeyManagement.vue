@@ -747,19 +747,8 @@ export default {
   display: block;
 }
 
-/* Modal overlay uses global styles from vault.css with sidebar-specific padding */
 .modal-overlay {
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-body.mobile-mode .modal-overlay {
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
+  padding: 2rem;
 }
 
 /* Modal uses global .modal styles from vault.css */

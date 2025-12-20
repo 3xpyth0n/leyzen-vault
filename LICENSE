@@ -5,15 +5,18 @@ Parameters
 Licensor:             Idrissi Saad
 Licensed Work:        Leyzen Vault
                       The Licensed Work is (c) 2025 Idrissi Saad
-Additional Use Grant: You may make use of the Licensed Work, provided that
-                      you may not use the Licensed Work for a Document
-                      Service.
 
-                      A “Document Service” is a commercial offering that
-                      allows third parties (other than your employees and
-                      contractors) to access the functionality of the
-                      Licensed Work by creating VaultSpaces and files
-                      controlled by such third parties.
+Additional Use Grant:
+
+You may use the Licensed Work in production environments for personal use
+and for internal use within a single organization.
+
+Organizations may use the Licensed Work internally to store and share files,
+including sharing files with external parties via download links.
+
+You may not use the Licensed Work to provide a hosted, managed, white-labeled,
+or revenue-generating service, nor allow third parties (other than employees
+or contractors) to create accounts, upload files, or manage their own data.
 
 Change Date:          2029-01-01
 

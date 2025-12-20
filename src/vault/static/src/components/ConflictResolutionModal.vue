@@ -167,19 +167,10 @@ export default {
   align-items: center !important;
   justify-content: center !important;
   padding: 1rem !important;
-  padding-left: calc(
-    1rem + 250px
-  ) !important; /* Default: sidebar expanded (250px) */
   background: rgba(10, 10, 10, 0.8) !important;
   opacity: 1 !important;
   visibility: visible !important;
   animation: fadeIn 0.2s ease;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(1rem + 70px) !important; /* Sidebar collapsed (70px) */
 }
 
 @keyframes fadeIn {

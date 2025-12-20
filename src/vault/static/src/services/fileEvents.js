@@ -117,7 +117,7 @@ class FileEventsClient {
    *
    * @private
    */
-  _connectSSE() {
+  async _connectSSE() {
     if (!this.vaultspaceId) {
       return;
     }
@@ -129,18 +129,39 @@ class FileEventsClient {
         return;
       }
 
+      // Establish SSE session with secure cookie before connecting
+      try {
+        const sessionResponse = await fetch("/api/v2/files/events/session", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "same-origin",
+        });
+
+        if (!sessionResponse.ok) {
+          logger.warn(
+            "Failed to establish SSE session, falling back to polling",
+          );
+          this._startPolling();
+          return;
+        }
+      } catch (error) {
+        logger.warn(
+          "Error establishing SSE session, falling back to polling:",
+          error,
+        );
+        this._startPolling();
+        return;
+      }
+
       const params = new URLSearchParams({
         vaultspace_id: this.vaultspaceId,
       });
 
       if (this.lastEventTimestamp) {
         params.append("last_event_timestamp", this.lastEventTimestamp);
-      }
-
-      // EventSource doesn't support custom headers, so we pass the token as a query parameter
-      // This is acceptable for SSE endpoints as the token is still validated server-side
-      if (token) {
-        params.append("token", token);
       }
 
       const url = `/api/v2/files/events?${params}`;

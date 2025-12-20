@@ -6,8 +6,8 @@
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
 
-> **Modular Moving-Target Defense Orchestrator — Enterprise-Grade Secure File Storage**  
-> **The first open-source file vault designed to stay ahead of attackers — by never standing still.**  
+> **Modular Moving-Target Defense Orchestrator - Enterprise-Grade Secure File Storage**  
+> **The first open-source file vault designed to stay ahead of attackers - by never standing still.**  
 > Licensed under **Business Source License 1.1 (BSL 1.1)**. See [`LICENSE`](LICENSE).
 
 ## Version 2.4.0 Highlights
@@ -18,15 +18,15 @@ Leyzen Vault 2.4.0 introduces three game-changing features that transform how yo
 
 ### 🌐 S3-Compatible External Storage Integration
 
-Break free from local storage limitations with native support for AWS S3, MinIO, and any S3-compatible service. Seamlessly synchronize your encrypted files bidirectionally between local storage and cloud infrastructure, enabling true hybrid deployments. Configure everything securely through the intuitive admin interface—your credentials are encrypted and stored safely. Whether you need cloud redundancy, distributed storage, or complete cloud-based deployments, Leyzen Vault now scales with your infrastructure needs while maintaining end-to-end encryption.
+Break free from local storage limitations with native support for AWS S3, MinIO, and any S3-compatible service. Seamlessly synchronize your encrypted files bidirectionally between local storage and cloud infrastructure, enabling true hybrid deployments. Configure everything securely through the intuitive admin interface-your credentials are encrypted and stored safely. Whether you need cloud redundancy, distributed storage, or complete cloud-based deployments, Leyzen Vault now scales with your infrastructure needs while maintaining end-to-end encryption.
 
 ### 💾 Encrypted Database Backup & Restore System
 
-Never lose your critical data again. Leyzen Vault 2.4.0 includes a comprehensive backup solution that protects your entire database with the same military-grade Argon2id encryption used for your files. Schedule automated backups with flexible cron-based scheduling, store them locally or in S3-compatible storage, and restore your entire system in one click directly from the setup page. All backups remain encrypted at rest—because security shouldn't be an afterthought, even for backups. Configure retention policies to automatically manage your backup history, keeping storage clean while preserving essential recovery points.
+Never lose your critical data again. Leyzen Vault 2.4.0 includes a comprehensive backup solution that protects your entire database with the same military-grade Argon2id encryption used for your files. Schedule automated backups with flexible cron-based scheduling, store them locally or in S3-compatible storage, and restore your entire system in one click directly from the setup page. All backups remain encrypted at rest-because security shouldn't be an afterthought, even for backups. Configure retention policies to automatically manage your backup history, keeping storage clean while preserving essential recovery points.
 
 ### 📱 Revolutionary Mobile Mode
 
-Experience Leyzen Vault like never before on mobile devices. Our brand-new mobile-optimized interface features a sleek bottom navigation bar, responsive single-column layouts, and touch-optimized interactions designed specifically for small screens. Toggle between mobile and desktop modes with a single tap, giving you the perfect experience on any device. Every screen has been reimagined for mobile—from file browsing to sharing, everything feels natural and intuitive on your phone or tablet. Your encrypted files, now in your pocket.
+Experience Leyzen Vault like never before on mobile devices. Our brand-new mobile-optimized interface features a sleek bottom navigation bar, responsive single-column layouts, and touch-optimized interactions designed specifically for small screens. Toggle between mobile and desktop modes with a single tap, giving you the perfect experience on any device. Every screen has been reimagined for mobile-from file browsing to sharing, everything feels natural and intuitive on your phone or tablet. Your encrypted files, now in your pocket.
 
 **End-to-End Encryption (E2EE)**: All features maintain our zero-trust security model. Files are encrypted client-side using the Web Crypto API (AES-GCM) before being uploaded. The server only stores ciphertext.
 
@@ -35,7 +35,7 @@ See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
 ## Overview
 
 Leyzen Vault is a **next-generation secure file storage platform** built around a fully automated **Moving-Target Defense (MTD)** model.
-Instead of relying on static, predictable infrastructures, it continuously rotates its backend containers, refreshes surface exposure, and isolates components — making targeted attacks dramatically harder.
+Instead of relying on static, predictable infrastructures, it continuously rotates its backend containers, refreshes surface exposure, and isolates components - making targeted attacks dramatically harder.
 
 It combines:
 
@@ -56,7 +56,7 @@ Leyzen Vault is designed for:
 - developers and researchers exploring **practical implementations of moving-target defense**,
 - operators looking for a **self-hosted, auditable, enterprise-grade alternative** to mainstream cloud services.
 
-All encryption and decryption happen in the browser — servers never access plaintext.
+All encryption and decryption happen in the browser - servers never access plaintext.
 
 ## Why It Matters
 
@@ -93,15 +93,15 @@ HAProxy, orchestrator, Docker engine access, authentication and proxy boundaries
 
 ### 4. Modular, transparent, and auditable architecture
 
-Each service is isolated, documented, reproducible, and observable — offering a realistic, modern security-oriented reference architecture.
+Each service is isolated, documented, reproducible, and observable - offering a realistic, modern security-oriented reference architecture.
 
 ### 5. Enterprise features without vendor lock-in
 
-SSO, audit logs, admin dashboard, device management, and REST API v2 — without subscriptions or proprietary dependencies.
+SSO, audit logs, admin dashboard, device management, and REST API v2 - without subscriptions or proprietary dependencies.
 
 ## Author
 
-**Saad Idrissi** — French cybersecurity student passionate about secure systems, automation, and digital defense.  
+**Saad Idrissi** - French cybersecurity student passionate about secure systems, automation, and digital defense.  
 Creator of **Leyzen Vault**, exploring real-world implementations of MTD concepts.  
 🌐 https://portfolio.leyzen.com
 
@@ -188,11 +188,11 @@ Please follow the Code of Conduct before submitting.
 
 ## Repository Structure
 
-- `src/` — orchestrator, builder, vault backend
-- `infra/` — HAProxy, Docker proxy
-- `tools/cli/` — `leyzenctl` Go CLI
-- `docs/` — developer documentation
-- root — generated compose file (do not edit manually)
+- `src/` - orchestrator, builder, vault backend
+- `infra/` - HAProxy, Docker proxy
+- `tools/cli/` - `leyzenctl` Go CLI
+- `docs/` - developer documentation
+- root - generated compose file (do not edit manually)
 
 ## Activity
 

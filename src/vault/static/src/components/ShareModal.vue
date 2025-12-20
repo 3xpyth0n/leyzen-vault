@@ -145,13 +145,13 @@
             <div v-else class="active-links-list">
               <div
                 v-for="link in activeLinks"
-                :key="link.link_id"
+                :key="link.id"
                 class="active-link-item"
               >
                 <div class="active-link-info">
                   <div
                     class="active-link-url"
-                    :ref="(el) => setLinkUrlRef(link.link_id, el)"
+                    :ref="(el) => setLinkUrlRef(link.id, el)"
                   >
                     {{ getLinkUrl(link) }}
                   </div>
@@ -166,7 +166,7 @@
                   </button>
                   <button
                     class="btn btn-small btn-danger revoke-link-btn"
-                    @click="revokeLink(link.link_id)"
+                    @click="revokeLink(link.id)"
                   >
                     Revoke
                   </button>
@@ -386,6 +386,10 @@ const createLink = async () => {
 
     const shareLink = response.share_link || response;
 
+    if (!shareLink) {
+      throw new Error("Invalid response from server: no share_link");
+    }
+
     // Build share URL with key
     let shareUrl = computeLinkUrl(shareLink);
 
@@ -419,9 +423,10 @@ const createLink = async () => {
     // Reload active links
     await loadActiveLinks();
   } catch (error) {
+    const errorMessage = error.message || error.toString() || "Unknown error";
     if (window.Notifications) {
       window.Notifications.error(
-        `Failed to create share link: ${error.message}`,
+        `Failed to create share link: ${errorMessage}`,
       );
     }
   } finally {
@@ -439,7 +444,7 @@ const copyLink = async (link) => {
     }
 
     // Show copy animation
-    const linkUrlElement = linkUrlRefs.value[link.link_id];
+    const linkUrlElement = linkUrlRefs.value[link.id];
     if (linkUrlElement) {
       showCopyAnimation(linkUrlElement);
     }
@@ -555,17 +560,16 @@ onMounted(async () => {
 
 <style scoped>
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 10000 !important;
+  padding: 1rem !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 .modal {
@@ -585,8 +589,9 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
+  width: -webkit-fill-available;
 }
 
 .modal-title {
@@ -622,6 +627,7 @@ onMounted(async () => {
   overflow-y: auto;
   flex: 1;
   text-align: left;
+  width: 100%;
 }
 
 .share-section {
@@ -629,6 +635,12 @@ onMounted(async () => {
   flex-direction: column;
   gap: 1rem;
   text-align: left;
+  align-items: flex-start;
+}
+
+.share-section-create {
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .share-section:not(:last-child) {
@@ -636,13 +648,26 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border-color);
 }
 
+.share-section:not(:first-of-type) {
+  padding-top: 0;
+  margin-top: 0;
+}
+
 .share-section h3 {
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
+  margin: 0 0 1rem 0;
   padding: 0;
   text-align: left;
+}
+
+.share-section:first-of-type h3 {
+  margin-top: 0;
+}
+
+.share-section:not(:first-of-type) h3 {
+  margin-top: 0;
 }
 
 .share-link-form {
@@ -798,24 +823,28 @@ onMounted(async () => {
   gap: 0.75rem;
   margin-top: 0.5rem;
   justify-content: flex-end;
+  width: -webkit-fill-available;
 }
 
 .loading-links {
-  padding: 2rem;
-  text-align: center;
+  padding: 1rem 0;
+  text-align: left;
   color: var(--text-primary);
 }
 
 .share-empty {
-  text-align: center !important;
+  text-align: center;
   color: var(--text-primary);
-  padding: 2rem;
+  padding: 0;
   font-size: 0.9rem;
+  width: 100%;
+  align-self: flex-start;
 }
 
 .share-empty p {
-  text-align: center !important;
+  text-align: center;
   margin: 0;
+  width: 100%;
 }
 
 .active-links-list {

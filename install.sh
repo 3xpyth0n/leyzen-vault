@@ -17,14 +17,14 @@ echo
 
 # Check Go installation
 if ! command -v go >/dev/null 2>&1; then
-    echo "❌ Go is not installed. Please install Go ≥1.22 first."
+    echo "Go is not installed. Please install Go ≥1.22 first."
     echo "   Example: sudo apt install golang"
     exit 1
 fi
 
 # Step 1. Remove old binary if exists
 if [ -f "$OUTPUT_BIN" ]; then
-    echo "🧹 Removing previous binary..."
+    echo "Removing previous binary..."
     rm -f "$OUTPUT_BIN"
 fi
 
@@ -36,23 +36,23 @@ go build -o "$OUTPUT_BIN"
 cd "$PROJECT_ROOT"
 
 if [ ! -f "$OUTPUT_BIN" ]; then
-    echo "❌ Compilation failed: binary not found at $OUTPUT_BIN"
+    echo "Compilation failed: binary not found at $OUTPUT_BIN"
     exit 1
 fi
 
 echo
-echo "✅ Binary built successfully:"
+echo "Binary built successfully:"
 echo "   $OUTPUT_BIN"
 echo
 
 # Step 3. Optional global install
 read -r -p "Would you like to install leyzenctl globally (requires sudo)? [y/N] " choice
 if [[ "$choice" =~ ^[Yy]$ ]]; then
-    echo "📦 Installing to /usr/local/bin..."
+    echo "Installing to /usr/local/bin..."
     sudo cp "$OUTPUT_BIN" /usr/local/bin/leyzenctl
     sudo chmod +x /usr/local/bin/leyzenctl
     sudo leyzenctl completion bash | sudo tee /etc/bash_completion.d/leyzenctl > /dev/null
-    echo "✅ Installed globally. You can now run it with: leyzenctl --help"
+    echo "Installed globally. You can now run it with: leyzenctl --help"
 else
     echo "ℹ️  Skipped global install. Use it locally via:"
     echo "   $OUTPUT_BIN --help"
@@ -62,7 +62,7 @@ echo
 echo "───────────────────────────────────────────────"
 echo " Leyzen Vault CLI installation completed."
 echo "───────────────────────────────────────────────"
-echo "🎯 You can now manage your stack with:"
+echo "You can now manage your stack with:"
 echo "   ./leyzenctl start"
 echo "   ./leyzenctl config wizard"
 echo

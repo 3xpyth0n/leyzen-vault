@@ -30,7 +30,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Database Backup System**: Leyzen Vault now includes a comprehensive database backup solution to protect your critical data and ensure business continuity.
   - Schedule automated backups with flexible cron-based scheduling (daily, weekly, or custom intervals) to match your operational needs.
   - Choose where to store your backups: locally, in S3-compatible storage, or both for maximum redundancy and disaster recovery readiness.
-  - All backups are encrypted at rest using Argon2id, the same industry-leading encryption system used for your files, ensuring your backup data remains protected whether stored locally or in S3-compatible storage—because security shouldn't be an afterthought, even for backups.
+  - All backups are encrypted at rest using Argon2id, the same industry-leading encryption system used for your files, ensuring your backup data remains protected whether stored locally or in S3-compatible storage-because security shouldn't be an afterthought, even for backups.
   - Configure retention policies to automatically manage backup history, keeping your storage clean while preserving essential recovery points.
   - Create manual backups on-demand whenever you need an extra safety checkpoint before important operations or changes.
   - Restore your database from any backup point directly from the setup page, making recovery simple and accessible even when starting fresh.

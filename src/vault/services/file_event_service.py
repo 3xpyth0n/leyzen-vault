@@ -28,6 +28,10 @@ class FileEventType(str, Enum):
     RENAME = "rename"
     MOVE = "move"
     RESTORE = "restore"
+    SHARE = "share"
+    ZIP_CREATED = "zip_created"
+    ZIP_EXTRACTION_STARTED = "zip_extraction_started"
+    ZIP_EXTRACTION_COMPLETED = "zip_extraction_completed"
 
 
 @dataclass

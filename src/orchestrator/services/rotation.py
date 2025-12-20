@@ -484,7 +484,7 @@ class RotationService:
                 break
             else:
                 self._logger.log(
-                    f"[WARNING] {name} failed to reach a healthy state during startup — stopping container."
+                    f"[WARNING] {name} failed to reach a healthy state during startup - stopping container."
                 )
                 self._docker.stop_container(name, reason="failed startup health check")
 
@@ -658,7 +658,7 @@ class RotationService:
                     )
                 else:
                     self._logger.log(
-                        f"[WARNING] Rotation skipped — no healthy candidates available. {active_name} remains active."
+                        f"[WARNING] Rotation skipped - no healthy candidates available. {active_name} remains active."
                     )
 
                 # Reset next switch time for next iteration
@@ -730,7 +730,7 @@ class RotationService:
             if not next_cont:
                 # If startup fails, try the next candidate (the current active container remains active)
                 self._logger.log(
-                    f"[WARNING] Failed to start {next_name} — trying next candidate."
+                    f"[WARNING] Failed to start {next_name} - trying next candidate."
                 )
                 continue
 
@@ -738,7 +738,7 @@ class RotationService:
             if not self._docker.wait_until_healthy(next_cont):
                 # If not healthy, stop the new one and try the next candidate
                 self._logger.log(
-                    f"[WARNING] {next_name} failed to reach a healthy state — stopping container."
+                    f"[WARNING] {next_name} failed to reach a healthy state - stopping container."
                 )
                 self._docker.stop_container(
                     next_name, reason="failed rotation health check"
@@ -1101,7 +1101,7 @@ class RotationService:
                 )
 
             self._logger.log(
-                f"[RESUME] Cleaning state before rotation — keeping {active_name} active"
+                f"[RESUME] Cleaning state before rotation - keeping {active_name} active"
             )
 
             for name in self._settings.web_containers:
@@ -1165,7 +1165,7 @@ class RotationService:
 
             if not rotated:
                 self._logger.log(
-                    "[CONTROL] Manual rotation skipped — no healthy candidates available."
+                    "[CONTROL] Manual rotation skipped - no healthy candidates available."
                 )
                 return False, "No healthy candidates were available for rotation.", None
 

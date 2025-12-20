@@ -364,6 +364,14 @@ export default {
       },
       immediate: true,
     },
+    sidebarExpanded: {
+      handler(newVal) {
+        // Only save to localStorage if not in mobile mode
+        if (!this.isMobileMode) {
+          this.saveSidebarStateToStorage(newVal);
+        }
+      },
+    },
   },
   methods: {
     updateScrollProgress() {
@@ -422,6 +430,24 @@ export default {
     savePinnedOrderToStorage(order) {
       try {
         localStorage.setItem("pinnedVaultSpacesOrder", JSON.stringify(order));
+      } catch (err) {
+        // Storage quota exceeded or other error, ignore
+      }
+    },
+    getSidebarStateFromStorage() {
+      try {
+        const stored = localStorage.getItem("vaultSidebarExpanded");
+        if (stored !== null) {
+          return JSON.parse(stored);
+        }
+      } catch (err) {
+        // Invalid JSON, ignore
+      }
+      return null;
+    },
+    saveSidebarStateToStorage(expanded) {
+      try {
+        localStorage.setItem("vaultSidebarExpanded", JSON.stringify(expanded));
       } catch (err) {
         // Storage quota exceeded or other error, ignore
       }
@@ -705,6 +731,14 @@ export default {
   async mounted() {
     // Initialize mobile mode state
     this.isMobileMode = checkMobileMode();
+
+    // Load sidebar state from localStorage (only if not in mobile mode)
+    if (!this.isMobileMode) {
+      const storedState = this.getSidebarStateFromStorage();
+      if (storedState !== null) {
+        this.sidebarExpanded = storedState;
+      }
+    }
 
     // Listen for mobile mode changes
     const handleMobileModeChange = (event) => {

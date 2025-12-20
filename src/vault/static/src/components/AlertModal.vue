@@ -127,21 +127,13 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  padding-left: calc(1rem + 250px); /* Default: sidebar expanded (250px) */
   background: rgba(10, 10, 10, 0.8);
   animation: fadeIn 0.2s ease;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(1rem + 70px); /* Sidebar collapsed (70px) */
-}
-
-/* Remove sidebar padding in mobile mode - must come after sidebar-collapsed rule */
+/* Remove sidebar padding in mobile mode */
 body.mobile-mode .modal-overlay {
-  padding-left: 1rem !important;
-  padding-right: 1rem !important;
+  padding: 1rem !important;
 }
 
 @keyframes fadeIn {

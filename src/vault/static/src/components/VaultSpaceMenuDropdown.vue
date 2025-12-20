@@ -368,18 +368,11 @@ export default {
 
 .vaultspace-menu-dropdown {
   position: relative;
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-
+  background: var(--bg-modal);
+  border: 1px solid var(--slate-grey);
   padding: 0.5rem;
   min-width: 180px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   overflow: visible;
   margin: 0;
   isolation: isolate;

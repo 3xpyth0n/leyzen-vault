@@ -203,6 +203,7 @@ export async function zipFolder(
     formData.append("vaultspace_id", vaultspaceId);
     formData.append("encrypted_file_key", encryptedZipFileKey);
     formData.append("mime_type", "application/zip");
+    formData.append("source_folder_id", folderId);
     if (parentId) {
       formData.append("parent_id", parentId);
     }
@@ -576,6 +577,28 @@ export async function extractZip(
           );
         }
       }
+    }
+
+    // Signal extraction completion to server
+    try {
+      const completeResponse = await apiRequest(
+        "/v2/files/zip/extract/complete",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            zip_file_id: zipFileId,
+            vaultspace_id: vaultspaceId,
+            extracted_folder_id: rootFolderId || targetParentId,
+            files_count: totalFiles,
+          }),
+        },
+      );
+
+      if (!completeResponse.ok) {
+        logger.warn("Failed to signal ZIP extraction completion");
+      }
+    } catch (error) {
+      logger.warn("Error signaling ZIP extraction completion:", error);
     }
 
     return rootFolderId || targetParentId;

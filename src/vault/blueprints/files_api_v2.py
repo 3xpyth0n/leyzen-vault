@@ -575,6 +575,31 @@ def upload_file_v2():
                     f"Failed to update folder size for parent {parent_id}: {e}"
                 )
 
+        # Emit ZIP_CREATED event if this is a ZIP file created from a folder
+        # Check if mime_type is application/zip and if source_folder_id is provided
+        source_folder_id = data.get("source_folder_id")
+        if (
+            file_obj.mime_type in ("application/zip", "application/x-zip-compressed")
+            and source_folder_id
+        ):
+            from vault.services.file_event_service import (
+                FileEventType,
+                get_file_event_service,
+            )
+
+            event_service = get_file_event_service()
+            event_service.emit(
+                event_type=FileEventType.ZIP_CREATED,
+                file_id=file_obj.id,
+                vaultspace_id=vaultspace_id,
+                user_id=user.id,
+                data={
+                    "source_folder_id": source_folder_id,
+                    "zip_file_name": file_obj.original_name,
+                    "parent_id": parent_id,
+                },
+            )
+
         return (
             jsonify(
                 {
@@ -1608,6 +1633,25 @@ def prepare_extract():
         if not file_key:
             return jsonify({"error": "FileKey not found for ZIP file"}), 404
 
+        # Emit ZIP_EXTRACTION_STARTED event
+        from vault.services.file_event_service import (
+            FileEventType,
+            get_file_event_service,
+        )
+
+        event_service = get_file_event_service()
+        event_service.emit(
+            event_type=FileEventType.ZIP_EXTRACTION_STARTED,
+            file_id=zip_file_id,
+            vaultspace_id=vaultspace_id,
+            user_id=user.id,
+            data={
+                "zip_file_id": zip_file_id,
+                "zip_file_name": file_obj.original_name,
+                "target_parent_id": target_parent_id,
+            },
+        )
+
         return (
             jsonify(
                 {
@@ -1619,6 +1663,73 @@ def prepare_extract():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@files_api_bp.route("/zip/extract/complete", methods=["POST"])
+@csrf.exempt
+@jwt_required
+def complete_extract():
+    """Signal completion of ZIP extraction.
+
+    Request body:
+        {
+            "zip_file_id": "file-uuid",
+            "vaultspace_id": "vaultspace-uuid",
+            "extracted_folder_id": "folder-uuid" (optional),
+            "files_count": 10 (optional)
+        }
+
+    Returns:
+        JSON with success status
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    zip_file_id = data.get("zip_file_id")
+    vaultspace_id = data.get("vaultspace_id")
+    extracted_folder_id = data.get("extracted_folder_id")
+    files_count = data.get("files_count")
+
+    if not zip_file_id:
+        return jsonify({"error": "zip_file_id is required"}), 400
+
+    if not vaultspace_id:
+        return jsonify({"error": "vaultspace_id is required"}), 400
+
+    if not validate_file_id(zip_file_id):
+        return jsonify({"error": "Invalid zip_file_id format"}), 400
+
+    if not validate_vaultspace_id(vaultspace_id):
+        return jsonify({"error": "Invalid vaultspace_id format"}), 400
+
+    if extracted_folder_id and not validate_file_id(extracted_folder_id):
+        return jsonify({"error": "Invalid extracted_folder_id format"}), 400
+
+    # Emit ZIP_EXTRACTION_COMPLETED event
+    from vault.services.file_event_service import (
+        FileEventType,
+        get_file_event_service,
+    )
+
+    event_service = get_file_event_service()
+    event_service.emit(
+        event_type=FileEventType.ZIP_EXTRACTION_COMPLETED,
+        file_id=zip_file_id,
+        vaultspace_id=vaultspace_id,
+        user_id=user.id,
+        data={
+            "zip_file_id": zip_file_id,
+            "extracted_folder_id": extracted_folder_id,
+            "files_count": files_count,
+        },
+    )
+
+    return jsonify({"status": "success"}), 200
 
 
 @files_api_bp.route("/upload/session", methods=["POST"])

@@ -3,7 +3,7 @@
  * Handles file key retrieval and modal state management
  */
 
-import { ref, createApp } from "vue";
+import { ref, createApp, h, defineComponent } from "vue";
 import ShareModal from "../components/ShareModal.vue";
 import { files } from "../services/api";
 
@@ -112,12 +112,18 @@ const getFileKey = async (
     }
   }
 
-  // Third: Try to get from global function
-  if (!fileKey) {
-    if (typeof getFileKey === "function") {
-      fileKey = getFileKey(fileId);
-    } else if (window.getFileKey) {
+  // Third: Try to get from global function (skip - this would cause infinite recursion)
+  // Note: We skip this step as the local function would call itself
+  // Only check window.getFileKey if it exists and is different
+  if (
+    !fileKey &&
+    window.getFileKey &&
+    typeof window.getFileKey === "function"
+  ) {
+    try {
       fileKey = window.getFileKey(fileId);
+    } catch (e) {
+      // Ignore errors
     }
   }
 
@@ -135,6 +141,7 @@ const getFileKey = async (
       }
 
       const fileData = await files.getFile(fileId, vaultspaceId);
+
       if (fileData && fileData.file_key && fileData.file_key.encrypted_key) {
         try {
           let decryptFileKeyFunc = window.decryptFileKey;
@@ -219,69 +226,100 @@ export const showShareModal = async (
     return;
   }
 
-  // Get file key
+  // Get file key - this should not block modal opening
   let fileKey = null;
   try {
     fileKey = await getFileKey(fileId, vaultspaceId, vaultspaceKey);
   } catch (error) {
-    if (window.Notifications) {
-      window.Notifications.warning(
-        "Decryption key not found. You may need to decrypt this file first to share it.",
-      );
-    }
+    // Continue without key - modal should still open
+    fileKey = null;
   }
 
+  // Always try to open modal, even if key retrieval failed
   try {
     // Remove existing modal if any
     const existingContainer = document.getElementById("share-modal-container");
     if (existingContainer) {
-      existingContainer.remove();
+      try {
+        existingContainer.remove();
+      } catch (e) {
+        // Ignore removal errors
+      }
     }
 
     // Create modal container
     const modalContainer = document.createElement("div");
     modalContainer.id = "share-modal-container";
+
+    // Ensure container is added to body
+    if (!document.body) {
+      if (window.Notifications) {
+        window.Notifications.error("Failed to open share dialog.");
+      }
+      return;
+    }
+
     document.body.appendChild(modalContainer);
 
     // Create Vue app instance for the modal
-    const show = ref(true);
+    let app = null;
 
     const closeModal = () => {
-      show.value = false;
       setTimeout(() => {
-        if (modalContainer && modalContainer.parentNode) {
-          app.unmount();
-          modalContainer.remove();
+        try {
+          if (modalContainer && modalContainer.parentNode && app) {
+            app.unmount();
+            modalContainer.remove();
+          }
+        } catch (e) {
+          // Ignore cleanup errors
         }
       }, 300);
     };
 
-    // Create Vue app
-    const app = createApp(ShareModal, {
-      show: show.value,
-      fileId,
-      fileType,
-      fileKey,
-      "onUpdate:show": (value) => {
-        show.value = value;
-        if (!value) {
+    // Create Vue app with reactive show prop
+    const ShareModalWrapper = defineComponent({
+      setup() {
+        const show = ref(true);
+
+        const handleUpdateShow = (value) => {
+          show.value = value;
+          if (!value) {
+            closeModal();
+          }
+        };
+
+        const handleClose = () => {
+          show.value = false;
           closeModal();
-        }
+        };
+
+        return () => {
+          if (!show.value) {
+            return null;
+          }
+          return h(ShareModal, {
+            show: show.value,
+            fileId,
+            fileType,
+            fileKey: fileKey || null,
+            "onUpdate:show": handleUpdateShow,
+            onClose: handleClose,
+          });
+        };
       },
-      onClose: closeModal,
     });
 
+    app = createApp(ShareModalWrapper);
     app.mount(modalContainer);
   } catch (error) {
-    // Only show error if modal rendering actually failed
-    console.error("Failed to render share modal:", error);
     if (window.Notifications) {
       window.Notifications.error(
-        "Failed to open share dialog. Please refresh the page.",
+        "Failed to open share dialog. Please try again or refresh the page.",
       );
     }
-    // Don't throw error - let the modal try to open anyway
-    // The error might be non-critical
+    // Re-throw to allow caller to handle if needed
+    throw error;
   }
 };
 

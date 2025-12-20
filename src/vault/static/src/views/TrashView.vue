@@ -177,13 +177,6 @@
           </div>
           <div class="form-actions">
             <button
-              @click="confirmEmptyTrash"
-              :disabled="emptying"
-              class="btn btn-danger"
-            >
-              {{ emptying ? "Deleting..." : "Empty Trash" }}
-            </button>
-            <button
               type="button"
               @click="
                 showEmptyTrashConfirm = false;
@@ -192,6 +185,13 @@
               class="btn btn-secondary"
             >
               Cancel
+            </button>
+            <button
+              @click="confirmEmptyTrash"
+              :disabled="emptying"
+              class="btn btn-danger"
+            >
+              {{ emptying ? "Deleting..." : "Empty Trash" }}
             </button>
           </div>
         </div>
@@ -211,7 +211,7 @@
 </template>
 
 <script>
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { trash, auth } from "../services/api";
 import BatchActionsTrash from "../components/BatchActionsTrash.vue";
@@ -472,8 +472,42 @@ export default {
       return getIcon(iconName, 48);
     };
 
+    const handleDocumentClick = (event) => {
+      // Don't clear selection if clicking on:
+      // - File cards or their children
+      // - Modals
+      // - Batch actions bar
+      // - Header actions
+      // - Inputs, textareas, or contenteditable elements
+      if (
+        event.target.closest(".file-card") ||
+        event.target.closest(".modal-overlay") ||
+        event.target.closest(".trash-modal") ||
+        event.target.closest(".batch-actions-bar") ||
+        event.target.closest(".header-actions") ||
+        event.target.closest(".view-header") ||
+        event.target.tagName === "INPUT" ||
+        event.target.tagName === "TEXTAREA" ||
+        event.target.isContentEditable
+      ) {
+        return;
+      }
+
+      // Clear selection when clicking elsewhere
+      if (selectedItems.value.length > 0) {
+        clearSelection();
+      }
+    };
+
     onMounted(() => {
       loadTrash();
+      // Add global click handler to clear selection when clicking outside
+      document.addEventListener("click", handleDocumentClick);
+    });
+
+    onUnmounted(() => {
+      // Remove global click handler when component is unmounted
+      document.removeEventListener("click", handleDocumentClick);
     });
 
     // Watch for route changes to refresh when user returns to this view
@@ -603,20 +637,18 @@ export default {
 }
 
 .file-card {
-  border: 1px solid var(--border-color, #004225);
-
+  background: var(--bg-modal) !important;
   padding: 1.5rem;
   transition: all var(--transition-base, 0.2s);
   cursor: pointer;
 }
 
 .file-card:hover {
-  border-color: var(--border-color-hover, #004225);
-  background: var(--bg-glass-hover, rgba(30, 41, 59, 0.6));
+  background: var(--bg-secondary);
 }
 
 .file-card.selected {
-  border-color: var(--accent, #004225);
+  border: 1px solid var(--accent, #004225);
   background: rgba(56, 189, 248, 0.1);
 }
 
@@ -624,8 +656,8 @@ export default {
   margin-right: 0.75rem;
   margin-top: 0.25rem;
   cursor: pointer;
-  width: 18px;
-  height: 18px;
+  width: 13px;
+  height: 13px;
 }
 
 .file-icon {
@@ -682,34 +714,18 @@ export default {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(7, 14, 28, 0.6);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  background: #000000c4;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100000;
   padding: 2rem;
-  padding-left: calc(2rem + 250px); /* Default: sidebar expanded (250px) */
   overflow-y: auto;
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px); /* Sidebar collapsed (70px) */
 }
 
 .trash-modal {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-
+  background: var(--bg-modal);
+  border: 1px solid var(--slate-grey);
   padding: 2rem;
   max-width: 500px;
   width: 60%;

@@ -105,6 +105,30 @@ class AdvancedSharingService:
         db.session.add(share_link)
         db.session.commit()
 
+        # Emit share event for file resources
+        if resource_type == "file":
+            from vault.services.file_event_service import (
+                FileEventType,
+                get_file_event_service,
+            )
+
+            event_service = get_file_event_service()
+            event_service.emit(
+                event_type=FileEventType.SHARE,
+                file_id=resource_id,
+                vaultspace_id=resource.vaultspace_id,
+                user_id=created_by,
+                data={
+                    "share_link_id": share_link.id,
+                    "token": token,
+                    "expires_at": expires_at.isoformat() if expires_at else None,
+                    "max_downloads": max_downloads,
+                    "max_access_count": max_access_count,
+                    "allow_download": allow_download,
+                    "permission_type": permission_type,
+                },
+            )
+
         return share_link
 
     def get_public_link(self, token: str) -> PublicShareLink | None:

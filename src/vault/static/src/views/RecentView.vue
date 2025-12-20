@@ -698,69 +698,52 @@ export default {
         editingItemId.value = null;
       } else if (action === "share") {
         // Open share modal using SharingManager
-        // Always load vaultspaceKey from server with extractable: true
-        // This ensures the key is always extractable for file key decryption
+        // Try to load vaultspaceKey from server with extractable: true
+        // This helps retrieve file key, but modal should open even without it
         let vaultspaceKey = null;
 
         try {
           const userMasterKey = await getUserMasterKey();
-          if (!userMasterKey) {
-            showAlert({
-              type: "error",
-              title: "Error",
-              message:
-                "Unable to access encryption keys. Please unlock your files first.",
-            });
-            return;
-          }
+          if (userMasterKey) {
+            try {
+              const vaultspaceKeyData = await vaultspaces.getKey(
+                item.vaultspace_id,
+              );
+              if (!vaultspaceKeyData) {
+                // Key doesn't exist, create it
+                const currentUser = await auth.getCurrentUser();
+                const { encryptedKey } =
+                  await createVaultSpaceKey(userMasterKey);
+                await vaultspaces.share(
+                  item.vaultspace_id,
+                  currentUser.id,
+                  encryptedKey,
+                );
+                vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                  userMasterKey,
+                  encryptedKey,
+                  true, // extractable to use for file key decryption
+                );
+              } else {
+                // Decrypt VaultSpace key with user master key
+                vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                  userMasterKey,
+                  vaultspaceKeyData.encrypted_key,
+                  true, // extractable to use for file key decryption
+                );
+              }
 
-          const vaultspaceKeyData = await vaultspaces.getKey(
-            item.vaultspace_id,
-          );
-          if (!vaultspaceKeyData) {
-            // Key doesn't exist, create it
-            const currentUser = await auth.getCurrentUser();
-            const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
-            await vaultspaces.share(
-              item.vaultspace_id,
-              currentUser.id,
-              encryptedKey,
-            );
-            vaultspaceKey = await decryptVaultSpaceKeyForUser(
-              userMasterKey,
-              encryptedKey,
-              true, // extractable to use for file key decryption
-            );
-          } else {
-            // Decrypt VaultSpace key with user master key
-            vaultspaceKey = await decryptVaultSpaceKeyForUser(
-              userMasterKey,
-              vaultspaceKeyData.encrypted_key,
-              true, // extractable to use for file key decryption
-            );
+              // Cache the key for future use
+              cacheVaultSpaceKey(item.vaultspace_id, vaultspaceKey);
+              vaultspaceKeys.value[item.vaultspace_id] = vaultspaceKey;
+            } catch (e) {
+              console.warn("Failed to load vaultspace key for sharing:", e);
+              // Continue without key - modal should still open
+            }
           }
-
-          // Cache the key for future use
-          cacheVaultSpaceKey(item.vaultspace_id, vaultspaceKey);
-          vaultspaceKeys.value[item.vaultspace_id] = vaultspaceKey;
         } catch (e) {
-          showAlert({
-            type: "error",
-            title: "Error",
-            message:
-              "Failed to load encryption key: " +
-              (e.message || "Unknown error"),
-          });
-          return;
-        }
-
-        if (!vaultspaceKey) {
-          showAlert({
-            type: "error",
-            title: "Error",
-            message: "Unable to load encryption key for this VaultSpace.",
-          });
-          return;
+          console.warn("Failed to get user master key for sharing:", e);
+          // Continue without key - modal should still open
         }
 
         try {
@@ -773,6 +756,7 @@ export default {
             safeVaultspaceKey,
           );
         } catch (err) {
+          console.error("Failed to open share modal:", err);
           showAlert({
             type: "error",
             title: "Error",
@@ -1437,9 +1421,6 @@ export default {
 
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow:
-    0 4px 16px rgba(0, 66, 37, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   font-family: inherit;
   position: relative;
   overflow: hidden;

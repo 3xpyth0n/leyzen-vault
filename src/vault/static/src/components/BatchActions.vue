@@ -152,7 +152,7 @@ export default {
   padding: 1rem 1.5rem;
   background: var(--bg-primary);
   border: solid 1px var(--slate-grey);
-  z-index: 100001 !important;
+  z-index: 1 !important;
   min-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   gap: 1.5rem;
@@ -202,19 +202,12 @@ export default {
   align-items: center;
   justify-content: center;
   z-index: 10001;
-  padding-left: calc(0px + 250px); /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
 }
 
 /* Remove sidebar padding in mobile mode */
 .mobile-mode .modal-overlay {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-/* Adjust modal overlay when sidebar is collapsed */
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(0px + 70px); /* Sidebar collapsed (70px) */
+  padding: 0 !important;
 }
 
 .modal {

@@ -955,16 +955,8 @@ export default {
   background: rgba(88, 166, 255, 0.1);
 }
 
-/* Modal styles use global .modal-overlay and .modal from vault.css with sidebar-specific padding */
 .modal-overlay {
-  padding-left: calc(
-    2rem + 250px
-  ) !important; /* Default: sidebar expanded (250px) */
-  transition: padding-left 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-body.sidebar-collapsed .modal-overlay {
-  padding-left: calc(2rem + 70px) !important; /* Sidebar collapsed (70px) */
+  padding: 2rem;
 }
 
 .modal h2 {

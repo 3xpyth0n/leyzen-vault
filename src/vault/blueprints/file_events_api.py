@@ -6,7 +6,17 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, current_app, g, request, stream_with_context
+from datetime import timedelta
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    g,
+    jsonify,
+    make_response,
+    request,
+    stream_with_context,
+)
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.file_event_service import (
@@ -35,14 +45,23 @@ def stream_file_events():
     Query parameters:
         - vaultspace_id: VaultSpace ID to subscribe to (required)
         - last_event_timestamp: ISO timestamp of last received event (optional, for catch-up)
-        - token: JWT token (required, since EventSource doesn't support custom headers)
+    Cookies:
+        - sse_token: JWT token in HttpOnly cookie (preferred method)
 
     Returns:
         SSE stream of file events
     """
-    # EventSource doesn't support custom headers, so we accept token as query parameter
-    # This is a special case for SSE endpoints only
-    token = request.args.get("token")
+    token = request.cookies.get("sse_token")
+
+    if not token:
+        # Fallback to query parameter (deprecated but kept for compatibility)
+        token = request.args.get("token")
+        if token:
+            logger.warning(
+                "Token passed as query parameter is deprecated. "
+                "Use /api/v2/files/events/session to establish SSE session with cookie."
+            )
+
     if not token:
         # Fallback to Authorization header if available (for testing with curl, etc.)
         auth_header = request.headers.get("Authorization")
@@ -181,6 +200,66 @@ def stream_file_events():
             "Connection": "keep-alive",
         },
     )
+    return response
+
+
+@file_events_api_bp.route("/session", methods=["POST"])
+@csrf.exempt
+@jwt_required
+def establish_sse_session():
+    """Establish SSE session by setting authentication cookie.
+
+    This endpoint validates the JWT token from Authorization header
+    and sets a secure HttpOnly cookie for SSE authentication.
+    This prevents token exposure in URLs, browser history, and logs.
+
+    Request headers:
+        Authorization: Bearer <token>
+
+    Returns:
+        JSON with success status
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Get token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return jsonify({"error": "Authorization header required"}), 401
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return jsonify({"error": "Invalid Authorization header format"}), 401
+
+    token = parts[1]
+
+    # Create response
+    response = make_response(
+        jsonify({"status": "success", "message": "SSE session established"})
+    )
+
+    # Set SSE token in HttpOnly cookie for security
+    # This prevents token exposure in URL, browser history, logs, and Referer headers
+    settings = current_app.config.get("VAULT_SETTINGS")
+    jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
+    session_cookie_secure = settings.session_cookie_secure if settings else True
+
+    # Calculate cookie expiration based on JWT expiration
+    from datetime import datetime, timezone
+
+    expires = datetime.now(timezone.utc) + timedelta(hours=jwt_expiration_hours)
+
+    response.set_cookie(
+        "sse_token",
+        token,
+        expires=expires,
+        httponly=True,
+        secure=session_cookie_secure,
+        samesite="Lax",
+        path="/api/v2/files/events",
+    )
+
     return response
 
 

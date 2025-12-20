@@ -50,9 +50,11 @@ export function useFileViewComposable(options = {}) {
 
   // Resize observers and intervals for cleanup
   const _overlayResizeHandler = ref(null);
+  const _mobileModeChangeHandler = ref(null);
   const _sidebarResizeObserver = ref(null);
   const _mainContentResizeObserver = ref(null);
   const _pageContentResizeObserver = ref(null);
+  const _bottomBarResizeObserver = ref(null);
   const _overlayProtectionInterval = ref(null);
   const _overlayMutationObserver = ref(null);
 
@@ -176,6 +178,21 @@ export function useFileViewComposable(options = {}) {
             window.addEventListener("resize", resizeHandler);
             _overlayResizeHandler.value = resizeHandler;
 
+            // Recalculate when mobile mode changes
+            const mobileModeChangeHandler = () => {
+              // Wait a bit for DOM to update after mode change
+              setTimeout(() => {
+                calculateOverlayPosition();
+                // Re-observe elements as they may have changed
+                observeSidebarChanges();
+              }, 100);
+            };
+            window.addEventListener(
+              "mobile-mode-changed",
+              mobileModeChangeHandler,
+            );
+            _mobileModeChangeHandler.value = mobileModeChangeHandler;
+
             // Recalculate when sidebar toggles (observe sidebar width changes)
             observeSidebarChanges();
 
@@ -287,6 +304,7 @@ export function useFileViewComposable(options = {}) {
   /**
    * Calculate overlay position to cover main-content
    * The overlay should cover the entire main-content area with the same border-radius
+   * In mobile mode, exclude header and bottom bar to keep them accessible
    */
   const calculateOverlayPosition = () => {
     nextTick(() => {
@@ -295,22 +313,80 @@ export function useFileViewComposable(options = {}) {
       if (mainContent) {
         const mainContentRect = mainContent.getBoundingClientRect();
 
-        // Use the exact dimensions and position of main-content
-        const overlayTop = mainContentRect.top;
-        const overlayLeft = mainContentRect.left;
-        const overlayWidth = mainContentRect.width;
-        const overlayHeight = mainContentRect.height;
+        let overlayTop = mainContentRect.top;
+        let overlayLeft = mainContentRect.left;
+        let overlayWidth = mainContentRect.width;
+        let overlayHeight = mainContentRect.height;
 
-        overlayStyle.value = {
-          position: "fixed",
-          top: `${overlayTop}px`,
-          left: `${overlayLeft}px`,
-          width: `${overlayWidth}px`,
-          height: `${overlayHeight}px`,
-          borderRadius: isMobileMode ? "0" : "1rem", // Match main-content border-radius in desktop mode
-          zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
-          pointerEvents: "auto", // Ensure overlay is interactive
-        };
+        // In mobile mode, adjust overlay to exclude header and bottom bar
+        if (isMobileMode) {
+          // Get header height
+          const header = document.querySelector(".app-header");
+          const headerHeight = header ? header.offsetHeight : 0;
+
+          // Get bottom bar position and dimensions
+          const bottomBar = document.querySelector(".bottom-navigation");
+          let bottomBorderRadius = "0";
+          if (bottomBar) {
+            const bottomBarRect = bottomBar.getBoundingClientRect();
+            const bottomBarTop = bottomBarRect.top;
+            const bottomBarWidth = bottomBarRect.width;
+            const isExpanded = bottomBar.classList.contains("expanded");
+
+            // Add a gap between overlay and bottom bar for visual separation
+            // This creates the effect of the overlay "curving around" the bottom bar
+            const gap = 16;
+            const availableHeight = bottomBarTop - headerHeight - gap;
+
+            overlayTop = headerHeight;
+            overlayHeight = Math.max(0, availableHeight);
+
+            // Create rounded bottom corners that complement the circular bottom bar
+            // The bottom bar has border-radius: 1.5rem (24px)
+            // Use a larger border-radius on the bottom of the overlay to create
+            // a smooth curve that visually flows around the bottom bar
+            if (isExpanded) {
+              // When expanded, bottom bar is wider (95% width), use matching border-radius
+              bottomBorderRadius = "0 0 1.5rem 1.5rem";
+            } else {
+              // When collapsed, bottom bar is circular (80px wide, 40px high)
+              // Use a larger radius to create a smooth transition that curves around it
+              // The radius should be slightly larger than the bottom bar's radius
+              bottomBorderRadius = "0 0 2.5rem 2.5rem";
+            }
+          } else {
+            // No bottom bar, just exclude header
+            overlayTop = headerHeight;
+            overlayHeight = window.innerHeight - headerHeight;
+          }
+
+          // Full width in mobile
+          overlayLeft = 0;
+          overlayWidth = window.innerWidth;
+
+          overlayStyle.value = {
+            position: "fixed",
+            top: `${overlayTop}px`,
+            left: `${overlayLeft}px`,
+            width: `${overlayWidth}px`,
+            height: `${overlayHeight}px`,
+            borderRadius: isMobileMode ? bottomBorderRadius : "1rem", // Match main-content border-radius in desktop mode
+            zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
+            pointerEvents: "auto", // Ensure overlay is interactive
+          };
+        } else {
+          // Desktop mode - use original logic
+          overlayStyle.value = {
+            position: "fixed",
+            top: `${overlayTop}px`,
+            left: `${overlayLeft}px`,
+            width: `${overlayWidth}px`,
+            height: `${overlayHeight}px`,
+            borderRadius: isMobileMode ? "0" : "1rem",
+            zIndex: 50,
+            pointerEvents: "auto",
+          };
+        }
       }
     });
   };
@@ -319,6 +395,24 @@ export function useFileViewComposable(options = {}) {
    * Observe sidebar changes to recalculate overlay position
    */
   const observeSidebarChanges = () => {
+    // Clean up existing observers first
+    if (_sidebarResizeObserver.value) {
+      _sidebarResizeObserver.value.disconnect();
+      _sidebarResizeObserver.value = null;
+    }
+    if (_mainContentResizeObserver.value) {
+      _mainContentResizeObserver.value.disconnect();
+      _mainContentResizeObserver.value = null;
+    }
+    if (_pageContentResizeObserver.value) {
+      _pageContentResizeObserver.value.disconnect();
+      _pageContentResizeObserver.value = null;
+    }
+    if (_bottomBarResizeObserver.value) {
+      _bottomBarResizeObserver.value.disconnect();
+      _bottomBarResizeObserver.value = null;
+    }
+
     // Observe sidebar width changes
     const sidebar = document.querySelector(".sidebar");
     if (sidebar && window.ResizeObserver) {
@@ -364,6 +458,18 @@ export function useFileViewComposable(options = {}) {
       });
       observer.observe(pageContent);
       _pageContentResizeObserver.value = observer;
+    }
+
+    // Observe bottom bar changes (height changes when collapsed/expanded)
+    const bottomBar = document.querySelector(".bottom-navigation");
+    if (bottomBar && window.ResizeObserver) {
+      const observer = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          calculateOverlayPosition();
+        });
+      });
+      observer.observe(bottomBar);
+      _bottomBarResizeObserver.value = observer;
     }
   };
 
@@ -420,6 +526,15 @@ export function useFileViewComposable(options = {}) {
       _overlayResizeHandler.value = null;
     }
 
+    // Remove mobile mode change handler
+    if (_mobileModeChangeHandler.value) {
+      window.removeEventListener(
+        "mobile-mode-changed",
+        _mobileModeChangeHandler.value,
+      );
+      _mobileModeChangeHandler.value = null;
+    }
+
     // Disconnect resize observers
     if (_sidebarResizeObserver.value) {
       _sidebarResizeObserver.value.disconnect();
@@ -434,6 +549,11 @@ export function useFileViewComposable(options = {}) {
     if (_pageContentResizeObserver.value) {
       _pageContentResizeObserver.value.disconnect();
       _pageContentResizeObserver.value = null;
+    }
+
+    if (_bottomBarResizeObserver.value) {
+      _bottomBarResizeObserver.value.disconnect();
+      _bottomBarResizeObserver.value = null;
     }
 
     // Clear protection interval

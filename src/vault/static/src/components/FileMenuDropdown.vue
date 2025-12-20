@@ -500,7 +500,7 @@ export default {
 <style scoped>
 .file-menu-container {
   position: fixed;
-  z-index: 10000;
+  z-index: 100002;
   top: 0;
   left: 0;
   pointer-events: auto;
@@ -508,15 +508,8 @@ export default {
 
 .file-menu-dropdown {
   position: relative;
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  ) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey) !important;
   padding: 0.5rem;
   min-width: 180px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
