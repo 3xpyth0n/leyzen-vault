@@ -167,12 +167,20 @@ class ExternalStorageService:
             )
 
         # Create client with appropriate addressing style
+        # Add strict timeouts to avoid blocking processes indefinitely
+        boto_config_params = {
+            "connect_timeout": 10,
+            "read_timeout": 60,
+            "retries": {"max_attempts": 2},
+        }
+
         if addressing_style == "path":
-            boto_config = Config(s3={"addressing_style": "path"})
+            boto_config = Config(s3={"addressing_style": "path"}, **boto_config_params)
             self._client = boto3.client("s3", config=boto_config, **client_config)
         else:
             # Default: virtual-hosted-style (or explicit "virtual")
-            self._client = boto3.client("s3", **client_config)
+            boto_config = Config(**boto_config_params)
+            self._client = boto3.client("s3", config=boto_config, **client_config)
 
         # Test bucket access and fallback if needed
         if not explicit_addressing_style and not stored_addressing_style:
@@ -526,42 +534,6 @@ class ExternalStorageService:
         except Exception as e:
             logger.error(f"Error listing files in S3: {e}")
             return []
-
-    def get_file_metadata(
-        self, file_id: str, is_thumbnail: bool = False
-    ) -> dict[str, Any] | None:
-        """Get file metadata from S3.
-
-        Args:
-            file_id: File identifier
-            is_thumbnail: Whether this is a thumbnail
-
-        Returns:
-            Dictionary with metadata or None if not found
-        """
-        client = self._get_client()
-        s3_key = self._get_s3_key(file_id, is_thumbnail)
-
-        try:
-            response = client.head_object(Bucket=self._bucket_name, Key=s3_key)
-            metadata = response.get("Metadata", {})
-            return {
-                "file_id": metadata.get("file_id", file_id),
-                "file_hash": metadata.get("file_hash", ""),
-                "file_size": int(
-                    metadata.get("file_size", response.get("ContentLength", 0))
-                ),
-                "last_modified": response.get("LastModified"),
-            }
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "Unknown")
-            if error_code == "404" or error_code == "NoSuchKey":
-                return None
-            logger.debug(f"Error getting file metadata from S3: {e}")
-            return None
-        except Exception as e:
-            logger.debug(f"Unexpected error getting file metadata from S3: {e}")
-            return None
 
     def compute_hash(self, data: bytes) -> str:
         """Compute SHA-256 hash of encrypted data.

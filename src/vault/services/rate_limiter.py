@@ -131,10 +131,6 @@ class RateLimiter:
         except Exception as e:
             # SECURITY: Always fail-closed (deny request) if rate limiting fails
             # This prevents bypassing rate limits due to errors
-            import logging
-            import traceback
-
-            logger = logging.getLogger(__name__)
             logger.error(
                 f"Rate limiting error in check_rate_limit (fail-closed): {e}\n{traceback.format_exc()}"
             )
@@ -183,7 +179,7 @@ class RateLimiter:
 
         try:
             now = datetime.now(self._timezone)
-            base_window_start = now - timedelta(seconds=window_seconds)
+            now - timedelta(seconds=window_seconds)
 
             # Clean up old entries (older than 2x window for safety margin)
             # OPTIMIZATION: Only run cleanup every 100 requests to reduce database load

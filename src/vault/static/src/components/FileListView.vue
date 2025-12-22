@@ -1,8 +1,10 @@
 <template>
   <div
     class="file-list-view"
+    :class="{ 'is-draggable': isInVaultSpace }"
     @keydown="handleKeyDown"
     @click="handleViewClick"
+    @contextmenu="handleBackgroundContextMenu"
     tabindex="0"
   >
     <div class="file-controls">
@@ -137,6 +139,7 @@
             :class="{
               selected: isSelected(item.id),
               focused: focusedItemIndex === index,
+              cut: isItemCut(item.id),
               'drop-target':
                 dropTargetId === item.id &&
                 item.mime_type === 'application/x-directory',
@@ -148,7 +151,7 @@
             :data-file-id="
               item.mime_type !== 'application/x-directory' ? item.id : null
             "
-            :draggable="true"
+            :draggable="isInVaultSpace"
             @dragstart="handleDragStart(item, $event)"
             @dragover="handleDragOver(item, $event)"
             @dragleave="handleDragLeave(item, $event)"
@@ -222,6 +225,7 @@
             selected: isSelected(item.id),
             focused: focusedItemIndex === index,
             folder: item.mime_type === 'application/x-directory',
+            cut: isItemCut(item.id),
             'drop-target':
               dropTargetId === item.id &&
               item.mime_type === 'application/x-directory',
@@ -234,7 +238,7 @@
           :data-file-id="
             item.mime_type !== 'application/x-directory' ? item.id : null
           "
-          :draggable="true"
+          :draggable="isInVaultSpace"
           @dragstart="handleDragStart(item, $event)"
           @dragover="handleDragOver(item, $event)"
           @dragleave="handleDragLeave(item, $event)"
@@ -300,11 +304,11 @@
     </div>
 
     <FileMenuDropdown
-      v-if="showMenu"
       :key="menuItem?.id || 'menu'"
       :show="showMenu"
       :item="menuItem"
       :position="menuPosition"
+      menu-id="file-list-menu"
       @close="showMenu = false"
       @action="handleMenuAction"
     />
@@ -321,6 +325,7 @@ import {
   onMounted,
   onUnmounted,
 } from "vue";
+import { useRoute } from "vue-router";
 import { thumbnails, files } from "../services/api";
 import { debounce } from "../utils/debounce";
 import { decryptFile, decryptFileKey } from "../services/encryption";
@@ -330,6 +335,7 @@ import FileMenuDropdown from "./FileMenuDropdown.vue";
 import CustomSelect from "./CustomSelect.vue";
 import { isMobileMode } from "../utils/mobileMode";
 import { getThumbnail, setThumbnail } from "../services/thumbnailCache";
+import { clipboardManager } from "../utils/clipboard";
 
 export default {
   name: "FileListView",
@@ -381,6 +387,7 @@ export default {
     "action",
     "selection-change",
     "item-context-menu",
+    "background-context-menu",
     "rename",
     "drag-start",
     "drag-over",
@@ -388,18 +395,30 @@ export default {
     "drop",
   ],
   setup(props, { emit }) {
+    const route = useRoute();
     const isMobileView = ref(isMobileMode());
     const sortBy = ref(props.defaultSortBy);
     const sortOrder = ref(props.defaultSortOrder);
     const filterType = ref("all");
+
+    const isInVaultSpace = computed(() => {
+      return (
+        route &&
+        (route.name === "VaultSpaceView" ||
+          (route.path && route.path.includes("/vaultspace/")))
+      );
+    });
     const showMenu = ref(false);
     const menuItem = ref(null);
     const menuPosition = ref({ x: 0, y: 0 });
     const editingName = ref("");
-    const editingExtension = ref(null); // Store extension separately during editing
+    const editingExtension = ref(null);
     const dropTargetId = ref(null);
     const draggedItemId = ref(null);
     const focusedItemIndex = ref(-1); // Index of focused element for keyboard navigation
+    const isCutMode = ref(false);
+    const cutItemIds = ref(new Set());
+    let unsubscribeClipboard = null;
 
     // Refs for CustomSelect components to control their open/close state
     const viewSelectRef = ref(null);
@@ -436,6 +455,54 @@ export default {
       },
       { immediate: true },
     );
+
+    // Clipboard visual state
+    const updateCutVisualState = (items) => {
+      const hasItems = Array.isArray(items) && items.length > 0;
+      isCutMode.value =
+        clipboardManager && clipboardManager.isCut
+          ? clipboardManager.isCut()
+          : false;
+      const nextSet = new Set();
+      if (hasItems) {
+        for (const it of items) {
+          if (it && it.id) nextSet.add(it.id);
+        }
+      }
+      cutItemIds.value = nextSet;
+    };
+    onMounted(() => {
+      window.addEventListener("close-all-menus", handleCloseAllMenus);
+      if (clipboardManager && clipboardManager.subscribe) {
+        unsubscribeClipboard = clipboardManager.subscribe((items) => {
+          updateCutVisualState(items);
+        });
+        if (clipboardManager.getItems) {
+          updateCutVisualState(clipboardManager.getItems());
+        }
+      }
+    });
+    onUnmounted(() => {
+      window.removeEventListener("close-all-menus", handleCloseAllMenus);
+      if (unsubscribeClipboard) {
+        try {
+          unsubscribeClipboard();
+        } catch {}
+        unsubscribeClipboard = null;
+      }
+    });
+
+    const isItemCut = (id) => {
+      return isCutMode.value && cutItemIds.value.has(id);
+    };
+
+    const handleCloseAllMenus = (event) => {
+      // Ignore if event came from this component
+      if (event && event.detail && event.detail.origin === "file-list-menu") {
+        return;
+      }
+      showMenu.value = false;
+    };
 
     // Expose newlyCreatedItemId for template access
     const newlyCreatedItemId = computed(() => props.newlyCreatedItemId);
@@ -648,10 +715,16 @@ export default {
           const container = tableContainer.value;
           if (container && container.offsetWidth > 0) {
             const containerWidth = container.offsetWidth;
-            width = `${Math.max(minWidth, Math.floor((containerWidth * defaultColumnPercentages[i]) / 100))}px`;
+            width = `${Math.max(
+              minWidth,
+              Math.floor((containerWidth * defaultColumnPercentages[i]) / 100),
+            )}px`;
           } else {
             // Fallback: use percentage of typical 1200px container
-            width = `${Math.max(minWidth, Math.floor((1200 * defaultColumnPercentages[i]) / 100))}px`;
+            width = `${Math.max(
+              minWidth,
+              Math.floor((1200 * defaultColumnPercentages[i]) / 100),
+            )}px`;
           }
         }
 
@@ -890,7 +963,7 @@ export default {
 
     const getFileIcon = (item, size = "large") => {
       if (!window.Icons) {
-        return item.mime_type === "application/x-directory" ? "📁" : "📄";
+        return "";
       }
       const iconSize = size === "large" ? 48 : 48;
       if (item.mime_type === "application/x-directory") {
@@ -1203,7 +1276,23 @@ export default {
 
     const handleContextMenu = (item, event) => {
       event.preventDefault();
+      event.stopPropagation();
       emit("item-context-menu", item, event);
+    };
+
+    const handleBackgroundContextMenu = (event) => {
+      const target = event.target;
+      const isOnItem =
+        target.closest(".grid-body-row") ||
+        target.closest(".file-card") ||
+        target.closest(".btn-menu") ||
+        target.closest(".btn-menu-grid");
+      if (isOnItem) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      emit("background-context-menu", { x: event.clientX, y: event.clientY });
     };
 
     const handleDragStart = (item, event) => {
@@ -2515,6 +2604,7 @@ export default {
     });
 
     return {
+      isInVaultSpace,
       isMobileView,
       newlyCreatedItemId,
       isNewlyCreated,
@@ -2534,6 +2624,7 @@ export default {
       dropTargetId,
       draggedItemId,
       focusedItemIndex,
+      isItemCut,
       localViewMode,
       handleViewChange,
       handleSortChange,
@@ -2554,6 +2645,7 @@ export default {
       saveRename,
       cancelRename,
       handleContextMenu,
+      handleBackgroundContextMenu,
       handleDragStart,
       handleDragOver,
       handleDragLeave,
@@ -2578,6 +2670,7 @@ export default {
       handleGlobalClick,
       handleGlobalScroll,
       handleSelectOpen,
+      isInVaultSpace,
       // Column resizing
       tableContainer,
       columnWidths,
@@ -2743,6 +2836,14 @@ export default {
 }
 
 /* Row states - apply to all cells in the row */
+.file-list-view.is-draggable .grid-body-row:hover > .grid-cell {
+  cursor: grab;
+}
+
+.file-list-view.is-draggable .file-card {
+  cursor: grab;
+}
+
 .grid-body-row:hover > .grid-cell {
   background: var(--bg-primary);
 }
@@ -2982,6 +3083,11 @@ export default {
   gap: 1.5rem;
 }
 
+.grid-body-row.cut,
+.file-card.cut {
+  opacity: 0.5;
+}
+
 .file-card {
   background: var(--bg-modal);
   padding: 1.5rem;
@@ -2990,7 +3096,6 @@ export default {
   align-items: center;
   position: relative;
   transition: all var(--transition-base);
-  cursor: grab;
   border: none;
 }
 
@@ -3012,12 +3117,12 @@ export default {
   border: 2px dashed var(--accent);
 }
 
-.file-card.dragging {
+.file-list-view.is-draggable .file-card.dragging {
   opacity: 0.5;
   cursor: grabbing;
 }
 
-.file-card:active {
+.file-list-view.is-draggable .file-card:active {
   cursor: grabbing;
 }
 

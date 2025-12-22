@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from vault.database.schema import File, FileKey, db
+from vault.database.schema import File, db
 from vault.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)

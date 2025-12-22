@@ -6,11 +6,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
 
 from vault.database.schema import (
     ApiKey,
-    AuditLogEntry,
     File,
     Quota,
     SSOProvider,
@@ -130,7 +128,6 @@ class AdminService:
             )
 
             # Users by role - single query with GROUP BY instead of multiple queries
-            from vault.database.schema import GlobalRole as GlobalRoleEnum
 
             users_by_role_query = (
                 db.session.query(User.global_role, func.count(User.id))
@@ -398,7 +395,7 @@ class AdminService:
             # Average storage per user
             avg_storage_per_user = total_storage / total_users if total_users > 0 else 0
 
-            return {
+            result = {
                 "users": {
                     "total": total_users,
                     "recent_activity": recent_users,

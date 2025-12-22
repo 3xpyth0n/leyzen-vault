@@ -145,9 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (logoutForm) {
     logoutForm.addEventListener("submit", function (event) {
       event.preventDefault();
-      const logoutIcon = window.Icons?.logout
-        ? window.Icons.logout(20, "currentColor")
-        : "🚪";
+      const logoutIcon = window.Icons.logout(20, "currentColor");
       showConfirmationModal({
         icon: logoutIcon,
         title: "Logout",

@@ -1,33 +1,56 @@
 # Pre-commit hooks configuration for Leyzen Vault
-# Install: pip install pre-commit && pre-commit install
+# Install: sudo apt install pre-commit && pre-commit install
 # Run manually: pre-commit run --all-files
 
 repos:
-  # Python linting and formatting with Ruff
+  # -------------------------
+  # Python formatting (BLACK)
+  # -------------------------
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  # -------------------------
+  # Python linting (RUFF)
+  # -------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.8
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         files: ^(src/|infra/).*\.py$
-      - id: ruff-format
-        files: ^(src/|infra/).*\.py$
 
-  # Shell script linting with shellcheck
+  # -------------------------
+  # Frontend formatting (PRETTIER)
+  # -------------------------
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+
+  # -------------------------
+  # Shell script linting
+  # -------------------------
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6
     hooks:
       - id: shellcheck
         files: \.(sh|bash)$
 
-  # YAML file validation
+  # -------------------------
+  # YAML validation
+  # -------------------------
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.33.0
     hooks:
       - id: yamllint
-        args: [-d, "{extends: default, rules: {line-length: {max: 120}}}"]
+        args: [-d, "{extends: default, rules: {line-length: {max: 200}}}"]
 
-  # Trailing whitespace and basic file checks
+  # -------------------------
+  # Generic hygiene checks
+  # -------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:

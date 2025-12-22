@@ -16,8 +16,8 @@
 
 :root {
   /* Typography */
-  --font-family-base:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
   --font-family-mono: "JetBrains Mono", "Courier New", monospace;
   --font-family-branding: "TT Alientz Serif", sans-serif;
 
@@ -1501,18 +1501,18 @@ select.input-sm:disabled {
   font-weight: var(--font-weight-semibold);
 }
 
-.file-card,
-.folder-card,
-.file-row,
-.folder-row {
+.is-draggable .file-card,
+.is-draggable .folder-card,
+.is-draggable .file-row,
+.is-draggable .folder-row {
   cursor: grab;
   user-select: none;
 }
 
-.file-card:active,
-.folder-card:active,
-.file-row:active,
-.folder-row:active {
+.is-draggable .file-card:active,
+.is-draggable .folder-card:active,
+.is-draggable .file-row:active,
+.is-draggable .folder-row:active {
   cursor: grabbing;
 }
 
@@ -2302,13 +2302,11 @@ kbd {
 
 .folder-icon {
   font-size: 3rem;
-  margin-bottom: 0.5rem;
 }
 
 .folder-name {
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 0.75rem;
   word-break: break-word;
   font-size: 0.9rem;
   width: 100%;
@@ -3593,6 +3591,23 @@ body.sidebar-collapsed .logout-modal-overlay {
   padding-right: 0.5rem;
 }
 
+.folder-picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 1rem;
+}
+
+.folder-picker-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--accent);
+  border-top-color: var(--ash-grey);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 .folder-picker-list::-webkit-scrollbar {
   width: 8px;
 }
@@ -3627,89 +3642,69 @@ body.sidebar-collapsed .logout-modal-overlay {
   box-sizing: border-box;
 }
 
-/* Depth-specific padding classes - base padding is 0.75rem, each level adds 1.5rem */
+/* Depth-specific padding classes - linear progression, step = 0.75rem */
 .folder-picker-depth-0 {
+  padding-left: 0rem;
+}
+.folder-picker-depth-1 {
   padding-left: 0.75rem;
 }
-
-.folder-picker-depth-1 {
+.folder-picker-depth-2 {
+  padding-left: 1.5rem;
+}
+.folder-picker-depth-3 {
   padding-left: 2.25rem;
 }
-
-.folder-picker-depth-2 {
+.folder-picker-depth-4 {
+  padding-left: 3rem;
+}
+.folder-picker-depth-5 {
   padding-left: 3.75rem;
 }
-
-.folder-picker-depth-3 {
+.folder-picker-depth-6 {
+  padding-left: 4.5rem;
+}
+.folder-picker-depth-7 {
   padding-left: 5.25rem;
 }
-
-.folder-picker-depth-4 {
+.folder-picker-depth-8 {
+  padding-left: 6rem;
+}
+.folder-picker-depth-9 {
   padding-left: 6.75rem;
 }
-
-.folder-picker-depth-5 {
+.folder-picker-depth-10 {
+  padding-left: 7.5rem;
+}
+.folder-picker-depth-11 {
   padding-left: 8.25rem;
 }
-
-.folder-picker-depth-6 {
+.folder-picker-depth-12 {
+  padding-left: 9rem;
+}
+.folder-picker-depth-13 {
   padding-left: 9.75rem;
 }
-
-.folder-picker-depth-7 {
+.folder-picker-depth-14 {
+  padding-left: 10.5rem;
+}
+.folder-picker-depth-15 {
   padding-left: 11.25rem;
 }
-
-.folder-picker-depth-8 {
+.folder-picker-depth-16 {
+  padding-left: 12rem;
+}
+.folder-picker-depth-17 {
   padding-left: 12.75rem;
 }
-
-.folder-picker-depth-9 {
+.folder-picker-depth-18 {
+  padding-left: 13.5rem;
+}
+.folder-picker-depth-19 {
   padding-left: 14.25rem;
 }
-
-.folder-picker-depth-10 {
-  padding-left: 15.75rem;
-}
-
-.folder-picker-depth-11 {
-  padding-left: 17.25rem;
-}
-
-.folder-picker-depth-12 {
-  padding-left: 18.75rem;
-}
-
-.folder-picker-depth-13 {
-  padding-left: 20.25rem;
-}
-
-.folder-picker-depth-14 {
-  padding-left: 21.75rem;
-}
-
-.folder-picker-depth-15 {
-  padding-left: 23.25rem;
-}
-
-.folder-picker-depth-16 {
-  padding-left: 24.75rem;
-}
-
-.folder-picker-depth-17 {
-  padding-left: 26.25rem;
-}
-
-.folder-picker-depth-18 {
-  padding-left: 27.75rem;
-}
-
-.folder-picker-depth-19 {
-  padding-left: 29.25rem;
-}
-
 .folder-picker-depth-20 {
-  padding-left: 30.75rem;
+  padding-left: 15rem;
 }
 
 .folder-picker-option:hover {

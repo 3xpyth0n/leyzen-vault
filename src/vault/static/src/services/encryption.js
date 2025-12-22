@@ -148,7 +148,9 @@ export async function deriveUserKey(password, salt, extractable = false) {
       saltType: typeof actualSalt,
     });
     throw new Error(
-      `Failed to derive master key with Argon2: ${error.message || error.code || "Unknown error"}`,
+      `Failed to derive master key with Argon2: ${
+        error.message || error.code || "Unknown error"
+      }`,
     );
   }
 }

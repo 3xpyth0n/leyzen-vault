@@ -24,6 +24,51 @@ class FileMenuManager {
     this.init();
   }
 
+  async copyLocalFileKey(oldId, newId) {
+    if (!oldId || !newId || oldId === newId) return;
+    try {
+      let storageModule = null;
+      try {
+        storageModule = await import(
+          window.location.origin + "/static/src/services/fileKeyStorage.js"
+        );
+      } catch (e1) {
+        try {
+          storageModule = await import("../src/services/fileKeyStorage.js");
+        } catch (e2) {
+          storageModule = null;
+        }
+      }
+      let keyStr = null;
+      if (storageModule && storageModule.getFileKey) {
+        try {
+          keyStr = await storageModule.getFileKey(oldId);
+        } catch (e) {
+          keyStr = null;
+        }
+      }
+      if (!keyStr) {
+        try {
+          const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+          keyStr = keys[oldId] || null;
+        } catch (e) {
+          keyStr = null;
+        }
+      }
+      if (!keyStr) return;
+      if (storageModule && storageModule.storeFileKey) {
+        try {
+          await storageModule.storeFileKey(newId, keyStr);
+        } catch (e) {}
+      }
+      try {
+        const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+        keys[newId] = keyStr;
+        localStorage.setItem("vault_keys", JSON.stringify(keys));
+      } catch (e) {}
+    } catch (e) {}
+  }
+
   init() {
     // Create menu container
     this.menuContainer = document.createElement("div");
@@ -307,7 +352,12 @@ class FileMenuManager {
     try {
       // Get current folders and vaultspace info
       const folders = window.foldersList || [];
-      const currentFolderId = window.currentFolderId || null;
+      const currentFolderId =
+        (window.Folders &&
+          typeof window.Folders.getCurrentFolderId === "function" &&
+          window.Folders.getCurrentFolderId()) ||
+        window.folderId ||
+        null;
       const vaultspaceId =
         resource?.vaultspace_id || window.currentVaultspaceId;
 
@@ -331,8 +381,9 @@ class FileMenuManager {
         } catch (e1) {
           try {
             // Alternative path
-            const folderPickerModule2 =
-              await import("../src/utils/FolderPicker.js");
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
@@ -384,17 +435,28 @@ class FileMenuManager {
         throw new Error(error.error || "Failed to copy");
       }
 
+      let newFileId = null;
+      try {
+        const data = await response.json();
+        const fileObj = data?.file || data;
+        newFileId =
+          fileObj?.file_id ||
+          fileObj?.id ||
+          data?.new_file_id ||
+          data?.copied_file_id ||
+          null;
+      } catch (e) {
+        newFileId = null;
+      }
+
+      if (fileType === "file" && newFileId) {
+        await this.copyLocalFileKey(fileId, newFileId);
+      }
+
       if (window.Notifications) {
         window.Notifications.success(
           `${fileType === "file" ? "File" : "Folder"} copied successfully`,
         );
-      }
-
-      // Reload files
-      if (window.loadFiles) {
-        await window.loadFiles();
-      } else if (window.Folders && window.Folders.loadFolderContents) {
-        await window.Folders.loadFolderContents(currentFolderId);
       }
     } catch (error) {
       if (window.Notifications) {
@@ -414,7 +476,12 @@ class FileMenuManager {
     try {
       // Get current folders and vaultspace info
       const folders = window.foldersList || [];
-      const currentFolderId = window.currentFolderId || null;
+      const currentFolderId =
+        (window.Folders &&
+          typeof window.Folders.getCurrentFolderId === "function" &&
+          window.Folders.getCurrentFolderId()) ||
+        window.folderId ||
+        null;
       const vaultspaceId =
         resource?.vaultspace_id || window.currentVaultspaceId;
 
@@ -436,8 +503,9 @@ class FileMenuManager {
           window.folderPicker = folderPicker;
         } catch (e1) {
           try {
-            const folderPickerModule2 =
-              await import("../src/utils/FolderPicker.js");
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
@@ -509,13 +577,6 @@ class FileMenuManager {
         window.Notifications.success(
           `${fileType === "file" ? "File" : "Folder"} moved successfully`,
         );
-      }
-
-      // Reload files
-      if (window.loadFiles) {
-        await window.loadFiles();
-      } else if (window.Folders && window.Folders.loadFolderContents) {
-        await window.Folders.loadFolderContents(currentFolderId);
       }
     } catch (error) {
       if (window.Notifications) {

@@ -263,8 +263,8 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
                     text(
                         """
                         SELECT EXISTS (
-                            SELECT FROM information_schema.tables 
-                            WHERE table_schema = 'public' 
+                            SELECT FROM information_schema.tables
+                            WHERE table_schema = 'public'
                             AND table_name = 'system_secrets'
                         )
                     """

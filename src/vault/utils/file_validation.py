@@ -6,7 +6,6 @@ and ensure consistent validation across the application.
 
 from __future__ import annotations
 
-import unicodedata
 from pathlib import Path
 
 from vault.storage import FileStorage

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from vault.database.migrations.base import Migration
-from vault.database.schema import UserPinnedVaultSpace, db
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +85,7 @@ class PinnedVaultSpacesDisplayOrderMigration(Migration):
                 """
                 WITH ordered_pins AS (
                     SELECT id, ROW_NUMBER() OVER (
-                        PARTITION BY user_id 
+                        PARTITION BY user_id
                         ORDER BY pinned_at DESC
                     ) - 1 AS new_order
                     FROM user_pinned_vaultspaces

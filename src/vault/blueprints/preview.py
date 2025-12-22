@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, send_file
-from pathlib import Path
 
 from ..storage import FileStorage
 from ..services.preview import PreviewService
 from ..middleware.jwt_auth import jwt_required, get_current_user
 from ..utils.mime_type_detection import detect_mime_type_from_extension
-from .utils import get_client_ip
 
 preview_bp = Blueprint("preview", __name__)
 

@@ -179,16 +179,16 @@ jobs:
 
           while [ $attempt -lt $max_attempts ] && [ "$all_critical_healthy" != "true" ]; do
             attempt=$((attempt + 1))
-            
+
             services=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" config --services)
             all_critical_healthy=true
             current_time=$(date +%s)
-            
+
             for service in $services; do
               if [ "$service" = "orchestrator" ]; then
                 continue
               fi
-              
+
               container_name=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q $service 2>/dev/null | head -n1)
               if [ -z "$container_name" ]; then
                 if [[ ! "$service" =~ ^vault_web ]]; then
@@ -196,10 +196,10 @@ jobs:
                 fi
                 continue
               fi
-              
+
               status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "unknown")
               health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container_name 2>/dev/null || echo "none")
-              
+
               if [[ "$service" =~ ^vault_web ]]; then
                 if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
                   if [ ! -f "/tmp/${service}_start_time.txt" ]; then
@@ -216,12 +216,12 @@ jobs:
                 fi
               fi
             done
-            
+
             if [ "$all_critical_healthy" = "true" ]; then
               echo "✅ All critical services are healthy"
               break
             fi
-            
+
             if [ $attempt -lt $max_attempts ]; then
               sleep 3
             fi
@@ -247,12 +247,12 @@ jobs:
           orchestrator_healthy=false
           while [ $attempt -lt $max_attempts ] && [ "$orchestrator_healthy" != "true" ]; do
             attempt=$((attempt + 1))
-            
+
             orchestrator_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q orchestrator 2>/dev/null | head -n1)
             if [ -n "$orchestrator_container" ]; then
               status=$(docker inspect --format='{{.State.Status}}' $orchestrator_container 2>/dev/null || echo "unknown")
               health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $orchestrator_container 2>/dev/null || echo "none")
-              
+
               if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
                 orchestrator_healthy=true
                 echo "✅ Orchestrator is healthy"
@@ -260,7 +260,7 @@ jobs:
                 break
               fi
             fi
-            
+
             if [ $attempt -lt $max_attempts ]; then
               sleep 3
             fi
@@ -322,12 +322,12 @@ jobs:
 
           while [ $attempt -lt $max_attempts ] && [ "$vault_web_healthy" != "true" ]; do
             attempt=$((attempt + 1))
-            
+
             vault_web1_status=$(docker inspect --format='{{.State.Status}}' $vault_web1_container 2>/dev/null || echo "unknown")
             vault_web1_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web1_container 2>/dev/null || echo "none")
             vault_web2_status=$(docker inspect --format='{{.State.Status}}' $vault_web2_container 2>/dev/null || echo "unknown")
             vault_web2_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web2_container 2>/dev/null || echo "none")
-            
+
             if [ "$vault_web1_status" = "running" ] && ([ "$vault_web1_health" = "none" ] || [ "$vault_web1_health" = "healthy" ]) && \
                [ "$vault_web2_status" = "running" ] && ([ "$vault_web2_health" = "none" ] || [ "$vault_web2_health" = "healthy" ]); then
               vault_web_healthy=true
@@ -341,7 +341,7 @@ jobs:
               fi
               break
             fi
-            
+
             if [ $attempt -lt $max_attempts ]; then
               sleep 2
             fi
@@ -431,22 +431,22 @@ jobs:
           for service in $services; do
             start_file="/tmp/${service}_start_time.txt"
             end_file="/tmp/${service}_end_time.txt"
-            
+
             if [ -f "$start_file" ] && [ -f "$end_file" ]; then
               start_time=$(cat "$start_file")
               end_time=$(cat "$end_file")
               duration=$((end_time - start_time))
-              
+
               if [ $duration -ge 0 ]; then
                 minutes=$((duration / 60))
                 seconds=$((duration % 60))
-                
+
                 if [ $minutes -gt 0 ]; then
                   duration_str="${minutes}m ${seconds}s"
                 else
                   duration_str="${seconds}s"
                 fi
-                
+
                 printf "%-20s %-15s\n" "$service" "$duration_str"
                 displayed_services="${displayed_services} ${service}"
               else
@@ -466,25 +466,25 @@ jobs:
             if echo "$displayed_services" | grep -q " ${vault_service} "; then
               continue
             fi
-            
+
             start_file="/tmp/${vault_service}_start_time.txt"
             end_file="/tmp/${vault_service}_end_time.txt"
-            
+
             if [ -f "$start_file" ] && [ -f "$end_file" ]; then
               start_time=$(cat "$start_file")
               end_time=$(cat "$end_file")
               duration=$((end_time - start_time))
-              
+
               if [ $duration -ge 0 ]; then
                 minutes=$((duration / 60))
                 seconds=$((duration % 60))
-                
+
                 if [ $minutes -gt 0 ]; then
                   duration_str="${minutes}m ${seconds}s"
                 else
                   duration_str="${seconds}s"
                 fi
-                
+
                 printf "%-20s %-15s\n" "$vault_service" "$duration_str"
               else
                 printf "%-20s %-15s\n" "$vault_service" "N/A (invalid duration)"

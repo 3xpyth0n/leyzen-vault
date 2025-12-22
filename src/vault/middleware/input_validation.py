@@ -7,7 +7,7 @@ across API endpoints to prevent malformed input and ensure data integrity.
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 from flask import current_app, jsonify, request
 

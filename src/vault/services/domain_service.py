@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from vault.database.schema import DomainRule, SSOProvider, db
 

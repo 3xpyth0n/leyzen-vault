@@ -5,10 +5,9 @@ from __future__ import annotations
 import base64
 import json
 from typing import Any
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import urlencode
 
-from flask import current_app, redirect, request, session, url_for
-from sqlalchemy.orm import Session
+from flask import current_app, request, session
 
 import secrets
 from datetime import timedelta
@@ -317,7 +316,6 @@ class SSOService:
             return None
 
         try:
-
             config = safe_json_loads(
                 provider.config,
                 max_size=10 * 1024,  # 10KB for SSO config
@@ -417,8 +415,6 @@ class SSOService:
             raise ValueError(f"Provider {provider_id} is not OAuth2 type")
 
         try:
-            from authlib.integrations.flask_client import OAuth
-
             config = safe_json_loads(
                 provider.config,
                 max_size=10 * 1024,  # 10KB for SSO config
@@ -434,8 +430,7 @@ class SSOService:
 
             # SECURITY: Store state and return_url in session with timestamp
             # State expires after 5 minutes for security
-            import secrets
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timezone
 
             state = secrets.token_urlsafe(32)
             session["sso_provider_id"] = provider_id
@@ -535,7 +530,7 @@ class SSOService:
         if not hmac.compare_digest(stored_state, state):
             try:
                 current_app.logger.warning(
-                    f"SSO OAuth2 callback: State mismatch - this may indicate a CSRF attack or session issue."
+                    "SSO OAuth2 callback: State mismatch - this may indicate a CSRF attack or session issue."
                 )
             except Exception:
                 pass
@@ -646,7 +641,6 @@ class SSOService:
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
-            import secrets
 
             # Ensure user has session_key_salt (generate if missing)
             if not user.session_key_salt:
@@ -750,7 +744,6 @@ class SSOService:
 
             # SECURITY: Store state and return_url in session with timestamp
             # State expires after 5 minutes for security
-            import secrets
             from datetime import datetime, timezone
 
             state = secrets.token_urlsafe(32)
@@ -1091,7 +1084,6 @@ class SSOService:
             # Generate JWT token
             from datetime import datetime, timedelta, timezone
             import jwt
-            import secrets
 
             expiration = datetime.now(timezone.utc) + timedelta(hours=24)
             issued_at = datetime.now(timezone.utc)
@@ -1183,8 +1175,8 @@ class SSOService:
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #007bff; 
-                          color: white; text-decoration: none; border-radius: 5px; 
+                .button {{ display: inline-block; padding: 12px 24px; background: #007bff;
+                          color: white; text-decoration: none; border-radius: 5px;
                           margin: 20px 0; }}
                 .warning {{ color: #dc3545; font-size: 0.9em; }}
             </style>
@@ -1316,10 +1308,9 @@ The Leyzen Vault Team
 
         # Check if another provider with the same preset is active
         # We need to check all active providers and compare their presets
-        from sqlalchemy import cast, String
 
         active_providers = (
-            db.session.query(SSOProvider).filter(SSOProvider.is_active == True).all()
+            db.session.query(SSOProvider).filter(SSOProvider.is_active is True).all()
         )
 
         for active_provider in active_providers:
@@ -1419,11 +1410,10 @@ The Leyzen Vault Team
                 )
 
             # Check all active providers for the same preset
-            from sqlalchemy import cast, String
 
             active_providers = (
                 db.session.query(SSOProvider)
-                .filter(SSOProvider.is_active == True)
+                .filter(SSOProvider.is_active is True)
                 .filter(SSOProvider.id != provider_id)
                 .all()
             )

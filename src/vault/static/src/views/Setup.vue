@@ -412,7 +412,9 @@ export default {
           const finalTokenCheck = localStorage.getItem("jwt_token");
           if (finalTokenCheck) {
             logger.error(
-              `Token still exists after clear (attempt ${i + 1})! Forcing removal...`,
+              `Token still exists after clear (attempt ${
+                i + 1
+              })! Forcing removal...`,
             );
             // Try every possible removal method
             try {

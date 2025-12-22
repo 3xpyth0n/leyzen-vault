@@ -33,7 +33,7 @@ Leyzen Vault uses [pre-commit](https://pre-commit.com/) to automatically run cod
 Install pre-commit and enable the hooks:
 
 ```bash
-pip install pre-commit
+sudo apt install pre-commit
 pre-commit install
 ```
 

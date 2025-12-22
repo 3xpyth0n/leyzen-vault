@@ -131,7 +131,9 @@ export async function zipFolder(
           );
         } else {
           throw new Error(
-            `Failed to process file ${fileInfo.name}: ${error.message || "Unknown error"}`,
+            `Failed to process file ${fileInfo.name}: ${
+              error.message || "Unknown error"
+            }`,
           );
         }
       }
@@ -549,7 +551,9 @@ export async function extractZip(
             );
           }
           throw new Error(
-            `Failed to upload file ${fileName}: ${errorData.error || "Unknown error"}`,
+            `Failed to upload file ${fileName}: ${
+              errorData.error || "Unknown error"
+            }`,
           );
         }
 
@@ -573,7 +577,9 @@ export async function extractZip(
           );
         } else {
           throw new Error(
-            `Failed to extract file ${zipFileEntry.path}: ${error.message || "Unknown error"}`,
+            `Failed to extract file ${zipFileEntry.path}: ${
+              error.message || "Unknown error"
+            }`,
           );
         }
       }
@@ -735,7 +741,9 @@ export async function zipFiles(
 
         if (!fileVaultspaceKey) {
           throw new Error(
-            `VaultSpace key not found for file ${fileItem.original_name || fileItem.name}`,
+            `VaultSpace key not found for file ${
+              fileItem.original_name || fileItem.name
+            }`,
           );
         }
 
@@ -810,19 +818,27 @@ export async function zipFiles(
         // Check for specific error types
         if (error.message && error.message.includes("quota")) {
           throw new Error(
-            `Storage quota exceeded while processing ${fileItem.original_name || fileItem.name}. Please free up space and try again.`,
+            `Storage quota exceeded while processing ${
+              fileItem.original_name || fileItem.name
+            }. Please free up space and try again.`,
           );
         } else if (error.message && error.message.includes("network")) {
           throw new Error(
-            `Network error while downloading ${fileItem.original_name || fileItem.name}. Please check your connection and try again.`,
+            `Network error while downloading ${
+              fileItem.original_name || fileItem.name
+            }. Please check your connection and try again.`,
           );
         } else if (error.message && error.message.includes("decrypt")) {
           throw new Error(
-            `Failed to decrypt file ${fileItem.original_name || fileItem.name}. The file key may be missing or corrupted.`,
+            `Failed to decrypt file ${
+              fileItem.original_name || fileItem.name
+            }. The file key may be missing or corrupted.`,
           );
         } else {
           throw new Error(
-            `Failed to process file ${fileItem.original_name || fileItem.name}: ${error.message || "Unknown error"}`,
+            `Failed to process file ${
+              fileItem.original_name || fileItem.name
+            }: ${error.message || "Unknown error"}`,
           );
         }
       }

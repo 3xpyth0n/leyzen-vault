@@ -115,6 +115,7 @@ export default {
   emits: ["logout", "menu-open", "menu-close"],
   data() {
     return {
+      menuId: `user-menu-${Math.random().toString(36).substr(2, 9)}`,
       showMenu: false,
       clickOutsideHandler: null,
       escapeKeyHandler: null,
@@ -135,6 +136,9 @@ export default {
       "mobile-mode-changed",
       this.mobileModeChangeHandler,
     );
+
+    // Listen for global close-all-menus event
+    window.addEventListener("close-all-menus", this.handleCloseAllMenus);
   },
   beforeUnmount() {
     if (this.mobileModeChangeHandler) {
@@ -143,6 +147,7 @@ export default {
         this.mobileModeChangeHandler,
       );
     }
+    window.removeEventListener("close-all-menus", this.handleCloseAllMenus);
     this.removeEventListeners();
   },
   computed: {
@@ -170,6 +175,12 @@ export default {
     toggleMenu() {
       this.showMenu = !this.showMenu;
       if (this.showMenu) {
+        // Close all other open menus before opening this one
+        window.dispatchEvent(
+          new CustomEvent("close-all-menus", {
+            detail: { origin: this.menuId },
+          }),
+        );
         this.$emit("menu-open");
         this.$nextTick(() => {
           this.positionMenu();
@@ -180,10 +191,22 @@ export default {
         this.removeEventListeners();
       }
     },
+    handleCloseAllMenus(event) {
+      // Ignore if event came from this component
+      if (event && event.detail && event.detail.origin === this.menuId) {
+        return;
+      }
+      if (this.showMenu) {
+        this.showMenu = false;
+        this.$emit("menu-close");
+        this.removeEventListeners();
+      }
+    },
     closeMenu() {
       this.showMenu = false;
       this.$emit("menu-close");
       this.removeEventListeners();
+      window.dispatchEvent(new CustomEvent("close-all-menus"));
     },
     positionMenu() {
       if (!this.$refs.menuWrapper || !this.$refs.menuDropdown) {

@@ -115,7 +115,7 @@ class DBPasswordService:
                         conn.execute(
                             text(
                                 """
-                                UPDATE system_secrets 
+                                UPDATE system_secrets
                                 SET encrypted_value = :encrypted_value, updated_at = NOW()
                                 WHERE key = :key
                                 """
@@ -325,7 +325,7 @@ class DBPasswordService:
                         conn.execute(
                             text(
                                 """
-                                UPDATE system_secrets 
+                                UPDATE system_secrets
                                 SET encrypted_value = :encrypted_value, updated_at = NOW()
                                 WHERE key = :key
                                 """

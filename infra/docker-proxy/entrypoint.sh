@@ -97,7 +97,7 @@ if [ "$1" = "uvicorn" ]; then
     LOG_LEVEL="${DOCKER_PROXY_LOG_LEVEL:-warning}"
     # Convert to lowercase for uvicorn compatibility
     LOG_LEVEL=$(echo "$LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
-    
+
     # First, check if --log-level already exists in arguments
     HAS_LOG_LEVEL=false
     for arg in "$@"; do
@@ -106,12 +106,12 @@ if [ "$1" = "uvicorn" ]; then
             break
         fi
     done
-    
+
     # Build new arguments array, replacing or adding --log-level
     TEMP_ARGS=""
     SKIP_NEXT=false
     ARG_COUNT=0
-    
+
     for arg in "$@"; do
         ARG_COUNT=$((ARG_COUNT + 1))
         if [ "$SKIP_NEXT" = true ]; then
@@ -130,7 +130,7 @@ if [ "$1" = "uvicorn" ]; then
             fi
         fi
     done
-    
+
     # Rebuild the argument list
     eval "set -- $TEMP_ARGS"
 fi

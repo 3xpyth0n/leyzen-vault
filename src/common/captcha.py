@@ -407,7 +407,6 @@ class DatabaseCaptchaStore:
                 and "sqlalchemy" in current_app.extensions
             ):
                 # Try to get model from app registry
-                from sqlalchemy import inspect
 
                 db = self._get_db()
                 # Get model from metadata
@@ -475,7 +474,7 @@ class DatabaseCaptchaStore:
 
         db = self._get_db()
         CaptchaEntry = self._get_model()
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
 
         with self._app.app_context():
             entry = (
@@ -513,7 +512,7 @@ class DatabaseCaptchaStore:
 
         db = self._get_db()
         CaptchaEntry = self._get_model()
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
 
         with self._app.app_context():
             entry = (
@@ -550,7 +549,7 @@ class DatabaseCaptchaStore:
 
         db = self._get_db()
         CaptchaEntry = self._get_model()
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
 
         with self._app.app_context():
             entry = (

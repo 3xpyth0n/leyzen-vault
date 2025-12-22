@@ -63,14 +63,14 @@ import json
 try:
     import urllib.request
     import urllib.error
-    
+
     url = "http://localhost/api/internal/prepare-rotation"
     data = json.dumps({}).encode('utf-8')
     req = urllib.request.Request(url, data=data, headers={
         'Authorization': 'Bearer %s',
         'Content-Type': 'application/json'
     })
-    
+
     with urllib.request.urlopen(req, timeout=300) as response:
         result = json.loads(response.read().decode('utf-8'))
         if not result.get('overall_success', False):

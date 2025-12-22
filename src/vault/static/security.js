@@ -162,14 +162,20 @@ function renderAuditLogs(logs) {
   const actionIcons = {
     upload: "⬆️",
     download: "⬇️",
-    delete: "🗑️",
-    share: "🔗",
-    access_denied: "🚫",
+    delete: window.Icons.trash(14, "currentColor"),
+    share: window.Icons.link(14, "currentColor"),
+    access_denied: window.Icons.getIcon
+      ? window.Icons.getIcon("Ban", 14, "currentColor")
+      : window.Icons.link(14, "currentColor"),
   };
 
   const html = logs
     .map((log) => {
-      const icon = actionIcons[log.action] || "📋";
+      const icon =
+        actionIcons[log.action] ||
+        (window.Icons.clipboard
+          ? window.Icons.clipboard(14, "currentColor")
+          : "");
       const successClass = log.success ? "log-success" : "log-error";
       const successText = log.success ? "✓" : "✗";
 
@@ -195,9 +201,17 @@ function renderAuditLogs(logs) {
             </div>
             <div class="log-details">
               <span class="log-ip">IP: ${escapedIp}</span>
-              ${escapedFileId ? `<span class="log-file-id">File: ${escapedFileId}</span>` : ""}
+              ${
+                escapedFileId
+                  ? `<span class="log-file-id">File: ${escapedFileId}</span>`
+                  : ""
+              }
             </div>
-            ${escapedDetails ? `<div class="log-extra">${escapedDetails}</div>` : ""}
+            ${
+              escapedDetails
+                ? `<div class="log-extra">${escapedDetails}</div>`
+                : ""
+            }
           </div>
         </div>
       `;

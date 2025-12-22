@@ -10,9 +10,19 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Application UI Refactor**: Leyzen Vault’s interface has been fully reworked to improve readability, consistency, and long-term usability across the entire application.
+
   - Simplified visual structure by removing decorative effects, excessive borders, and unnecessary styling.
   - Reworked layouts and navigation to establish clearer hierarchy and reduce visual noise.
   - This refactor focuses on user comfort, clarity, and maintainability rather than visual embellishment.
+
+- **File Management**:
+  - Improved file and folder manipulation with native drag-and-drop and full keyboard workflows (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`).
+  - Added contextual actions on empty space to upload files and create folders, paste cutted/copied elements, and view current folder properties.
+  - Enhanced file and folder properties for clearer and more useful metadata.
+  - Introduced breadcrumb navigation to quickly reach files and folders from Favorites and Recents.
+  - Fixed folder deletion to correctly handle nested contents.
+  - Strengthened deletion and restoration logic across the system, with more precise actions and improved database consistency.
+  - Various internal refinements to improve reliability and overall file management behavior.
 
 ### Fixed
 
@@ -23,11 +33,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **S3-Compatible External Storage Integration**: Leyzen Vault now supports seamless integration with S3-compatible storage services, including AWS S3, MinIO, and other S3-compatible providers.
+
   - Choose between local-only, S3-only, or hybrid storage modes to match your infrastructure needs.
   - Files are automatically synchronized bidirectionally between local storage and S3, ensuring data redundancy and enabling complete cloud-based deployments.
   - All S3 credentials are securely encrypted and stored in the database, with an intuitive admin interface for easy configuration and monitoring.
 
 - **Database Backup System**: Leyzen Vault now includes a comprehensive database backup solution to protect your critical data and ensure business continuity.
+
   - Schedule automated backups with flexible cron-based scheduling (daily, weekly, or custom intervals) to match your operational needs.
   - Choose where to store your backups: locally, in S3-compatible storage, or both for maximum redundancy and disaster recovery readiness.
   - All backups are encrypted at rest using Argon2id, the same industry-leading encryption system used for your files, ensuring your backup data remains protected whether stored locally or in S3-compatible storage-because security shouldn't be an afterthought, even for backups.

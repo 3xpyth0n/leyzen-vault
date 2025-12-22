@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import current_app
-from sqlalchemy import and_, or_, func, case
+from sqlalchemy import and_, case
 from sqlalchemy.orm import Query
 
 from vault.database.schema import (

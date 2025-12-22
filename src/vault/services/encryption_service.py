@@ -11,10 +11,8 @@ happens client-side. This service only manages encrypted key storage and metadat
 
 from __future__ import annotations
 
-import secrets
 import struct
 import time
-from typing import Any
 
 from vault.database.schema import (
     File,

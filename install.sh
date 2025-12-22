@@ -29,7 +29,7 @@ if [ -f "$OUTPUT_BIN" ]; then
 fi
 
 # Step 2. Compile leyzenctl
-echo "⚙️  Compiling leyzenctl..."
+echo "Compiling leyzenctl..."
 cd "$CLI_DIR"
 go mod tidy >/dev/null
 go build -o "$OUTPUT_BIN"
@@ -54,7 +54,7 @@ if [[ "$choice" =~ ^[Yy]$ ]]; then
     sudo leyzenctl completion bash | sudo tee /etc/bash_completion.d/leyzenctl > /dev/null
     echo "Installed globally. You can now run it with: leyzenctl --help"
 else
-    echo "ℹ️  Skipped global install. Use it locally via:"
+    echo "Skipped global install. Use it locally via:"
     echo "   $OUTPUT_BIN --help"
 fi
 
@@ -66,4 +66,3 @@ echo "You can now manage your stack with:"
 echo "   ./leyzenctl start"
 echo "   ./leyzenctl config wizard"
 echo
-

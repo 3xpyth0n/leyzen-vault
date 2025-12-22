@@ -132,8 +132,21 @@ export default {
     const dropdownWidth = ref(0);
     const selectId = ref(`select-${Math.random().toString(36).substr(2, 9)}`);
 
-    // Listen for close events from other selects
+    // Listen for close events from other selects and general menu close events
     const handleCloseEvent = (event) => {
+      if (event.type === "close-all-menus") {
+        // Ignore if event came from this component
+        if (
+          event.detail &&
+          event.detail.origin === `select-${selectId.value}`
+        ) {
+          return;
+        }
+        if (isOpen.value) {
+          closeDropdown();
+        }
+        return;
+      }
       if (event.detail && event.detail.selectId !== selectId.value) {
         if (isOpen.value) {
           closeDropdown();
@@ -143,10 +156,12 @@ export default {
 
     onMounted(() => {
       window.addEventListener("custom-select-open", handleCloseEvent);
+      window.addEventListener("close-all-menus", handleCloseEvent);
     });
 
     onUnmounted(() => {
       window.removeEventListener("custom-select-open", handleCloseEvent);
+      window.removeEventListener("close-all-menus", handleCloseEvent);
     });
 
     const getOptionLabel = (option) => {
@@ -401,6 +416,12 @@ export default {
             detail: { selectId: selectId.value },
           }),
         );
+        // Dispatch general menu close event
+        window.dispatchEvent(
+          new CustomEvent("close-all-menus", {
+            detail: { origin: `select-${selectId.value}` },
+          }),
+        );
         // Emit local event
         emit("open");
         isOpen.value = true;
@@ -585,9 +606,8 @@ export default {
 
   color: var(--text-primary);
   font-size: 0.95rem;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;

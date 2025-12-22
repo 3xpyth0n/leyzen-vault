@@ -121,7 +121,9 @@ function displayLogs(scrollBottom = false) {
   if (searchResults) {
     if (searchTerm) {
       const totalMatches = filtered.length;
-      searchResults.textContent = `${totalMatches} match${totalMatches !== 1 ? "es" : ""} found`;
+      searchResults.textContent = `${totalMatches} match${
+        totalMatches !== 1 ? "es" : ""
+      } found`;
       searchResults.classList.remove("hidden");
     } else {
       searchResults.textContent = "";

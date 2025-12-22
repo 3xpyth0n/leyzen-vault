@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-from pathlib import Path
-from typing import Any
 
 try:
     from PIL import Image
@@ -14,7 +12,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-from vault.database.schema import File, db
 from vault.storage import FileStorage
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable, TypeVar
 
-from flask import current_app, g, jsonify
+from flask import jsonify
 
 from vault.database.schema import GlobalRole
 from vault.middleware.jwt_auth import get_current_user

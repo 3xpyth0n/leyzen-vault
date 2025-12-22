@@ -7,6 +7,8 @@ import * as lucideVue from "lucide-vue-next";
 // Mapping from old icon names to Lucide icon names
 const ICON_NAME_MAP = {
   folder: "Folder",
+  folderOpen: "FolderOpen",
+  folderPlus: "FolderPlus",
   file: "File",
   delete: "Trash2",
   star: "Star",
@@ -46,6 +48,8 @@ const ICON_NAME_MAP = {
   success: "CheckCircle",
   error: "XCircle",
   info: "Info",
+  scissors: "Scissors",
+  clipboardPaste: "ClipboardPaste",
   sparkles: "Sparkles",
   school: "GraduationCap",
   briefcase: "Briefcase",
@@ -261,6 +265,43 @@ function generateSVG(iconNameOrComponent, size, color) {
       const withSuffix = mappedName + "Icon";
       if (lucideVue[withSuffix]) {
         VueIconComponent = lucideVue[withSuffix];
+      }
+    }
+
+    // 5. Try with "Lucide" prefix variants
+    if (!VueIconComponent && mappedName) {
+      const withLucidePrefix = "Lucide" + mappedName;
+      if (lucideVue[withLucidePrefix]) {
+        VueIconComponent = lucideVue[withLucidePrefix];
+      }
+    }
+
+    // 6. Case-insensitive search for "Lucide" prefixed name
+    if (!VueIconComponent && mappedName) {
+      const lucidePrefixedKey = Object.keys(lucideVue).find(
+        (key) => key.toLowerCase() === ("lucide" + mappedName).toLowerCase(),
+      );
+      if (lucidePrefixedKey) {
+        VueIconComponent = lucideVue[lucidePrefixedKey];
+      }
+    }
+
+    // 7. Try "Lucide" prefix with base name
+    if (!VueIconComponent && mappedName) {
+      const baseName = mappedName
+        .replace(/Icon$/, "")
+        .replace(/^Lucide/, "")
+        .trim();
+      const withLucideBase = "Lucide" + baseName;
+      if (lucideVue[withLucideBase]) {
+        VueIconComponent = lucideVue[withLucideBase];
+      } else {
+        const foundLucideBase = Object.keys(lucideVue).find(
+          (key) => key.toLowerCase() === ("lucide" + baseName).toLowerCase(),
+        );
+        if (foundLucideBase) {
+          VueIconComponent = lucideVue[foundLucideBase];
+        }
       }
     }
 
@@ -701,6 +742,8 @@ if (typeof window !== "undefined") {
     searchIcons,
     // Legacy compatibility - map old function calls
     folder: (size, color) => getIcon("folder", size, color),
+    folderOpen: (size, color) => getIcon("folderOpen", size, color),
+    folderPlus: (size, color) => getIcon("folderPlus", size, color),
     file: (size, color) => getIcon("file", size, color),
     delete: (size, color) => getIcon("delete", size, color),
     star: (size, color) => getIcon("star", size, color),
@@ -777,6 +820,8 @@ if (typeof window !== "undefined") {
     iso: (size, color) => getIcon("iso", size, color),
     executable: (size, color) => getIcon("executable", size, color),
     archive: (size, color) => getIcon("archive", size, color),
+    scissors: (size, color) => getIcon("scissors", size, color),
+    clipboardPaste: (size, color) => getIcon("clipboardPaste", size, color),
     chevronRight: (size, color) => getIcon("chevronRight", size, color),
     "chevron-right": (size, color) => getIcon("chevron-right", size, color),
     chevronLeft: (size, color) => getIcon("chevronLeft", size, color),

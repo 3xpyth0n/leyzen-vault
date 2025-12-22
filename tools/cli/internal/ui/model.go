@@ -229,12 +229,12 @@ func (m *Model) appendLog(line string, lineRaw string) {
 		} else {
 			content = strings.Join(m.logs, "\n")
 		}
-		
+
 		// Check if user is already at the bottom before updating
 		wasAtBottom := m.isViewportAtBottom()
-		
+
 		m.viewport.SetContent(content)
-		
+
 		// Only auto-scroll to bottom if user was already at bottom
 		if wasAtBottom {
 			m.viewport.GotoBottom()
@@ -264,14 +264,14 @@ func (m *Model) isViewportAtBottom() bool {
 	} else {
 		content = strings.Join(m.logs, "\n")
 	}
-	
+
 	if content == "" {
 		return true
 	}
-	
+
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
-	
+
 	// Check if we're at or near the bottom (within 2 lines to account for rounding)
 	return m.viewport.YOffset+m.viewport.Height >= totalLines-2
 }
@@ -326,7 +326,7 @@ func (m *Model) switchToLogs() {
 		m.logs = make([]string, len(m.logsBuffer))
 		copy(m.logs, m.logsBuffer)
 	}
-	
+
 	// Determine which logs to display based on mode
 	var logsToDisplay []string
 	if m.logModeRaw {
@@ -334,7 +334,7 @@ func (m *Model) switchToLogs() {
 	} else {
 		logsToDisplay = m.logs
 	}
-	
+
 	if len(logsToDisplay) > 0 {
 		m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
 		// Restore saved scroll position or go to bottom
@@ -352,7 +352,7 @@ func (m *Model) switchToLogs() {
 			}
 		}
 	}
-	
+
 	m.viewState = ViewLogs
 	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
@@ -370,7 +370,7 @@ func (m *Model) switchToLogs() {
 
 func (m *Model) switchToAction() {
 	m.viewState = ViewAction
-	
+
 	// Determine which logs to display based on mode
 	var logsToDisplay []string
 	if m.logModeRaw {
@@ -378,7 +378,7 @@ func (m *Model) switchToAction() {
 	} else {
 		logsToDisplay = m.logs
 	}
-	
+
 	if len(logsToDisplay) > 0 {
 		m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
 		// Restore saved scroll position or go to bottom
@@ -396,7 +396,7 @@ func (m *Model) switchToAction() {
 			}
 		}
 	}
-	
+
 	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 8

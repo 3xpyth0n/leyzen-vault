@@ -189,6 +189,7 @@
         class="page-content"
         ref="pageContentRef"
         @scroll="updateScrollProgress"
+        @contextmenu="handlePageContentContextMenu"
       >
         <transition name="page" mode="out-in">
           <div :key="$route.path" class="page-transition-wrapper">
@@ -349,6 +350,9 @@ export default {
     },
   },
   watch: {
+    $route() {
+      window.dispatchEvent(new CustomEvent("close-all-menus"));
+    },
     isMobileMode(newVal, oldVal) {
       if (oldVal === true && newVal === false) {
         this.sidebarExpanded = false;
@@ -392,6 +396,38 @@ export default {
       this.scrollProgress = Math.min(
         100,
         Math.max(0, (scrollTop / maxScroll) * 100),
+      );
+    },
+    handlePageContentContextMenu(event) {
+      // Only handle if we are in VaultSpaceView
+      if (this.$route.name !== "VaultSpaceView") {
+        return;
+      }
+
+      // Check if target is interactive
+      const target = event.target;
+      const isInteractive =
+        target.closest("button") ||
+        target.closest("a") ||
+        target.closest("input") ||
+        target.closest("textarea") ||
+        target.closest(".interactive");
+
+      if (isInteractive) {
+        return;
+      }
+
+      // If we got here, it's a right click on an empty area of the page
+      event.preventDefault();
+
+      // Dispatch custom event for VaultSpaceView to catch
+      window.dispatchEvent(
+        new CustomEvent("show-vault-background-menu", {
+          detail: {
+            x: event.clientX,
+            y: event.clientY,
+          },
+        }),
       );
     },
     scrollToTop() {

@@ -394,8 +394,13 @@ export async function apiRequest(endpoint, options = {}) {
           // But don't disconnect automatically - let caller handle it
           // This could be a temporary issue during container restart
           if (response.status === 401) {
-            // Always return response - let caller decide what to do
-            // Don't automatically disconnect - could be temporary network issue
+            removeToken();
+            try {
+              await clearUserMasterKey();
+            } catch (e) {}
+            if (typeof window !== "undefined") {
+              window.location.replace("/login");
+            }
             return response;
           }
         } else {
@@ -441,9 +446,16 @@ export async function apiRequest(endpoint, options = {}) {
       return response;
     }
 
-    // Always return response - don't automatically disconnect
-    // Let callers handle 401 errors appropriately
-    // This prevents disconnection during temporary network issues
+    const token = getToken();
+    if (token) {
+      removeToken();
+      try {
+        await clearUserMasterKey();
+      } catch (e) {}
+      if (typeof window !== "undefined") {
+        window.location.replace("/login");
+      }
+    }
     return response;
   }
 
@@ -730,15 +742,23 @@ export const auth = {
       if (response.status === 401) {
         const token = getToken();
         if (token) {
-          // We have a token but got 401 - this is likely temporary
-          // Throw as network error so callers don't disconnect
-          throw new Error(
-            "Network error: Authentication temporarily unavailable",
-          );
+          removeToken();
+          try {
+            await clearUserMasterKey();
+          } catch (e) {}
+          if (typeof window !== "undefined") {
+            window.location.replace("/login");
+          }
+          throw new Error("Unauthorized");
         }
-        // No token - this is a real auth issue, but still don't disconnect automatically
-        // Let the router handle it based on token presence
         const errorData = await parseErrorResponse(response);
+        removeToken();
+        try {
+          await clearUserMasterKey();
+        } catch (e) {}
+        if (typeof window !== "undefined") {
+          window.location.replace("/login");
+        }
         throw new Error(errorData.error || "Failed to get current user");
       }
 
@@ -1000,14 +1020,23 @@ export const account = {
       if (response.status === 401) {
         const token = getToken();
         if (token) {
-          // We have a token but got 401 - this is likely temporary
-          // Throw as network error so callers don't disconnect
-          throw new Error(
-            "Network error: Authentication temporarily unavailable",
-          );
+          removeToken();
+          try {
+            await clearUserMasterKey();
+          } catch (e) {}
+          if (typeof window !== "undefined") {
+            window.location.replace("/login");
+          }
+          throw new Error("Unauthorized");
         }
-        // No token - this is a real auth issue, but still don't disconnect automatically
         const errorData = await parseErrorResponse(response);
+        removeToken();
+        try {
+          await clearUserMasterKey();
+        } catch (e) {}
+        if (typeof window !== "undefined") {
+          window.location.replace("/login");
+        }
         throw new Error(errorData.error || "Failed to get account information");
       }
 
@@ -1996,7 +2025,9 @@ export const files = {
           if (rejectPromise) {
             rejectPromise(
               new Error(
-                `Upload chunk failed: HTTP ${xhr.status} - ${xhr.statusText || "Unknown error"}`,
+                `Upload chunk failed: HTTP ${xhr.status} - ${
+                  xhr.statusText || "Unknown error"
+                }`,
               ),
             );
           }

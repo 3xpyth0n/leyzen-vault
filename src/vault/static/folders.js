@@ -154,7 +154,10 @@ async function renderBreadcrumbs(folderId) {
 
   // Root breadcrumb - always visible as Home button
   breadcrumbs.push(
-    '<button class="breadcrumb-item breadcrumb-home" data-folder-id="" title="Go to root">🏠 Home</button>',
+    `<button class="breadcrumb-item breadcrumb-home" data-folder-id="" title="Go to root">${window.Icons.home(
+      16,
+      "currentColor",
+    )} Home</button>`,
   );
 
   // Folder breadcrumbs
@@ -225,9 +228,7 @@ async function renderFoldersGridView(folders, parentId) {
       const escapedName = escapeHtml(folderName);
       const escapedFolderId = escapeHtml(folder.folder_id);
 
-      const folderIcon = window.Icons?.folder
-        ? window.Icons.folder(48, "currentColor")
-        : "📁";
+      const folderIcon = window.Icons.folder(48, "currentColor");
       const moreIcon = window.Icons?.moreVertical
         ? window.Icons.moreVertical(20, "currentColor")
         : "⋮";
@@ -283,7 +284,10 @@ async function renderFoldersListView(folders, parentId) {
 
       return `
                 <div class="folder-row" data-folder-id="${escapedFolderId}">
-                    <div class="folder-row-icon">${window.Icons?.folder ? window.Icons.folder(24, "currentColor") : "📁"}</div>
+                    <div class="folder-row-icon">${window.Icons.folder(
+                      24,
+                      "currentColor",
+                    )}</div>
                     <div class="folder-row-name" title="${escapedName}">${escapedName}</div>
                     <div class="folder-row-actions">
                         <button class="file-menu-btn" data-folder-id="${escapedFolderId}" title="More options" aria-label="More options">
@@ -319,6 +323,9 @@ async function navigateToFolder(folderId) {
   }
 
   currentFolderId = folderId;
+  if (typeof window !== "undefined") {
+    window.currentFolderId = currentFolderId;
+  }
   await renderBreadcrumbs(folderId);
   await loadFolderContents(folderId);
 }

@@ -495,6 +495,41 @@ export default {
       return normalizeMimeType(props.fileName, props.mimeType);
     });
 
+    const getDecryptionKey = async (fileId, vaultspaceId) => {
+      try {
+        const vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
+        const fileData = await files.get(fileId, vaultspaceId);
+        if (fileData && fileData.file_key && vaultspaceKey) {
+          const fileKey = await decryptFileKey(
+            vaultspaceKey,
+            fileData.file_key.encrypted_key,
+          );
+          try {
+            const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
+            const keyArray = new Uint8Array(exportedKey);
+            const keyBase64 = arrayToBase64url(keyArray);
+            await storeFileKey(fileId, keyBase64);
+          } catch (e) {}
+          return fileKey;
+        }
+      } catch (e) {}
+      const keyBase64 = await getFileKeyFromStorage(fileId);
+      if (keyBase64) {
+        const keyArray = base64urlToArray(keyBase64);
+        const fileKey = await crypto.subtle.importKey(
+          "raw",
+          keyArray,
+          {
+            name: "AES-GCM",
+            length: 256,
+          },
+          false,
+          ["decrypt"],
+        );
+        return fileKey;
+      }
+      throw new Error("File key not found");
+    };
     const isImage = computed(() => {
       return (
         normalizedMimeType.value &&
@@ -825,16 +860,9 @@ export default {
             props.vaultspaceId,
           );
 
-          // Get file key from server
-          const fileData = await files.get(props.fileId, props.vaultspaceId);
-          if (!fileData.file_key) {
-            throw new Error("File key not found");
-          }
-
-          // Decrypt file key with VaultSpace key
-          const fileKey = await decryptFileKey(
-            vaultspaceKey,
-            fileData.file_key.encrypted_key,
+          const fileKey = await getDecryptionKey(
+            props.fileId,
+            props.vaultspaceId,
           );
 
           // Decrypt file data
@@ -887,19 +915,9 @@ export default {
                   props.vaultspaceId,
                 );
 
-                // Get file key from server
-                const fileData = await files.get(
+                const fileKey = await getDecryptionKey(
                   props.fileId,
                   props.vaultspaceId,
-                );
-                if (!fileData.file_key) {
-                  throw new Error("File key not found");
-                }
-
-                // Decrypt file key with VaultSpace key
-                const fileKey = await decryptFileKey(
-                  vaultspaceKey,
-                  fileData.file_key.encrypted_key,
                 );
 
                 // Decrypt file data
@@ -945,16 +963,9 @@ export default {
               props.vaultspaceId,
             );
 
-            // Get file key from server
-            const fileData = await files.get(props.fileId, props.vaultspaceId);
-            if (!fileData.file_key) {
-              throw new Error("File key not found");
-            }
-
-            // Decrypt file key with VaultSpace key
-            const fileKey = await decryptFileKey(
-              vaultspaceKey,
-              fileData.file_key.encrypted_key,
+            const fileKey = await getDecryptionKey(
+              props.fileId,
+              props.vaultspaceId,
             );
 
             // Decrypt file data
@@ -1036,16 +1047,9 @@ export default {
             props.vaultspaceId,
           );
 
-          // Get file key from server
-          const fileData = await files.get(props.fileId, props.vaultspaceId);
-          if (!fileData.file_key) {
-            throw new Error("File key not found");
-          }
-
-          // Decrypt file key with VaultSpace key
-          const fileKey = await decryptFileKey(
-            vaultspaceKey,
-            fileData.file_key.encrypted_key,
+          const fileKey = await getDecryptionKey(
+            props.fileId,
+            props.vaultspaceId,
           );
 
           // Decrypt file data
@@ -1097,16 +1101,9 @@ export default {
             props.vaultspaceId,
           );
 
-          // Get file key from server
-          const fileData = await files.get(props.fileId, props.vaultspaceId);
-          if (!fileData.file_key) {
-            throw new Error("File key not found");
-          }
-
-          // Decrypt file key with VaultSpace key
-          const fileKey = await decryptFileKey(
-            vaultspaceKey,
-            fileData.file_key.encrypted_key,
+          const fileKey = await getDecryptionKey(
+            props.fileId,
+            props.vaultspaceId,
           );
 
           // Decrypt file data

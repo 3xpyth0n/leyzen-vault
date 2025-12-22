@@ -403,7 +403,6 @@ def list_quotas():
 @require_role(GlobalRole.ADMIN)
 def create_or_update_quota():
     """Create or update quota (admin only)."""
-    from vault.database.schema import Quota
 
     quota_service = _get_quota_service()
     data = request.get_json()
@@ -996,7 +995,7 @@ def create_auth_sso_provider():
         return (
             jsonify(
                 {
-                    "error": f"Invalid provider_type. Must be one of: saml, oauth2, oidc, email-magic-link"
+                    "error": "Invalid provider_type. Must be one of: saml, oauth2, oidc, email-magic-link"
                 }
             ),
             400,

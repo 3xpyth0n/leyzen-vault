@@ -153,6 +153,7 @@
       selectedVaultSpaceForMenu ? isPinned(selectedVaultSpaceForMenu.id) : false
     "
     :position="menuPosition"
+    menu-id="dashboard-menu"
     @close="showVaultSpaceMenu = false"
     @action="handleMenuAction"
   />
@@ -216,6 +217,10 @@ export default {
   async mounted() {
     await this.loadVaultSpaces();
     await this.loadPinnedStatus();
+    window.addEventListener("close-all-menus", this.handleCloseAllMenus);
+  },
+  beforeUnmount() {
+    window.removeEventListener("close-all-menus", this.handleCloseAllMenus);
   },
   methods: {
     getIcon(iconName, size = 24) {
@@ -527,6 +532,14 @@ export default {
         this.showVaultSpaceMenu = true;
       });
     },
+    handleCloseAllMenus(event) {
+      // Ignore if event came from this component
+      if (event && event.detail && event.detail.origin === "dashboard-menu") {
+        return;
+      }
+      this.showVaultSpaceMenu = false;
+      this.selectedVaultSpaceForMenu = null;
+    },
     async handleMenuAction(action, vaultspace) {
       switch (action) {
         case "pin":
@@ -576,6 +589,8 @@ export default {
   background: transparent;
   border: 1px solid var(--slate-grey);
   padding: 2rem;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .mobile-mode .vaultspaces-section {

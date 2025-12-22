@@ -16,7 +16,7 @@ func init() {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			color.HiCyan("Restarting Docker stack...")
-			
+
 			// Promote files to persistent storage before shutdown
 			color.HiYellow("Promoting files to persistent storage...")
 			if err := internal.PrepareRotation(EnvFilePath()); err != nil {
@@ -26,7 +26,7 @@ func init() {
 			} else {
 				color.HiGreen("✓ Files promoted to persistent storage")
 			}
-			
+
 			color.HiYellow("Stopping containers...")
 			if err := internal.RunCompose(EnvFilePath(), "down", "--remove-orphans"); err != nil {
 				return fmt.Errorf("failed to stop stack: %w", err)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.search_service import SearchService
 

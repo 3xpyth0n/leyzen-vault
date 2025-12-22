@@ -116,6 +116,7 @@
           @drag-leave="handleDragLeave"
           @drag-end="handleDragEnd"
           @drop="handleDrop"
+          @background-context-menu="handleBackgroundContextMenu"
         />
       </div>
     </main>
@@ -299,6 +300,7 @@
     :show="showProperties"
     :fileId="propertiesFileId"
     :vaultspaceId="$route.params.id"
+    @navigate="navigateToAndSelectItem"
     @close="
       showProperties = false;
       propertiesFileId = null;
@@ -394,6 +396,18 @@
     @confirm="handleRevokeConfirm"
     @close="showRevokeConfirm = false"
   />
+
+  <BackgroundContextMenu
+    :show="showBackgroundMenu"
+    :position="backgroundMenuPosition"
+    :canShowProperties="currentParentId !== null"
+    menu-id="vault-background-menu"
+    @close="
+      showBackgroundMenu = false;
+      backgroundMenuPosition = { x: 0, y: 0 };
+    "
+    @action="handleBackgroundMenuAction"
+  />
 </template>
 
 <script>
@@ -426,7 +440,6 @@ import {
   initializeUserMasterKey,
 } from "../services/keyManager";
 import { debounce } from "../utils/debounce";
-import { folderPicker } from "../utils/FolderPicker";
 import { logger } from "../utils/logger.js";
 import AlertModal from "../components/AlertModal.vue";
 import ConflictResolutionModal from "../components/ConflictResolutionModal.vue";
@@ -439,6 +452,12 @@ import {
 import { trash } from "../services/trash.js";
 import PasswordInput from "../components/PasswordInput.vue";
 import CustomSelect from "../components/CustomSelect.vue";
+import {
+  getFileKey as getFileKeyFromStorage,
+  storeFileKey,
+} from "../services/fileKeyStorage.js";
+import { arrayToBase64url } from "../services/encryption.js";
+import BackgroundContextMenu from "../components/BackgroundContextMenu.vue";
 
 export default {
   name: "VaultSpaceView",
@@ -455,6 +474,7 @@ export default {
     ConflictResolutionModal,
     PasswordInput,
     CustomSelect,
+    BackgroundContextMenu,
   },
   data() {
     return {
@@ -534,6 +554,9 @@ export default {
       pendingFolderName: null,
       pendingRenameItem: null,
       pendingRenameNewName: null,
+      showBackgroundMenu: false,
+      backgroundMenuPosition: { x: 0, y: 0 },
+      skipSelectionClear: false,
     };
   },
   computed: {
@@ -651,6 +674,14 @@ export default {
     // Setup keyboard shortcuts
     this.setupKeyboardShortcuts();
 
+    // Listen for global background context menu events
+    window.addEventListener(
+      "show-vault-background-menu",
+      this.handleCustomBackgroundContextMenu,
+    );
+
+    window.addEventListener("close-all-menus", this.handleCloseAllMenus);
+
     // Expose showConfirmationModal for modals to use
     window.showConfirmationModal = (options) => {
       this.revokeConfirmMessage =
@@ -658,6 +689,9 @@ export default {
       this.pendingRevokeCallback = options.onConfirm || null;
       this.showRevokeConfirm = true;
     };
+
+    // Check for pending selection (e.g., from Starred or Recent view)
+    this.checkPendingSelection();
   },
   beforeUnmount() {
     // Deselect all items when component is unmounted
@@ -691,6 +725,12 @@ export default {
     if (this._keyboardShortcutHandler) {
       document.removeEventListener("keydown", this._keyboardShortcutHandler);
     }
+    // Cleanup background context menu listener
+    window.removeEventListener(
+      "show-vault-background-menu",
+      this.handleCustomBackgroundContextMenu,
+    );
+    window.removeEventListener("close-all-menus", this.handleCloseAllMenus);
     // Cleanup global function
     if (window.showConfirmationModal) {
       delete window.showConfirmationModal;
@@ -720,7 +760,9 @@ export default {
       // - When transitioning from empty to non-empty (or vice versa)
       // This prevents the component from being recreated on every file upload
       const hasItems = this.folders.length > 0 || this.filesList.length > 0;
-      return `file-list-${hasItems ? "has-items" : "empty"}-${this.currentParentId || "root"}`;
+      return `file-list-${hasItems ? "has-items" : "empty"}-${
+        this.currentParentId || "root"
+      }`;
     },
     newlyCreatedItemIdForAnimation() {
       // Return the newly created folder ID if available, otherwise the array of uploaded file IDs
@@ -741,10 +783,11 @@ export default {
   watch: {
     "$route.query.folder": {
       handler(newFolderId, oldFolderId) {
-        // Deselect all items when folder parameter changes
-        this.clearSelection();
-        if (window.selectionManager) {
-          window.selectionManager.deselectAll();
+        if (!this.skipSelectionClear) {
+          this.clearSelection();
+          if (window.selectionManager) {
+            window.selectionManager.deselectAll();
+          }
         }
 
         // Load files when folder parameter changes
@@ -761,6 +804,11 @@ export default {
           ) {
             // Use loadFilesInternal directly to bypass debounce for route changes
             this.loadFilesInternal(folderId, false);
+
+            // Check for pending selection after route change
+            this.$nextTick(() => {
+              this.checkPendingSelection();
+            });
           }
         }
       },
@@ -769,11 +817,16 @@ export default {
     "$route.path": {
       handler(newPath, oldPath) {
         // Deselect all items when route path changes (e.g., navigating to a different page)
-        if (newPath !== oldPath && oldPath !== undefined) {
+        if (
+          !this.skipSelectionClear &&
+          newPath !== oldPath &&
+          oldPath !== undefined
+        ) {
           this.clearSelection();
           if (window.selectionManager) {
             window.selectionManager.deselectAll();
           }
+          this.handleCloseAllMenus();
         }
       },
       immediate: false,
@@ -1086,9 +1139,11 @@ export default {
 
       // Deselect all items when loading files (folder change)
       // Do this before loading to ensure clean state
-      this.clearSelection();
-      if (window.selectionManager) {
-        window.selectionManager.deselectAll();
+      if (!this.skipSelectionClear) {
+        this.clearSelection();
+        if (window.selectionManager) {
+          window.selectionManager.deselectAll();
+        }
       }
 
       // Clear animation IDs when changing folders
@@ -1141,10 +1196,12 @@ export default {
           // This ensures that any lingering selection state is cleared from the DOM
           this.$nextTick(() => {
             // Clear selection again after DOM update to ensure it's really cleared
-            this.clearSelection();
-            if (window.selectionManager) {
-              window.selectionManager.deselectAll();
-              window.selectionManager.updateUI();
+            if (!this.skipSelectionClear) {
+              this.clearSelection();
+              if (window.selectionManager) {
+                window.selectionManager.deselectAll();
+                window.selectionManager.updateUI();
+              }
             }
           });
 
@@ -1252,15 +1309,18 @@ export default {
       }
     },
 
-    async navigateToFolder(folderId) {
+    async navigateToFolder(folderId, options = {}) {
       // Block navigation if server is offline
       if (this.isServerOffline) {
         return;
       }
-      // Deselect all items when changing folder
-      this.clearSelection();
-      if (window.selectionManager) {
-        window.selectionManager.deselectAll();
+
+      // Deselect all items when changing folder, unless skipped (e.g. when selecting an item immediately after)
+      if (!options.skipDeselect) {
+        this.clearSelection();
+        if (window.selectionManager) {
+          window.selectionManager.deselectAll();
+        }
       }
 
       // Update URL with folder parameter
@@ -1302,8 +1362,10 @@ export default {
           // Ignore navigation errors - URL is already updated
         });
 
-      // Load files immediately
-      await this.loadFiles(newFolderId);
+      // Load files immediately if folder changed or forced
+      if (newFolderId !== currentFolderId || options.forceReload) {
+        await this.loadFiles(newFolderId);
+      }
     },
 
     async updateBreadcrumbs(folderId) {
@@ -2242,7 +2304,11 @@ export default {
                         sizes[i]
                       );
                     };
-                    quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(used)} / ${formatSize(limit)}\nAvailable: ${formatSize(available)}`;
+                    quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(
+                      used,
+                    )} / ${formatSize(limit)}\nAvailable: ${formatSize(
+                      available,
+                    )}`;
                   }
                 }
               }
@@ -2593,7 +2659,11 @@ export default {
                       sizes[i]
                     );
                   };
-                  quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(used)} / ${formatSize(limit)}\nAvailable: ${formatSize(available)}`;
+                  quotaMessage = `You have reached your storage limit.\n\nUsed: ${formatSize(
+                    used,
+                  )} / ${formatSize(limit)}\nAvailable: ${formatSize(
+                    available,
+                  )}`;
                 }
               }
             }
@@ -2984,59 +3054,105 @@ export default {
     },
 
     async handleSearchResultClick(item) {
-      // Navigate to the file or folder from search results
-      if (item.mime_type === "application/x-directory") {
-        // Navigate to folder
-        await this.navigateToFolder(item.id);
-      } else {
-        // Navigate to file - first navigate to its parent folder, then select the file
-        const parentId = item.folder_id || item.parent_id || null;
-        await this.navigateToFolder(parentId);
+      await this.navigateToAndSelectItem(item);
+    },
 
-        // Wait for files to load and render
-        await this.$nextTick();
+    checkPendingSelection() {
+      if (window.pendingSelection) {
+        const selection = window.pendingSelection;
+        const currentFolderId = this.$route.query.folder || null;
 
-        // Retry mechanism to find and select the file
-        const maxRetries = 10;
-        let retries = 0;
+        // Only process if we are in the right folder and vaultspace
+        if (
+          selection.vaultspaceId === this.$route.params.id &&
+          (selection.parentId === currentFolderId ||
+            (selection.parentId === null && currentFolderId === null))
+        ) {
+          // Clear global pending selection
+          window.pendingSelection = null;
 
-        const trySelectFile = () => {
-          // Find the file in the loaded files
-          const allItems = [...this.folders, ...this.filesList];
-          const fileItem = allItems.find((f) => f.id === item.id);
-
-          if (fileItem) {
-            // Clear selection and select the file
-            this.clearSelection();
-            this.toggleSelection(fileItem);
-
-            // Scroll to the file after a short delay to ensure it's rendered
-            setTimeout(() => {
-              const fileElement = document.querySelector(
-                `[data-file-id="${item.id}"], [data-folder-id="${item.id}"]`,
-              );
-              if (fileElement) {
-                fileElement.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center",
-                });
-                // Add a highlight effect
-                fileElement.classList.add("search-highlighted");
-                setTimeout(() => {
-                  fileElement.classList.remove("search-highlighted");
-                }, 2000);
-              }
-            }, 100);
-          } else if (retries < maxRetries) {
-            // File not found yet, retry after a short delay
-            retries++;
-            setTimeout(trySelectFile, 100);
-          }
-        };
-
-        // Start trying to select the file
-        setTimeout(trySelectFile, 200);
+          // Use the existing navigateToAndSelectItem logic
+          this.navigateToAndSelectItem(selection);
+        }
       }
+    },
+
+    async navigateToAndSelectItem(item) {
+      if (!item) return;
+
+      // Enable skipSelectionClear to prevent watcher and navigateToFolder from clearing selection
+      this.skipSelectionClear = true;
+
+      // Special case for root navigation (if item represents root)
+      if (item.isRoot) {
+        await this.navigateToFolder(null, { skipDeselect: true });
+        this.skipSelectionClear = false;
+        return;
+      }
+
+      // 1. Determine the parent folder to navigate to
+      // Search results might use folder_id, breadcrumbs use parentId
+      const parentId =
+        item.folder_id || item.parent_id || item.parentId || null;
+
+      // 2. Navigate to that parent folder
+      await this.navigateToFolder(parentId, { skipDeselect: true });
+
+      // 3. Wait for files to load and render
+      await this.$nextTick();
+
+      // 4. Retry mechanism to find and select the item
+      const maxRetries = 15; // Increased retries
+      let retries = 0;
+
+      const trySelect = () => {
+        // Find the item in the loaded files
+        const allItems = [...this.folders, ...this.filesList];
+        const targetItem = allItems.find((f) => f.id === item.id);
+
+        if (targetItem) {
+          // Clear selection and select the item
+          this.clearSelection();
+          this.toggleSelection(targetItem);
+
+          // Now that we've selected it, we can reset skipSelectionClear
+          // We use a delay to ensure any pending loadFilesInternal calls (from route changes)
+          // have finished their selection-clearing logic
+          setTimeout(() => {
+            this.skipSelectionClear = false;
+          }, 1000);
+
+          // Scroll to the item after a short delay to ensure it's rendered
+          setTimeout(() => {
+            const element = document.querySelector(
+              `[data-id="${item.id}"], [data-file-id="${item.id}"], [data-folder-id="${item.id}"]`,
+            );
+            if (element) {
+              element.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+              // Add a highlight effect
+              element.classList.add("search-highlighted");
+              setTimeout(() => {
+                element.classList.remove("search-highlighted");
+              }, 2000);
+            }
+          }, 100);
+        } else if (retries < maxRetries) {
+          // Item not found yet, retry after a short delay
+          retries++;
+          setTimeout(trySelect, 150); // Slightly longer delay between retries
+        } else {
+          // Give up and reset skipSelectionClear after a delay
+          setTimeout(() => {
+            this.skipSelectionClear = false;
+          }, 1000);
+        }
+      };
+
+      // Start trying to select the item
+      setTimeout(trySelect, 300); // Increased initial delay
     },
 
     handleItemClick(item, event) {
@@ -3107,7 +3223,19 @@ export default {
           this.editingItemId = item.id;
         }
       } else if (action === "copy") {
-        this.handleCopyAction(item);
+        if (clipboardManager) {
+          clipboardManager.copy([item]);
+          if (window.Notifications) {
+            window.Notifications.success("Copied to clipboard");
+          }
+        }
+      } else if (action === "cut") {
+        if (clipboardManager) {
+          clipboardManager.cut([item]);
+          if (window.Notifications) {
+            window.Notifications.success("Ready to move");
+          }
+        }
       } else if (action === "share") {
         // Open share modal using composable
         try {
@@ -3632,59 +3760,11 @@ export default {
     },
 
     async handleCopyAction(item) {
-      try {
-        // Verify folderPicker is available
-        if (!folderPicker) {
-          this.showAlert({
-            type: "error",
-            title: "Error",
-            message: "Folder picker is not available. Please refresh the page.",
-          });
-          return;
-        }
-
-        // Get folders at the same level as the current item
-        const itemParentId = item.parent_id || this.currentParentId;
-        const allFolders = await this.getAllFolders(itemParentId);
-
-        // Show folder picker with vaultspace info
-        const vaultspaceInfo = this.vaultspace
-          ? {
-              name: this.vaultspace.name,
-              icon_name: this.vaultspace.icon_name || "folder",
-            }
-          : null;
-        const selectedFolderId = await folderPicker.show(
-          allFolders,
-          this.currentParentId,
-          this.$route.params.id,
-          item.mime_type === "application/x-directory" ? item.id : null,
-          vaultspaceInfo,
-        );
-
-        // User cancelled
-        if (selectedFolderId === undefined) {
-          return;
-        }
-
-        // Perform copy
-        await this.handleCopy(item, selectedFolderId, null);
-
-        // Reload files to show the new copy
-        await this.loadFiles();
-
-        // Show success message
+      if (clipboardManager) {
+        clipboardManager.copy([item]);
         if (window.Notifications) {
-          window.Notifications.success(
-            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} copied successfully`,
-          );
+          window.Notifications.success("Copied to clipboard");
         }
-      } catch (err) {
-        this.showAlert({
-          type: "error",
-          title: "Error",
-          message: err.message || "Failed to copy item",
-        });
       }
     },
 
@@ -4278,6 +4358,65 @@ export default {
           newName: newName, // Keep same name unless specified
         });
 
+        try {
+          // Attempt to propagate file key for the copied item
+          const oldId = item.id;
+          const newId = copiedFile?.id || null;
+          if (oldId && newId && oldId !== newId) {
+            // Try to read existing key from local storage
+            const existingKeyBase64 = await getFileKeyFromStorage(oldId);
+            if (existingKeyBase64) {
+              await storeFileKey(newId, existingKeyBase64);
+            } else {
+              // Fallback: fetch and decrypt original file key, then store for the new copy
+              try {
+                // Ensure VaultSpace key is available
+                if (!this.vaultspaceKey) {
+                  await this.loadVaultSpaceKey();
+                }
+                if (this.vaultspaceKey) {
+                  const originalData = await files.get(
+                    oldId,
+                    this.$route.params.id,
+                  );
+                  const encryptedKey =
+                    originalData?.file_key?.encrypted_key || null;
+                  if (encryptedKey) {
+                    const fileKey = await decryptFileKey(
+                      this.vaultspaceKey,
+                      encryptedKey,
+                      true,
+                    );
+                    const exported = await crypto.subtle.exportKey(
+                      "raw",
+                      fileKey,
+                    );
+                    const keyArray = new Uint8Array(exported);
+                    const keyBase64 = arrayToBase64url(keyArray);
+                    await storeFileKey(newId, keyBase64);
+                  }
+                }
+              } catch (e) {}
+            }
+            // Also attempt to store the copied file's key if server provides it
+            try {
+              const copiedData = await files.get(newId, this.$route.params.id);
+              const encryptedKey = copiedData?.file_key?.encrypted_key || null;
+              if (encryptedKey && this.vaultspaceKey) {
+                const fileKey = await decryptFileKey(
+                  this.vaultspaceKey,
+                  encryptedKey,
+                  true,
+                );
+                const exported = await crypto.subtle.exportKey("raw", fileKey);
+                const keyArray = new Uint8Array(exported);
+                const keyBase64 = arrayToBase64url(keyArray);
+                await storeFileKey(newId, keyBase64);
+              }
+            } catch (e) {}
+          }
+        } catch (e) {}
+
         // Reload files to show the new copy with cache-busting
         await this.loadFilesInternal(this.currentParentId, true);
       } catch (err) {
@@ -4379,13 +4518,21 @@ export default {
           // Show success notification
           if (window.Notifications) {
             window.Notifications.success(
-              `${sourceItem.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
+              `${
+                sourceItem.mime_type === "application/x-directory"
+                  ? "Folder"
+                  : "File"
+              } moved successfully`,
             );
           }
         } catch (moveErr) {
           if (window.Notifications) {
             window.Notifications.error(
-              `Failed to move ${sourceItem.mime_type === "application/x-directory" ? "folder" : "file"}: ${moveErr.message || "Unknown error"}`,
+              `Failed to move ${
+                sourceItem.mime_type === "application/x-directory"
+                  ? "folder"
+                  : "file"
+              }: ${moveErr.message || "Unknown error"}`,
             );
           }
         }
@@ -4431,7 +4578,11 @@ export default {
           // Show success notification
           if (window.Notifications) {
             window.Notifications.success(
-              `${sourceItem.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
+              `${
+                sourceItem.mime_type === "application/x-directory"
+                  ? "Folder"
+                  : "File"
+              } moved successfully`,
             );
           }
         } catch (moveErr) {
@@ -4455,9 +4606,11 @@ export default {
           event.target.tagName === "TEXTAREA" ||
           event.target.isContentEditable
         ) {
-          // Allow Escape to cancel editing
-          if (event.key === "Escape" && this.editingItemId) {
+          // Allow Escape to cancel editing, selection and clipboard
+          if (event.key === "Escape") {
             this.editingItemId = null;
+            this.clearSelection();
+            clipboardManager.clear();
           }
           return;
         }
@@ -4470,6 +4623,17 @@ export default {
           }
         }
 
+        // Ctrl+X or Cmd+X - Cut selected items
+        if ((event.ctrlKey || event.metaKey) && event.key === "x") {
+          event.preventDefault();
+          if (this.selectedItems.length > 0) {
+            clipboardManager.cut(this.selectedItems);
+            if (window.Notifications) {
+              window.Notifications.success("Ready to move");
+            }
+          }
+        }
+
         // Ctrl+V or Cmd+V - Paste clipboard items
         if ((event.ctrlKey || event.metaKey) && event.key === "v") {
           event.preventDefault();
@@ -4478,11 +4642,11 @@ export default {
           }
         }
 
-        // Escape - Cancel editing or close modals
+        // Escape - Cancel editing, selection and clipboard mode
         if (event.key === "Escape") {
-          if (this.editingItemId) {
-            this.editingItemId = null;
-          }
+          this.editingItemId = null;
+          this.clearSelection();
+          clipboardManager.clear();
         }
       };
 
@@ -4499,18 +4663,62 @@ export default {
       }
 
       try {
-        for (const item of items) {
-          const sourceItem = this.files.find((f) => f.id === item.id);
-          if (sourceItem) {
-            await this.handleCopy(sourceItem, this.currentParentId, null);
+        const isCut = clipboardManager.isCut && clipboardManager.isCut();
+        for (const clipItem of items) {
+          const minimalItem = { id: clipItem.id };
+          if (isCut) {
+            await this.handleMove(minimalItem, this.currentParentId);
+          } else {
+            await this.handleCopy(minimalItem, this.currentParentId, null);
           }
         }
+        clipboardManager.clear();
       } catch (err) {
         this.showAlert({
           type: "error",
           title: "Error",
           message: err.message || "Error pasting items",
         });
+      }
+    },
+
+    handleCustomBackgroundContextMenu(event) {
+      if (event && event.detail) {
+        this.handleBackgroundContextMenu(event.detail);
+      }
+    },
+    handleCloseAllMenus(event) {
+      // Ignore if event came from this component
+      if (
+        event &&
+        event.detail &&
+        event.detail.origin === "vault-background-menu"
+      ) {
+        return;
+      }
+      this.showBackgroundMenu = false;
+      this.backgroundMenuPosition = { x: 0, y: 0 };
+    },
+    handleBackgroundContextMenu(position) {
+      if (!position) return;
+      this.backgroundMenuPosition = {
+        x: position.x || position.left || 0,
+        y: position.y || position.top || 0,
+      };
+      this.showBackgroundMenu = true;
+    },
+    handleBackgroundMenuAction(action) {
+      this.showBackgroundMenu = false;
+      if (action === "paste") {
+        this.handlePaste();
+      } else if (action === "new-folder") {
+        this.createFolderDirect();
+      } else if (action === "upload-file") {
+        this.handleUploadClick();
+      } else if (action === "properties") {
+        if (this.currentParentId !== null) {
+          this.showFileProperties(this.currentParentId);
+        }
       }
     },
 
@@ -4560,7 +4768,9 @@ export default {
         this.showAlert({
           type: "error",
           title: "Error",
-          message: `Some items could not be deleted: ${result.errors.map((e) => e.error).join(", ")}`,
+          message: `Some items could not be deleted: ${result.errors
+            .map((e) => e.error)
+            .join(", ")}`,
         });
       }
     },
@@ -4759,7 +4969,6 @@ export default {
   height: 16px;
   color: currentColor;
   display: block;
-  vertical-align: middle;
 }
 
 .breadcrumb-item {
@@ -5403,9 +5612,6 @@ export default {
   .password-modal-container {
     max-width: 100%;
     margin: 0 1rem;
-  }
-
-  .password-modal-content {
   }
 
   .password-modal-header,

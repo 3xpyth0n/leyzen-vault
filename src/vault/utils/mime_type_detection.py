@@ -7,8 +7,6 @@ Falls back to application/octet-stream only as a last resort.
 from __future__ import annotations
 
 import mimetypes
-from pathlib import Path
-from typing import BinaryIO
 
 # Try to import optional libraries for content-based detection
 try:

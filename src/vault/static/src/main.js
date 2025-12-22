@@ -17,7 +17,6 @@ if (typeof window !== "undefined") {
 
 // Initialize global utilities
 import { modalManager } from "./utils/ModalManager.js";
-import { folderPicker } from "./utils/FolderPicker.js";
 // Import encryption.js to initialize VaultCrypto wrapper for compatibility
 import "./services/encryption.js";
 import { decryptFileKey } from "./services/encryption.js";
@@ -31,7 +30,6 @@ import "./composables/useShareModal.js";
 // Make available globally for non-module scripts
 if (typeof window !== "undefined") {
   window.modalManager = modalManager;
-  window.folderPicker = folderPicker;
   window.decryptFileKey = decryptFileKey;
   window.getVaultBaseUrl = getVaultBaseUrl;
 }

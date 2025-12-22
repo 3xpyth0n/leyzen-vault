@@ -67,15 +67,13 @@ def _validate_origin() -> tuple[bool, str | None]:
         request_url = urlparse(request.url)
         expected_host = request_url.netloc.split(":")[0]  # Remove port
         expected_scheme = request_url.scheme
-        expected_origin = f"{expected_scheme}://{expected_host}"
     except Exception:
         # Fallback to request.host if url parsing fails
         expected_host = request.host.split(":")[0]
         expected_scheme = request.scheme
-        expected_origin = f"{expected_scheme}://{expected_host}"
 
     # Normalize expected origin for comparison
-    expected_origin_normalized = f"{expected_scheme.lower()}://{expected_host.lower()}"
+    f"{expected_scheme.lower()}://{expected_host.lower()}"
 
     # Check Origin header first (most reliable for POST requests)
     if origin:

@@ -8,7 +8,7 @@
     @dragleave.prevent="handleDragLeave"
   >
     <div v-if="!isDragOver" class="drop-zone-content">
-      <div class="drop-icon">📤</div>
+      <div class="drop-icon" v-html="uploadIcon"></div>
       <p class="drop-text">Drag and drop files here</p>
       <p class="drop-hint">or click to browse</p>
     </div>
@@ -34,6 +34,14 @@ export default {
     return {
       isDragOver: false,
     };
+  },
+  computed: {
+    uploadIcon() {
+      if (window.Icons && typeof window.Icons.upload === "function") {
+        return window.Icons.upload(48, "currentColor");
+      }
+      return "";
+    },
   },
   methods: {
     handleDragOver(event) {

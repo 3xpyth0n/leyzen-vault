@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fcntl
 import logging
+import multiprocessing
 import os
 import shutil
 import tempfile
@@ -19,6 +20,75 @@ from typing import Any
 from common.services.sync_validation_service import SyncValidationService
 
 logger = logging.getLogger(__name__)
+
+
+def _bg_sync_to_external_storage(
+    file_id: str, file_path_str: str, secret_key: str, s3_config: dict[str, Any]
+):
+    """Background process for external storage synchronization.
+
+    This function runs in a separate process to avoid blocking workers.
+    It handles its own errors and logs them accordingly.
+    """
+    import logging
+    import signal
+    from pathlib import Path
+
+    # Set up basic logging for this process
+    logging.basicConfig(level=logging.INFO)
+    bg_logger = logging.getLogger(f"bg-sync-{file_id}")
+
+    # Set a hard timeout for the entire process (2 minutes)
+    # This ensures the process is "killed" if it hangs indefinitely
+    def timeout_handler(signum, frame):
+        bg_logger.error(
+            f"[PROMOTION SYNC] Process timed out and was killed for file {file_id}"
+        )
+        exit(1)
+
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(120)
+
+    try:
+        from vault.services.external_storage_service import ExternalStorageService
+
+        # Mock app for ExternalStorageService
+        class MockApp:
+            def __init__(self, sk: str):
+                self.config = {"SECRET_KEY": sk}
+
+            def app_context(self):
+                class DummyCM:
+                    def __enter__(self):
+                        pass
+
+                    def __exit__(self, *args):
+                        pass
+
+                return DummyCM()
+
+        mock_app = MockApp(secret_key)
+        service = ExternalStorageService(secret_key, mock_app)
+        service._config = s3_config
+
+        path = Path(file_path_str)
+        if not path.exists():
+            bg_logger.warning(
+                f"[PROMOTION SYNC] File {file_id} not found at {file_path_str}"
+            )
+            return
+
+        # Read file data
+        file_data = path.read_bytes()
+
+        # Save to S3 (this might block, but it's in a separate process)
+        service.save_file(file_id, file_data)
+        bg_logger.info(
+            f"[PROMOTION SYNC] Successfully synced file {file_id} to external storage"
+        )
+
+    except Exception as e:
+        bg_logger.error(f"[PROMOTION SYNC] Failed to sync file {file_id}: {e}")
 
 
 class FilePromotionService:
@@ -139,7 +209,6 @@ class FilePromotionService:
                     # Instead, we validate by checking the hash directly against the whitelist.
                     # We already validated the source file, so we just need to verify the
                     # temp file hash matches the expected hash.
-                    import hashlib
 
                     temp_hash = self.validation_service.compute_file_hash(temp_file)
                     temp_size = temp_file.stat().st_size
@@ -195,36 +264,41 @@ class FilePromotionService:
                                         )
                                     )
                                     if storage_mode == "hybrid":
-                                        # Sync to S3 in background (non-blocking)
+                                        # Sync to S3 in background (non-blocking process)
                                         try:
-                                            from vault.services.external_storage_service import (
-                                                ExternalStorageService,
-                                            )
-                                            from vault.services.external_storage_sync_service import (
-                                                ExternalStorageSyncService,
+                                            from vault.services.external_storage_config_service import (
+                                                ExternalStorageConfigService,
                                             )
 
-                                            external_storage = ExternalStorageService(
-                                                secret_key, current_app
+                                            # Get S3 config to pass to the background process
+                                            s3_config = (
+                                                ExternalStorageConfigService.get_config(
+                                                    secret_key, current_app
+                                                )
                                             )
-                                            # Read file data for sync
-                                            file_data = target_file_path.read_bytes()
-                                            # Upload to S3 (non-blocking, log errors but don't fail)
-                                            try:
-                                                external_storage.save_file(
-                                                    file_id, file_data
+
+                                            if s3_config and s3_config.get("enabled"):
+                                                # Start background process for sync
+                                                # This avoids blocking the Gunicorn worker
+                                                p = multiprocessing.Process(
+                                                    target=_bg_sync_to_external_storage,
+                                                    args=(
+                                                        file_id,
+                                                        str(target_file_path),
+                                                        secret_key,
+                                                        s3_config,
+                                                    ),
                                                 )
+                                                p.daemon = True
+                                                p.start()
+
                                                 self._logger.info(
-                                                    f"[PROMOTION] Synced file {file_id} to external storage"
-                                                )
-                                            except Exception as sync_error:
-                                                self._logger.warning(
-                                                    f"[PROMOTION] Failed to sync file {file_id} to external storage: {sync_error}"
+                                                    f"[PROMOTION] Started background sync for file {file_id}"
                                                 )
                                         except Exception as hook_error:
-                                            # Don't fail promotion if sync fails
+                                            # Don't fail promotion if sync process fails to start
                                             self._logger.warning(
-                                                f"[PROMOTION] External storage sync hook failed: {hook_error}"
+                                                f"[PROMOTION] Failed to start background sync hook: {hook_error}"
                                             )
                         except Exception as e:
                             # Don't fail promotion if hook fails
@@ -240,7 +314,7 @@ class FilePromotionService:
                             f"[PROMOTION SECURITY] File {file_id} became invalid during promotion: {revalidation_error}"
                         )
                         return False, f"Revalidation failed: {revalidation_error}"
-                except Exception as e:
+                except Exception:
                     if temp_file and temp_file.exists():
                         temp_file.unlink()
                     raise
@@ -398,13 +472,13 @@ class FilePromotionService:
                             continue
 
                         # Validate file
-                        is_valid, error_msg = (
-                            self.validation_service.is_file_legitimate(item, base_dir)
-                        )
+                        (
+                            is_valid,
+                            error_msg,
+                        ) = self.validation_service.is_file_legitimate(item, base_dir)
 
                         if not is_valid:
                             # File is orphaned or invalid - delete it
-                            file_id = item.name
                             try:
                                 if not dry_run:
                                     item.unlink()

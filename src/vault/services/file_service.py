@@ -12,14 +12,10 @@ from typing import Any, Callable, TypeVar
 from vault.database.schema import (
     File,
     FileKey,
-    User,
-    VaultSpace,
-    VaultSpaceType,
     db,
 )
 from vault.database.transaction import db_transaction
 from vault.services.encryption_service import EncryptionService
-from vault.storage import FileStorage
 
 from vault.services.vaultspace_service import VaultSpaceService
 from vault.services.search_service import SearchService
@@ -351,8 +347,27 @@ class AdvancedFileService:
                 # Already deleted
                 return True
 
-            # Soft delete: set deleted_at timestamp instead of hard delete
-            file_obj.deleted_at = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+
+            # Soft delete the file/folder itself
+            file_obj.deleted_at = now
+
+            # If it's a folder, recursively soft delete all children
+            if file_obj.mime_type == "application/x-directory":
+
+                def _soft_delete_recursive(parent_id):
+                    children = (
+                        db.session.query(File)
+                        .filter_by(parent_id=parent_id, deleted_at=None)
+                        .all()
+                    )
+                    for child in children:
+                        child.deleted_at = now
+                        if child.mime_type == "application/x-directory":
+                            _soft_delete_recursive(child.id)
+
+                _soft_delete_recursive(file_id)
+
             db.session.flush()  # Flush to ensure state is saved
             return True
 
@@ -489,8 +504,33 @@ class AdvancedFileService:
                 f"User {user_id} does not have permission to restore file {file_id}"
             )
 
+        # Store the deletion timestamp to restore only related children
+        deletion_time = file_obj.deleted_at
+
         # Restore file by clearing deleted_at
         file_obj.deleted_at = None
+
+        # If it's a folder, recursively restore children that were deleted at the same time
+        if file_obj.mime_type == "application/x-directory":
+
+            def _restore_recursive(parent_id):
+                # Only restore children that were deleted at approximately the same time
+                # We use a small buffer of 1 second just in case of slight DB execution differences
+                # although in our new delete_file implementation they share the exact same 'now'
+                children = (
+                    db.session.query(File)
+                    .filter(
+                        File.parent_id == parent_id, File.deleted_at == deletion_time
+                    )
+                    .all()
+                )
+                for child in children:
+                    child.deleted_at = None
+                    if child.mime_type == "application/x-directory":
+                        _restore_recursive(child.id)
+
+            _restore_recursive(file_id)
+
         db.session.commit()
 
         # Re-index file after restore in background
@@ -561,21 +601,41 @@ class AdvancedFileService:
                 f"User {user_id} does not have permission to permanently delete file {file_id}"
             )
 
-        # Store storage_ref before deletion for physical file cleanup
-        storage_ref = file_obj.storage_ref
-        mime_type = file_obj.mime_type
+        # Collect all files to delete (recursively if folder)
+        files_to_delete = [file_obj]
+        if file_obj.mime_type == "application/x-directory":
+
+            def _collect_recursive(parent_id):
+                children = db.session.query(File).filter_by(parent_id=parent_id).all()
+                for child in children:
+                    files_to_delete.append(child)
+                    if child.mime_type == "application/x-directory":
+                        _collect_recursive(child.id)
+
+            _collect_recursive(file_id)
+
+        # Store storage info for cleanup
+        cleanup_info = [
+            (f.id, f.storage_ref, f.mime_type)
+            for f in files_to_delete
+            if f.storage_ref or f.mime_type == "application/x-directory"
+        ]
 
         # Perform permanent deletion in atomic transaction with retry
         def _permanent_delete_operation():
-            # Refresh file object to ensure we have latest state
-            db.session.refresh(file_obj)
-            # Delete all FileKeys (cascade will handle)
-            file_keys = self.encryption_service.get_all_file_keys(file_id)
-            for fk in file_keys:
-                db.session.delete(fk)
+            # Refresh all objects to ensure we have latest state
+            for f in files_to_delete:
+                db.session.refresh(f)
 
-            # Hard delete file from database
-            db.session.delete(file_obj)
+            for f in files_to_delete:
+                # Delete all FileKeys (cascade will handle but we do it explicitly to be safe)
+                file_keys = self.encryption_service.get_all_file_keys(f.id)
+                for fk in file_keys:
+                    db.session.delete(fk)
+
+                # Hard delete file from database
+                db.session.delete(f)
+
             db.session.flush()  # Flush to ensure state is saved
             return True
 
@@ -594,7 +654,7 @@ class AdvancedFileService:
             )
             raise
 
-        # Delete physical file from storage and remove from search index in background
+        # Delete physical files from storage and remove from search index in background
         # This prevents blocking the worker uvicorn on slow I/O operations
         # The database deletion is already committed, so we can safely do cleanup async
         from flask import current_app
@@ -605,41 +665,105 @@ class AdvancedFileService:
         search_index_service = self.search_service.index_service
 
         def _background_cleanup():
-            """Background cleanup of physical file and search index."""
+            """Background cleanup of physical files and search index."""
             # Use captured Flask app instance to create app context
             with flask_app.app_context():
-                if storage and storage_ref and mime_type != "application/x-directory":
-                    try:
-                        # Delete from both primary and source storage
-                        deleted = storage.delete_file(storage_ref)
+                for f_id, s_ref, m_type in cleanup_info:
+                    if storage and s_ref and m_type != "application/x-directory":
+                        try:
+                            # Delete from both primary and source storage
+                            deleted = storage.delete_file(s_ref)
 
-                        # Only log if a file was actually deleted
-                        if deleted:
-                            logger.info(
-                                f"Deleted physical file {storage_ref} during permanent delete"
+                            # Only log if a file was actually deleted
+                            if deleted:
+                                logger.info(
+                                    f"Deleted physical file {s_ref} during permanent delete"
+                                )
+                        except Exception as e:
+                            # Log warning - physical deletion failed for a reason other than "not found"
+                            logger.warning(
+                                f"Failed to delete physical file {s_ref} during permanent delete: {e}"
                             )
 
-                        # If not deleted (already missing), silently ignore
-                    except Exception as e:
-                        # Log warning - physical deletion failed for a reason other than "not found"
-                        logger.warning(
-                            f"Failed to delete physical file {storage_ref} during permanent delete: {e}"
-                        )
-
-                # Remove from search index
-                if search_index_service:
-                    try:
-                        search_index_service.remove_file(file_id)
-                    except Exception as e:
-                        logger.debug(
-                            f"Failed to remove file {file_id} from search index: {e}"
-                        )
+                    # Remove from search index
+                    if search_index_service:
+                        try:
+                            search_index_service.remove_file(f_id)
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to remove file {f_id} from search index: {e}"
+                            )
 
         # Execute cleanup in background thread to avoid blocking the worker
         cleanup_thread = threading.Thread(target=_background_cleanup, daemon=True)
         cleanup_thread.start()
 
         return True
+
+    def list_recent_files(
+        self,
+        user_id: str,
+        vaultspace_id: str | None = None,
+        limit: int = 50,
+        days: int = 30,
+    ) -> list[File]:
+        """List recent files across all accessible VaultSpaces.
+
+        Args:
+            user_id: User ID
+            vaultspace_id: Optional VaultSpace ID filter
+            limit: Maximum number of files to return
+            days: Number of days to look back
+
+        Returns:
+            List of recent File objects
+        """
+        from datetime import timedelta
+        from sqlalchemy import and_, or_
+
+        # Calculate cutoff date
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # Get VaultSpaces user has access to (owned or shared)
+        from vault.services.vaultspace_service import VaultSpaceService
+
+        vaultspace_service = VaultSpaceService()
+        accessible_vaultspaces = vaultspace_service.list_vaultspaces(user_id)
+        accessible_vaultspace_ids = [vs.id for vs in accessible_vaultspaces]
+
+        if not accessible_vaultspace_ids:
+            return []
+
+        # If vaultspace_id is provided, check if user has access to it
+        if vaultspace_id:
+            if vaultspace_id not in accessible_vaultspace_ids:
+                return []
+            target_vaultspace_ids = [vaultspace_id]
+        else:
+            target_vaultspace_ids = accessible_vaultspace_ids
+
+        # Query recent files
+        # 1. Must be in an accessible VaultSpace
+        # 2. Must not be deleted
+        # 3. Must be recently updated or created
+        query = db.session.query(File).filter(
+            and_(
+                File.vaultspace_id.in_(target_vaultspace_ids),
+                File.deleted_at.is_(None),
+                or_(
+                    File.updated_at >= cutoff_date,
+                    File.created_at >= cutoff_date,
+                ),
+            )
+        )
+
+        # Order by most recently updated first
+        query = query.order_by(File.updated_at.desc())
+
+        # Limit results
+        recent_files = query.limit(limit).all()
+
+        return recent_files
 
     def list_trash_files(
         self,
@@ -1693,7 +1817,7 @@ class AdvancedFileService:
 
         # Try to get from cache (but folder sizes are recalculated below, so cache may be stale)
         # We'll invalidate cache after recalculating folder sizes
-        cached_result = cache.get(cache_key_str)
+        cache.get(cache_key_str)
 
         query = db.session.query(File).filter_by(vaultspace_id=vaultspace_id)
         if parent_id:

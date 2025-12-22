@@ -102,8 +102,7 @@ function getFileIcon(fileName) {
       return window.Icons.file(48, "currentColor");
     }
   }
-  // Fallback to text if icons not available
-  return "📄";
+  return window.Icons.file(48, "currentColor");
 }
 
 // Helper function to create file card element for virtual list
@@ -111,15 +110,11 @@ function createFileCardElement(file, index) {
   const escapedFileName = escapeHtml(file.original_name);
   const escapedFileId = escapeHtml(file.file_id);
   const hasActiveShare = file.has_active_share === true;
-  const shareIcon = window.Icons?.link
-    ? window.Icons.link(14, "currentColor")
-    : "🔗";
+  const shareIcon = window.Icons.link(14, "currentColor");
   const shareIndicator = hasActiveShare
     ? `<span class="share-badge" title="This file has an active share link">${shareIcon} Shared</span>`
     : "";
-  const lockIcon = window.Icons?.lock
-    ? window.Icons.lock(14, "currentColor")
-    : "🔒";
+  const lockIcon = window.Icons.lock(14, "currentColor");
   const moreIcon = window.Icons?.moreVertical
     ? window.Icons.moreVertical(20, "currentColor")
     : "⋮";
@@ -252,15 +247,11 @@ function renderFilesGridView(files) {
       const escapedFileName = escapeHtml(file.original_name);
       const escapedFileId = escapeHtml(file.file_id);
       const hasActiveShare = file.has_active_share === true;
-      const shareIcon = window.Icons?.link
-        ? window.Icons.link(14, "currentColor")
-        : "🔗";
+      const shareIcon = window.Icons.link(14, "currentColor");
       const shareIndicator = hasActiveShare
         ? `<span class="share-badge" title="This file has an active share link">${shareIcon} Shared</span>`
         : "";
-      const lockIcon = window.Icons?.lock
-        ? window.Icons.lock(14, "currentColor")
-        : "🔒";
+      const lockIcon = window.Icons.lock(14, "currentColor");
       const moreIcon = window.Icons?.moreVertical
         ? window.Icons.moreVertical(20, "currentColor")
         : "⋮";
@@ -269,7 +260,9 @@ function renderFilesGridView(files) {
                 <div class="file-icon">${getFileIcon(file.original_name)}</div>
                 <div class="file-name" title="${escapedFileName}">${escapedFileName}</div>
                 <div class="file-meta">
-                    ${formatFileSize(file.size)} • ${formatDate(file.created_at)}
+                    ${formatFileSize(file.size)} • ${formatDate(
+                      file.created_at,
+                    )}
                 </div>
                 <div class="file-badge">
                     <span class="e2ee-badge">${lockIcon} E2EE</span>
@@ -320,9 +313,7 @@ function renderFilesListView(files) {
       const escapedFileName = escapeHtml(file.original_name);
       const escapedFileId = escapeHtml(file.file_id);
       const hasActiveShare = file.has_active_share === true;
-      const shareIcon = window.Icons?.link
-        ? window.Icons.link(14, "currentColor")
-        : "🔗";
+      const shareIcon = window.Icons.link(14, "currentColor");
       const shareIndicator = hasActiveShare ? shareIcon : "";
       const moreIcon = window.Icons?.moreVertical
         ? window.Icons.moreVertical(20, "currentColor")
@@ -330,7 +321,9 @@ function renderFilesListView(files) {
 
       return `
             <div class="file-row interactive" data-file-id="${escapedFileId}" data-id="${escapedFileId}">
-                <div class="file-row-icon">${getFileIcon(file.original_name)}</div>
+                <div class="file-row-icon">${getFileIcon(
+                  file.original_name,
+                )}</div>
                 <div class="file-row-name" title="${escapedFileName}">${escapedFileName} ${shareIndicator}</div>
                 <div class="file-row-size">${formatFileSize(file.size)}</div>
                 <div class="file-row-date">${formatDate(file.created_at)}</div>
@@ -352,9 +345,7 @@ function createFileRowElement(file, index) {
   const escapedFileName = escapeHtml(file.original_name);
   const escapedFileId = escapeHtml(file.file_id);
   const hasActiveShare = file.has_active_share === true;
-  const shareIcon = window.Icons?.link
-    ? window.Icons.link(14, "currentColor")
-    : "🔗";
+  const shareIcon = window.Icons.link(14, "currentColor");
   const shareIndicator = hasActiveShare ? shareIcon : "";
   const moreIcon = window.Icons?.moreVertical
     ? window.Icons.moreVertical(20, "currentColor")
@@ -396,15 +387,11 @@ function createFileCardElement(file, index) {
   const escapedFileName = escapeHtml(file.original_name);
   const escapedFileId = escapeHtml(file.file_id);
   const hasActiveShare = file.has_active_share === true;
-  const shareIcon = window.Icons?.link
-    ? window.Icons.link(14, "currentColor")
-    : "🔗";
+  const shareIcon = window.Icons.link(14, "currentColor");
   const shareIndicator = hasActiveShare
     ? `<span class="share-badge" title="This file has an active share link">${shareIcon} Shared</span>`
     : "";
-  const lockIcon = window.Icons?.lock
-    ? window.Icons.lock(14, "currentColor")
-    : "🔒";
+  const lockIcon = window.Icons.lock(14, "currentColor");
   const moreIcon = window.Icons?.moreVertical
     ? window.Icons.moreVertical(20, "currentColor")
     : "⋮";
@@ -710,9 +697,13 @@ async function uploadFile(file) {
               isFinite(timeRemaining)
             ) {
               if (timeRemaining < 60) {
-                progressTime.textContent = `${Math.round(timeRemaining)}s remaining`;
+                progressTime.textContent = `${Math.round(
+                  timeRemaining,
+                )}s remaining`;
               } else {
-                progressTime.textContent = `${Math.round(timeRemaining / 60)}m remaining`;
+                progressTime.textContent = `${Math.round(
+                  timeRemaining / 60,
+                )}m remaining`;
               }
             }
           }
@@ -961,8 +952,9 @@ async function generateExistingLinksHTML(activeLinks, fileId, key) {
       baseUrl = await window.getVaultBaseUrl();
     } else {
       // Fallback: try to import dynamically
-      const { getVaultBaseUrl } =
-        await import("/static/src/services/vault-config.js");
+      const { getVaultBaseUrl } = await import(
+        "/static/src/services/vault-config.js"
+      );
       baseUrl = await getVaultBaseUrl();
     }
   } catch (e) {
@@ -971,7 +963,9 @@ async function generateExistingLinksHTML(activeLinks, fileId, key) {
 
   const linksHTML = activeLinks
     .map((link) => {
-      const linkUrl = `${baseUrl}/share/${link.link_id}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
+      const linkUrl = `${baseUrl}/share/${
+        link.link_id
+      }#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
       const expiresText = link.expires_at
         ? `Expires: ${formatDate(link.expires_at)}`
         : "No expiration";
@@ -981,10 +975,16 @@ async function generateExistingLinksHTML(activeLinks, fileId, key) {
       return `
         <div class="existing-link-item">
           <div class="existing-link-info">
-            <input type="text" value="${escapeHtml(linkUrl)}" readonly class="share-url-input-small" />
-            <div class="link-meta">${escapeHtml(expiresText)} • ${escapeHtml(downloadsText)}</div>
+            <input type="text" value="${escapeHtml(
+              linkUrl,
+            )}" readonly class="share-url-input-small" />
+            <div class="link-meta">${escapeHtml(expiresText)} • ${escapeHtml(
+              downloadsText,
+            )}</div>
           </div>
-          <button class="btn btn-danger btn-small revoke-link-btn" data-link-token="${escapeHtml(link.link_id)}" title="Revoke link">
+          <button class="btn btn-danger btn-small revoke-link-btn" data-link-token="${escapeHtml(
+            link.link_id,
+          )}" title="Revoke link">
             Revoke
           </button>
         </div>
@@ -1135,14 +1135,17 @@ async function shareFile(fileId, key = null) {
         baseUrl = await window.getVaultBaseUrl();
       } else {
         // Fallback: try to import dynamically
-        const { getVaultBaseUrl } =
-          await import("/static/src/services/vault-config.js");
+        const { getVaultBaseUrl } = await import(
+          "/static/src/services/vault-config.js"
+        );
         baseUrl = await getVaultBaseUrl();
       }
     } catch (e) {
       baseUrl = window.location.origin;
     }
-    const shareUrl = `${baseUrl}/share/${linkToken}#key=${VaultCrypto.arrayToBase64url(key)}&file=${fileId}`;
+    const shareUrl = `${baseUrl}/share/${linkToken}#key=${VaultCrypto.arrayToBase64url(
+      key,
+    )}&file=${fileId}`;
 
     if (shareUrlInput) shareUrlInput.value = shareUrl;
 
@@ -1330,9 +1333,7 @@ async function deleteFile(fileId) {
 
   // Use styled confirmation modal instead of native confirm
   if (typeof window.showConfirmationModal === "function") {
-    const deleteIcon = window.Icons?.delete
-      ? window.Icons.delete(20, "currentColor")
-      : "🗑️";
+    const deleteIcon = window.Icons.delete(20, "currentColor");
     window.showConfirmationModal({
       icon: deleteIcon,
       title: "Delete File",

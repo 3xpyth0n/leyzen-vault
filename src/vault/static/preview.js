@@ -218,7 +218,9 @@ class PreviewManager {
       await this.loadPreview(fileId, mimeType, container);
     } catch (error) {
       if (container) {
-        const errorHtml = `<div class="preview-error">Failed to load preview: ${escapeHtml(error.message)}</div>`;
+        const errorHtml = `<div class="preview-error">Failed to load preview: ${escapeHtml(
+          error.message,
+        )}</div>`;
         setInnerHTML(container, errorHtml);
       }
     }
@@ -299,7 +301,9 @@ class PreviewManager {
       clearElement(container);
       container.appendChild(img);
     } catch (error) {
-      const errorHtml = `<div class="preview-error">Failed to load image: ${escapeHtml(error.message)}</div>`;
+      const errorHtml = `<div class="preview-error">Failed to load image: ${escapeHtml(
+        error.message,
+      )}</div>`;
       setInnerHTML(container, errorHtml);
     }
   }
@@ -358,7 +362,9 @@ class PreviewManager {
       clearElement(container);
       container.appendChild(pre);
     } catch (error) {
-      const errorHtml = `<div class="preview-error">Failed to load text: ${escapeHtml(error.message)}</div>`;
+      const errorHtml = `<div class="preview-error">Failed to load text: ${escapeHtml(
+        error.message,
+      )}</div>`;
       setInnerHTML(container, errorHtml);
     }
   }

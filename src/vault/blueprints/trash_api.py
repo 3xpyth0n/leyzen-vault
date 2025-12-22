@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.file_service import AdvancedFileService

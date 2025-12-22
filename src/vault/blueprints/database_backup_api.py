@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required, require_role
-from vault.database.schema import GlobalRole, User, DatabaseBackup
-from vault.database import db
+from vault.database.schema import GlobalRole
 from vault.config import is_setup_complete
 from vault.blueprints.utils import get_client_ip
 
@@ -441,9 +439,7 @@ def restore_database_backup_public():
                     )
 
                     # Use radical restore approach (DROP SCHEMA CASCADE)
-                    result = backup_service_worker.restore_backup_radical(
-                        backup_file, backup_id
-                    )
+                    backup_service_worker.restore_backup_radical(backup_file, backup_id)
 
                     # Clear any previous error
                     app_instance.config.pop("DATABASE_RESTORE_ERROR", None)
@@ -599,7 +595,7 @@ def restore_database_backup():
                         secret_key, app_instance
                     )
                     # Use radical restore approach (DROP SCHEMA CASCADE)
-                    result = backup_service_worker.restore_backup_radical(
+                    backup_service_worker.restore_backup_radical(
                         backup_path_final, backup_id
                     )
 

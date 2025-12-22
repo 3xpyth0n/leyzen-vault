@@ -10,9 +10,8 @@ from flask import (
     redirect,
     request,
     session,
-    url_for,
 )
-from urllib.parse import parse_qs, urlparse, quote
+from urllib.parse import urlparse, quote
 from datetime import datetime, timedelta, timezone
 
 from vault.database.schema import SSOProviderType, User

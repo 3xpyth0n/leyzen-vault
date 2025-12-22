@@ -360,7 +360,10 @@ function fmtHMS(s) {
     m = Math.floor((s % 3600) / 60),
     sec = s % 60;
   if (h > 0)
-    return `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
+    return `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(
+      2,
+      "0",
+    )}s`;
   if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
   return `${sec}s`;
 }
@@ -1778,7 +1781,9 @@ function updateMetricCharts(metrics, options = {}) {
       if (updateLabels) {
         setMetricValue(
           "memory",
-          `${formatBytes(used)} / ${formatBytes(total)} (${formatPercent(percent)})`,
+          `${formatBytes(used)} / ${formatBytes(total)} (${formatPercent(
+            percent,
+          )})`,
         );
       }
     }
@@ -2262,7 +2267,7 @@ document.addEventListener("DOMContentLoaded", () => {
     logoutForm.addEventListener("submit", function (event) {
       event.preventDefault();
       showConfirmationModal({
-        icon: "🚪",
+        icon: window.Icons.logout(20, "currentColor"),
         title: "Logout",
         message: "Are you sure you want to logout?",
         confirmText: "Logout",

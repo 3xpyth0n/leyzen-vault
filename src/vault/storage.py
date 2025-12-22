@@ -7,7 +7,6 @@ import re
 import secrets
 import unicodedata
 from pathlib import Path
-from typing import BinaryIO
 
 
 class FileStorage:
@@ -580,8 +579,6 @@ class FileStorage:
             IOError: If file move fails or integrity check fails
             FileNotFoundError: If temporary file doesn't exist
         """
-        import os
-        import shutil
 
         temp_file_path = self.get_temp_file_path(session_id)
 

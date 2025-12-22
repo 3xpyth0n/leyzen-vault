@@ -69,8 +69,6 @@ class ExternalStorageWorker:
         # Use app context manager to ensure proper context handling
         with self.app.app_context():
             try:
-                from vault.storage import FileStorage
-
                 if not self.local_storage:
                     logger.warning(
                         "[WORKER] Local storage not available, skipping hybrid sync"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from vault.extensions import db
 import logging
 
 from vault.database.migrations.base import Migration

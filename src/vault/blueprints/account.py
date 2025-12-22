@@ -144,8 +144,6 @@ def change_password():
     # Enhanced rate limiting for sensitive operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
-        from vault.blueprints.utils import get_client_ip
-
         client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
             client_ip,
@@ -305,8 +303,6 @@ def delete_account():
     # Enhanced rate limiting for sensitive operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
-        from vault.blueprints.utils import get_client_ip
-
         client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
             client_ip,

@@ -112,23 +112,53 @@ class ContextMenu {
   getMenuItems(type) {
     if (type === "file") {
       return [
-        { icon: "👁️", label: "Preview", action: "preview" },
+        {
+          icon: window.Icons.eye(16, "currentColor"),
+          label: "Preview",
+          action: "preview",
+        },
         { icon: "✏️", label: "Rename", action: "rename" },
         "divider",
         { icon: "⬇️", label: "Download", action: "download" },
-        { icon: "🔗", label: "Share", action: "share" },
-        { icon: "📋", label: "Properties", action: "properties" },
+        {
+          icon: window.Icons.link(16, "currentColor"),
+          label: "Share",
+          action: "share",
+        },
+        {
+          icon: window.Icons.clipboard(16, "currentColor"),
+          label: "Properties",
+          action: "properties",
+        },
         "divider",
-        { icon: "🗑️", label: "Delete", action: "delete", dangerous: true },
+        {
+          icon: window.Icons.trash(16, "currentColor"),
+          label: "Delete",
+          action: "delete",
+          dangerous: true,
+        },
       ];
     } else if (type === "folder") {
       return [
-        { icon: "📂", label: "Open", action: "open" },
+        {
+          icon: window.Icons.folder(16, "currentColor"),
+          label: "Open",
+          action: "open",
+        },
         "divider",
         { icon: "✏️", label: "Rename", action: "rename" },
-        { icon: "📋", label: "Properties", action: "properties" },
+        {
+          icon: window.Icons.clipboard(16, "currentColor"),
+          label: "Properties",
+          action: "properties",
+        },
         "divider",
-        { icon: "🗑️", label: "Delete", action: "delete", dangerous: true },
+        {
+          icon: window.Icons.trash(16, "currentColor"),
+          label: "Delete",
+          action: "delete",
+          dangerous: true,
+        },
       ];
     }
     return [];
@@ -297,7 +327,12 @@ class ContextMenu {
       if (window.loadFiles) {
         await window.loadFiles();
       } else if (window.Folders && window.Folders.loadFolderContents) {
-        const currentFolderId = window.currentFolderId || null;
+        const currentFolderId =
+          (window.Folders &&
+            typeof window.Folders.getCurrentFolderId === "function" &&
+            window.Folders.getCurrentFolderId()) ||
+          window.folderId ||
+          null;
         await window.Folders.loadFolderContents(currentFolderId);
       } else {
         // Fallback: reload page

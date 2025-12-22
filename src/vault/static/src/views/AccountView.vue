@@ -793,7 +793,9 @@ export default {
           const vs = vaultspacesList[i];
           this.reEncryptionCurrentIndex = i;
           this.currentVaultspaceName = vs.name;
-          this.reEncryptionStep = `Decrypting keys... ${i + 1}/${vaultspacesList.length}`;
+          this.reEncryptionStep = `Decrypting keys... ${i + 1}/${
+            vaultspacesList.length
+          }`;
           this.reEncryptionProgress = 10 + (i / vaultspacesList.length) * 30;
 
           try {
@@ -880,7 +882,9 @@ export default {
 
           this.reEncryptionCurrentIndex = processedCount;
           this.currentVaultspaceName = vs.name;
-          this.reEncryptionStep = `Re-encrypting keys... ${processedCount + 1}/${totalToProcess}`;
+          this.reEncryptionStep = `Re-encrypting keys... ${
+            processedCount + 1
+          }/${totalToProcess}`;
           this.reEncryptionProgress =
             45 + (processedCount / totalToProcess) * 30;
           processedCount++;
@@ -947,7 +951,9 @@ export default {
 
           this.reEncryptionCurrentIndex = updatedCount;
           this.currentVaultspaceName = vs.name;
-          this.reEncryptionStep = `Updating on server... ${updatedCount + 1}/${reencryptedKeys.size}`;
+          this.reEncryptionStep = `Updating on server... ${updatedCount + 1}/${
+            reencryptedKeys.size
+          }`;
           this.reEncryptionProgress =
             75 + (updatedCount / reencryptedKeys.size) * 20;
 
@@ -980,7 +986,9 @@ export default {
           if (updateErrors.length > 0) {
             errorMessage += "Errors:\n";
             updateErrors.forEach((e, idx) => {
-              errorMessage += `${idx + 1}. ${e.vaultspaceName || e.vaultspaceId}: ${e.error}\n`;
+              errorMessage += `${idx + 1}. ${
+                e.vaultspaceName || e.vaultspaceId
+              }: ${e.error}\n`;
             });
           }
           errorMessage +=

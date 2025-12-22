@@ -115,7 +115,7 @@ def build_postgres_service(env: Mapping[str, str]) -> dict:
     - Docker Compose validation prevents containers from starting with invalid configuration
     - Application validation provides better error messages and handles runtime configuration changes
     """
-    env_file_name = resolve_env_file_name(REPO_ROOT)
+    resolve_env_file_name(REPO_ROOT)
 
     # Parse PostgreSQL configuration from environment
     postgres_db = env.get("POSTGRES_DB", "leyzen_vault").strip()
@@ -422,7 +422,7 @@ def main() -> None:
         https_port = 8443
 
     # CLI script output - using print() for direct console output
-    print(f"[compose] Leyzen Vault service")
+    print("[compose] Leyzen Vault service")
     print(f"[compose] Number of replicas: {len(web_containers)}")
     print(f"[haproxy] HTTP port: {http_port}:80")
     if enable_https:

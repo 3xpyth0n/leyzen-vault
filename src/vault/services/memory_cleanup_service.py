@@ -53,18 +53,13 @@ class MemoryCleanupService:
 
         # Clear functools.lru_cache caches
         try:
-            import functools
-
             # This is a best-effort approach - we can't enumerate all caches
             # but we can clear known cache types
             cleared += 1
         except Exception:
             pass
 
-        # Clear any cachetools caches if available
         try:
-            import cachetools
-
             # Note: We can't enumerate all cache instances, but this is best effort
             cleared += 1
         except ImportError:

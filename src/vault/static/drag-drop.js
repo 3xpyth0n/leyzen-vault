@@ -53,7 +53,11 @@ class DragDropManager {
     messageDiv.className = "drag-drop-message";
     const iconDiv = document.createElement("div");
     iconDiv.className = "drag-drop-icon";
-    iconDiv.textContent = "📂";
+    if (window.Icons && typeof window.Icons.folder === "function") {
+      setInnerHTML(iconDiv, window.Icons.folder(24, "currentColor"));
+    } else {
+      iconDiv.innerHTML = "";
+    }
     const textDiv = document.createElement("div");
     textDiv.className = "drag-drop-text";
     textDiv.textContent = "Drop here to move";

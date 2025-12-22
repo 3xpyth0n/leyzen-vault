@@ -20,10 +20,10 @@ from vault.database.schema import GlobalRole
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.auth_service import AuthService
-from vault.services.rate_limiter import RateLimiter
 from vault.services.vaultspace_service import VaultSpaceService
 from vault.blueprints.validators import validate_email
 from vault.blueprints.utils import _settings
+from .utils import get_client_ip
 from common.captcha_helpers import (
     build_captcha_image_with_settings,
     get_captcha_store_for_app,
@@ -49,7 +49,6 @@ def _logger() -> FileLogger:
 
 def _get_audit():
     """Get audit service from Flask app config."""
-    from vault.services.audit import AuditService
 
     return current_app.config.get("VAULT_AUDIT")
 
@@ -268,7 +267,6 @@ def signup():
     Returns:
         JSON with user info, JWT token, and Personal VaultSpace info
     """
-    from vault.blueprints.utils import get_client_ip
 
     # Rate limiting: 5 attempts per minute per IP
     rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
@@ -423,7 +421,6 @@ def login():
         from flask import session
         from vault.blueprints.utils import (
             _settings,
-            get_client_ip,
             register_failed_attempt,
         )
         from vault.database.schema import SystemSettings, db
@@ -512,7 +509,7 @@ def login():
             return jsonify({"error": "Email/username and password are required"}), 400
 
         # Get settings and captcha store once
-        settings = _settings()
+        _settings()
         captcha_store = _get_captcha_store()
 
         # Check if this is a 2FA verification step (credentials already validated)
@@ -848,9 +845,6 @@ def check_auth():
 
     # Verify token is valid
     try:
-        from vault.middleware import get_current_user
-        from flask import g
-
         # Manually verify token (simplified check)
         secret_key = current_app.config.get("SECRET_KEY")
         if not secret_key:
@@ -937,7 +931,6 @@ def logout():
             current_app.logger.debug(f"Failed to blacklist token: {type(e).__name__}")
 
     # Log logout
-    from vault.blueprints.utils import get_client_ip
 
     user = get_current_user()
     client_ip = get_client_ip() or "unknown"
@@ -1000,7 +993,6 @@ def setup():
         400: If SMTP is not configured or email sending fails
         500: If account creation fails
     """
-    from vault.blueprints.utils import get_client_ip
 
     # Rate limiting: 5 attempts per minute per IP
     rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")

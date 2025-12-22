@@ -11,8 +11,8 @@ import ipaddress
 
 logger = logging.getLogger(__name__)
 
-from flask import Flask, current_app
-from werkzeug.middleware.proxy_fix import ProxyFix
+from flask import Flask, current_app  # noqa: E402
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 # Bootstrap common modules
 _COMMON_DIR = Path("/common")
@@ -147,14 +147,14 @@ from .blueprints.sharing_api import sharing_api_bp  # noqa: E402
 from .blueprints.sso_api import sso_api_bp  # noqa: E402
 from .blueprints.thumbnail_api import thumbnail_api_bp  # noqa: E402
 from .blueprints.trash_api import trash_api_bp  # noqa: E402
-from .blueprints.external_storage_api import (
+from .blueprints.external_storage_api import (  # noqa: E402
     external_storage_api_bp,
 )  # noqa: E402
-from .blueprints.database_backup_api import (
+from .blueprints.database_backup_api import (  # noqa: E402
     database_backup_api_bp,
 )  # noqa: E402
 from .blueprints.vaultspaces import vaultspace_api_bp  # noqa: E402
-from .config import (
+from .config import (  # noqa: E402
     VaultSettings,
     get_postgres_url,
     is_setup_complete,
@@ -431,7 +431,7 @@ def _get_or_generate_internal_api_token(
                         secrets_conn.execute(
                             text(
                                 """
-                                UPDATE system_secrets 
+                                UPDATE system_secrets
                                 SET encrypted_value = :encrypted_value, updated_at = NOW()
                                 WHERE key = :key
                                 """
@@ -460,7 +460,7 @@ def _get_or_generate_internal_api_token(
         except Exception:
             # leyzen_secrets role not available yet, fall back to regular connection
             raise
-    except Exception as secrets_error:
+    except Exception:
         # Fallback: use regular connection (for first startup)
         with app.app_context():
             # Ensure SystemSecrets table exists before storing
@@ -729,7 +729,6 @@ def _log_once_with_lock(
     Returns:
         True if this worker logged the message, False otherwise
     """
-    import os
     import fcntl
 
     # Try PostgreSQL lock first (preferred method)
@@ -1169,7 +1168,7 @@ def create_app(
             # Use lock to ensure only one worker logs the development mode warning
             try:
                 _log_dev_mode_warning_once(app, logger)
-            except Exception as e:
+            except Exception:
                 # If lock mechanism fails, log anyway to ensure warning is shown
                 warning_msg = (
                     "[WARNING] Application is running in DEVELOPMENT mode. "
@@ -1641,13 +1640,14 @@ def create_app(
                                 ):
                                     # File is in tmpfs but not in persistent storage - promote it
                                     try:
-                                        success, error_msg = (
-                                            promotion_service.promote_file(
-                                                file_id=storage_ref,
-                                                source_path=tmpfs_path,
-                                                target_dir=storage.source_dir,
-                                                base_dir=storage.storage_dir / "files",
-                                            )
+                                        (
+                                            success,
+                                            error_msg,
+                                        ) = promotion_service.promote_file(
+                                            file_id=storage_ref,
+                                            source_path=tmpfs_path,
+                                            target_dir=storage.source_dir,
+                                            base_dir=storage.storage_dir / "files",
                                         )
                                         if success:
                                             promoted_count += 1
@@ -2372,7 +2372,7 @@ def create_app(
     @app.route("/")
     def serve_vue_app_root():
         """Serve Vue.js SPA root - return index.html."""
-        from flask import make_response, redirect, request, send_file
+        from flask import make_response, redirect, request
         import re
 
         # Check setup status within app context
@@ -2406,7 +2406,7 @@ def create_app(
                 # Replace any absolute HTTPS URLs with HTTP URLs
                 html_content = re.sub(
                     r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
-                    rf"http://\1\2",
+                    r"http://\1\2",
                     html_content,
                     flags=re.IGNORECASE,
                 )
@@ -2497,7 +2497,7 @@ def create_app(
     @app.errorhandler(404)
     def serve_vue_app_for_404(e):
         """Serve Vue.js SPA for 404 errors (Vue Router will handle client-side routing)."""
-        from flask import request, send_file, jsonify, make_response, current_app
+        from flask import request, jsonify, make_response, current_app
 
         # Return JSON for API endpoints
         if request.path.startswith("/api/"):
@@ -2535,7 +2535,6 @@ def create_app(
         dist_index = static_dir / "index.html"
         if dist_index.exists():
             # Use the same logic as serve_vue_app_root to inject <base> tag for HTTP
-            from flask import make_response
             import re
 
             with open(dist_index, "r", encoding="utf-8") as f:
@@ -2548,7 +2547,7 @@ def create_app(
                 # Replace any absolute HTTPS URLs with HTTP URLs or relative URLs
                 html_content = re.sub(
                     r'https://([^"\'<>]+)(/static/[^"\'<>]+)',
-                    rf"http://\1\2",
+                    r"http://\1\2",
                     html_content,
                     flags=re.IGNORECASE,
                 )

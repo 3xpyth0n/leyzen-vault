@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any
 
 from vault.database.schema import (
     File,
-    FileKey,
     User,
     UserPinnedVaultSpace,
     VaultSpace,
@@ -17,7 +14,6 @@ from vault.database.schema import (
     db,
 )
 from vault.services.encryption_service import EncryptionService
-from vault.storage import FileStorage
 from vault.utils.valid_icons import is_valid_icon_name
 
 logger = logging.getLogger(__name__)
@@ -331,7 +327,6 @@ class VaultSpaceService:
             )
 
         # Get storage service to delete physical files
-        from vault.storage import FileStorage
         from flask import current_app
 
         storage = current_app.config.get("VAULT_STORAGE")

@@ -249,7 +249,9 @@ class SelectionManager {
     if (this.selectedIds.size === 0) return;
 
     const count = this.selectedIds.size;
-    const message = `Are you sure you want to delete ${count} item${count > 1 ? "s" : ""}?`;
+    const message = `Are you sure you want to delete ${count} item${
+      count > 1 ? "s" : ""
+    }?`;
 
     if (confirm(message)) {
       // Trigger delete for each selected item
@@ -339,7 +341,12 @@ class SelectionManager {
     try {
       // Get current folders and vaultspace info
       const folders = window.foldersList || [];
-      const currentFolderId = window.currentFolderId || null;
+      const currentFolderId =
+        (window.Folders &&
+          typeof window.Folders.getCurrentFolderId === "function" &&
+          window.Folders.getCurrentFolderId()) ||
+        window.folderId ||
+        null;
       const vaultspaceId =
         window.currentVaultspaceId ||
         (() => {
@@ -370,8 +377,9 @@ class SelectionManager {
           window.folderPicker = folderPicker;
         } catch (e1) {
           try {
-            const folderPickerModule2 =
-              await import("../src/utils/FolderPicker.js");
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
@@ -510,7 +518,12 @@ class SelectionManager {
       if (window.loadFiles) {
         await window.loadFiles();
       } else if (window.Folders && window.Folders.loadFolderContents) {
-        const currentFolderId = window.currentFolderId || null;
+        const currentFolderId =
+          (window.Folders &&
+            typeof window.Folders.getCurrentFolderId === "function" &&
+            window.Folders.getCurrentFolderId()) ||
+          window.folderId ||
+          null;
         await window.Folders.loadFolderContents(currentFolderId);
       }
 

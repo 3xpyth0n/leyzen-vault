@@ -16,7 +16,6 @@ from sqlalchemy import text as sql_text
 from botocore.exceptions import ClientError
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.backends import default_backend
 import argon2
 
 from vault.config import get_postgres_url
@@ -1319,7 +1318,7 @@ class DatabaseBackupService:
             logger.info(
                 f"[BACKUP] Starting backup {backup_id} (storage: {storage_type}) to {backup_path}"
             )
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 env=env,
                 capture_output=True,
@@ -1536,7 +1535,7 @@ class DatabaseBackupService:
                     actual_checksum = self._calculate_checksum(backup_path)
                     if actual_checksum != expected_checksum:
                         raise RuntimeError(
-                            f"Backup checksum mismatch: file may be corrupted"
+                            "Backup checksum mismatch: file may be corrupted"
                         )
 
                 validation_info = metadata.get("validation", {})
@@ -1859,7 +1858,6 @@ class DatabaseBackupService:
                 )
 
                 try:
-
                     # Rollback any pending transactions first
                     db.session.rollback()
 
@@ -1871,25 +1869,20 @@ class DatabaseBackupService:
                     pass
 
                 try:
-
                     db.session.close()
 
                 except Exception as e:
-
                     logger.warning(f"[RESTORE] Error closing session: {e}")
 
                 try:
-
                     db.session.remove()
 
                 except Exception as e:
-
                     logger.warning(f"[RESTORE] Error removing session: {e}")
 
                 # Verify database connection is valid
 
                 try:
-
                     # Test connection with a simple query
                     db.session.execute(sql_text("SELECT 1"))
 
@@ -1900,7 +1893,6 @@ class DatabaseBackupService:
                     )
 
                 except Exception as e:
-
                     logger.error(
                         f"[RESTORE] Database connection test failed: {e}", exc_info=True
                     )
@@ -1931,7 +1923,6 @@ class DatabaseBackupService:
                     # Check for validation errors - this is CRITICAL
 
                     if not validation_result.get("valid", False):
-
                         errors = validation_result.get("errors", [])
                         if errors:
                             error_msg = (
@@ -1979,7 +1970,6 @@ class DatabaseBackupService:
                     )
 
             except Exception as e:
-
                 logger.error(
                     f"[RESTORE] Error during post-restore operations: {e}",
                     exc_info=True,
@@ -2142,7 +2132,7 @@ class DatabaseBackupService:
                     backup_map[backup_id] = backup
 
             # Merge S3 backups
-            s3_backup_ids = {b.get("id") for b in s3_backups if b.get("id")}
+            {b.get("id") for b in s3_backups if b.get("id")}
             for s3_backup in s3_backups:
                 backup_id = s3_backup.get("id")
                 if not backup_id:

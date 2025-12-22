@@ -10,8 +10,6 @@ checks we expect before shipping changes.
 
 **Path conventions**: All paths in this document are relative to the repository root unless explicitly stated otherwise. For example:
 
-- `src/orchestrator/` refers to the `orchestrator/` directory inside the `src/` directory at the repository root
-- `infra/docker-proxy/` refers to the `docker-proxy/` directory inside the `infra/` directory at the repository root
 - When referencing files in code examples or documentation, paths starting with `src/` or `infra/` are relative to the repository root
 - When referencing files within Python code (e.g., imports), paths are relative to the Python module structure (e.g., `from common.env import ...` refers to `src/common/env.py`)
 
@@ -31,8 +29,6 @@ checks we expect before shipping changes.
 - `tools/cli/` - Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
-- `infra/monitoring/` - Monitoring infrastructure components (currently empty, reserved for future use).
-- `infra/queue/` - Queue infrastructure components (currently empty, reserved for future use).
 - `leyzenctl` - Deployment helper (Go CLI binary compiled by `install.sh`).
 
 ## Python guidelines
@@ -80,6 +76,7 @@ checks we expect before shipping changes.
 - **Python path bootstrap**: When importing `common.*` modules from
   entry points outside the `src/` directory, you must first bootstrap the Python path.
   The standard pattern is:
+
   1. Add `src/` to `sys.path` manually (this enables importing `common.path_setup`)
   2. Import `bootstrap_entry_point` from `common.path_setup`
   3. Call `bootstrap_entry_point()` to configure all paths (idempotent)
@@ -188,12 +185,14 @@ The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Bl
 The Vault application uses middleware components for authentication, authorization, and input validation:
 
 - **`jwt_auth.py`** - JWT authentication middleware providing:
+
   - `@jwt_required` decorator for protecting routes with JWT authentication
   - `get_current_user()` function to retrieve the authenticated user from the JWT token
   - Origin/Referer validation for additional security
   - JWT token validation and replay protection via `jti` (JWT ID) tracking
 
 - **`rbac.py`** - Role-Based Access Control (RBAC) middleware providing:
+
   - `@require_role(role_name)` decorator for role-based authorization
   - `@require_permission(permission_name)` decorator for permission-based authorization
   - Integration with user roles and permissions stored in the database
@@ -228,6 +227,7 @@ All middleware components are imported from `vault.middleware` and used as decor
   via `asset_version` when adding new bundles.
 
   **Note**: There is an important distinction between filesystem paths and URL paths:
+
   - Filesystem path: `src/orchestrator/static/dashboard.css` (used in Python code)
   - URL path: `/orchestrator/static/dashboard.css` (used in HTML templates)
 
@@ -428,6 +428,7 @@ Entrypoint scripts handle container initialization and user privilege management
 - **`src/orchestrator/entrypoint.sh`**: Simple script that ensures the `orchestrator` user owns the log directory when running as root, then drops privileges using `su-exec`. This pattern is suitable when the service doesn't need special filesystem permissions.
 
 - **`infra/docker-proxy/entrypoint.sh`**: Complex script that dynamically detects the Docker socket's group ownership and configures the `dockerproxy` user to access it. This is necessary because Docker socket permissions vary across different host configurations. The script:
+
   1. Detects the socket's group ID (GID)
   2. Finds or creates a group with that GID
   3. Adds the dockerproxy user to that group
@@ -461,7 +462,7 @@ Entrypoint scripts handle container initialization and user privilege management
 
 ## Verification & validation
 
-- Install and use pre-commit hooks: `pip install pre-commit && pre-commit install`
+- Install and use pre-commit hooks: `sudo apt install pre-commit && pre-commit install`
   The hooks automatically run Ruff, shellcheck, YAML validation, and other checks before each commit.
 - For Python syntax safety, run `python -m compileall src/orchestrator infra/docker-proxy`
   before committing.
@@ -481,18 +482,22 @@ Leyzen Vault follows a standardized naming convention for environment variables 
 Environment variables use specific prefixes to indicate their scope and purpose:
 
 - **`VAULT_*`**: Variables specific to Leyzen Vault core functionality only
+
   - Examples: `VAULT_URL`, `VAULT_MAX_UPLOADS_PER_HOUR`, `VAULT_MAX_FILE_SIZE_MB`
   - Used by: Vault application only
 
 - **`ORCH_*`**: Variables specific to the Orchestrator only
+
   - Examples: `ORCH_USER`, `ORCH_PASS`, `ORCH_WEB_CONTAINERS`, `ORCH_PORT`
   - Used by: Orchestrator application only
 
 - **`DOCKER_*`**: Variables for Docker/Docker Proxy configuration
+
   - Examples: `DOCKER_PROXY_URL`, `DOCKER_SOCKET_PATH`
   - Used by: Docker proxy service and orchestrator
 
 - **`LEYZEN_*`**: Variables for Leyzen Vault infrastructure/tooling
+
   - Examples: `LEYZEN_ENV_FILE`, `LEYZEN_ENVIRONMENT`
   - Used by: Build scripts, CLI tools, and multiple services
 
@@ -503,12 +508,14 @@ Environment variables use specific prefixes to indicate their scope and purpose:
 ### Best Practices
 
 1. **When adding new environment variables**:
+
    - Choose the appropriate prefix based on scope (VAULT*\*, ORCH*\_, DOCKER\_\_, LEYZEN\_\*, or no prefix)
    - Document the variable in `env.template` with description, defaults, and validation rules
    - Update validation in both Python (`src/*/config.py`) and Go (`tools/cli/cmd/validate.go`) if needed
    - Add the variable to the appropriate settings dataclass (VaultSettings or Settings)
 
 2. **When modifying existing variables**:
+
    - Maintain backward compatibility when possible
    - Update documentation in `env.template`
    - Update validation logic in both Python and Go implementations

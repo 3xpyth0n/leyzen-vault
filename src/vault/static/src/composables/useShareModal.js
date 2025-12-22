@@ -147,8 +147,9 @@ const getFileKey = async (
           let decryptFileKeyFunc = window.decryptFileKey;
           if (!decryptFileKeyFunc) {
             try {
-              const encryptionModule =
-                await import("../services/encryption.js");
+              const encryptionModule = await import(
+                "../services/encryption.js"
+              );
               decryptFileKeyFunc = encryptionModule.decryptFileKey;
             } catch (e) {
               // Fallback failed

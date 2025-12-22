@@ -35,7 +35,6 @@ try:
         env_values = load_env_with_priority()
     except Exception:
         # Fallback to os.environ if loading fails
-        import os
 
         env_values = dict(os.environ)
 

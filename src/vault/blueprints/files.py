@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
+from flask_wtf.csrf import generate_csrf as csrf
 import re
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
 from vault.middleware import get_current_user, jwt_required
-from ..models import FileMetadata
 from ..services.audit import AuditService
 from ..services.rate_limiter import RateLimiter
 from ..services.share_link_service import ShareService
@@ -239,7 +237,7 @@ def upload_file():
 
     # Get optional metadata
     mime_type = request.form.get("mime_type")
-    encrypted_tags = request.form.get("encrypted_tags")
+    request.form.get("encrypted_tags")
     encrypted_description = request.form.get("encrypted_description")
 
     # Store metadata in PostgreSQL
@@ -248,8 +246,6 @@ def upload_file():
     settings = current_app.config.get("VAULT_SETTINGS")
     # Use timezone-aware datetime with configured timezone
     if settings:
-        from zoneinfo import ZoneInfo
-
         current_time = datetime.now(settings.timezone)
     else:
         current_time = datetime.now(timezone.utc)
@@ -707,7 +703,7 @@ def download_file(file_id: str):
         return jsonify({"error": "Authentication required"}), 401
 
     # Get file from PostgreSQL using actual_file_id
-    from vault.database.schema import File, User, GlobalRole, db
+    from vault.database.schema import File, db
 
     file_obj = (
         db.session.query(File).filter_by(id=actual_file_id, deleted_at=None).first()
@@ -829,7 +825,7 @@ def list_files():
     audit = _get_audit()
 
     try:
-        from vault.database.schema import File, User, GlobalRole, db
+        from vault.database.schema import File, db
 
         share_service = _get_share_service()
 
@@ -1248,8 +1244,6 @@ def delete_file(file_id: str):
     # Enhanced rate limiting for delete operations
     rate_limiter = _get_rate_limiter()
     if rate_limiter:
-        from vault.blueprints.utils import get_client_ip
-
         client_ip = get_client_ip() or "unknown"
         is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
             client_ip,

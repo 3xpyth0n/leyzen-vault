@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from vault.database.schema import Quota, User, VaultSpace, File, db
+from vault.database.schema import Quota, VaultSpace, File, db
 from vault.services.vaultspace_service import VaultSpaceService
 
 
@@ -342,7 +342,7 @@ class QuotaService:
             }
 
         # Calculate percentage based on disk usage
-        disk_percentage = disk_usage.get("percentage", 0.0)
+        disk_usage.get("percentage", 0.0)
 
         # Calculate user's percentage of total disk
         user_percentage = (used / total_bytes * 100) if total_bytes > 0 else 0.0

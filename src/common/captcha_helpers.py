@@ -10,7 +10,6 @@ from __future__ import annotations
 import secrets
 from typing import TYPE_CHECKING, Callable
 
-from flask import session
 
 from common.captcha import (
     CaptchaStore,
@@ -45,14 +44,12 @@ def get_captcha_store_for_app(
     # Try to use database store, fallback to in-memory if database is not available
     try:
         app = current_app._get_current_object()
-        # Check if database is available by trying to import the model
-        try:
-            from vault.database.schema import CaptchaEntry
+        import importlib.util
 
-            # Database is available, use DatabaseCaptchaStore
+        spec = importlib.util.find_spec("vault.database.schema")
+        if spec is not None:
             return DatabaseCaptchaStore(ttl, app=app)
-        except (ImportError, RuntimeError):
-            # Database not available (e.g., orchestrator without shared DB), use in-memory
+        else:
             return CaptchaStore(ttl)
     except RuntimeError:
         # No application context, fallback to in-memory store

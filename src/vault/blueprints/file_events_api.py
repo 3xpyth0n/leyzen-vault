@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from datetime import timedelta
 from flask import (
@@ -21,7 +21,6 @@ from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 from vault.services.file_event_service import (
     FileEventService,
-    FileEventType,
     get_file_event_service,
 )
 

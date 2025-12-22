@@ -68,16 +68,16 @@ if [ -d "/data-source" ]; then
     # Count files before sync for logging
     source_file_count=$(find /data-source -type f 2>/dev/null | wc -l)
     log "Found ${source_file_count} files in /data-source"
-    
+
     rsync -a --update /data-source/ /data/ || {
       log "Error: Failed to synchronize from source (exit code: $?)"
       log "This may indicate a permission or filesystem issue"
     }
-    
+
     # Count files after sync
     data_file_count=$(find /data -type f 2>/dev/null | wc -l)
     log "Synchronized ${data_file_count} files to /data"
-    
+
     # Ensure vault user owns synced files
     if [ "$(id -u)" = "0" ]; then
       chown -R "${VAULT_USER}:${VAULT_USER}" /data 2>/dev/null || {
@@ -114,14 +114,14 @@ fi
 if [ "$1" = "uvicorn" ]; then
   LEYZEN_ENV="${LEYZEN_ENVIRONMENT:-}"
   LEYZEN_ENV=$(echo "$LEYZEN_ENV" | tr '[:upper:]' '[:lower:]' | xargs)
-  
+
   # Determine log level: debug for dev/development, error for production (default)
   if [ "$LEYZEN_ENV" = "dev" ] || [ "$LEYZEN_ENV" = "development" ]; then
     UVICORN_LOG_LEVEL="debug"
   else
     UVICORN_LOG_LEVEL="error"
   fi
-  
+
   # Check if --log-level already exists in arguments
   HAS_LOG_LEVEL=false
   for arg in "$@"; do
@@ -130,12 +130,12 @@ if [ "$1" = "uvicorn" ]; then
       break
     fi
   done
-  
+
   # Build new arguments array, replacing or adding --log-level
   TEMP_ARGS=""
   SKIP_NEXT=false
   ARG_COUNT=0
-  
+
   for arg in "$@"; do
     ARG_COUNT=$((ARG_COUNT + 1))
     if [ "$SKIP_NEXT" = true ]; then
@@ -154,7 +154,7 @@ if [ "$1" = "uvicorn" ]; then
       fi
     fi
   done
-  
+
   # Rebuild the argument list
   eval "set -- $TEMP_ARGS"
 fi
@@ -174,4 +174,3 @@ else
   log "Starting Leyzen Vault backend..."
   exec "$@"
 fi
-

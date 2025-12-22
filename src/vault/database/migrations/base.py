@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from sqlalchemy import inspect as sql_inspect
-from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.sql import text as sql_text
 
 from vault.database.schema import db

@@ -14,6 +14,7 @@ import {
   initializeUserMasterKey,
 } from "../services/keyManager";
 import { auth } from "../services/api";
+import { clipboardManager } from "../utils/clipboard";
 import { logger } from "../utils/logger.js";
 
 /**
@@ -132,6 +133,16 @@ export function useFileViewComposable(options = {}) {
   const handleViewChange = (mode) => {
     viewMode.value = mode;
     localStorage.setItem(viewModeStorageKey, mode);
+  };
+
+  /**
+   * Global keydown handler for Escape key
+   */
+  const handleGlobalKeydown = (event) => {
+    if (event.key === "Escape") {
+      clearSelection();
+      clipboardManager.clear();
+    }
   };
 
   /**
@@ -570,7 +581,12 @@ export function useFileViewComposable(options = {}) {
   };
 
   // Cleanup on unmount
+  onMounted(() => {
+    window.addEventListener("keydown", handleGlobalKeydown);
+  });
+
   onUnmounted(() => {
+    window.removeEventListener("keydown", handleGlobalKeydown);
     cleanup();
   });
 

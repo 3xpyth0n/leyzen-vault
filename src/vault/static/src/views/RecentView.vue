@@ -45,6 +45,7 @@
       propertiesFileId = null;
       propertiesVaultspaceId = null;
     "
+    @navigate="handleNavigate"
     @action="handlePropertiesAction"
   />
 
@@ -252,6 +253,7 @@
           @action="handleFileAction"
           @selection-change="handleSelectionChange"
           @rename="handleRename"
+          @item-context-menu="handleContextMenu"
         />
       </div>
     </main>
@@ -269,7 +271,7 @@ import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
 import BatchActions from "../components/BatchActions.vue";
 import CustomSelect from "../components/CustomSelect.vue";
-import { folderPicker } from "../utils/FolderPicker";
+import { clipboardManager } from "../utils/clipboard";
 import { decryptFileKey, decryptFile } from "../services/encryption.js";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import PasswordInput from "../components/PasswordInput.vue";
@@ -511,6 +513,38 @@ export default {
       loadRecent(true); // Force cache-busting on manual refresh
     };
 
+    const handleNavigate = (item) => {
+      if (!item) return;
+
+      // Logic for navigation:
+      // 1. Root: navigate to root, no selection
+      // 2. Folder/File: navigate to its PARENT and SELECT this item
+      const vaultspaceId = item.vaultspace_id || propertiesVaultspaceId.value;
+
+      if (item.isRoot) {
+        router.push(`/vaultspace/${vaultspaceId}`);
+        return;
+      }
+
+      // Determine parent folder ID
+      const parentId =
+        item.folder_id || item.parent_id || item.parentId || null;
+
+      // Set global pending selection so VaultSpaceView can pick it up
+      window.pendingSelection = {
+        id: item.id,
+        parentId: parentId,
+        vaultspaceId: vaultspaceId,
+      };
+
+      // Navigate to the parent folder in VaultSpaceView
+      const query = parentId ? { folder: parentId } : {};
+      router.push({
+        path: `/vaultspace/${vaultspaceId}`,
+        query,
+      });
+    };
+
     const handleItemClick = (item, event) => {
       if (item.mime_type === "application/x-directory") {
         router.push(`/vaultspace/${item.vaultspace_id}?folder=${item.id}`);
@@ -593,6 +627,11 @@ export default {
       } finally {
         deleting.value = false;
       }
+    };
+
+    const handleContextMenu = (item, event) => {
+      event.preventDefault();
+      showFileProperties(item.id, item.vaultspace_id);
     };
 
     const handleFileAction = async (action, item, newName = null) => {
@@ -780,6 +819,13 @@ export default {
         showPreview.value = true;
       } else if (action === "copy") {
         handleCopyAction(item);
+      } else if (action === "cut") {
+        if (clipboardManager) {
+          clipboardManager.cut([item]);
+          if (window.Notifications) {
+            window.Notifications.success("Ready to move");
+          }
+        }
       } else if (action === "move") {
         handleMoveAction(item);
       }
@@ -795,18 +841,7 @@ export default {
     };
 
     const getAllFolders = async (vaultspaceId) => {
-      // Get all folders in the vaultspace for the picker
-      try {
-        if (!vaultspaceId) {
-          return [];
-        }
-        const result = await files.list(vaultspaceId, null, 1, 100);
-        return (result.files || []).filter(
-          (f) => f.mime_type === "application/x-directory",
-        );
-      } catch (err) {
-        return [];
-      }
+      return [];
     };
 
     const handleCopy = async (item, newParentId, newName) => {
@@ -838,47 +873,10 @@ export default {
     };
 
     const handleMoveAction = async (item) => {
-      try {
-        // Get all folders in the vaultspace for the picker
-        const allFolders = await getAllFolders(item.vaultspace_id);
-
-        // Show folder picker
-        const selectedFolderId = await folderPicker.show(
-          allFolders,
-          null, // Current folder ID (not applicable in RecentView)
-          item.vaultspace_id,
-          item.mime_type === "application/x-directory" ? item.id : null,
-        );
-
-        // User cancelled
-        if (selectedFolderId === undefined) {
-          return;
-        }
-
-        // Perform move
-        await handleMove(item, selectedFolderId);
-
-        // Note: handleMove already calls loadRecent(true), but we ensure it here too
-        await loadRecent(true);
-
-        // Show success message
+      if (clipboardManager) {
+        clipboardManager.cut([item]);
         if (window.Notifications) {
-          window.Notifications.success(
-            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} moved successfully`,
-          );
-        }
-      } catch (err) {
-        if (err.message === "Cancelled") {
-          return; // User cancelled, don't show error
-        }
-        if (window.Notifications) {
-          window.Notifications.error(err.message || "Failed to move item");
-        } else {
-          showAlert({
-            type: "error",
-            title: "Error",
-            message: err.message || "Failed to move item",
-          });
+          window.Notifications.success("Ready to move");
         }
       }
     };
@@ -911,47 +909,10 @@ export default {
     };
 
     const handleCopyAction = async (item) => {
-      try {
-        // Get all folders in the vaultspace for the picker
-        const allFolders = await getAllFolders(item.vaultspace_id);
-
-        // Show folder picker
-        const selectedFolderId = await folderPicker.show(
-          allFolders,
-          null, // Current folder ID (not applicable in RecentView)
-          item.vaultspace_id,
-          item.mime_type === "application/x-directory" ? item.id : null,
-        );
-
-        // User cancelled
-        if (selectedFolderId === undefined) {
-          return;
-        }
-
-        // Perform copy
-        await handleCopy(item, selectedFolderId, null);
-
-        // Note: handleCopy already calls loadRecent(true), but we ensure it here too
-        await loadRecent(true);
-
-        // Show success message
+      if (clipboardManager) {
+        clipboardManager.copy([item]);
         if (window.Notifications) {
-          window.Notifications.success(
-            `${item.mime_type === "application/x-directory" ? "Folder" : "File"} copied successfully`,
-          );
-        }
-      } catch (err) {
-        if (err.message === "Cancelled") {
-          return; // User cancelled, don't show error
-        }
-        if (window.Notifications) {
-          window.Notifications.error(err.message || "Failed to copy item");
-        } else {
-          showAlert({
-            type: "error",
-            title: "Error",
-            message: err.message || "Failed to copy item",
-          });
+          window.Notifications.success("Copied to clipboard");
         }
       }
     };
@@ -1134,12 +1095,14 @@ export default {
       daysFilter,
       daysOptions,
       handleDaysChange,
+      handleNavigate,
       loadRecent,
       refreshRecent,
       handleItemClick,
       handleFileAction,
       handleRename,
       handleDeleteConfirm,
+      handleContextMenu,
       editingItemId,
       showDeleteConfirm,
       pendingDeleteFileName,

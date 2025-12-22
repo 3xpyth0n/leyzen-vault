@@ -7,15 +7,9 @@ function createDropdownHTML() {
   //   document
   //     .querySelector('meta[name="csrf-token"]')
   //     ?.getAttribute("content") || "";
-  const userIcon = window.Icons?.user
-    ? window.Icons.user(16, "currentColor")
-    : "👤";
-  const lockIcon = window.Icons?.lock
-    ? window.Icons.lock(16, "currentColor")
-    : "🔒";
-  const logoutIcon = window.Icons?.logout
-    ? window.Icons.logout(16, "currentColor")
-    : "🚪";
+  const userIcon = window.Icons.user(16, "currentColor");
+  const lockIcon = window.Icons.lock(16, "currentColor");
+  const logoutIcon = window.Icons.logout(16, "currentColor");
 
   return `
         <a href="/account" class="user-menu-item">
@@ -171,9 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
           e.stopPropagation();
 
           if (typeof window.showConfirmationModal === "function") {
-            const logoutIcon = window.Icons?.logout
-              ? window.Icons.logout(20, "currentColor")
-              : "🚪";
+            const logoutIcon = window.Icons.logout(20, "currentColor");
             window.showConfirmationModal({
               icon: logoutIcon,
               title: "Logout",

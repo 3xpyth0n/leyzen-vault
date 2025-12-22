@@ -5,7 +5,6 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, request
 
 from vault.database.schema import GlobalRole
-from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required, require_role
 from vault.services.quota_service import QuotaService
 
@@ -67,7 +66,7 @@ def create_quota():
     data = request.get_json()
     user_id = data.get("user_id")
     max_storage_bytes = data.get("max_storage_bytes")
-    max_files = data.get("max_files")
+    data.get("max_files")
 
     if not max_storage_bytes:
         return jsonify({"error": "max_storage_bytes is required"}), 400

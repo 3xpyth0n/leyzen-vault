@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -11,7 +10,7 @@ from flask import current_app
 from whoosh import index
 from whoosh.fields import ID, KEYWORD, NUMERIC, Schema, TEXT
 from whoosh.qparser import FuzzyTermPlugin, MultifieldParser, QueryParser
-from whoosh.query import And, Or, Term
+from whoosh.query import And, Term
 
 from vault.database.schema import File, db
 

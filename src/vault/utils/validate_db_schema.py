@@ -33,45 +33,14 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from flask import Flask
-from sqlalchemy import inspect, text
+from flask import Flask  # noqa: E402
+from sqlalchemy import inspect  # noqa: E402
 
-from vault.config import get_postgres_url
-from common.env import load_env_with_override
-from vault.database.schema import (
+from vault.config import get_postgres_url  # noqa: E402
+from common.env import load_env_with_override  # noqa: E402
+from vault.database.schema import (  # noqa: E402
     db,
     init_db,
-    # Explicitly import all models to ensure they're registered
-    SSOProvider,
-    User,
-    VaultSpace,
-    VaultSpaceKey,
-    UserPinnedVaultSpace,
-    File,
-    FileKey,
-    Webhook,
-    Device,
-    Quota,
-    Workflow,
-    WorkflowExecution,
-    BehaviorAnalytics,
-    VaultSpaceTemplate,
-    BackupJob,
-    ReplicationTarget,
-    PublicShareLink,
-    RateLimitTracking,
-    JWTBlacklist,
-    AuditLogEntry,
-    ShareLink,
-    EmailVerificationToken,
-    MagicLinkToken,
-    UserInvitation,
-    DomainRule,
-    SystemSettings,
-    SystemSecrets,
-    ApiKey,
-    SchemaMigration,
-    DatabaseBackup,
 )
 
 # Expected tables (from __tablename__ attributes)

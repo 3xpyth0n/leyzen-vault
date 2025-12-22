@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
+from vault.extensions import db
 import fcntl
-import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
 
 from vault.extensions import csrf
-from vault.services.rate_limiter import RateLimiter
 
 internal_api_bp = Blueprint("internal_api", __name__, url_prefix="/api/internal")
 
@@ -282,9 +279,11 @@ def sync_volumes():
 
                     if src_item.is_dir():
                         # Recursively sync subdirectories
-                        sub_synced, sub_rejected, sub_deleted = (
-                            sync_directory_validated(src_item, dst_item, base_dir)
-                        )
+                        (
+                            sub_synced,
+                            sub_rejected,
+                            sub_deleted,
+                        ) = sync_directory_validated(src_item, dst_item, base_dir)
                         synced += sub_synced
                         rejected += sub_rejected
                         deleted += sub_deleted
@@ -594,7 +593,7 @@ def security_metrics():
                 db.session.query(AuditLogEntry)
                 .filter(
                     AuditLogEntry.action.in_(suspicious_actions),
-                    AuditLogEntry.success == False,
+                    AuditLogEntry.success is False,
                     AuditLogEntry.timestamp >= recent_threshold,
                 )
                 .count()
@@ -639,7 +638,7 @@ def security_metrics():
             # Query audit logs for auth failures
             auth_failures_query = db.session.query(AuditLogEntry).filter(
                 AuditLogEntry.action.in_(["auth_login", "auth_signup"]),
-                AuditLogEntry.success == False,
+                AuditLogEntry.success is False,
                 AuditLogEntry.timestamp >= recent_threshold,
             )
 
@@ -687,7 +686,7 @@ def security_metrics():
             import psutil
 
             process = psutil.Process()
-            memory_info = process.memory_info()
+            process.memory_info()
             memory_percent = process.memory_percent()
             metrics["memory_usage_percent"] = round(memory_percent, 2)
         except ImportError:

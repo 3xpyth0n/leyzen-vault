@@ -6,7 +6,6 @@ import base64
 import logging
 import secrets
 import time
-from typing import Any
 
 from sqlalchemy.exc import InternalError, ProgrammingError
 

@@ -116,7 +116,7 @@ class DatabaseBackupConfigService:
                 # Handle case where table doesn't exist or has wrong structure
                 import logging
 
-                logger = logging.getLogger(__name__)
+                logging.getLogger(__name__)
                 error_str = str(db_error)
                 if "does not exist" in error_str or "UndefinedColumn" in error_str:
                     # Table or column doesn't exist yet - raise error as this should not happen during normal operation

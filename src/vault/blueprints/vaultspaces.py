@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
 
 from vault.services.vaultspace_service import VaultSpaceService
-from vault.blueprints.validators import validate_vaultspace_id, validate_file_id
+from vault.blueprints.validators import validate_vaultspace_id
 
 vaultspace_api_bp = Blueprint("vaultspace_api", __name__, url_prefix="/api/vaultspaces")
 

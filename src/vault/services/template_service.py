@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
 from typing import Any
 
 from vault.database.schema import (
-    File,
     VaultSpace,
     VaultSpaceTemplate,
     VaultSpaceType,
@@ -130,7 +128,7 @@ class TemplateService:
             # Return user's templates and public templates
             query = query.filter(
                 (VaultSpaceTemplate.created_by == user_id)
-                | (VaultSpaceTemplate.is_public == True)
+                | (VaultSpaceTemplate.is_public is True)
             )
         else:
             query = query.filter_by(is_public=True)

@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from vault.database.schema import File, db
+from vault.database.schema import db
 from vault.middleware import get_current_user, jwt_required
 from vault.services.file_service import AdvancedFileService
 from vault.services.thumbnail_service import ThumbnailService
-from vault.storage import FileStorage
 
 thumbnail_api_bp = Blueprint("thumbnail_api", __name__, url_prefix="/api/v2/thumbnails")
 
@@ -101,7 +100,7 @@ def generate_thumbnail(file_id: str):
 
     file_service = _get_file_service()
     thumbnail_service = _get_thumbnail_service()
-    storage = current_app.config.get("VAULT_STORAGE")
+    current_app.config.get("VAULT_STORAGE")
 
     try:
         # Check if user has access to file

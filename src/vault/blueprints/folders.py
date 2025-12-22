@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import secrets
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
@@ -134,8 +133,6 @@ def create_folder():
     # Get current time with timezone
     settings = current_app.config.get("VAULT_SETTINGS")
     if settings:
-        from zoneinfo import ZoneInfo
-
         current_time = datetime.now(settings.timezone)
     else:
         current_time = datetime.now(timezone.utc)
@@ -413,8 +410,6 @@ def update_folder(folder_id: str):
     # Get current time with timezone
     settings = current_app.config.get("VAULT_SETTINGS")
     if settings:
-        from zoneinfo import ZoneInfo
-
         current_time = datetime.now(settings.timezone)
     else:
         current_time = datetime.now(timezone.utc)

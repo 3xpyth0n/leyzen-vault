@@ -1,25 +1,27 @@
 <template>
   <teleport to="body">
-    <div
-      v-if="show"
-      class="file-menu-container"
-      ref="menuContainer"
-      :style="menuStyle"
-      @click.stop
-    >
-      <div class="file-menu-dropdown">
-        <button
-          v-for="option in menuOptions"
-          :key="option.action"
-          @click="handleOptionClick(option.action)"
-          class="file-menu-item"
-          :disabled="option.disabled"
-        >
-          <span class="file-menu-icon" v-html="getIcon(option.icon)"></span>
-          <span class="file-menu-label">{{ option.label }}</span>
-        </button>
+    <transition name="menu-fade">
+      <div
+        v-if="show"
+        class="file-menu-container"
+        ref="menuContainer"
+        :style="menuStyle"
+        @click.stop
+      >
+        <div class="file-menu-dropdown">
+          <button
+            v-for="option in menuOptions"
+            :key="option.action"
+            @click="handleOptionClick(option.action)"
+            class="file-menu-item"
+            :disabled="option.disabled"
+          >
+            <span class="file-menu-icon" v-html="getIcon(option.icon)"></span>
+            <span class="file-menu-label">{{ option.label }}</span>
+          </button>
+        </div>
       </div>
-    </div>
+    </transition>
   </teleport>
 </template>
 
@@ -39,10 +41,16 @@ export default {
       type: Object,
       default: () => ({ x: 0, y: 0 }),
     },
+    menuId: {
+      type: String,
+      default: null,
+    },
   },
   emits: ["close", "action"],
   data() {
     return {
+      internalMenuId:
+        this.menuId || `file-menu-${Math.random().toString(36).substr(2, 9)}`,
       clickOutsideHandler: null,
       escapeKeyHandler: null,
       scrollHandler: null,
@@ -52,6 +60,9 @@ export default {
       menuTop: 0,
       menuLeft: 0,
     };
+  },
+  mounted() {
+    window.addEventListener("close-all-menus", this.handleCloseAllMenus);
   },
   computed: {
     menuStyle() {
@@ -70,6 +81,11 @@ export default {
         (this.item.original_name &&
           this.item.original_name.toLowerCase().endsWith(".zip"));
       const options = [];
+
+      const isInVaultSpace =
+        this.$route &&
+        (this.$route.name === "VaultSpaceView" ||
+          (this.$route.path && this.$route.path.includes("/vaultspace/")));
 
       if (!isFolder) {
         options.push({
@@ -91,6 +107,12 @@ export default {
         action: "copy",
         label: "Copy",
         icon: "clipboard",
+        disabled: false,
+      });
+      options.push({
+        action: "cut",
+        label: "Cut",
+        icon: "scissors",
         disabled: false,
       });
 
@@ -152,12 +174,30 @@ export default {
         disabled: false,
       });
 
+      if (!isInVaultSpace) {
+        const allowedActions = [
+          "preview",
+          "share",
+          "star",
+          "download",
+          "properties",
+        ];
+        return options.filter((opt) => allowedActions.includes(opt.action));
+      }
+
       return options;
     },
   },
   watch: {
     show(newVal) {
       if (newVal) {
+        // Dispatch global event to close other menus
+        window.dispatchEvent(
+          new CustomEvent("close-all-menus", {
+            detail: { origin: this.internalMenuId },
+          }),
+        );
+
         // Position immediately with current coordinates
         this.positionMenu();
         this.$nextTick(() => {
@@ -186,9 +226,18 @@ export default {
     },
   },
   beforeUnmount() {
+    window.removeEventListener("close-all-menus", this.handleCloseAllMenus);
     this.cleanup();
   },
   methods: {
+    handleCloseAllMenus(event) {
+      // Ignore if event came from this component
+      if (event?.detail?.origin === this.internalMenuId) return;
+
+      if (this.show) {
+        this.$emit("close");
+      }
+    },
     getIcon(iconName) {
       if (!window.Icons || !window.Icons[iconName]) {
         return "";
@@ -559,5 +608,19 @@ export default {
 
 .file-menu-label {
   flex: 1;
+}
+
+/* Transition animations */
+.menu-fade-enter-active,
+.menu-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.menu-fade-enter-from,
+.menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
 }
 </style>

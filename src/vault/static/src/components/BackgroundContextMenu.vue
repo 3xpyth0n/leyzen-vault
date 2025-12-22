@@ -3,24 +3,21 @@
     <transition name="menu-fade">
       <div
         v-if="show"
-        class="vaultspace-menu-container"
+        class="bg-menu-container"
         ref="menuContainer"
         :style="menuStyle"
         @click.stop
       >
-        <div class="vaultspace-menu-dropdown">
+        <div class="bg-menu-dropdown">
           <button
             v-for="option in menuOptions"
             :key="option.action"
             @click="handleOptionClick(option.action)"
-            class="vaultspace-menu-item"
+            class="bg-menu-item"
             :disabled="option.disabled"
           >
-            <span
-              class="vaultspace-menu-icon"
-              v-html="getIcon(option.icon)"
-            ></span>
-            <span class="vaultspace-menu-label">{{ option.label }}</span>
+            <span class="bg-menu-icon" v-html="getIcon(option.icon)"></span>
+            <span class="bg-menu-label">{{ option.label }}</span>
           </button>
         </div>
       </div>
@@ -29,24 +26,21 @@
 </template>
 
 <script>
+import { clipboardManager } from "../utils/clipboard";
 export default {
-  name: "VaultSpaceMenuDropdown",
+  name: "BackgroundContextMenu",
   props: {
     show: {
-      type: Boolean,
-      default: false,
-    },
-    vaultspace: {
-      type: Object,
-      default: null,
-    },
-    isPinned: {
       type: Boolean,
       default: false,
     },
     position: {
       type: Object,
       default: () => ({ x: 0, y: 0 }),
+    },
+    canShowProperties: {
+      type: Boolean,
+      default: false,
     },
     menuId: {
       type: String,
@@ -58,7 +52,7 @@ export default {
     return {
       internalMenuId:
         this.menuId ||
-        `vaultspace-menu-${Math.random().toString(36).substr(2, 9)}`,
+        `bg-context-menu-${Math.random().toString(36).substr(2, 9)}`,
       clickOutsideHandler: null,
       escapeKeyHandler: null,
       scrollHandler: null,
@@ -67,6 +61,8 @@ export default {
       scrollableElements: [],
       menuTop: 0,
       menuLeft: 0,
+      hasClipboardItems: false,
+      unsubscribeClipboard: null,
     };
   },
   computed: {
@@ -77,38 +73,31 @@ export default {
       };
     },
     menuOptions() {
-      if (!this.vaultspace) return [];
-
       const options = [];
-
       options.push({
-        action: this.isPinned ? "unpin" : "pin",
-        label: this.isPinned ? "Unpin" : "Pin",
-        icon: this.isPinned ? "unpin" : "pin",
+        action: "paste",
+        label: "Paste",
+        icon: "clipboardPaste",
+        disabled: !this.hasClipboardItems,
+      });
+      options.push({
+        action: "new-folder",
+        label: "New Folder",
+        icon: "folderPlus",
         disabled: false,
       });
-
       options.push({
-        action: "change-icon",
-        label: "Change Icon",
-        icon: "sparkles",
+        action: "upload-file",
+        label: "Upload File",
+        icon: "upload",
         disabled: false,
       });
-
       options.push({
-        action: "rename",
-        label: "Rename",
-        icon: "edit",
-        disabled: false,
+        action: "properties",
+        label: "Properties",
+        icon: "info",
+        disabled: !this.canShowProperties,
       });
-
-      options.push({
-        action: "delete",
-        label: "Delete",
-        icon: "trash",
-        disabled: false,
-      });
-
       return options;
     },
   },
@@ -153,6 +142,10 @@ export default {
   beforeUnmount() {
     window.removeEventListener("close-all-menus", this.handleCloseAllMenus);
     this.cleanup();
+    if (this.unsubscribeClipboard) {
+      this.unsubscribeClipboard();
+      this.unsubscribeClipboard = null;
+    }
   },
   methods: {
     handleCloseAllMenus(event) {
@@ -170,7 +163,7 @@ export default {
       return window.Icons[iconName](16, "currentColor");
     },
     handleOptionClick(action) {
-      this.$emit("action", action, this.vaultspace);
+      this.$emit("action", action);
       this.closeMenu();
     },
     closeMenu() {
@@ -182,66 +175,53 @@ export default {
     },
     adjustPosition() {
       if (!this.$refs.menuContainer) return;
-
       const container = this.$refs.menuContainer;
-      const dropdown = container.querySelector(".vaultspace-menu-dropdown");
+      const dropdown = container.querySelector(".bg-menu-dropdown");
       if (!dropdown) return;
-
       const menuRect = dropdown.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-
       let adjustedTop = this.menuTop;
       let adjustedLeft = this.menuLeft;
-
       if (menuRect.right > viewportWidth - 10) {
         adjustedLeft = viewportWidth - menuRect.width - 10;
       }
       if (adjustedLeft < 10) {
         adjustedLeft = 10;
       }
-
       if (menuRect.bottom > viewportHeight - 10) {
         adjustedTop = viewportHeight - menuRect.height - 10;
       }
       if (adjustedTop < 10) {
         adjustedTop = 10;
       }
-
       this.menuTop = adjustedTop;
       this.menuLeft = adjustedLeft;
     },
     setupClickOutside() {
       this.cleanupClickOutside();
-
       this.clickOutsideHandler = (event) => {
         if (!this.show) {
           this.cleanupClickOutside();
           return;
         }
-
         if (!this.$refs.menuContainer) {
           this.cleanupClickOutside();
           return;
         }
-
         const menuContainer = this.$refs.menuContainer;
         const clickedElement = event.target;
-
         if (menuContainer.contains(clickedElement)) {
           return;
         }
-
         const clickedButton = clickedElement.closest(
-          ".vaultspace-menu-btn, .vaultspace-action-btn",
+          ".btn-menu, .btn-menu-grid",
         );
         if (clickedButton) {
           return;
         }
-
         this.$emit("close");
       };
-
       setTimeout(() => {
         if (this.show) {
           document.addEventListener(
@@ -250,18 +230,18 @@ export default {
             true,
           );
           document.addEventListener("click", this.clickOutsideHandler, true);
+          window.addEventListener("mousedown", this.clickOutsideHandler, true);
+          window.addEventListener("click", this.clickOutsideHandler, true);
         }
       }, 50);
     },
     setupEscapeKey() {
       this.cleanupEscapeKey();
-
       this.escapeKeyHandler = (event) => {
         if (event.key === "Escape" && this.show) {
           this.$emit("close");
         }
       };
-
       document.addEventListener("keydown", this.escapeKeyHandler);
     },
     cleanupClickOutside() {
@@ -272,6 +252,8 @@ export default {
           true,
         );
         document.removeEventListener("click", this.clickOutsideHandler, true);
+        window.removeEventListener("mousedown", this.clickOutsideHandler, true);
+        window.removeEventListener("click", this.clickOutsideHandler, true);
         this.clickOutsideHandler = null;
       }
     },
@@ -283,24 +265,20 @@ export default {
     },
     setupScroll() {
       this.cleanupScroll();
-
       const closeMenuHandler = () => {
         if (this.show) {
           this.closeMenu();
         }
       };
-
       this.scrollHandler = closeMenuHandler;
       this.wheelHandler = closeMenuHandler;
       this.touchMoveHandler = closeMenuHandler;
-
       document.addEventListener("scroll", this.scrollHandler, true);
       window.addEventListener("scroll", this.scrollHandler, true);
       document.addEventListener("wheel", this.wheelHandler, true);
       window.addEventListener("wheel", this.wheelHandler, true);
       document.addEventListener("touchmove", this.touchMoveHandler, true);
       window.addEventListener("touchmove", this.touchMoveHandler, true);
-
       if (document.body) {
         document.body.addEventListener("scroll", this.scrollHandler, true);
         document.body.addEventListener("wheel", this.wheelHandler, true);
@@ -310,7 +288,6 @@ export default {
           true,
         );
       }
-
       this.$nextTick(() => {
         const allElements = document.querySelectorAll("*");
         allElements.forEach((el) => {
@@ -340,7 +317,6 @@ export default {
         }
         this.scrollHandler = null;
       }
-
       if (this.wheelHandler) {
         document.removeEventListener("wheel", this.wheelHandler, true);
         window.removeEventListener("wheel", this.wheelHandler, true);
@@ -349,7 +325,6 @@ export default {
         }
         this.wheelHandler = null;
       }
-
       if (this.touchMoveHandler) {
         document.removeEventListener("touchmove", this.touchMoveHandler, true);
         window.removeEventListener("touchmove", this.touchMoveHandler, true);
@@ -362,7 +337,6 @@ export default {
         }
         this.touchMoveHandler = null;
       }
-
       this.scrollableElements.forEach((el) => {
         if (this.scrollHandler) {
           el.removeEventListener("scroll", this.scrollHandler, true);
@@ -382,31 +356,40 @@ export default {
       this.cleanupScroll();
     },
   },
+  created() {
+    this.hasClipboardItems =
+      clipboardManager && clipboardManager.hasItems
+        ? clipboardManager.hasItems()
+        : false;
+    if (clipboardManager && clipboardManager.subscribe) {
+      this.unsubscribeClipboard = clipboardManager.subscribe((items) => {
+        this.hasClipboardItems = Array.isArray(items) && items.length > 0;
+      });
+    }
+  },
 };
 </script>
 
 <style scoped>
-.vaultspace-menu-container {
+.bg-menu-container {
   position: fixed;
-  z-index: 10000;
+  z-index: 100002;
   top: 0;
   left: 0;
   pointer-events: auto;
 }
-
-.vaultspace-menu-dropdown {
+.bg-menu-dropdown {
   position: relative;
-  background: var(--bg-modal);
-  border: 1px solid var(--slate-grey);
+  background: var(--bg-primary);
+  border: 1px solid var(--slate-grey) !important;
   padding: 0.5rem;
   min-width: 180px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   overflow: visible;
   margin: 0;
   isolation: isolate;
 }
-
-.vaultspace-menu-item {
+.bg-menu-item {
   width: 100%;
   display: flex;
   align-items: center;
@@ -416,22 +399,18 @@ export default {
   background: transparent;
   color: var(--text-primary, #a9b7aa);
   cursor: pointer;
-
   font-size: 0.9rem;
   transition: background-color 0.2s;
   text-align: left;
 }
-
-.vaultspace-menu-item:hover:not(:disabled) {
+.bg-menu-item:hover:not(:disabled) {
   background: #004225;
 }
-
-.vaultspace-menu-item:disabled {
+.bg-menu-item:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-.vaultspace-menu-icon {
+.bg-menu-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -439,13 +418,11 @@ export default {
   height: 16px;
   flex-shrink: 0;
 }
-
-.vaultspace-menu-icon svg {
+.bg-menu-icon svg {
   width: 16px;
   height: 16px;
 }
-
-.vaultspace-menu-label {
+.bg-menu-label {
   flex: 1;
 }
 

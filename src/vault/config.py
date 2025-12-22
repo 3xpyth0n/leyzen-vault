@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from typing import Any
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,10 +14,8 @@ from common.constants import (
     CAPTCHA_STORE_TTL_SECONDS_DEFAULT,
     LOGIN_CSRF_TTL_SECONDS_DEFAULT,
     PROXY_TRUST_COUNT_DEFAULT,
-    TIMEZONE_DEFAULT,
 )
 from common.env import (
-    load_env_with_override,
     load_env_with_priority,
     parse_timezone,
 )

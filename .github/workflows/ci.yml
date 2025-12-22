@@ -81,7 +81,7 @@ jobs:
           EOF
 
       - name: Check Prettier formatting
-        run: npx prettier@3.7.1 --check .
+        run: npx prettier@3.1.0 --check .
 
       - name: Check Black formatting
         run: black --check .
@@ -204,7 +204,7 @@ jobs:
               if pkg_path.exists():
                   for pyfile in pkg_path.rglob("*.py"):
                       parts = pyfile.with_suffix("").parts
-                      
+
                       # Check if this is a module that can't be imported normally (e.g., has hyphens)
                       # For modules in infra/docker-proxy, use spec_from_file_location
                       if parts[0] == "infra" and "docker-proxy" in parts:

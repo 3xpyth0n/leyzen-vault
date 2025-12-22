@@ -43,7 +43,24 @@
             </div>
             <div class="property-row">
               <span class="property-label">Location:</span>
-              <span class="property-value">{{ getLocation() }}</span>
+              <div
+                class="property-value breadcrumb-path"
+                ref="breadcrumbContainer"
+              >
+                <template
+                  v-for="(item, index) in breadcrumbPath"
+                  :key="item.id || 'root'"
+                >
+                  <span v-if="index > 0" class="breadcrumb-separator">/</span>
+                  <button
+                    class="breadcrumb-link"
+                    @click="handleBreadcrumbClick(item)"
+                    :title="item.name"
+                  >
+                    {{ item.name }}
+                  </button>
+                </template>
+              </div>
             </div>
           </div>
 
@@ -94,8 +111,9 @@
 </template>
 
 <script>
-import { ref, watch } from "vue";
-import { files } from "../services/api";
+import { ref, watch, nextTick } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { files, vaultspaces } from "../services/api";
 
 export default {
   name: "FileProperties",
@@ -113,12 +131,97 @@ export default {
       required: true,
     },
   },
-  emits: ["close"],
+  emits: ["close", "navigate"],
   setup(props, { emit }) {
+    const router = useRouter();
+    const route = useRoute();
     const loading = ref(false);
     const error = ref(null);
     const file = ref(null);
     const permissions = ref(null);
+    const breadcrumbPath = ref([]);
+    const breadcrumbContainer = ref(null);
+    const vaultspace = ref(null);
+
+    const scrollToRight = () => {
+      nextTick(() => {
+        if (breadcrumbContainer.value) {
+          breadcrumbContainer.value.scrollLeft =
+            breadcrumbContainer.value.scrollWidth;
+        }
+      });
+    };
+
+    const fetchBreadcrumbs = async (targetFile) => {
+      const path = [];
+      let currentId = targetFile.id;
+      let currentParentId = targetFile.parent_id;
+
+      // Add the file itself as the last segment
+      path.unshift({
+        id: targetFile.id,
+        name: targetFile.original_name || targetFile.name,
+        parentId: targetFile.parent_id,
+        isRoot: false,
+        isFile: true,
+      });
+
+      // Traverse up to find all parent folders
+      let depth = 0;
+      const maxDepth = 50;
+      while (currentParentId && depth < maxDepth) {
+        try {
+          const parentData = await files.get(
+            currentParentId,
+            props.vaultspaceId,
+          );
+          if (parentData && parentData.file) {
+            path.unshift({
+              id: parentData.file.id,
+              name: parentData.file.original_name || parentData.file.name,
+              parentId: parentData.file.parent_id,
+              isRoot: false,
+              isFile: false,
+            });
+            currentParentId = parentData.file.parent_id;
+          } else {
+            break;
+          }
+        } catch (err) {
+          break;
+        }
+        depth++;
+      }
+
+      // Add the VaultSpace root as the first segment
+      if (!vaultspace.value) {
+        try {
+          vaultspace.value = await vaultspaces.get(props.vaultspaceId);
+        } catch (err) {
+          // Fallback if vaultspace loading fails
+        }
+      }
+
+      path.unshift({
+        id: null,
+        name: vaultspace.value?.name || "Home",
+        parentId: null,
+        isRoot: true,
+        isFile: false,
+      });
+
+      breadcrumbPath.value = path;
+    };
+
+    const handleBreadcrumbClick = (item) => {
+      // Logic for navigation and selection:
+      // 1. Root: navigate to root, no selection
+      // 2. Folder: navigate to its PARENT and SELECT this folder
+      // 3. File: navigate to its PARENT and SELECT this file
+
+      emit("navigate", item);
+      close();
+    };
 
     const loadProperties = async () => {
       if (!props.fileId || !props.vaultspaceId) return;
@@ -130,6 +233,10 @@ export default {
         // Load file details
         const fileData = await files.get(props.fileId, props.vaultspaceId);
         file.value = fileData.file;
+
+        // Fetch full breadcrumb path
+        await fetchBreadcrumbs(file.value);
+        scrollToRight();
 
         // Load permissions (if available in fileData)
         if (fileData.permissions) {
@@ -316,7 +423,9 @@ export default {
       formatSize,
       formatDateTime,
       getFileType,
-      getLocation,
+      breadcrumbPath,
+      breadcrumbContainer,
+      handleBreadcrumbClick,
     };
   },
 };
@@ -439,6 +548,61 @@ export default {
   min-width: 0;
   line-height: 1.5;
   margin-left: auto;
+}
+
+.breadcrumb-path {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+}
+
+.breadcrumb-path::before {
+  content: "";
+  margin-left: auto;
+}
+
+.breadcrumb-path::-webkit-scrollbar {
+  height: 1px;
+}
+
+.breadcrumb-path::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.breadcrumb-path::-webkit-scrollbar-thumb {
+  background: var(--accent);
+}
+
+.breadcrumb-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--primary, #3b82f6);
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.breadcrumb-link:hover {
+  text-decoration: underline;
+  color: var(--primary-hover, #2563eb);
+}
+
+.breadcrumb-separator {
+  color: var(--text-secondary, #a9b7aa);
+  opacity: 0.5;
+  font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .loading,

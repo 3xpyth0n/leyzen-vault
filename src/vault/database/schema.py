@@ -9,7 +9,6 @@ from typing import Any
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -1961,7 +1960,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
             role_check = conn.execute(
                 text(
                     """
-                    SELECT rolname FROM pg_roles 
+                    SELECT rolname FROM pg_roles
                     WHERE rolname IN ('leyzen_app', 'leyzen_migrator', 'leyzen_secrets', 'leyzen_orchestrator')
                     """
                 )
@@ -1974,7 +1973,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 secrets_check = conn.execute(
                     text(
                         """
-                        SELECT key FROM system_secrets 
+                        SELECT key FROM system_secrets
                         WHERE key IN (:key1, :key2, :key3, :key4)
                         """
                     ),
@@ -1987,7 +1986,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 )
                 existing_secret_keys = {row[0] for row in secrets_check.fetchall()}
 
-            except Exception as e:
+            except Exception:
                 # If system_secrets table doesn't exist yet, assume no passwords exist
                 existing_secret_keys = set()
 
@@ -2161,8 +2160,8 @@ def init_db_roles(app: Any, secret_key: str) -> None:
             tables_result = conn.execute(
                 text(
                     """
-                    SELECT tablename FROM pg_tables 
-                    WHERE schemaname = 'public' 
+                    SELECT tablename FROM pg_tables
+                    WHERE schemaname = 'public'
                     AND tablename != 'system_secrets'
                     ORDER BY tablename
                     """
@@ -2239,11 +2238,9 @@ def init_db_roles(app: Any, secret_key: str) -> None:
         # (We're using a new admin connection, so use_admin_connection=True)
         # IMPORTANT: Store passwords even if transaction failed - passwords were already set in PostgreSQL
         if passwords_to_store:
-
             storage_errors = []
             for password_key, password_value in passwords_to_store.items():
                 try:
-
                     DBPasswordService.store_password(
                         secret_key,
                         password_key,
@@ -2682,7 +2679,6 @@ def init_db(app) -> bool:
         # Drop indexes before db.create_all() to prevent duplicate index errors
         try:
             from sqlalchemy.sql import text as sql_text
-            import sys
 
             # Clean up indexes before creating tables
             all_problematic_indexes = [
@@ -2808,8 +2804,8 @@ def init_db(app) -> bool:
                             index_check = db.session.execute(
                                 sql_text(
                                     """
-                                    SELECT indexname FROM pg_indexes 
-                                    WHERE tablename = :table_name 
+                                    SELECT indexname FROM pg_indexes
+                                    WHERE tablename = :table_name
                                     AND schemaname = 'public'
                                 """
                                 ),
@@ -2835,7 +2831,6 @@ def init_db(app) -> bool:
                         table_def = model_class.__table__
                         columns = []
                         from sqlalchemy.dialects import postgresql
-                        from sqlalchemy.schema import CreateTable
 
                         # Use SQLAlchemy's dialect to get correct PostgreSQL types
                         for col in table_def.columns:
@@ -2892,8 +2887,8 @@ def init_db(app) -> bool:
                                     sql_text(
                                         """
                                         SELECT EXISTS (
-                                            SELECT 1 FROM pg_indexes 
-                                            WHERE indexname = :idx_name 
+                                            SELECT 1 FROM pg_indexes
+                                            WHERE indexname = :idx_name
                                             AND schemaname = 'public'
                                         )
                                     """
@@ -2965,8 +2960,8 @@ def init_db(app) -> bool:
                         sql_text(
                             """
                             SELECT EXISTS (
-                                SELECT 1 FROM pg_indexes 
-                                WHERE indexname = :idx_name 
+                                SELECT 1 FROM pg_indexes
+                                WHERE indexname = :idx_name
                                 AND schemaname = 'public'
                             )
                         """
@@ -2979,7 +2974,7 @@ def init_db(app) -> bool:
                         db.session.execute(sql_text(f'DROP INDEX "{idx_name}" CASCADE'))
                         db.session.commit()
 
-                except Exception as drop_err:
+                except Exception:
                     db.session.rollback()
                     # Ignore errors - index may not exist or already dropped
                     pass
@@ -3013,7 +3008,6 @@ def init_db(app) -> bool:
                 secret_key = app.config.get("SECRET_KEY")
 
                 if secret_key:
-
                     init_db_roles(app, secret_key)
 
                 else:
@@ -3091,8 +3085,8 @@ def init_db(app) -> bool:
                                 tables_result = conn.execute(
                                     text(
                                         """
-                                        SELECT tablename FROM pg_tables 
-                                        WHERE schemaname = 'public' 
+                                        SELECT tablename FROM pg_tables
+                                        WHERE schemaname = 'public'
                                         AND tablename != 'system_secrets'
                                         ORDER BY tablename
                                         """
@@ -3145,7 +3139,6 @@ def init_db(app) -> bool:
             # This worker performed initialization
             initialization_performed = True
         except Exception as e:
-            import sys
             import traceback
 
             # Check if it's a duplicate/already exists error
@@ -3261,7 +3254,6 @@ def init_db(app) -> bool:
                             max_create_attempts = 3
 
                             for create_attempt in range(1, max_create_attempts + 1):
-
                                 # First, check if table exists (it might exist but not be detected)
                                 try:
                                     from sqlalchemy import inspect as sql_inspect
@@ -3280,8 +3272,8 @@ def init_db(app) -> bool:
                                         index_check = db.session.execute(
                                             sql_text(
                                                 """
-                                                SELECT indexname FROM pg_indexes 
-                                                WHERE tablename = :table_name 
+                                                SELECT indexname FROM pg_indexes
+                                                WHERE tablename = :table_name
                                                 AND schemaname = 'public'
                                             """
                                             ),
@@ -3315,11 +3307,11 @@ def init_db(app) -> bool:
                                                             app_logger.log(log_msg)
                                                         else:
                                                             logger.warning(log_msg)
-                                    except Exception as cleanup_error:
+                                    except Exception:
                                         # Ignore cleanup errors - continue with table creation
                                         pass
 
-                                except Exception as pre_check_error:
+                                except Exception:
                                     # Continue with table creation even if pre-check fails
                                     pass
 
@@ -3332,8 +3324,8 @@ def init_db(app) -> bool:
                                         index_check = db.session.execute(
                                             sql_text(
                                                 """
-                                                SELECT indexname FROM pg_indexes 
-                                                WHERE tablename = :table_name 
+                                                SELECT indexname FROM pg_indexes
+                                                WHERE tablename = :table_name
                                                 AND schemaname = 'public'
                                             """
                                             ),
@@ -3371,7 +3363,7 @@ def init_db(app) -> bool:
                                                             app_logger.log(log_msg)
                                                         else:
                                                             logger.warning(log_msg)
-                                    except Exception as cleanup_error:
+                                    except Exception:
                                         # Ignore cleanup errors - continue with table creation
                                         pass
 
@@ -3431,7 +3423,6 @@ def init_db(app) -> bool:
                                     existing_tables_after = inspector.get_table_names()
 
                                     if table_name in existing_tables_after:
-
                                         table_created = True
                                         break
                                     else:
@@ -3518,7 +3509,7 @@ def init_db(app) -> bool:
                         )
                         db.session.commit()
 
-                    except Exception as create_table_error:
+                    except Exception:
                         # Table might already exist, that's OK
                         db.session.rollback()
 
@@ -3551,7 +3542,7 @@ def init_db(app) -> bool:
                         )
                         db.session.commit()
 
-                    except Exception as index_error:
+                    except Exception:
                         db.session.rollback()
 
                     # Clear cache

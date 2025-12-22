@@ -537,7 +537,12 @@ class KeyboardShortcuts {
 
       // Load folder picker
       const folders = window.foldersList || [];
-      const currentFolderId = window.currentFolderId || null;
+      const currentFolderId =
+        (window.Folders &&
+          typeof window.Folders.getCurrentFolderId === "function" &&
+          window.Folders.getCurrentFolderId()) ||
+        window.folderId ||
+        null;
       let folderPicker = window.folderPicker;
       if (!folderPicker) {
         try {
@@ -548,8 +553,9 @@ class KeyboardShortcuts {
           window.folderPicker = folderPicker;
         } catch (e1) {
           try {
-            const folderPickerModule2 =
-              await import("../src/utils/FolderPicker.js");
+            const folderPickerModule2 = await import(
+              "../src/utils/FolderPicker.js"
+            );
             folderPicker = folderPickerModule2.folderPicker;
             window.folderPicker = folderPicker;
           } catch (e2) {
@@ -585,7 +591,9 @@ class KeyboardShortcuts {
 
         if (window.Notifications) {
           window.Notifications.success(
-            `${clipboardItems.length} item${clipboardItems.length > 1 ? "s" : ""} moved`,
+            `${clipboardItems.length} item${
+              clipboardItems.length > 1 ? "s" : ""
+            } moved`,
           );
         }
 
@@ -593,16 +601,78 @@ class KeyboardShortcuts {
         clipboardManager.clear();
       } else {
         // Copy items
-        const copyPromises = clipboardItems.map((item) =>
-          files.copy(item.id, {
-            newParentId: selectedFolderId || null,
-          }),
+        const copyResults = await Promise.all(
+          clipboardItems.map((item) =>
+            files.copy(item.id, {
+              newParentId: selectedFolderId || null,
+            }),
+          ),
         );
-        await Promise.all(copyPromises);
+
+        // Propagate encryption keys for copied files
+        try {
+          let storageModule = null;
+          try {
+            storageModule = await import(
+              window.location.origin + "/static/src/services/fileKeyStorage.js"
+            );
+          } catch (e1) {
+            try {
+              storageModule = await import("../src/services/fileKeyStorage.js");
+            } catch (e2) {
+              storageModule = null;
+            }
+          }
+          for (let i = 0; i < clipboardItems.length; i++) {
+            const src = clipboardItems[i];
+            const dst = copyResults[i];
+            // Only files, not folders
+            const isFolder =
+              src.mime_type === "application/x-directory" ||
+              src.is_folder === true;
+            if (isFolder) continue;
+            const oldId = src.id || src.file_id;
+            const newId = dst?.file_id || dst?.id;
+            if (!oldId || !newId) continue;
+            let keyStr = null;
+            if (storageModule && storageModule.getFileKey) {
+              try {
+                keyStr = await storageModule.getFileKey(oldId);
+              } catch (e) {
+                keyStr = null;
+              }
+            }
+            if (!keyStr) {
+              try {
+                const keys = JSON.parse(
+                  localStorage.getItem("vault_keys") || "{}",
+                );
+                keyStr = keys[oldId] || null;
+              } catch (e) {
+                keyStr = null;
+              }
+            }
+            if (!keyStr) continue;
+            if (storageModule && storageModule.storeFileKey) {
+              try {
+                await storageModule.storeFileKey(newId, keyStr);
+              } catch (e) {}
+            }
+            try {
+              const keys = JSON.parse(
+                localStorage.getItem("vault_keys") || "{}",
+              );
+              keys[newId] = keyStr;
+              localStorage.setItem("vault_keys", JSON.stringify(keys));
+            } catch (e) {}
+          }
+        } catch (e) {}
 
         if (window.Notifications) {
           window.Notifications.success(
-            `${clipboardItems.length} item${clipboardItems.length > 1 ? "s" : ""} copied`,
+            `${clipboardItems.length} item${
+              clipboardItems.length > 1 ? "s" : ""
+            } copied`,
           );
         }
       }

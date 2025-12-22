@@ -286,7 +286,9 @@ class SyncValidationService:
                     file_path.resolve().relative_to(base_dir.resolve())
                 except ValueError:
                     return False, "Path traversal detected"
-                validate_file_path = lambda p, b: (True, None)
+
+                def validate_file_path(p, b):
+                    return True, None
 
             is_valid_path, path_error = validate_file_path(file_path, base_dir)
             if not is_valid_path:

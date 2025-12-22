@@ -413,7 +413,7 @@
                           }"
                           @click="
                             backup.status === 'completed' &&
-                            selectBackupForRestore(backup.id)
+                              selectBackupForRestore(backup.id)
                           "
                         >
                           <td class="col-select">
@@ -423,7 +423,7 @@
                               :disabled="backup.status !== 'completed'"
                               @click.stop="
                                 backup.status === 'completed' &&
-                                selectBackupForRestore(backup.id)
+                                  selectBackupForRestore(backup.id)
                               "
                             />
                           </td>

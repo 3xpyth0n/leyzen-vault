@@ -61,7 +61,6 @@ def get_config():
             from vault.database.schema import GlobalRole
             from vault.services.auth_service import AuthService
             from vault.services.api_key_service import ApiKeyService
-            from common.env import load_env_with_override
 
             # Try to get JWT token from Authorization header
             auth_header = request.headers.get("Authorization", "")

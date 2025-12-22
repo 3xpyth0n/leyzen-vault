@@ -44,15 +44,9 @@ function updateThemeIcon(theme) {
   if (icon && window.Icons) {
     const iconHTML =
       theme === "dark"
-        ? window.Icons.moon
-          ? window.Icons.moon(20, "currentColor")
-          : "🌙"
-        : window.Icons.sun
-          ? window.Icons.sun(20, "currentColor")
-          : "☀️";
+        ? window.Icons.moon(20, "currentColor")
+        : window.Icons.sun(20, "currentColor");
     setInnerHTML(icon, iconHTML);
-  } else if (icon) {
-    icon.textContent = theme === "dark" ? "🌙" : "☀️";
   }
 }
 
@@ -84,8 +78,6 @@ document.addEventListener("DOMContentLoaded", () => {
     iconSpan.id = "theme-toggle-icon";
     if (window.Icons && window.Icons.moon) {
       setInnerHTML(iconSpan, window.Icons.moon(20, "currentColor"));
-    } else {
-      iconSpan.textContent = "🌙";
     }
     toggleBtn.appendChild(iconSpan);
     toggleBtn.addEventListener("click", toggleTheme);

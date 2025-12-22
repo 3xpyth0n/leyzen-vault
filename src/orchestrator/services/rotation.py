@@ -41,6 +41,7 @@ from .rotation_telemetry import RotationTelemetry
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .sync_service import SyncService
     from .security_metrics_service import SecurityMetricsService
 
 
@@ -255,8 +256,8 @@ class RotationService:
 
             if not internal_token:
                 self._logger.log(
-                    f"[PREPARE ROTATION ERROR] INTERNAL_API_TOKEN not available. "
-                    f"Vault may not have generated the token yet. Will retry on next rotation attempt."
+                    "[PREPARE ROTATION ERROR] INTERNAL_API_TOKEN not available. "
+                    "Vault may not have generated the token yet. Will retry on next rotation attempt."
                 )
                 return False
 
@@ -341,7 +342,7 @@ class RotationService:
                                 f"[PREPARE ROTATION ERROR] Promotion failed: {promotion_stats.get('failed', 0)} files"
                             )
                         if not cleanup_stats.get("success", False):
-                            self._logger.log(f"[PREPARE ROTATION ERROR] Cleanup failed")
+                            self._logger.log("[PREPARE ROTATION ERROR] Cleanup failed")
 
                         errors = result.get("errors", [])
                         if errors:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Any
 
 from flask import current_app
 
@@ -147,8 +146,8 @@ class EmailService:
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #007bff; 
-                          color: white; text-decoration: none; border-radius: 5px; 
+                .button {{ display: inline-block; padding: 12px 24px; background: #007bff;
+                          color: white; text-decoration: none; border-radius: 5px;
                           margin: 20px 0; }}
             </style>
         </head>
@@ -156,7 +155,7 @@ class EmailService:
             <div class="container">
                 <h1>Verify your email address</h1>
                 <p>Hello,</p>
-                <p>Thank you for signing up for Leyzen Vault. To complete your registration, 
+                <p>Thank you for signing up for Leyzen Vault. To complete your registration,
                 please click on the following link to verify your email address:</p>
                 <p><a href="{verification_url}" class="button">Verify my email</a></p>
                 <p>This link is valid for {expiry_minutes} minutes.</p>
@@ -221,8 +220,8 @@ The Leyzen Vault Team
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #007bff; 
-                          color: white; text-decoration: none; border-radius: 5px; 
+                .button {{ display: inline-block; padding: 12px 24px; background: #007bff;
+                          color: white; text-decoration: none; border-radius: 5px;
                           margin: 20px 0; }}
             </style>
         </head>
@@ -291,8 +290,8 @@ The Leyzen Vault Team
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #007bff; 
-                          color: white; text-decoration: none; border-radius: 5px; 
+                .button {{ display: inline-block; padding: 12px 24px; background: #007bff;
+                          color: white; text-decoration: none; border-radius: 5px;
                           margin: 20px 0; }}
                 .warning {{ color: #dc3545; font-weight: bold; }}
             </style>
@@ -304,7 +303,7 @@ The Leyzen Vault Team
                 <p>You have requested to reset your password for your Leyzen Vault account.</p>
                 <p>Click on the button below to reset your password:</p>
                 <p><a href="{reset_url}" class="button">Reset my password</a></p>
-                <p class="warning">This link is valid for 1 hour. If you did not request 
+                <p class="warning">This link is valid for 1 hour. If you did not request
                 this password reset, ignore this email and your password will remain unchanged.</p>
                 <p>Best regards,<br>The Leyzen Vault Team</p>
             </div>
@@ -510,7 +509,7 @@ The Leyzen Vault Team
                 <div class="content">
                     <p>Hello,</p>
                     <p>A file has been shared with you{sender_text} via Leyzen Vault.</p>
-                    
+
                     <div class="file-info">
                         <div class="file-name">📄 {file_name}</div>
                     </div>
@@ -526,8 +525,8 @@ The Leyzen Vault Team
 
                     <div class="security-note">
                         <strong>🔒 Security Information:</strong>
-                        This link contains the decryption key needed to access the file. 
-                        Keep this link secure and do not share it with unauthorized parties. 
+                        This link contains the decryption key needed to access the file.
+                        Keep this link secure and do not share it with unauthorized parties.
                         The link will remain valid according to the sharing settings.
                     </div>
 
@@ -558,8 +557,8 @@ Access the shared file using this link:
 {share_url}
 
 Security Information:
-This link contains the decryption key needed to access the file. 
-Keep this link secure and do not share it with unauthorized parties. 
+This link contains the decryption key needed to access the file.
+Keep this link secure and do not share it with unauthorized parties.
 The link will remain valid according to the sharing settings.
 
 If you did not expect this email, you can safely ignore it.

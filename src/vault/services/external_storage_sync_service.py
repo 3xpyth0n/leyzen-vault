@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +52,7 @@ class ExternalStorageSyncService:
 
             # Upload to S3
             try:
-                s3_key = self.external_storage.save_file(file_id, encrypted_data)
+                self.external_storage.save_file(file_id, encrypted_data)
                 logger.info(f"Successfully synced file {file_id} to S3")
                 return True, None
             except Exception as e:
@@ -238,7 +238,7 @@ class ExternalStorageSyncService:
                             )
                         logger.debug(f"Renaming {temp_path} to {target_path}")
                         temp_path.rename(target_path)
-                    except OSError as e:
+                    except OSError:
                         # Clean up temp file if it exists
                         if temp_fd is not None:
                             try:
@@ -535,7 +535,7 @@ class ExternalStorageSyncService:
                         )
                     logger.debug(f"Renaming {temp_path} to {target_path}")
                     temp_path.rename(target_path)
-                except OSError as e:
+                except OSError:
                     # Clean up temp file if it exists
                     if temp_fd is not None:
                         try:
@@ -1143,7 +1143,6 @@ class ExternalStorageSyncService:
                 }
 
             # List all files on disk
-            from pathlib import Path
 
             disk_files = set()
             storage_files_dir = self.local_storage.storage_dir / "files"
@@ -1202,7 +1201,6 @@ class ExternalStorageSyncService:
 
                     if file_really_missing:
                         # Third check: verify paths directly
-                        from pathlib import Path
 
                         storage_path = self.local_storage.get_file_path(storage_ref)
                         source_path = (

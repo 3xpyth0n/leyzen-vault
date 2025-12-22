@@ -460,7 +460,10 @@ export class HealthTimelineChart {
         ctx.strokeStyle = withAlpha("#ffffff", 0.2);
         ctx.stroke();
 
-        ctx.font = `600 ${Math.min(16, markerRadius * 1.3)}px "Inter", "Segoe UI", sans-serif`;
+        ctx.font = `600 ${Math.min(
+          16,
+          markerRadius * 1.3,
+        )}px "Inter", "Segoe UI", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillStyle = withAlpha("#e2e8f0", 0.95);
@@ -477,7 +480,10 @@ export class HealthTimelineChart {
         ctx.lineTo(centerX, baseY + markerRadius * 0.6);
         ctx.stroke();
         ctx.fillStyle = withAlpha("#0f172a", 0.65);
-        ctx.font = `600 ${Math.min(12, markerRadius * 1.1)}px "Inter", "Segoe UI", sans-serif`;
+        ctx.font = `600 ${Math.min(
+          12,
+          markerRadius * 1.1,
+        )}px "Inter", "Segoe UI", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
         ctx.fillText(icon, centerX, baseY - markerRadius * 0.7);

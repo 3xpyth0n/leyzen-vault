@@ -49,14 +49,14 @@ for req_file in "${REQUIREMENTS_FILES[@]}"; do
         echo -e "${YELLOW}Warning: $req_file not found, skipping...${NC}"
         continue
     fi
-    
+
     echo -e "${GREEN}Auditing: $req_file${NC}"
-    
+
     # Run pip-audit and capture output
     if pip-audit -r "$req_file" --format=json > /tmp/pip-audit-output.json 2>&1; then
         # Check if there are any vulnerabilities
         VULN_COUNT=$(python3 -c "import json; data = json.load(open('/tmp/pip-audit-output.json')); print(len(data.get('vulnerabilities', [])))" 2>/dev/null || echo "0")
-        
+
         if [ "$VULN_COUNT" -gt 0 ]; then
             echo -e "${RED}Found $VULN_COUNT vulnerability/vulnerabilities${NC}"
             pip-audit -r "$req_file" --format=text
@@ -91,4 +91,3 @@ else
     echo "4. Re-run this script to verify fixes"
     exit 1
 fi
-

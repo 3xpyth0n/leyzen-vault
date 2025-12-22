@@ -80,7 +80,9 @@
               <div v-if="isSuperadmin" class="form-group">
                 <label>User:</label>
                 <CustomSelect
-                  :key="`user-select-${userOptions?.length || 0}-${showCreateModal}-${isSuperadmin}`"
+                  :key="`user-select-${
+                    userOptions?.length || 0
+                  }-${showCreateModal}-${isSuperadmin}`"
                   v-model="apiKeyForm.userId"
                   :options="userOptions || []"
                   placeholder="Select a user"
@@ -859,9 +861,8 @@ export default {
 
   color: #a9b7aa !important;
   font-size: 0.95rem !important;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif !important;
   cursor: pointer !important;
   position: relative !important;
   box-sizing: border-box !important;

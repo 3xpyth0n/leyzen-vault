@@ -6,10 +6,9 @@ from datetime import datetime, timedelta
 from flask import Blueprint, current_app, jsonify
 
 from ..database.schema import File, GlobalRole, db
-from ..services.audit import AuditService
 from ..middleware.jwt_auth import jwt_required
 from ..middleware.rbac import require_role
-from .utils import _settings, get_client_ip
+from .utils import _settings
 
 security_bp = Blueprint("security", __name__, url_prefix="/security")
 
@@ -27,7 +26,7 @@ def get_stats():
     Restricted to administrators only to prevent cross-tenant information disclosure.
     """
     audit = current_app.config["VAULT_AUDIT"]
-    storage = current_app.config["VAULT_STORAGE"]
+    current_app.config["VAULT_STORAGE"]
 
     # Get all files from PostgreSQL
     files = db.session.query(File).filter(File.deleted_at.is_(None)).all()

@@ -38,8 +38,6 @@ RUN test -d /app/src/vault/static/dist && echo "Build successful: dist directory
 WORKDIR /app
 
 # Copy application code (Python and other files)
-# Note: Only copy src/vault/ - common/ will be mounted as read-only volume
-# This ensures isolation: vault container only has vault code, not orchestrator or compose
 COPY src/vault/ /app/src/vault/
 # Remove any Python cache files that might have been copied (shouldn't happen due to .dockerignore, but be safe)
 RUN find /app/src -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \

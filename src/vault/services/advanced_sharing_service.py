@@ -5,7 +5,6 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from vault.database.schema import (
     File,

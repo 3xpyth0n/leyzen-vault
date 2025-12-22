@@ -36,7 +36,7 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 bootstrap_entry_point()
 
 from flask import Flask, Response  # noqa: E402
-from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
+from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]  # noqa: E402
 
 # Global reference to the Flask app for signal handlers
 _flask_app = None

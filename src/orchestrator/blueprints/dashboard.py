@@ -42,7 +42,7 @@ def _rotation_service() -> RotationService:
 def healthz():
     """Health check endpoint that doesn't require authentication."""
     try:
-        rotation = _rotation_service()
+        _rotation_service()
         return jsonify({"status": "ok"}), 200
     except Exception:
         return jsonify({"status": "error"}), 503

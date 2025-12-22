@@ -34,8 +34,8 @@ from common.path_setup import bootstrap_entry_point  # noqa: E402
 # Complete the bootstrap sequence (idempotent)
 bootstrap_entry_point()
 
-from flask import Flask
-from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]
+from flask import Flask  # noqa: E402
+from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-found]  # noqa: E402
 
 # Global references to services for signal handlers
 _rotation_service = None

@@ -818,7 +818,9 @@ class UploadManager {
       const statusIcon = this.getStatusIcon(upload.status);
       const speedText =
         upload.speed > 0
-          ? `${this.formatSpeed(upload.speed)} • ${this.formatTimeRemaining(upload.timeRemaining)}`
+          ? `${this.formatSpeed(upload.speed)} • ${this.formatTimeRemaining(
+              upload.timeRemaining,
+            )}`
           : "";
 
       const item = document.createElement("div");
@@ -838,7 +840,9 @@ class UploadManager {
 
       const detailsDiv = document.createElement("div");
       detailsDiv.className = "upload-queue-item-details";
-      detailsDiv.textContent = `${this.formatFileSize(upload.file.size)}${speedText ? " • " + speedText : ""}`;
+      detailsDiv.textContent = `${this.formatFileSize(upload.file.size)}${
+        speedText ? " • " + speedText : ""
+      }`;
 
       if (upload.error) {
         const errorSpan = document.createElement("span");
@@ -917,7 +921,7 @@ class UploadManager {
       case "error":
         return "❌";
       default:
-        return "📄";
+        return window.Icons.file(16, "currentColor");
     }
   }
 

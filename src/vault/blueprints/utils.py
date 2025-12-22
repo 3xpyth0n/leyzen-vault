@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Callable, TypeVar
 
-from flask import current_app, request, session, url_for
+from flask import current_app, request, session
 
 from common.constants import LOGIN_BLOCK_WINDOW_MINUTES, MAX_LOGIN_ATTEMPTS
 from common.utils import get_client_ip as _get_client_ip_base

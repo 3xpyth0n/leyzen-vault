@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from flask import current_app, url_for
+from flask import current_app
 
 from vault.database.schema import EmailVerificationToken, User, db
 from vault.services.email_service import EmailService

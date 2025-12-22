@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
-from vault.database.schema import Device, User, db
+from vault.database.schema import Device, db
 
 
 class DeviceService:

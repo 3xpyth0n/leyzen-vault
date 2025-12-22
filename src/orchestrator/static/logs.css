@@ -17,8 +17,7 @@ body {
   margin: 0;
   padding: 0;
   background: var(--bg);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
   height: 100vh;
   display: flex;

@@ -253,7 +253,6 @@ export default {
   padding: 1rem 1.5rem;
   background: transparent;
   border: 1px solid var(--slate-grey);
-  margin-bottom: 1rem;
   margin-top: 1.5rem;
 }
 

@@ -80,6 +80,16 @@ async function requireAuth(to, from, next) {
     next("/login");
     return;
   }
+  try {
+    await auth.getCurrentUser();
+  } catch (err) {
+    if (isNetworkError(err)) {
+      next();
+      return;
+    }
+    next("/login");
+    return;
+  }
 
   // For routes that need encryption, check if master key is available
   if (

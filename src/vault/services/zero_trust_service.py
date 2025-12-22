@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timezone
 
 from flask import current_app
 from vault.database.schema import Device, File, User, db
@@ -163,7 +161,6 @@ class ZeroTrustService:
             ip_address: IP address
         """
         # Store audit log
-        from vault.services.audit import AuditService
 
         audit = current_app.config.get("VAULT_AUDIT")
         if audit:

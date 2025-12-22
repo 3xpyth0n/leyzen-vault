@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from sqlalchemy.exc import DisconnectionError, OperationalError
-from sqlalchemy.orm import Session
 
 from vault.blueprints.validators import validate_email
 from vault.database.schema import GlobalRole, JWTBlacklist, User, db
@@ -165,9 +162,7 @@ def _check_jti_column_exists() -> bool:
         # Use a very lightweight query that won't affect performance
         try:
             # Use a query that will fail gracefully if column doesn't exist
-            result = db.session.execute(
-                sql_text("SELECT jti FROM jwt_blacklist LIMIT 0")
-            )
+            db.session.execute(sql_text("SELECT jti FROM jwt_blacklist LIMIT 0"))
             # If query succeeds, column exists
             _jti_column_exists_cache = True
             return True
@@ -811,7 +806,7 @@ class AuthService:
                     {"token": token, "expires_at": expiration_time},
                 )
             db.session.commit()
-        except Exception as e:
+        except Exception:
             # Fallback: try without jti if first attempt failed
             db.session.rollback()
             try:

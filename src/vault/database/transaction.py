@@ -104,7 +104,6 @@ def db_transaction(max_retries: int = MAX_RETRIES) -> Generator[None, None, None
             pass
     """
     attempt = 0
-    last_exception = None
 
     while attempt < max_retries:
         try:
@@ -116,7 +115,6 @@ def db_transaction(max_retries: int = MAX_RETRIES) -> Generator[None, None, None
             return
         except Exception as e:
             db.session.rollback()
-            last_exception = e
 
             # Check if error is retryable
             if not _is_retryable_error(e):

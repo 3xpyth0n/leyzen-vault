@@ -37,7 +37,6 @@ try:
         env_values = load_env_with_priority()
     except Exception as e:
         print(f"[check_storage_mode] Failed to load env: {e}", file=sys.stderr)
-        import os
 
         env_values = dict(os.environ)
 

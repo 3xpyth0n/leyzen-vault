@@ -6,7 +6,6 @@ import base64
 import io
 import json
 import secrets
-from typing import Any
 
 import pyotp
 import qrcode
@@ -114,30 +113,6 @@ class TOTPService:
         img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
 
         return f"data:image/png;base64,{img_base64}"
-
-    def __init__(self, secret_key: bytes):
-        """Initialize TOTP service.
-
-        Args:
-            secret_key: Secret key for encrypting TOTP secrets
-        """
-        self.secret_key = secret_key
-        # Derive Fernet key from secret_key using PBKDF2
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=b"leyzen_totp_salt",  # Fixed salt for deterministic key derivation
-            iterations=100000,
-            backend=default_backend(),
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(secret_key))
-        self.cipher = Fernet(key)
-        # Cache for used TOTP tokens to prevent reuse (token -> timestamp)
-        # Tokens expire after 3 minutes (6 time periods)
-        self._used_tokens: dict[str, float] = {}
-        import time
-
-        self._time = time
 
     def verify_token(self, secret: str, token: str, window: int = 0) -> bool:
         """Verify a TOTP token.
