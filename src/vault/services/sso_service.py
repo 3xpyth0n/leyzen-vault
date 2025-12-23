@@ -20,6 +20,7 @@ from vault.database.schema import (
     db,
 )
 from vault.services.auth_service import AuthService
+from vault.blueprints.utils import get_client_ip
 from vault.services.email_service import EmailService
 from vault.security.url_validator import SSRFProtection, SSRFProtectionError
 from vault.utils.safe_json import safe_json_loads
@@ -374,9 +375,18 @@ class SSOService:
                 if not user:
                     # User does not exist - they must register with a password first
                     # SSO can only be used to login to existing accounts
-                    current_app.logger.warning(
-                        f"SAML SSO login attempted for non-existent user: {email}"
-                    )
+                    audit = current_app.config.get("VAULT_AUDIT")
+                    if audit:
+                        audit.log_action(
+                            action="sso_login_attempt_failed",
+                            user_ip=get_client_ip() or "unknown",
+                            details={
+                                "email": email,
+                                "provider_type": provider.provider_type.value,
+                                "message": f"SAML SSO login attempted for non-existent user: {email}",
+                            },
+                            success=False,
+                        )
                     return None
 
                 # Check if 2FA is enabled - if so, return user without token
@@ -629,9 +639,18 @@ class SSOService:
             if not user:
                 # User does not exist - they must register with a password first
                 # SSO can only be used to login to existing accounts
-                current_app.logger.warning(
-                    f"SSO login attempted for non-existent user: {email}"
-                )
+                audit = current_app.config.get("VAULT_AUDIT")
+                if audit:
+                    audit.log_action(
+                        action="sso_login_attempt_failed",
+                        user_ip=get_client_ip() or "unknown",
+                        details={
+                            "email": email,
+                            "provider_type": provider.provider_type.value,
+                            "message": f"SSO login attempted for non-existent user: {email}",
+                        },
+                        success=False,
+                    )
                 return None
 
             # Check if 2FA is enabled - if so, return user without token
@@ -1064,9 +1083,18 @@ class SSOService:
             if not user:
                 # User does not exist - they must register with a password first
                 # SSO can only be used to login to existing accounts
-                current_app.logger.warning(
-                    f"OIDC SSO login attempted for non-existent user: {email}"
-                )
+                audit = current_app.config.get("VAULT_AUDIT")
+                if audit:
+                    audit.log_action(
+                        action="sso_login_attempt_failed",
+                        user_ip=get_client_ip() or "unknown",
+                        details={
+                            "email": email,
+                            "provider_type": provider.provider_type.value,
+                            "message": f"OIDC SSO login attempted for non-existent user: {email}",
+                        },
+                        success=False,
+                    )
                 return None
 
             # Check if 2FA is enabled - if so, return user without token
@@ -1259,9 +1287,18 @@ The Leyzen Vault Team
         if not user:
             # User does not exist - they must register with a password first
             # SSO can only be used to login to existing accounts
-            current_app.logger.warning(
-                f"Magic link SSO login attempted for non-existent user: {email}"
-            )
+            audit = current_app.config.get("VAULT_AUDIT")
+            if audit:
+                audit.log_action(
+                    action="sso_login_attempt_failed",
+                    user_ip=get_client_ip() or "unknown",
+                    details={
+                        "email": email,
+                        "provider_type": "email-magic-link",
+                        "message": f"Magic link SSO login attempted for non-existent user: {email}",
+                    },
+                    success=False,
+                )
             return None
 
         # Check if 2FA is enabled - if so, return user without token

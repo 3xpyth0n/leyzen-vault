@@ -692,7 +692,7 @@ def _calculate_pool_settings(workers: int) -> dict[str, object]:
         "pool_size": pool_size,
         "max_overflow": max_overflow,
         "pool_timeout": 1,  # Timeout when getting connection from pool
-        "pool_recycle": 3600,  # Recycle connections after 1 hour to prevent stale connections
+        "pool_recycle": 300,  # Recycle connections every 5 minutes to prevent stale connections
         "pool_pre_ping": True,  # Verify connections before using (detects stale connections)
         "connect_args": {
             "connect_timeout": 10,  # Connection timeout
@@ -987,11 +987,11 @@ def create_app(
     app.config["IS_PRODUCTION"] = is_production
 
     # Configure Python logging based on environment
+    log_module = sys.modules["logging"]
+    root_logger = log_module.getLogger()
     if not is_production:
         # In development mode, enable DEBUG level logging to stdout/stderr
         # This allows uvicorn to capture and display logger.info and logger.debug calls
-        log_module = sys.modules["logging"]
-        root_logger = log_module.getLogger()
         root_logger.setLevel(log_module.DEBUG)
         # Remove existing handlers to avoid duplicates
         for handler in root_logger.handlers[:]:
@@ -1004,7 +1004,9 @@ def create_app(
         )
         stream_handler.setFormatter(formatter)
         root_logger.addHandler(stream_handler)
-    # In production, keep default WARNING level (no handler added)
+    else:
+        # In production, use WARNING level for both stdout and file
+        root_logger.setLevel(log_module.WARNING)
 
     # Load settings
     try:
@@ -1018,7 +1020,7 @@ def create_app(
             SESSION_COOKIE_SECURE=settings.session_cookie_secure,
         )
         # Initialize logger
-        logger = FileLogger(settings)
+        logger = FileLogger(settings, is_production=is_production)
         app.config["LOGGER"] = logger
 
         # Configure PostgreSQL database
@@ -1066,6 +1068,24 @@ def create_app(
                 # The application can use the leyzen_app role by reading the password from system_secrets
                 # when needed, but we don't change the default connection after initialization
                 # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
+
+                # Synchronize S3 configuration from environment variables
+                # This ensures that if S3 env vars are provided, they take precedence
+                # and the database is updated to reflect this.
+                try:
+                    from vault.services.external_storage_config_service import (
+                        ExternalStorageConfigService,
+                    )
+
+                    ExternalStorageConfigService.sync_on_startup(
+                        settings.secret_key, app
+                    )
+                    if db_initialized_by_this_worker:
+                        logger.info("[INIT] S3 configuration synchronized")
+                except Exception as s3_sync_error:
+                    logger.warning(
+                        f"[WARNING] Failed to sync S3 config: {s3_sync_error}"
+                    )
 
                 if db_initialized_by_this_worker:
                     logger.info("[INIT] PostgreSQL database initialized")
@@ -1536,7 +1556,6 @@ def create_app(
                         if storage.source_dir:
                             result = promotion_service.cleanup_orphaned_files(
                                 target_dir=storage.source_dir,
-                                base_dir=storage.storage_dir / "files",
                                 dry_run=False,
                             )
                             deleted_count = result.get("deleted_count", 0)
@@ -2702,28 +2721,6 @@ def create_app(
                     std_logger.debug(msg)
 
             validation_logger = LoggerWrapper()
-        else:
-            # FileLogger only has log() method, so add wrapper methods
-            class FileLoggerWrapper:
-                def __init__(self, file_logger):
-                    self._logger = file_logger
-
-                def log(self, msg: str) -> None:
-                    self._logger.log(msg)
-
-                def info(self, msg: str) -> None:
-                    self._logger.log(msg)
-
-                def warning(self, msg: str) -> None:
-                    self._logger.log(msg)
-
-                def error(self, msg: str) -> None:
-                    self._logger.log(msg)
-
-                def debug(self, msg: str) -> None:
-                    self._logger.log(msg)
-
-            validation_logger = FileLoggerWrapper(validation_logger)
 
         if robots_file.exists():
             file_content = robots_file.read_text(encoding="utf-8")

@@ -337,34 +337,16 @@ export function useFileViewComposable(options = {}) {
 
           // Get bottom bar position and dimensions
           const bottomBar = document.querySelector(".bottom-navigation");
-          let bottomBorderRadius = "0";
           if (bottomBar) {
             const bottomBarRect = bottomBar.getBoundingClientRect();
             const bottomBarTop = bottomBarRect.top;
-            const bottomBarWidth = bottomBarRect.width;
-            const isExpanded = bottomBar.classList.contains("expanded");
 
             // Add a gap between overlay and bottom bar for visual separation
-            // This creates the effect of the overlay "curving around" the bottom bar
             const gap = 16;
             const availableHeight = bottomBarTop - headerHeight - gap;
 
             overlayTop = headerHeight;
             overlayHeight = Math.max(0, availableHeight);
-
-            // Create rounded bottom corners that complement the circular bottom bar
-            // The bottom bar has border-radius: 1.5rem (24px)
-            // Use a larger border-radius on the bottom of the overlay to create
-            // a smooth curve that visually flows around the bottom bar
-            if (isExpanded) {
-              // When expanded, bottom bar is wider (95% width), use matching border-radius
-              bottomBorderRadius = "0 0 1.5rem 1.5rem";
-            } else {
-              // When collapsed, bottom bar is circular (80px wide, 40px high)
-              // Use a larger radius to create a smooth transition that curves around it
-              // The radius should be slightly larger than the bottom bar's radius
-              bottomBorderRadius = "0 0 2.5rem 2.5rem";
-            }
           } else {
             // No bottom bar, just exclude header
             overlayTop = headerHeight;
@@ -381,7 +363,7 @@ export function useFileViewComposable(options = {}) {
             left: `${overlayLeft}px`,
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
-            borderRadius: isMobileMode ? bottomBorderRadius : "1rem", // Match main-content border-radius in desktop mode
+            borderRadius: "1rem",
             zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
             pointerEvents: "auto", // Ensure overlay is interactive
           };
@@ -393,7 +375,7 @@ export function useFileViewComposable(options = {}) {
             left: `${overlayLeft}px`,
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
-            borderRadius: isMobileMode ? "0" : "1rem",
+            borderRadius: "1rem",
             zIndex: 50,
             pointerEvents: "auto",
           };

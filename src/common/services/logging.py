@@ -203,15 +203,18 @@ class FileLogger:
         settings: Any,
         *,
         enable_secret_detection: bool = True,
+        is_production: bool = True,
     ) -> None:
         """Initialize FileLogger.
 
         Args:
             settings: Settings object with `log_file` (Path) and `timezone` (ZoneInfo) attributes
             enable_secret_detection: Enable secret detection in logs (default: True for security)
+            is_production: If True, set default log level to WARNING, otherwise INFO
         """
         self._settings = settings
         self._enable_secret_detection = enable_secret_detection
+        self._is_production = is_production
         self._lock = Lock()
 
         # Configure rotating file handler
@@ -230,7 +233,9 @@ class FileLogger:
 
         # Create a logger instance just for the handler
         self._logger = logging.getLogger(f"file_logger_{id(self)}")
-        self._logger.setLevel(logging.INFO)
+        # Default to WARNING in production, INFO in development
+        default_level = logging.WARNING if is_production else logging.INFO
+        self._logger.setLevel(default_level)
         self._logger.handlers = [self._handler]
 
     @property
@@ -238,13 +243,24 @@ class FileLogger:
         """Get the log file path."""
         return self._settings.log_file
 
-    def log(self, msg: Any, *, context: Any | None = None) -> None:
-        """Log a message with optional context.
+    def setLevel(self, level: int) -> None:
+        """Set the logging level for the file logger."""
+        self._logger.setLevel(level)
+
+    def log(
+        self, msg: Any, *, context: Any | None = None, level: int = logging.INFO
+    ) -> None:
+        """Log a message with optional context and specific level.
 
         Args:
             msg: Message to log
             context: Optional context dictionary to include in the log entry
+            level: The logging level to use (default: INFO)
         """
+        # Respect the configured level before logging anything
+        if not self._logger.isEnabledFor(level):
+            return
+
         timezone: ZoneInfo = self._settings.timezone
         timestamp = datetime.now(timezone).strftime("%Y-%m-%d %H:%M:%S")
         sanitized_msg = _sanitize_log_value(
@@ -272,7 +288,8 @@ class FileLogger:
 
         with self._lock:
             # Use the logger's handler for automatic rotation
-            self._logger.info(line)
+            # Log at the requested level
+            self._logger.log(level, line)
 
     def flush(self) -> None:
         """Flush the log handler to ensure all buffered messages are written to disk."""
@@ -280,40 +297,20 @@ class FileLogger:
             self._handler.flush()
 
     def info(self, msg: Any, *, context: Any | None = None) -> None:
-        """Log an info message.
-
-        Args:
-            msg: Message to log
-            context: Optional context dictionary to include in the log entry
-        """
-        self.log(msg, context=context)
+        """Log an info message."""
+        self.log(msg, context=context, level=logging.INFO)
 
     def error(self, msg: Any, *, context: Any | None = None) -> None:
-        """Log an error message.
-
-        Args:
-            msg: Message to log
-            context: Optional context dictionary to include in the log entry
-        """
-        self.log(msg, context=context)
+        """Log an error message."""
+        self.log(msg, context=context, level=logging.ERROR)
 
     def warning(self, msg: Any, *, context: Any | None = None) -> None:
-        """Log a warning message.
-
-        Args:
-            msg: Message to log
-            context: Optional context dictionary to include in the log entry
-        """
-        self.log(msg, context=context)
+        """Log a warning message."""
+        self.log(msg, context=context, level=logging.WARNING)
 
     def debug(self, msg: Any, *, context: Any | None = None) -> None:
-        """Log a debug message.
-
-        Args:
-            msg: Message to log
-            context: Optional context dictionary to include in the log entry
-        """
-        self.log(msg, context=context)
+        """Log a debug message."""
+        self.log(msg, context=context, level=logging.DEBUG)
 
 
 __all__ = ["FileLogger", "_sanitize_log_value"]

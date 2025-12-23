@@ -235,7 +235,7 @@ body {
   width: 100%;
   padding: var(--space-3) var(--space-4);
   background: var(--bg-primary);
-  border: 1px solid var(--slate-gray);
+  border: 1px solid var(--slate-grey);
   color: var(--text-primary);
   font-family: var(--font-family-base);
   font-size: var(--font-size-base);
@@ -978,7 +978,6 @@ select.input-sm:disabled {
   background-color: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 0.75rem;
-  margin-bottom: 1rem;
 }
 
 /* Account Page Styles */

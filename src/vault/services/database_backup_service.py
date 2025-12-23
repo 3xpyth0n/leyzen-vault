@@ -2270,6 +2270,14 @@ class DatabaseBackupService:
         """
         backups = []
         try:
+            from vault.services.external_storage_config_service import (
+                ExternalStorageConfigService,
+            )
+
+            # Check if S3 is enabled first
+            if not ExternalStorageConfigService.is_enabled(self.secret_key, self.app):
+                return []
+
             from vault.services.external_storage_service import ExternalStorageService
 
             storage_service = ExternalStorageService(self.secret_key, self.app)
@@ -2977,6 +2985,14 @@ class DatabaseBackupService:
             backup: DatabaseBackup object
         """
         try:
+            from vault.services.external_storage_config_service import (
+                ExternalStorageConfigService,
+            )
+
+            # Check if S3 is enabled first
+            if not ExternalStorageConfigService.is_enabled(self.secret_key, self.app):
+                return
+
             from vault.services.external_storage_service import ExternalStorageService
 
             storage_service = ExternalStorageService(self.secret_key, self.app)

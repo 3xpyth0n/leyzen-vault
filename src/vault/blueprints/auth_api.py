@@ -930,20 +930,6 @@ def logout():
         except Exception as e:
             current_app.logger.debug(f"Failed to blacklist token: {type(e).__name__}")
 
-    # Log logout
-
-    user = get_current_user()
-    client_ip = get_client_ip() or "unknown"
-    audit = _get_audit()
-    if audit and user:
-        audit.log_action(
-            action="auth_logout",
-            user_ip=client_ip,
-            details={"user_id": user.id},
-            success=True,
-            user_id=user.id,
-        )
-
     # Create response and delete jwt_token cookie
     response = make_response(jsonify({"message": "Logged out successfully"}), 200)
     response.set_cookie("jwt_token", "", expires=0, path="/")

@@ -96,6 +96,18 @@ class SMTPConfig:
 
 
 @dataclass(frozen=True)
+class S3Config:
+    """S3 configuration for external storage."""
+
+    endpoint_url: str | None
+    access_key_id: str
+    secret_access_key: str
+    bucket_name: str
+    region: str
+    use_ssl: bool
+
+
+@dataclass(frozen=True)
 class VaultSettings:
     """Application settings for Leyzen Vault."""
 
@@ -111,6 +123,7 @@ class VaultSettings:
     max_uploads_per_hour: int
     audit_retention_days: int
     smtp_config: SMTPConfig | None = None
+    s3_config: S3Config | None = None
     vault_url: str | None = None
     email_verification_expiry_minutes: int = 10
     max_total_size_mb: int | None = None
@@ -227,6 +240,23 @@ def load_settings() -> VaultSettings:
                 from_name=smtp_from_name,
             )
 
+    # S3 configuration (optional - used for external storage)
+    s3_config = None
+    s3_access_key_id = env_values.get("VAULT_S3_ACCESS_KEY_ID", "").strip()
+    s3_secret_access_key = env_values.get("VAULT_S3_SECRET_ACCESS_KEY", "").strip()
+    s3_bucket_name = env_values.get("VAULT_S3_BUCKET_NAME", "").strip()
+
+    if s3_access_key_id and s3_secret_access_key and s3_bucket_name:
+        s3_config = S3Config(
+            endpoint_url=env_values.get("VAULT_S3_ENDPOINT_URL", "").strip() or None,
+            access_key_id=s3_access_key_id,
+            secret_access_key=s3_secret_access_key,
+            bucket_name=s3_bucket_name,
+            region=env_values.get("VAULT_S3_REGION", "us-east-1").strip()
+            or "us-east-1",
+            use_ssl=parse_bool(env_values.get("VAULT_S3_USE_SSL"), default=True),
+        )
+
     # Vault URL (optional - used for email links)
     vault_url = env_values.get("VAULT_URL", "").strip()
     if vault_url:
@@ -272,6 +302,7 @@ def load_settings() -> VaultSettings:
         max_uploads_per_hour=max_uploads_per_hour,
         audit_retention_days=audit_retention_days,
         smtp_config=smtp_config,
+        s3_config=s3_config,
         vault_url=vault_url,
         email_verification_expiry_minutes=email_verification_expiry_minutes,
         max_total_size_mb=max_total_size_mb,
@@ -316,17 +347,17 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                 # Query user count
                 user_count = db.session.query(User).count()
                 result = user_count > 0
-                if not quiet:
+                if not quiet and not result:
                     log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
                     if app_logger:
-                        app_logger.log(log_msg)
+                        app_logger.warning(log_msg)
                     else:
-                        logger.info(log_msg)
+                        logger.warning(log_msg)
                 return result
             except Exception as db_error:
                 error_msg = f"[SETUP CHECK] Database query failed: {db_error}"
                 if app_logger:
-                    app_logger.log(error_msg)
+                    app_logger.error(error_msg)
                 else:
                     logger.error(error_msg, exc_info=True)
                 # Try to rollback any failed transaction
@@ -347,17 +378,17 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                     # Query user count
                     user_count = db.session.query(User).count()
                     result = user_count > 0
-                    if not quiet:
+                    if not quiet and not result:
                         log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
                         if app_logger:
-                            app_logger.log(log_msg)
+                            app_logger.warning(log_msg)
                         else:
-                            logger.info(log_msg)
+                            logger.warning(log_msg)
                     return result
                 except Exception as db_error:
                     error_msg = f"[SETUP CHECK] Database query failed: {db_error}"
                     if app_logger:
-                        app_logger.log(error_msg)
+                        app_logger.error(error_msg)
                     else:
                         logger.error(error_msg, exc_info=True)
                     # Try to rollback any failed transaction
@@ -376,7 +407,7 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
             pass
 
         if app_logger:
-            app_logger.log(error_msg)
+            app_logger.error(error_msg)
         else:
             logger.error(error_msg, exc_info=True)
         return False
@@ -385,6 +416,7 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
 __all__ = [
     "VaultSettings",
     "SMTPConfig",
+    "S3Config",
     "load_settings",
     "get_postgres_url",
     "is_setup_complete",

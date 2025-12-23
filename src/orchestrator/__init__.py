@@ -44,7 +44,22 @@ def create_app(settings: Settings | None = None) -> Flask:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
     )
 
-    logger = FileLogger(settings)
+    from common.env import load_env_with_priority
+
+    env_values = load_env_with_priority()
+    leyzen_env = env_values.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+    is_production = leyzen_env not in ("dev", "development")
+
+    # Configure root logger level
+    import logging as log_module
+
+    root_logger = log_module.getLogger()
+    if not is_production:
+        root_logger.setLevel(log_module.DEBUG)
+    else:
+        root_logger.setLevel(log_module.WARNING)
+
+    logger = FileLogger(settings, is_production=is_production)
     docker_service = DockerProxyService(settings, logger)
     rotation_service = RotationService(settings, docker_service, logger)
     storage_cleanup_service = StorageCleanupService(settings, logger)

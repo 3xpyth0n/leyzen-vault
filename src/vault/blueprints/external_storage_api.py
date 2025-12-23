@@ -41,7 +41,6 @@ def get_external_storage_status():
         ExternalStorageConfigService,
     )
 
-    enabled = ExternalStorageConfigService.is_enabled(secret_key, current_app)
     storage_mode = ExternalStorageConfigService.get_storage_mode(
         secret_key, current_app
     )
@@ -56,7 +55,6 @@ def get_external_storage_status():
     return (
         jsonify(
             {
-                "enabled": enabled,
                 "storage_mode": storage_mode,
                 "worker_running": worker_running,
                 "sync_running": sync_running,

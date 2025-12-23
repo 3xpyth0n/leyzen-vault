@@ -21,12 +21,7 @@
       </div>
       <div class="integration-actions">
         <div
-          v-if="
-            config &&
-            config.enabled &&
-            config.endpoint_url &&
-            config.bucket_name
-          "
+          v-if="config && config.storage_mode !== 'local'"
           class="sync-controls"
         >
           <button
@@ -102,12 +97,8 @@
                   <ul>
                     <li>
                       <strong>Local Only:</strong> Uses only local storage
-                      (/data, /data-source)
                     </li>
-                    <li>
-                      <strong>S3 Only:</strong> Uses only S3 storage (no local
-                      volumes needed)
-                    </li>
+                    <li><strong>S3 Only:</strong> Uses only S3 storage</li>
                     <li>
                       <strong>Hybrid:</strong> Uses both local and S3 with
                       synchronization
@@ -117,163 +108,20 @@
               </div>
 
               <div
-                v-if="config.storage_mode !== 'local'"
-                class="s3-config-section"
+                v-if="testResult"
+                class="test-result"
+                :class="testResult.success ? 'success' : 'error'"
               >
-                <h3>S3 Configuration</h3>
+                <span
+                  v-html="getIcon(testResult.success ? 'check' : 'warning', 16)"
+                ></span>
+                {{ testResult.message }}
+              </div>
 
-                <div class="form-group">
-                  <label>Endpoint URL (optional):</label>
-                  <input
-                    v-model="config.endpoint_url"
-                    type="text"
-                    placeholder="http://minio:9000 (for MinIO) or leave empty for AWS S3"
-                    class="form-input"
-                  />
-                  <div class="form-help">
-                    Leave empty for AWS S3. Required for MinIO or other
-                    S3-compatible services.
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label>Access Key ID:</label>
-                  <input
-                    v-model="config.access_key_id"
-                    type="text"
-                    required
-                    placeholder="Your S3 access key"
-                    class="form-input"
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label>Secret Access Key:</label>
-                  <div class="secret-key-input-wrapper">
-                    <input
-                      type="text"
-                      name="fake-username"
-                      autocomplete="username"
-                      style="
-                        position: absolute;
-                        left: -9999px;
-                        width: 1px;
-                        height: 1px;
-                        opacity: 0;
-                        pointer-events: none;
-                      "
-                      tabindex="-1"
-                      aria-hidden="true"
-                    />
-                    <input
-                      v-model="config.secret_access_key"
-                      :type="showSecretKey ? 'text' : 'password'"
-                      required
-                      placeholder="Your S3 secret key"
-                      class="form-input secret-key-input"
-                      autocomplete="new-password"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      data-bwignore="true"
-                      data-dashlane-ignore="true"
-                      data-bitwarden-watching="false"
-                      data-form-type="other"
-                      name="s3-secret-key-field"
-                      id="s3-secret-key-field"
-                      @focus="handleSecretKeyFocus"
-                    />
-                    <button
-                      type="button"
-                      class="secret-key-toggle"
-                      :class="{ 'is-visible': showSecretKey }"
-                      :aria-label="
-                        showSecretKey ? 'Hide secret key' : 'Show secret key'
-                      "
-                      @click="toggleSecretKey"
-                    >
-                      <svg
-                        class="secret-key-toggle-icon secret-key-toggle-icon--hide"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path
-                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                        ></path>
-                        <path
-                          d="M8 12.5c0 .5.5 1.5 4 1.5s4-1 4-1.5"
-                          stroke-linecap="round"
-                        ></path>
-                      </svg>
-                      <svg
-                        class="secret-key-toggle-icon secret-key-toggle-icon--show"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path
-                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                        ></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label>Bucket Name:</label>
-                  <input
-                    v-model="config.bucket_name"
-                    type="text"
-                    required
-                    placeholder="vault-backup"
-                    class="form-input"
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label>Region (optional):</label>
-                  <input
-                    v-model="config.region"
-                    type="text"
-                    placeholder="us-east-1"
-                    class="form-input"
-                  />
-                  <div class="form-help">
-                    AWS region (e.g., us-east-1). Leave empty for default.
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <div class="toggle-group">
-                    <label class="toggle-label">Use SSL/TLS</label>
-                    <label class="toggle-switch">
-                      <input
-                        v-model="config.use_ssl"
-                        type="checkbox"
-                        class="toggle-input"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                  <div class="form-help">
-                    Enable SSL/TLS for S3 connections (recommended for
-                    production).
-                  </div>
-                </div>
-
-                <div class="form-actions">
+              <div class="form-actions">
+                <div class="test-connection-wrapper">
                   <button
+                    v-if="config.storage_mode !== 'local'"
                     @click="testConnection"
                     type="button"
                     class="btn btn-secondary"
@@ -283,37 +131,26 @@
                     <span v-else>Test Connection</span>
                   </button>
                 </div>
-
-                <div
-                  v-if="testResult"
-                  class="test-result"
-                  :class="testResult.success ? 'success' : 'error'"
-                >
-                  <span
-                    v-html="
-                      getIcon(testResult.success ? 'check' : 'warning', 16)
+                <div class="save-actions">
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="
+                      saving ||
+                      (config.storage_mode !== 'local' && !testSuccessful)
                     "
-                  ></span>
-                  {{ testResult.message }}
+                  >
+                    <span v-if="saving">Saving...</span>
+                    <span v-else>Save Configuration</span>
+                  </button>
+                  <button
+                    type="button"
+                    @click="closeModal"
+                    class="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              </div>
-
-              <div class="form-actions">
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  :disabled="saving"
-                >
-                  <span v-if="saving">Saving...</span>
-                  <span v-else>Save Configuration</span>
-                </button>
-                <button
-                  type="button"
-                  @click="closeModal"
-                  class="btn btn-secondary"
-                >
-                  Cancel
-                </button>
               </div>
 
               <div
@@ -425,6 +262,17 @@ export default {
     const saving = ref(false);
     const testing = ref(false);
     const testResult = ref(null);
+    const testSuccessful = ref(false);
+
+    // Watch for storage mode changes
+    watch(
+      () => config.value.storage_mode,
+      (newMode) => {
+        testSuccessful.value = newMode === "local";
+        testResult.value = null;
+        onStorageModeChange();
+      },
+    );
     const saveResult = ref(null);
     const showModal = ref(false);
     const originalConfig = ref(null); // Store original config when opening modal
@@ -459,14 +307,7 @@ export default {
     ];
 
     const config = ref({
-      enabled: false,
       storage_mode: "local",
-      endpoint_url: "",
-      access_key_id: "",
-      secret_access_key: "",
-      bucket_name: "",
-      region: "",
-      use_ssl: true,
     });
 
     const loadConfig = async () => {
@@ -475,29 +316,11 @@ export default {
       try {
         const response = await admin.getExternalStorageConfig();
 
-        if (response.enabled) {
-          config.value = {
-            enabled: true,
-            storage_mode: response.storage_mode || "local",
-            endpoint_url: response.endpoint_url || "",
-            access_key_id: response.access_key_id || "", // Load from server (decrypted)
-            secret_access_key: response.secret_access_key || "", // Load from server (decrypted)
-            bucket_name: response.bucket_name || "",
-            region: response.region || "",
-            use_ssl: response.use_ssl !== false,
-          };
-        } else {
-          config.value = {
-            enabled: false,
-            storage_mode: "local",
-            endpoint_url: "",
-            access_key_id: response.access_key_id || "", // Load from server (decrypted)
-            secret_access_key: response.secret_access_key || "", // Load from server (decrypted)
-            bucket_name: "",
-            region: "",
-            use_ssl: true,
-          };
-        }
+        config.value = {
+          storage_mode: response.storage_mode || "local",
+        };
+        // If mode is local, it's considered "successful" by default for the save button
+        testSuccessful.value = config.value.storage_mode === "local";
       } catch (err) {
         error.value = err.message || "Failed to load configuration";
       } finally {
@@ -506,11 +329,6 @@ export default {
     };
 
     const onStorageModeChange = () => {
-      if (config.value.storage_mode === "local") {
-        config.value.enabled = false;
-      } else {
-        config.value.enabled = true;
-      }
       testResult.value = null;
       saveResult.value = null;
     };
@@ -526,27 +344,25 @@ export default {
 
       testing.value = true;
       testResult.value = null;
+      testSuccessful.value = false;
 
       try {
-        const response = await admin.testExternalStorageConnection({
-          endpoint_url: config.value.endpoint_url,
-          access_key_id: config.value.access_key_id,
-          secret_access_key: config.value.secret_access_key,
-          bucket_name: config.value.bucket_name,
-          region: config.value.region,
-          use_ssl: config.value.use_ssl,
-        });
+        const response = await admin.testExternalStorageConnection();
 
         testResult.value = {
           success: response.success,
           message:
             response.message || response.error || "Connection test completed",
         };
+        testSuccessful.value = response.success;
+        console.debug("Test successful set to:", testSuccessful.value);
       } catch (err) {
         testResult.value = {
           success: false,
           message: err.message || "Connection test failed",
         };
+        testSuccessful.value = false;
+        console.debug("Test failed, successful set to:", testSuccessful.value);
       } finally {
         testing.value = false;
       }
@@ -557,36 +373,13 @@ export default {
       saveResult.value = null;
 
       try {
-        // Build payload - only include fields that are provided
-        // Backend will preserve existing values if not provided
         const payload = {
-          enabled: config.value.storage_mode !== "local",
           storage_mode: config.value.storage_mode,
         };
-
-        // Only include fields if they have values (to allow preserving existing values)
-        if (config.value.endpoint_url) {
-          payload.endpoint_url = config.value.endpoint_url;
-        }
-        if (config.value.access_key_id) {
-          payload.access_key_id = config.value.access_key_id;
-        }
-        if (config.value.secret_access_key) {
-          payload.secret_access_key = config.value.secret_access_key;
-        }
-        if (config.value.bucket_name) {
-          payload.bucket_name = config.value.bucket_name;
-        }
-        if (config.value.region) {
-          payload.region = config.value.region;
-        }
-        // Always include use_ssl as it has a default value
-        payload.use_ssl = config.value.use_ssl;
 
         const response = await admin.saveExternalStorageConfig(payload);
 
         // Reload config to get updated values
-        // Both Access Key ID and Secret Access Key will be loaded from server (decrypted)
         await loadConfig(false);
         // Update originalConfig to reflect the saved state
         originalConfig.value = JSON.parse(JSON.stringify(config.value));
@@ -663,15 +456,6 @@ export default {
       return "Not configured";
     };
 
-    // Watch for storage mode changes
-    watch(
-      () => config.value.storage_mode,
-      () => {
-        // No need to preserve fields - they are always loaded from server
-        onStorageModeChange();
-      },
-    );
-
     const checkSyncStatus = async () => {
       try {
         const status = await admin.getExternalStorageStatus();
@@ -684,7 +468,6 @@ export default {
         }
       } catch (err) {
         // If status check fails, don't change syncing state
-        // This prevents disabling the button if there's a temporary network issue
       }
     };
 
@@ -781,6 +564,7 @@ export default {
       error,
       saving,
       testing,
+      testSuccessful,
       config,
       testResult,
       saveResult,
@@ -1380,8 +1164,19 @@ export default {
 
 .form-actions {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-top: 2rem;
+}
+
+.save-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.test-connection-wrapper {
+  flex: 1;
 }
 
 .btn {
@@ -1422,10 +1217,17 @@ export default {
   cursor: not-allowed;
 }
 
-.test-result,
+.test-result {
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .save-result {
   padding: 1rem;
-
   display: flex;
   align-items: center;
   gap: 0.5rem;

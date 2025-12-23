@@ -16,6 +16,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - This refactor focuses on user comfort, clarity, and maintainability rather than visual embellishment.
 
 - **File Management**:
+
   - Improved file and folder manipulation with native drag-and-drop and full keyboard workflows (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`).
   - Added contextual actions on empty space to upload files and create folders, paste cutted/copied elements, and view current folder properties.
   - Enhanced file and folder properties for clearer and more useful metadata.
@@ -23,6 +24,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Fixed folder deletion to correctly handle nested contents.
   - Strengthened deletion and restoration logic across the system, with more precise actions and improved database consistency.
   - Various internal refinements to improve reliability and overall file management behavior.
+
+- Migrated S3 credentials and bucket details to environment variables to allow data restoration from S3-compatible storage during initial setup, resolving accessibility issues when starting from an empty database.
 
 ### Fixed
 

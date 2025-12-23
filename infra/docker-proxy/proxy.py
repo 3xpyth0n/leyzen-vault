@@ -48,9 +48,15 @@ from common.env import parse_container_names  # noqa: E402
 from common.token_utils import derive_docker_proxy_token  # noqa: E402
 
 
+# Adjust default log level based on LEYZEN_ENVIRONMENT
+_leyzen_env = os.environ.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+_default_log_level = "WARNING" if _leyzen_env not in ("dev", "development") else "INFO"
+
 logging.basicConfig(
     level=getattr(
-        logging, os.environ.get("DOCKER_PROXY_LOG_LEVEL", "INFO").upper(), logging.INFO
+        logging,
+        os.environ.get("DOCKER_PROXY_LOG_LEVEL", _default_log_level).upper(),
+        logging.WARNING,
     ),
     format="%(asctime)s [%(levelname)s] %(message)s",
     stream=sys.stdout,

@@ -44,12 +44,41 @@
 </template>
 
 <script>
+import { watch, onUnmounted } from "vue";
 import { useServerStatus } from "../composables/useServerStatus";
 
 export default {
   name: "OfflineModal",
   setup() {
     const { isOffline } = useServerStatus();
+    let refreshTimer = null;
+
+    watch(
+      isOffline,
+      (offline) => {
+        if (offline) {
+          if (!refreshTimer) {
+            refreshTimer = setTimeout(() => {
+              window.location.reload();
+            }, 60000);
+          }
+        } else {
+          // If server comes back online, clear the timer
+          if (refreshTimer) {
+            clearTimeout(refreshTimer);
+            refreshTimer = null;
+          }
+        }
+      },
+      { immediate: true },
+    );
+
+    // Cleanup timer when component is unmounted
+    onUnmounted(() => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+    });
 
     return {
       isOffline,

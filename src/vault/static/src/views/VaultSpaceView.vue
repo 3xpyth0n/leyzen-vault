@@ -411,6 +411,8 @@
 </template>
 
 <script>
+import { ref, onMounted, nextTick, watch } from "vue";
+import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import { files, vaultspaces, auth, config } from "../services/api";
 import BatchActions from "../components/BatchActions.vue";
 import DragDropUpload from "../components/DragDropUpload.vue";
@@ -476,6 +478,53 @@ export default {
     CustomSelect,
     BackgroundContextMenu,
   },
+  setup(props, { emit }) {
+    const {
+      selectedItems,
+      viewMode,
+      showEncryptionOverlay,
+      isMasterKeyRequired,
+      showPasswordModal,
+      passwordModalPassword,
+      passwordModalError,
+      passwordModalLoading,
+      overlayStyle,
+      isSelected,
+      toggleSelection,
+      handleSelectionChange,
+      handleViewChange,
+      clearSelection,
+      checkEncryptionAccess,
+      handlePasswordSubmit,
+      closePasswordModal,
+      openPasswordModal,
+    } = useFileViewComposable({
+      viewType: "vaultspace",
+      enableEncryptionCheck: true,
+      onEncryptionUnlocked: null, // We'll use a watcher in the component instead
+    });
+
+    return {
+      selectedItems,
+      viewMode,
+      showEncryptionOverlay,
+      isMasterKeyRequired,
+      showPasswordModal,
+      passwordModalPassword,
+      passwordModalError,
+      passwordModalLoading,
+      overlayStyle,
+      isSelected,
+      toggleSelection,
+      handleSelectionChange,
+      handleViewChange,
+      clearSelection,
+      checkEncryptionAccess,
+      handlePasswordModalSubmit: handlePasswordSubmit,
+      closePasswordModal,
+      openPasswordModal,
+    };
+  },
   data() {
     return {
       vaultspace: null,
@@ -523,8 +572,6 @@ export default {
       uploadError: null,
       deleteError: null,
       vaultspaceKey: null, // Decrypted VaultSpace key (stored in memory only)
-      selectedItems: [], // Array of selected file/folder objects
-      viewMode: "grid", // 'grid' or 'list'
       showProperties: false,
       propertiesFileId: null,
       showPreview: false,
@@ -537,13 +584,6 @@ export default {
       newlyCreatedFolderId: null,
       newlyCreatedFileIds: [], // Array of file IDs that were just uploaded (for animation)
       pendingRevokeCallback: null,
-      showPasswordModal: false,
-      passwordModalPassword: "",
-      passwordModalError: "",
-      passwordModalLoading: false,
-      showEncryptionOverlay: false,
-      isMasterKeyRequired: false,
-      overlayStyle: {},
       showConflictModal: false,
       conflictData: null,
       conflictApplyToAll: false,
@@ -559,15 +599,6 @@ export default {
       skipSelectionClear: false,
     };
   },
-  computed: {
-    isServerOffline() {
-      // Check server status via global function
-      if (typeof window !== "undefined" && window.getServerStatus) {
-        return !window.getServerStatus();
-      }
-      return false; // Default to online if status not available
-    },
-  },
   created() {
     // Create debounced version of loadFiles to preserve 'this' context
     this.debouncedLoadFiles = debounce((parentId = null) => {
@@ -575,58 +606,37 @@ export default {
     }, 300);
 
     // Initialize file sync composable
-    // Note: In Vue 2, we need to use setup() or adapt the composable
-    // For now, we'll initialize it in mounted() after vaultspace is loaded
     this.fileSync = null;
   },
   async mounted() {
-    // Check if user master key is available first
+    await this.checkEncryptionAccess();
+
+    // Check if encryption access check resulted in showing overlay
+    if (this.showEncryptionOverlay) {
+      // Still load VaultSpace metadata (non-encrypted info)
+      await this.loadVaultSpace();
+      return;
+    }
+
+    // Check if user master key is available
     const userMasterKey = await getUserMasterKey();
     if (!userMasterKey) {
       // Check if salt exists - indicates master key is not available
       const storedSalt = getStoredSalt();
       if (storedSalt) {
-        // User is authenticated but master key is not available
-        // User needs to re-enter password to access encrypted content
-        // Don't logout - keep JWT token so user doesn't need to re-authenticate
-        // Show error message but don't redirect - user can still navigate
         this.showAlert({
           type: "error",
           title: "Session Expired",
           message:
             "Your encryption session has expired. Please log in again to access encrypted content.",
         });
-        // Don't load encrypted content, but don't disconnect user
-        // User can navigate to other pages or go to login to re-enter password
         return;
       } else {
-        // No salt and no master key
-        // Check if user is still authenticated (could be SSO user without password)
+        // No salt and no master key and not an SSO user
         try {
           const currentUser = await auth.getCurrentUser();
-          if (currentUser) {
-            // User is authenticated but has no master key or salt
-            // This is normal for SSO users - show encryption overlay instead of modal
-            // Load VaultSpace metadata but show overlay to indicate encryption is needed
-            this.showEncryptionOverlay = true;
-            this.isMasterKeyRequired = true;
-            // Still load VaultSpace metadata (non-encrypted info)
-            await this.loadVaultSpace();
-            // Calculate overlay position after DOM is ready
-            this.$nextTick(() => {
-              this.calculateOverlayPosition();
-              // Recalculate on window resize
-              const resizeHandler = () => this.calculateOverlayPosition();
-              window.addEventListener("resize", resizeHandler);
-              this._overlayResizeHandler = resizeHandler;
-
-              // Recalculate when sidebar toggles (observe sidebar width changes)
-              this.observeSidebarChanges();
-
-              // Protect overlay from being removed via DevTools
-              this.protectOverlay();
-            });
-            return;
+          if (!currentUser) {
+            throw new Error("Not authenticated");
           }
         } catch (err) {
           // User is not authenticated - redirect to login
@@ -658,15 +668,11 @@ export default {
     this.initializeFileSync();
 
     // Check if folder parameter is in URL query string
-    // This handles direct navigation to a folder (e.g., from favorites)
     const folderIdFromQuery = this.$route.query.folder;
     if (folderIdFromQuery) {
-      // Load the specific folder immediately (bypass debounce for initial load)
-      // Set currentParentId first to ensure state is correct
       this.currentParentId = folderIdFromQuery;
       await this.loadFilesInternal(folderIdFromQuery, false);
     } else {
-      // Load root folder immediately (bypass debounce for initial load)
       this.currentParentId = null;
       await this.loadFilesInternal(null, false);
     }
@@ -690,7 +696,7 @@ export default {
       this.showRevokeConfirm = true;
     };
 
-    // Check for pending selection (e.g., from Starred or Recent view)
+    // Check for pending selection
     this.checkPendingSelection();
   },
   beforeUnmount() {
@@ -700,27 +706,6 @@ export default {
       window.selectionManager.deselectAll();
     }
 
-    // Cleanup resize handler
-    if (this._overlayResizeHandler) {
-      window.removeEventListener("resize", this._overlayResizeHandler);
-    }
-    // Cleanup resize observers
-    if (this._sidebarResizeObserver) {
-      this._sidebarResizeObserver.disconnect();
-    }
-    if (this._mainContentResizeObserver) {
-      this._mainContentResizeObserver.disconnect();
-    }
-    if (this._pageContentResizeObserver) {
-      this._pageContentResizeObserver.disconnect();
-    }
-    // Cleanup overlay protection
-    if (this._overlayProtectionInterval) {
-      clearInterval(this._overlayProtectionInterval);
-    }
-    if (this._overlayMutationObserver) {
-      this._overlayMutationObserver.disconnect();
-    }
     // Cleanup keyboard shortcuts
     if (this._keyboardShortcutHandler) {
       document.removeEventListener("keydown", this._keyboardShortcutHandler);
@@ -781,6 +766,18 @@ export default {
     },
   },
   watch: {
+    showEncryptionOverlay(newVal) {
+      if (!newVal && !this.isMasterKeyRequired) {
+        // Encryption unlocked, reload data
+        this.loadVaultSpace().then(() => {
+          this.loadVaultSpaceKey().then(() => {
+            const folderIdFromQuery = this.$route.query.folder;
+            this.currentParentId = folderIdFromQuery || null;
+            this.loadFilesInternal(this.currentParentId, true);
+          });
+        });
+      }
+    },
     "$route.query.folder": {
       handler(newFolderId, oldFolderId) {
         if (!this.skipSelectionClear) {
@@ -3007,52 +3004,6 @@ export default {
       return date.toLocaleDateString();
     },
 
-    // Selection methods
-    toggleSelection(item) {
-      const index = this.selectedItems.findIndex((i) => i.id === item.id);
-      if (index >= 0) {
-        this.selectedItems.splice(index, 1);
-      } else {
-        this.selectedItems.push(item);
-      }
-    },
-
-    isSelected(itemId) {
-      return this.selectedItems.some((item) => item.id === itemId);
-    },
-
-    selectAll() {
-      this.selectedItems = [...this.folders, ...this.filesList];
-    },
-
-    clearSelection() {
-      this.selectedItems = [];
-    },
-
-    handleViewChange(mode) {
-      this.viewMode = mode;
-      localStorage.setItem("fileViewMode_vaultspace", mode);
-    },
-
-    handleSelectionChange(change) {
-      if (change.action === "select") {
-        if (!this.isSelected(change.item.id)) {
-          this.selectedItems.push(change.item);
-        }
-      } else if (change.action === "deselect") {
-        const index = this.selectedItems.findIndex(
-          (i) => i.id === change.item.id,
-        );
-        if (index >= 0) {
-          this.selectedItems.splice(index, 1);
-        }
-      } else if (change.action === "select-all") {
-        this.selectedItems = [...change.items];
-      } else if (change.action === "clear") {
-        this.selectedItems = [];
-      }
-    },
-
     async handleSearchResultClick(item) {
       await this.navigateToAndSelectItem(item);
     },
@@ -3319,219 +3270,6 @@ export default {
         const callback = this.pendingRevokeCallback;
         this.pendingRevokeCallback = null;
         callback();
-      }
-    },
-
-    async handlePasswordModalSubmit() {
-      if (!this.passwordModalPassword) {
-        this.passwordModalError = "Password is required";
-        return;
-      }
-
-      this.passwordModalError = "";
-      this.passwordModalLoading = true;
-
-      try {
-        // Get master key salt from API
-        // Use direct fetch to avoid automatic logout on 401
-        const token = localStorage.getItem("jwt_token");
-        if (!token) {
-          throw new Error(
-            "No authentication token found. Please log in again.",
-          );
-        }
-
-        const response = await fetch("/api/auth/account/master-key-salt", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error("Authentication failed. Please log in again.");
-          }
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || "Failed to get master key salt");
-        }
-
-        const data = await response.json();
-        const saltBase64 = data.master_key_salt;
-        if (!saltBase64) {
-          throw new Error("Master key salt not available");
-        }
-
-        // Convert base64 salt to Uint8Array
-        const saltStr = atob(saltBase64);
-        const salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
-
-        // Derive master key from password and salt
-        const masterKey = await initializeUserMasterKey(
-          this.passwordModalPassword,
-          salt,
-        );
-
-        if (!masterKey) {
-          throw new Error("Failed to derive master key");
-        }
-
-        // Close modal and clear password
-        this.showPasswordModal = false;
-        this.passwordModalPassword = "";
-        this.passwordModalError = "";
-
-        // Hide overlay and mark master key as no longer required
-        this.showEncryptionOverlay = false;
-        this.isMasterKeyRequired = false;
-
-        // Reload VaultSpace with the new master key
-        await this.loadVaultSpace();
-        await this.loadVaultSpaceKey();
-        await this.loadFiles();
-      } catch (err) {
-        logger.error("Failed to initialize master key:", err);
-        this.passwordModalError =
-          err.message || "Failed to initialize encryption. Please try again.";
-      } finally {
-        this.passwordModalLoading = false;
-      }
-    },
-
-    closePasswordModal() {
-      if (!this.passwordModalLoading) {
-        this.showPasswordModal = false;
-        this.passwordModalPassword = "";
-        this.passwordModalError = "";
-        // Keep overlay visible if master key is still required
-        // Don't hide overlay on cancel - user needs to unlock to proceed
-      }
-    },
-    openPasswordModal() {
-      this.showPasswordModal = true;
-    },
-    calculateOverlayPosition() {
-      // Calculate position to cover main-content with the same border-radius
-      this.$nextTick(() => {
-        const mainContent = document.querySelector(".main-content");
-        const isMobileMode = document.body.classList.contains("mobile-mode");
-        if (mainContent) {
-          const mainContentRect = mainContent.getBoundingClientRect();
-
-          // Use the exact dimensions and position of main-content
-          const overlayTop = mainContentRect.top;
-          const overlayLeft = mainContentRect.left;
-          const overlayWidth = mainContentRect.width;
-          const overlayHeight = mainContentRect.height;
-
-          this.overlayStyle = {
-            position: "fixed",
-            top: `${overlayTop}px`,
-            left: `${overlayLeft}px`,
-            width: `${overlayWidth}px`,
-            height: `${overlayHeight}px`,
-            borderRadius: isMobileMode ? "0" : "1rem", // Match main-content border-radius in desktop mode
-            zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
-            pointerEvents: "auto", // Ensure overlay is interactive
-          };
-        }
-      });
-    },
-    observeSidebarChanges() {
-      // Observe sidebar width changes to recalculate overlay position
-      const sidebar = document.querySelector(".sidebar");
-      if (sidebar && window.ResizeObserver) {
-        const observer = new ResizeObserver(() => {
-          // Use requestAnimationFrame to ensure DOM has updated
-          requestAnimationFrame(() => {
-            this.calculateOverlayPosition();
-          });
-        });
-        observer.observe(sidebar);
-        this._sidebarResizeObserver = observer;
-      }
-
-      // Observe header changes (height might change)
-      const header = document.querySelector(".app-header");
-      if (header && window.ResizeObserver) {
-        const observer = new ResizeObserver(() => {
-          requestAnimationFrame(() => {
-            this.calculateOverlayPosition();
-          });
-        });
-        observer.observe(header);
-      }
-
-      // Also observe main-content changes (which moves when sidebar toggles)
-      const mainContent = document.querySelector(".main-content");
-      if (mainContent && window.ResizeObserver) {
-        const observer = new ResizeObserver(() => {
-          requestAnimationFrame(() => {
-            this.calculateOverlayPosition();
-          });
-        });
-        observer.observe(mainContent);
-        this._mainContentResizeObserver = observer;
-      }
-
-      // Also observe page-content directly
-      const pageContent = document.querySelector(".page-content");
-      if (pageContent && window.ResizeObserver) {
-        const observer = new ResizeObserver(() => {
-          requestAnimationFrame(() => {
-            this.calculateOverlayPosition();
-          });
-        });
-        observer.observe(pageContent);
-        this._pageContentResizeObserver = observer;
-      }
-    },
-    protectOverlay() {
-      // Protect overlay from being removed via DevTools
-      // Check periodically if overlay still exists and recreate if needed
-      if (this._overlayProtectionInterval) {
-        clearInterval(this._overlayProtectionInterval);
-      }
-
-      this._overlayProtectionInterval = setInterval(() => {
-        if (this.showEncryptionOverlay && this.isMasterKeyRequired) {
-          const overlay = document.querySelector(
-            '[data-encryption-overlay="true"]',
-          );
-          if (!overlay) {
-            // Overlay was removed, force re-render
-            this.$forceUpdate();
-            this.$nextTick(() => {
-              this.calculateOverlayPosition();
-            });
-          }
-        }
-      }, 500);
-
-      // Also use MutationObserver to detect removal
-      const observer = new MutationObserver((mutations) => {
-        if (this.showEncryptionOverlay && this.isMasterKeyRequired) {
-          const overlay = document.querySelector(
-            '[data-encryption-overlay="true"]',
-          );
-          if (!overlay) {
-            // Overlay was removed, force re-render
-            this.$forceUpdate();
-            this.$nextTick(() => {
-              this.calculateOverlayPosition();
-            });
-          }
-        }
-      });
-
-      const body = document.body;
-      if (body) {
-        observer.observe(body, {
-          childList: true,
-          subtree: true,
-        });
-        this._overlayMutationObserver = observer;
       }
     },
 
@@ -5288,7 +5026,6 @@ export default {
   margin-bottom: 1.5rem;
 }
 
-/* Form styles use global .form-group and .input from vault.css */
 .modal .form-group input {
   width: 100%;
   box-sizing: border-box;

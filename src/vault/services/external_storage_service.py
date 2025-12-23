@@ -113,8 +113,8 @@ class ExternalStorageService:
             return self._client
 
         config = self._get_config()
-        if not config or not config.get("enabled", False):
-            raise RuntimeError("External storage S3 is not enabled")
+        if not config:
+            raise RuntimeError("External storage S3 configuration not found")
 
         # Get configuration values
         endpoint_url = config.get("endpoint_url")

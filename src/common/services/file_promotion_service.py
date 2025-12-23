@@ -35,7 +35,11 @@ def _bg_sync_to_external_storage(
     from pathlib import Path
 
     # Set up basic logging for this process
-    logging.basicConfig(level=logging.INFO)
+    _leyzen_env = os.environ.get("LEYZEN_ENVIRONMENT", "").strip().lower()
+    _default_level = (
+        logging.WARNING if _leyzen_env not in ("dev", "development") else logging.INFO
+    )
+    logging.basicConfig(level=_default_level)
     bg_logger = logging.getLogger(f"bg-sync-{file_id}")
 
     # Set a hard timeout for the entire process (2 minutes)
@@ -277,7 +281,7 @@ class FilePromotionService:
                                                 )
                                             )
 
-                                            if s3_config and s3_config.get("enabled"):
+                                            if s3_config:
                                                 # Start background process for sync
                                                 # This avoids blocking the Gunicorn worker
                                                 p = multiprocessing.Process(

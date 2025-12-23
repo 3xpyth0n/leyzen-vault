@@ -48,11 +48,15 @@ class ExternalStorageWorker:
         Returns:
             Storage mode string: "local", "s3", or "hybrid"
         """
-        # Use app context for database access
-        with self.app.app_context():
-            return ExternalStorageConfigService.get_storage_mode(
-                self.secret_key, self.app
-            )
+        try:
+            # Use app context for database access
+            with self.app.app_context():
+                return ExternalStorageConfigService.get_storage_mode(
+                    self.secret_key, self.app
+                )
+        except Exception:
+            # Fallback to local if error (e.g. database connection issue)
+            return "local"
 
     def _is_enabled(self) -> bool:
         """Check if external storage is enabled.
@@ -60,15 +64,21 @@ class ExternalStorageWorker:
         Returns:
             True if enabled, False otherwise
         """
-        # Use app context for database access
-        with self.app.app_context():
-            return ExternalStorageConfigService.is_enabled(self.secret_key, self.app)
+        try:
+            # Use app context for database access
+            with self.app.app_context():
+                return ExternalStorageConfigService.is_enabled(
+                    self.secret_key, self.app
+                )
+        except Exception:
+            # Fallback to disabled if error
+            return False
 
     def _run_hybrid_sync(self) -> None:
         """Run synchronization in hybrid mode."""
-        # Use app context manager to ensure proper context handling
-        with self.app.app_context():
-            try:
+        try:
+            # Use app context manager to ensure proper context handling
+            with self.app.app_context():
                 if not self.local_storage:
                     logger.warning(
                         "[WORKER] Local storage not available, skipping hybrid sync"
@@ -94,15 +104,14 @@ class ExternalStorageWorker:
                     logger.info(
                         f"[WORKER] Synced {deletion_results['deleted_count']} deletions"
                     )
-
-            except Exception as e:
-                logger.error(f"[WORKER ERROR] Hybrid sync failed: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[WORKER ERROR] Hybrid sync failed: {e}", exc_info=True)
 
     def _run_s3_cleanup(self) -> None:
         """Run cleanup/validation in S3-only mode."""
-        # Use app context manager to ensure proper context handling
-        with self.app.app_context():
-            try:
+        try:
+            # Use app context manager to ensure proper context handling
+            with self.app.app_context():
                 from vault.database.schema import File, db
 
                 external_storage = ExternalStorageService(self.secret_key, self.app)
@@ -117,9 +126,8 @@ class ExternalStorageWorker:
                     f"[WORKER] S3 cleanup completed: {results['deleted_count']} deleted, "
                     f"{results['failed_count']} failed"
                 )
-
-            except Exception as e:
-                logger.error(f"[WORKER ERROR] S3 cleanup failed: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[WORKER ERROR] S3 cleanup failed: {e}", exc_info=True)
 
     def _worker_loop(self) -> None:
         """Main worker loop."""
