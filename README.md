@@ -1,14 +1,28 @@
-# Leyzen Vault
-
-**Version 2.4.0**
-
-[![CI](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml)
-[![License: BSL 1.1](https://img.shields.io/badge/License-BSL--1.1-0A7AA6)](https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE)
-[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/3xpyth0n/leyzen-vault/issues)
-
-Leyzen Vault is a self-hosted file storage system built on a core idea: you shouldn't trust a backend system forever.
-
-Our focus isn't just on stopping intruders. We also look at how to limit how long a breach can last and lessen its impact if the backend is compromised.
+<p align="center">
+  <img src="https://leyzen.com/images/vault-text-logo.png" alt="Leyzen Vault logo" height="30" />
+</p>
+<p align="center">
+  <i>A secure alternative to traditional cloud storage, built around client-side encryption.</i>
+  <br/>
+  <img width="1640" style="border-radius: 12px;" alt="Vault dashboard" src="https://leyzen.com/images/vault-dashboard.png">
+</p>
+<p align="center">
+  <a href="https://github.com/prettier/prettier">
+    <img src="https://img.shields.io/badge/code_style-prettier-ff69b4.svg" alt="Prettier">
+  </a>
+  <a href="https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml">
+    <img src="https://github.com/3xpyth0n/leyzen-vault/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="https://github.com/3xpyth0n/leyzen-vault/issues">
+    <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome">
+  </a>
+  <a href="https://github.com/3xpyth0n/leyzen-vault/commits/main">
+  <img src="https://img.shields.io/github/last-commit/3xpyth0n/leyzen-vault" alt="Last commit">
+</a>
+  <a href="https://github.com/3xpyth0n/leyzen-vault/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-BSL--1.1-0A7AA6" alt="License">
+  </a>
+</p>
 
 ## What It's About
 
