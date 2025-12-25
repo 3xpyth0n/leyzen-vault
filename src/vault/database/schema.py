@@ -2093,70 +2093,71 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     {"password": orchestrator_password},
                 )
 
-            # Configure privileges
-            # Grant USAGE on schema public to all roles
-            # Handle "tuple concurrently updated" and transaction errors gracefully (multiple workers)
-            def safe_grant(statement: str, description: str = ""):
-                """Execute GRANT statement in a separate transaction, handling errors gracefully."""
-                max_retries = 2
-                for attempt in range(max_retries):
-                    try:
-                        # Use a separate transaction for each GRANT to avoid transaction conflicts
-                        with engine.begin() as grant_conn:
-                            grant_conn.execute(text(statement))
-                        # Success - break out of retry loop
+        # Configure privileges in a separate phase
+        # This ensures roles are created and committed before we try to grant privileges to them
+        # Grant USAGE on schema public to all roles
+        # Handle "tuple concurrently updated" and transaction errors gracefully (multiple workers)
+        def safe_grant(statement: str, description: str = ""):
+            """Execute GRANT statement in a separate transaction, handling errors gracefully."""
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    # Use a separate transaction for each GRANT to avoid transaction conflicts
+                    with engine.begin() as grant_conn:
+                        grant_conn.execute(text(statement))
+                    # Success - break out of retry loop
+                    break
+                except Exception as grant_error:
+                    error_str = str(grant_error).lower()
+                    # Check for transaction errors that require rollback
+                    is_transaction_error = (
+                        "infailedsqltransaction" in error_str
+                        or "current transaction is aborted" in error_str
+                    )
+                    is_concurrent_error = (
+                        "tuple concurrently updated" in error_str
+                        or "internalerror" in error_str
+                    )
+
+                    if is_concurrent_error:
+                        # Another worker already granted this - that's fine
                         break
-                    except Exception as grant_error:
-                        error_str = str(grant_error).lower()
-                        # Check for transaction errors that require rollback
-                        is_transaction_error = (
-                            "infailedsqltransaction" in error_str
-                            or "current transaction is aborted" in error_str
-                        )
-                        is_concurrent_error = (
-                            "tuple concurrently updated" in error_str
-                            or "internalerror" in error_str
-                        )
+                    elif is_transaction_error and attempt < max_retries - 1:
+                        # Transaction was aborted - retry in a new transaction
+                        import time
 
-                        if is_concurrent_error:
-                            # Another worker already granted this - that's fine
-                            break
-                        elif is_transaction_error and attempt < max_retries - 1:
-                            # Transaction was aborted - retry in a new transaction
-                            import time
-
-                            time.sleep(0.1 * (attempt + 1))  # Small delay before retry
-                            continue
+                        time.sleep(0.1 * (attempt + 1))  # Small delay before retry
+                        continue
+                    else:
+                        # Different error or max retries reached - log but continue
+                        if app_logger:
+                            app_logger.log(
+                                f"[WARNING] Failed to {description}: {grant_error}"
+                            )
                         else:
-                            # Different error or max retries reached - log but continue
-                            if app_logger:
-                                app_logger.log(
-                                    f"[WARNING] Failed to {description}: {grant_error}"
-                                )
-                            else:
-                                logger.warning(
-                                    f"Failed to {description}: {grant_error}"
-                                )
-                            break
+                            logger.warning(f"Failed to {description}: {grant_error}")
+                        break
 
-            safe_grant(
-                'GRANT USAGE ON SCHEMA public TO "leyzen_app"',
-                "grant USAGE to leyzen_app",
-            )
-            safe_grant(
-                'GRANT USAGE ON SCHEMA public TO "leyzen_migrator"',
-                "grant USAGE to leyzen_migrator",
-            )
-            safe_grant(
-                'GRANT USAGE ON SCHEMA public TO "leyzen_secrets"',
-                "grant USAGE to leyzen_secrets",
-            )
-            safe_grant(
-                'GRANT USAGE ON SCHEMA public TO "leyzen_orchestrator"',
-                "grant USAGE to leyzen_orchestrator",
-            )
+        safe_grant(
+            'GRANT USAGE ON SCHEMA public TO "leyzen_app"',
+            "grant USAGE to leyzen_app",
+        )
+        safe_grant(
+            'GRANT USAGE ON SCHEMA public TO "leyzen_migrator"',
+            "grant USAGE to leyzen_migrator",
+        )
+        safe_grant(
+            'GRANT USAGE ON SCHEMA public TO "leyzen_secrets"',
+            "grant USAGE to leyzen_secrets",
+        )
+        safe_grant(
+            'GRANT USAGE ON SCHEMA public TO "leyzen_orchestrator"',
+            "grant USAGE to leyzen_orchestrator",
+        )
 
-            # Get list of all application tables (exclude system_secrets)
+        # Get list of all application tables (exclude system_secrets)
+        # We need a new connection for this since the previous transaction is closed
+        with engine.connect() as conn:
             tables_result = conn.execute(
                 text(
                     """
@@ -2169,57 +2170,58 @@ def init_db_roles(app: Any, secret_key: str) -> None:
             )
             app_tables = [row[0] for row in tables_result.fetchall()]
 
-            # Grant privileges to leyzen_app on application tables
-            for table in app_tables:
-                safe_grant(
-                    f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"',
-                    f"grant privileges on {table} to leyzen_app",
-                )
-
-            # Grant CREATE privilege to leyzen_migrator on schema
-            # This allows leyzen_migrator to create, alter, and drop tables in the schema
-            # No need to grant ALTER/DROP on individual tables - CREATE on schema is sufficient
+        # Grant privileges to leyzen_app on application tables
+        for table in app_tables:
             safe_grant(
-                'GRANT CREATE ON SCHEMA public TO "leyzen_migrator"',
-                "grant CREATE to leyzen_migrator",
+                f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table}" TO "leyzen_app"',
+                f"grant privileges on {table} to leyzen_app",
             )
 
-            # Grant privileges to leyzen_secrets on system_secrets only
-            safe_grant(
-                'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"',
-                "grant privileges on system_secrets to leyzen_secrets",
-            )
+        # Grant CREATE privilege to leyzen_migrator on schema
+        # This allows leyzen_migrator to create, alter, and drop tables in the schema
+        # No need to grant ALTER/DROP on individual tables - CREATE on schema is sufficient
+        safe_grant(
+            'GRANT CREATE ON SCHEMA public TO "leyzen_migrator"',
+            "grant CREATE to leyzen_migrator",
+        )
 
-            # Grant SELECT only to leyzen_orchestrator on system_secrets
-            safe_grant(
-                'GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"',
-                "grant SELECT on system_secrets to leyzen_orchestrator",
-            )
+        # Grant privileges to leyzen_secrets on system_secrets only
+        safe_grant(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "system_secrets" TO "leyzen_secrets"',
+            "grant privileges on system_secrets to leyzen_secrets",
+        )
 
-            # Revoke all privileges from leyzen_app on system_secrets
-            safe_grant(
-                'REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"',
-                "revoke privileges from leyzen_app on system_secrets",
-            )
+        # Grant SELECT only to leyzen_orchestrator on system_secrets
+        safe_grant(
+            'GRANT SELECT ON TABLE "system_secrets" TO "leyzen_orchestrator"',
+            "grant SELECT on system_secrets to leyzen_orchestrator",
+        )
 
-            # Set default privileges for future tables
-            # Future tables created by leyzen_migrator will grant SELECT/INSERT/UPDATE/DELETE to leyzen_app
-            try:
+        # Revoke all privileges from leyzen_app on system_secrets
+        safe_grant(
+            'REVOKE ALL ON TABLE "system_secrets" FROM "leyzen_app"',
+            "revoke privileges from leyzen_app on system_secrets",
+        )
+
+        # Set default privileges for future tables
+        # Future tables created by leyzen_migrator will grant SELECT/INSERT/UPDATE/DELETE to leyzen_app
+        try:
+            with engine.begin() as conn:
                 conn.execute(
                     text(
                         'ALTER DEFAULT PRIVILEGES FOR ROLE "leyzen_migrator" IN SCHEMA public '
                         'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "leyzen_app"'
                     )
                 )
-            except Exception as default_priv_error:
-                # Log but don't fail - default privileges might not be critical
-                error_msg = (
-                    f"[WARNING] Failed to set default privileges: {default_priv_error}"
-                )
-                if app_logger:
-                    app_logger.log(error_msg)
-                else:
-                    logger.warning(error_msg)
+        except Exception as default_priv_error:
+            # Log but don't fail - default privileges might not be critical
+            error_msg = (
+                f"[WARNING] Failed to set default privileges: {default_priv_error}"
+            )
+            if app_logger:
+                app_logger.log(error_msg)
+            else:
+                logger.warning(error_msg)
 
             # Transaction commits here automatically with engine.begin()
 
@@ -2585,6 +2587,19 @@ def init_db(app) -> bool:
 
         # This worker has the lock - proceed with initialization
         initialization_performed = False
+
+        # Double-check if database is initialized NOW (after acquiring lock)
+        # Another worker might have finished initialization while we were waiting
+        try:
+            from sqlalchemy import inspect as sql_inspect
+
+            inspector = sql_inspect(db.engine)
+            existing_tables = set(inspector.get_table_names())
+            if "system_secrets" in existing_tables:
+                db_already_initialized = True
+        except Exception:
+            pass
+
         # If database was already initialized, skip table creation but still run migrations
         if db_already_initialized:
             initialization_performed = False

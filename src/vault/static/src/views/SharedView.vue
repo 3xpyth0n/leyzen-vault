@@ -253,7 +253,9 @@
 <script>
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
-import { auth, files, vaultspaces } from "../services/api";
+import { files, vaultspaces } from "../services/api";
+import { useAuthStore } from "../store/auth";
+import { mapStores } from "pinia";
 import { arrayToBase64url, base64urlToArray } from "../services/encryption.js";
 import { decryptFile, decryptFileKey } from "../services/encryption";
 import {
@@ -306,6 +308,9 @@ export default {
       editingNoteText: "",
       savingNote: false,
     };
+  },
+  computed: {
+    ...mapStores(useAuthStore),
   },
   async mounted() {
     await this.loadSharedFiles();
@@ -360,7 +365,7 @@ export default {
 
         if (!response.ok) {
           if (response.status === 401) {
-            auth.logout();
+            this.authStore.logout();
             this.$router.push("/login");
             return;
           }

@@ -9,18 +9,11 @@
     >
       <div class="modal-container" @click.stop>
         <div class="modal-content">
-          <!-- Animated gradient background -->
-          <div class="gradient-background"></div>
-
           <!-- Main content -->
           <div class="modal-body">
             <!-- Spinner -->
             <div class="spinner-container" v-if="!error">
-              <div class="spinner">
-                <div class="spinner-ring"></div>
-                <div class="spinner-ring"></div>
-                <div class="spinner-ring"></div>
-              </div>
+              <div class="spinner"></div>
             </div>
 
             <!-- Error icon -->
@@ -144,9 +137,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(7, 14, 28, 0.4);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
+  background: rgba(0, 0, 0, 0.7);
   animation: fadeIn 0.3s ease;
 }
 
@@ -167,7 +158,7 @@ export default {
 .modal-container {
   position: relative;
   width: 100%;
-  max-width: 500px;
+  max-width: 450px;
   animation: slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -183,63 +174,16 @@ export default {
 }
 
 .modal-content {
-  background: linear-gradient(
-    140deg,
-    rgba(30, 41, 59, 0.1),
-    rgba(15, 23, 42, 0.08)
-  );
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-
-  padding: 3rem 2.5rem;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-color);
+  padding: 2.5rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
-}
-
-.modal-content::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(88, 166, 255, 0.4),
-    transparent
-  );
-}
-
-.gradient-background {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(
-    circle,
-    rgba(88, 166, 255, 0.1) 0%,
-    transparent 70%
-  );
-  animation: rotate 20s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  border-radius: 0.5rem;
 }
 
 .modal-body {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -247,59 +191,19 @@ export default {
 }
 
 .spinner-container {
-  margin-bottom: 2rem;
-  position: relative;
-  width: 80px;
-  height: 80px;
+  margin-bottom: 1.5rem;
 }
 
 .spinner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.spinner-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
+  width: 40px;
+  height: 40px;
   border: 3px solid var(--accent);
   border-top-color: var(--ash-grey);
   border-radius: 50%;
-  animation: spin 1.5s linear infinite;
-}
-
-.spinner-ring:nth-child(1) {
-  animation-delay: 0s;
-  border: 3px solid var(--accent);
-  border-top-color: var(--ash-grey);
-}
-
-.spinner-ring:nth-child(2) {
-  animation-delay: 0.5s;
-  border: 3px solid var(--accent);
-  border-top-color: var(--ash-grey);
-  width: 70%;
-  height: 70%;
-  top: 15%;
-  left: 15%;
-}
-
-.spinner-ring:nth-child(3) {
-  animation-delay: 1s;
-  border: 3px solid var(--accent);
-  border-top-color: var(--ash-grey);
-  width: 40%;
-  height: 40%;
-  top: 30%;
-  left: 30%;
-  animation-direction: reverse;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
   to {
     transform: rotate(360deg);
   }
@@ -308,48 +212,32 @@ export default {
 .error-icon {
   margin-bottom: 1.5rem;
   color: #ef4444;
-  filter: drop-shadow(0 4px 8px rgba(239, 68, 68, 0.3));
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
 }
 
 .modal-title {
   margin: 0 0 1rem 0;
-  color: #a9b7aa;
-  font-size: 1.75rem;
+  color: var(--text-primary);
+  font-size: 1.5rem;
   font-weight: 600;
   text-align: center;
-  background: transparent;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .current-step {
   margin: 0 0 1rem 0;
-  color: #a9b7aa;
-  font-size: 1.1rem;
+  color: var(--text-primary);
+  font-size: 1rem;
   font-weight: 500;
   text-align: center;
   line-height: 1.5;
-  min-height: 1.5em;
 }
 
 .vaultspace-name {
-  margin: 0 0 1.5rem 0;
-  color: #a9b7aa;
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
   font-size: 0.95rem;
   font-style: italic;
   text-align: center;
+  opacity: 0.8;
 }
 
 .progress-info {
@@ -361,29 +249,28 @@ export default {
 }
 
 .progress-percentage {
-  color: #58a6ff;
-  font-size: 2rem;
+  color: var(--accent);
+  font-size: 1.75rem;
   font-weight: 700;
-  text-shadow: 0 0 20px rgba(88, 166, 255, 0.5);
   font-variant-numeric: tabular-nums;
 }
 
 .progress-count {
-  color: #a9b7aa;
+  color: var(--text-primary);
   font-size: 0.9rem;
   font-weight: 500;
+  opacity: 0.8;
 }
 
 .error-message {
   margin: 1rem 0 0 0;
   color: #fca5a5;
-  font-size: 1rem;
+  font-size: 0.95rem;
   text-align: center;
   line-height: 1.5;
-  padding: 1rem;
+  padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3) !important;
-
   width: 100%;
 }
 
@@ -394,20 +281,20 @@ export default {
 }
 
 .cancel-btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.5rem 1.25rem;
   border: 1px solid #004225;
-
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   background: #004225;
-  color: #a9b7aa;
+  color: var(--text-primary);
+  border-radius: 0.25rem;
 }
 
 .cancel-btn:hover:not(:disabled) {
   background: #004225;
-  border-color: #004225;
+  opacity: 0.9;
   transform: translateY(-1px);
 }
 
@@ -425,18 +312,6 @@ export default {
 
   .modal-content {
     padding: 2rem 1.5rem;
-  }
-
-  .modal-title {
-    font-size: 1.5rem;
-  }
-
-  .current-step {
-    font-size: 1rem;
-  }
-
-  .progress-percentage {
-    font-size: 1.5rem;
   }
 }
 </style>

@@ -231,7 +231,8 @@
 <script>
 import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { auth, removeToken, admin, config as configApi } from "../services/api";
+import { admin, config as configApi } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import PasswordInput from "../components/PasswordInput.vue";
 import { logger } from "../utils/logger";
 
@@ -242,6 +243,7 @@ export default {
   },
   setup() {
     const router = useRouter();
+    const authStore = useAuthStore();
     const email = ref("");
     const password = ref("");
     const confirmPassword = ref("");
@@ -322,7 +324,7 @@ export default {
       // Check if setup is already complete
       // If check fails (network error, database not available), allow user to proceed with setup
       try {
-        const setupComplete = await auth.isSetupComplete();
+        const setupComplete = await authStore.checkSetupStatus();
         if (setupComplete) {
           // Setup already complete, redirect to login
           router.push("/login");
@@ -336,6 +338,7 @@ export default {
     const handleSetup = async () => {
       error.value = "";
       loading.value = true;
+      const authStore = useAuthStore();
 
       try {
         // Validate passwords match
@@ -345,7 +348,7 @@ export default {
           return;
         }
 
-        const response = await auth.setup(
+        const response = await authStore.setup(
           email.value,
           password.value,
           confirmPassword.value,
@@ -689,7 +692,7 @@ export default {
               }
               if (!restoreStatus.running) {
                 // Restore finished, check if setup is complete
-                const setupComplete = await auth.isSetupComplete();
+                const setupComplete = await authStore.checkSetupStatus();
                 if (setupComplete) {
                   restoreMessage.value = "Restore completed successfully!";
                   setTimeout(() => {
@@ -710,7 +713,7 @@ export default {
             }
 
             // Check if setup is complete (restore finished)
-            const setupComplete = await auth.isSetupComplete();
+            const setupComplete = await authStore.checkSetupStatus();
             if (setupComplete) {
               restoreMessage.value = "Restore completed successfully!";
               setTimeout(() => {
@@ -855,6 +858,7 @@ export default {
 
 .setup-header h1 {
   margin: 0 0 0.5rem 0;
+  font-family: var(--font-family-branding);
   color: #a9b7aa;
   font-size: 2rem;
   font-weight: 600;

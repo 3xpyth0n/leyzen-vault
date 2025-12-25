@@ -133,9 +133,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { auth, sso } from "../services/api";
+import { sso } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import {
   initializeUserMasterKey,
   clearUserMasterKey,
@@ -143,9 +144,11 @@ import {
 import { logger } from "../utils/logger.js";
 import PasswordInput from "../components/PasswordInput.vue";
 import TwoFactorVerify from "../components/TwoFactorVerify.vue";
+import MaintenanceModal from "../components/MaintenanceModal.vue";
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 const username = ref("");
 const password = ref("");
 const captchaResponse = ref("");
@@ -155,9 +158,16 @@ const ssoLoading = ref(false);
 const error = ref("");
 const showVerificationLink = ref(false);
 const emailForVerification = ref("");
-const signupEnabled = ref(true);
+
+// Reactive configuration with safety checks
+const passwordAuthEnabled = computed(
+  () => authStore.authConfig?.password_authentication_enabled ?? true,
+);
+const signupEnabled = computed(
+  () => authStore.authConfig?.allow_signup ?? false,
+);
+const isSetupComplete = computed(() => authStore.isSetupComplete ?? true);
 const ssoProviders = ref([]);
-const passwordAuthEnabled = ref(true);
 const magicLinkEmail = ref("");
 const magicLinkLoading = ref(false);
 const magicLinkSuccess = ref(false);
@@ -251,20 +261,21 @@ onMounted(async () => {
     router.replace({ query: nextQuery });
   }
 
-  // Get authentication configuration (consolidated endpoint)
+  // Check if setup is complete and get auth configuration
   try {
-    const config = await auth.getAuthConfig();
-    passwordAuthEnabled.value = config.password_authentication_enabled === true;
-    signupEnabled.value = config.allow_signup === true;
+    await authStore.fetchAuthConfig();
+
+    if (isSetupComplete.value === false) {
+      router.push("/setup");
+      return;
+    }
   } catch (err) {
     logger.error("Failed to get auth config:", err);
-    passwordAuthEnabled.value = true; // Default to enabled
-    signupEnabled.value = true; // Default to enabled
   }
 
   // Always refresh CAPTCHA on mount to ensure we have a valid one
   // This handles cases where user returns to login page after logout
-  if (passwordAuthEnabled.value) {
+  if (passwordAuthEnabled.value === true) {
     await refreshCaptcha();
   }
   // Load SSO providers
@@ -353,7 +364,8 @@ const handleLogin = async () => {
 
   try {
     // Pass the nonce - should always be available at this point
-    const response = await auth.login(
+    const authStore = useAuthStore();
+    const response = await authStore.login(
       username.value,
       password.value,
       captchaNonce.value,
@@ -420,7 +432,8 @@ const handle2FAVerify = async (totpToken) => {
   loading.value = true;
 
   try {
-    const response = await auth.login(
+    const authStore = useAuthStore();
+    const response = await authStore.login(
       username.value,
       password.value,
       captchaNonce.value || "",
@@ -533,8 +546,9 @@ const handleMagicLinkLogin = async (providerId) => {
   magicLinkLoading.value = true;
 
   try {
+    const authStore = useAuthStore();
     const returnUrl = window.location.origin + "/dashboard";
-    const result = await sso.initiateMagicLinkLogin(
+    const result = await authStore.initiateMagicLinkLogin(
       providerId,
       magicLinkEmail.value,
       returnUrl,

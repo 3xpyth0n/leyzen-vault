@@ -5,167 +5,43 @@
  */
 
 import { clearUserMasterKey } from "./keyManager";
+import { useAuthStore } from "../store/auth";
 
 const API_BASE_URL = "/api";
 
-const SETUP_STATUS_CACHE_TTL = 5000; // milliseconds
-const SETUP_STATUS_ERROR_TTL = 1000;
-
-let setupStatusCache = {
-  value: null,
-  expiresAt: 0,
-};
-
-function getCachedSetupStatus() {
-  if (Date.now() < setupStatusCache.expiresAt) {
-    return setupStatusCache.value;
-  }
-  return null;
-}
-
-function setSetupStatusCache(value, ttl = SETUP_STATUS_CACHE_TTL) {
-  setupStatusCache = {
-    value,
-    expiresAt: Date.now() + Math.max(0, ttl),
-  };
-}
-
-function invalidateSetupStatusCache() {
-  setupStatusCache = { value: null, expiresAt: 0 };
-}
-
 function purgeBrowserState() {
-  // CRITICAL: Remove token FIRST before clearing
-  // This ensures token is gone even if clear() fails
-  try {
-    removeToken();
-    // Force remove again
-    localStorage.removeItem("jwt_token");
-    // Verify it's gone
-    if (localStorage.getItem("jwt_token")) {
-      // Last resort: clear everything
-      localStorage.clear();
-    }
-  } catch (err) {
-    // If removal fails, clear everything
-    try {
-      localStorage.clear();
-    } catch (e) {
-      // Ignore
-    }
-  }
-
-  // Now clear everything else
-  try {
-    localStorage.clear();
-  } catch (err) {
-    // Ignore storage errors
-  }
-
-  try {
-    sessionStorage.clear();
-  } catch (err) {
-    // Ignore storage errors
-  }
+  localStorage.clear();
+  sessionStorage.clear();
 
   try {
     if (typeof document !== "undefined") {
-      const hostname =
-        typeof window !== "undefined" ? window.location.hostname : "";
       const cookies = document.cookie ? document.cookie.split(";") : [];
-
-      // Explicitly delete "session" cookie first (Flask session cookie)
-      const sessionCookieName = "session";
       const expires = "Thu, 01 Jan 1970 00:00:00 GMT";
 
-      // Delete session cookie with all possible combinations
-      document.cookie = `${sessionCookieName}=;expires=${expires};path=/`;
-      document.cookie = `${sessionCookieName}=;expires=${expires};path=/;SameSite=Lax`;
-      document.cookie = `${sessionCookieName}=;expires=${expires};path=/;SameSite=Strict`;
-      if (hostname) {
-        document.cookie = `${sessionCookieName}=;expires=${expires};path=/;domain=${hostname}`;
-        if (hostname.indexOf(".") > 0) {
-          document.cookie = `${sessionCookieName}=;expires=${expires};path=/;domain=.${hostname}`;
-        }
-      }
-
-      // Delete all other cookies
       for (const cookie of cookies) {
         const eqPos = cookie.indexOf("=");
         const name =
           eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-        if (!name || name === sessionCookieName) {
-          continue; // Skip if already handled or empty
-        }
         document.cookie = `${name}=;expires=${expires};path=/`;
-        if (hostname) {
-          document.cookie = `${name}=;expires=${expires};path=/;domain=${hostname}`;
-          if (hostname.indexOf(".") > 0) {
-            document.cookie = `${name}=;expires=${expires};path=/;domain=.${hostname}`;
-          }
-        }
       }
     }
   } catch (err) {
-    // Ignore cookie clearing errors
+    // Ignore
   }
 }
 
-/**
- * Get JWT token from localStorage.
- *
- * @returns {string|null} JWT token or null
- */
 function getToken() {
   return localStorage.getItem("jwt_token");
 }
 
-/**
- * Set JWT token in localStorage.
- *
- * @param {string} token - JWT token
- */
 function setToken(token) {
   localStorage.setItem("jwt_token", token);
 }
 
-/**
- * Remove JWT token from localStorage.
- * Uses multiple methods to ensure deletion.
- */
 function removeToken() {
-  try {
-    localStorage.removeItem("jwt_token");
-    // Double-check: if still exists, try direct removal
-    if (localStorage.getItem("jwt_token")) {
-      delete localStorage.jwt_token;
-      // If still exists, clear all and restore other items
-      const backup = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key !== "jwt_token") {
-          backup[key] = localStorage.getItem(key);
-        }
-      }
-      localStorage.clear();
-      // Restore other items
-      for (const [key, value] of Object.entries(backup)) {
-        localStorage.setItem(key, value);
-      }
-    }
-  } catch (err) {
-    // If all else fails, clear everything
-    try {
-      localStorage.clear();
-    } catch (e) {
-      // Ignore
-    }
-  }
+  localStorage.removeItem("jwt_token");
 }
 
-/**
- * Export removeToken for external use (e.g., setup flow).
- */
 export { removeToken };
 
 /**
@@ -197,6 +73,8 @@ export function isNetworkError(error) {
     "temporary",
     "server is offline",
     "offline",
+    "service unavailable",
+    "bad gateway",
   ];
 
   // Check if error has isOffline flag (set when server is offline)
@@ -469,654 +347,6 @@ export async function apiRequest(endpoint, options = {}) {
 
   return response;
 }
-
-/**
- * Authentication API methods
- */
-export const auth = {
-  /**
-   * Get authentication configuration.
-   *
-   * @returns {Promise<object>} Authentication configuration object with allow_signup and password_authentication_enabled
-   */
-  async getAuthConfig() {
-    // Check if server is offline
-    if (typeof window !== "undefined" && window.getServerStatus) {
-      const isServerOnline = window.getServerStatus();
-      if (!isServerOnline) {
-        throw new Error("Network error: Server is offline");
-      }
-    }
-
-    try {
-      const response = await fetch("/api/auth/config", {
-        method: "GET",
-      });
-      if (!response.ok) {
-        return {
-          allow_signup: true,
-          password_authentication_enabled: true,
-        }; // Default to enabled if check fails
-      }
-      return await response.json();
-    } catch (err) {
-      return {
-        allow_signup: true,
-        password_authentication_enabled: true,
-      }; // Default to enabled if check fails
-    }
-  },
-
-  /**
-   * Check if public signup is enabled.
-   *
-   * @returns {Promise<boolean>} True if signup is allowed
-   */
-  async isSignupEnabled() {
-    try {
-      const config = await this.getAuthConfig();
-      return config.allow_signup === true;
-    } catch (err) {
-      return true; // Default to enabled if check fails
-    }
-  },
-
-  /**
-   * Check if setup is complete.
-   *
-   * @returns {Promise<boolean>} True if setup is complete
-   */
-  async isSetupComplete() {
-    const cached = getCachedSetupStatus();
-    if (cached !== null) {
-      return cached;
-    }
-
-    // Check if server is offline (but allow this check to proceed as it's needed for setup page)
-    // This endpoint is critical for determining if setup is needed, so we allow it even when offline
-    // The timeout will handle the actual network failure
-
-    try {
-      // Add timeout to prevent hanging on network errors
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-      const response = await fetch("/api/auth/setup/status", {
-        method: "GET",
-        signal: controller.signal,
-        credentials: "same-origin", // Include cookies for same-origin requests
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        // If response is not OK, assume setup is incomplete
-        setSetupStatusCache(false, SETUP_STATUS_ERROR_TTL);
-        return false;
-      }
-      const data = await response.json();
-      const result = data.is_setup_complete === true;
-      setSetupStatusCache(result);
-      return result;
-    } catch (err) {
-      // Network errors are expected on fresh install or when database is unavailable
-      // Return false to allow access to setup page
-      setSetupStatusCache(false, SETUP_STATUS_ERROR_TTL);
-      return false; // Default to incomplete if check fails
-    }
-  },
-
-  /**
-   * Create initial superadmin account (setup).
-   *
-   * @param {string} email - Admin email
-   * @param {string} password - Admin password
-   * @param {string} confirmPassword - Confirm password
-   * @returns {Promise<object>} User and token
-   */
-  async setup(email, password, confirmPassword) {
-    // Forcefully remove any existing token before hitting setup endpoint
-    removeToken();
-
-    const response = await apiRequest("/auth/setup", {
-      method: "POST",
-      body: JSON.stringify({
-        email,
-        password,
-        confirm_password: confirmPassword,
-      }),
-      skipAutoRefresh: true,
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Setup failed");
-    }
-
-    const data = await response.json();
-
-    // CRITICAL: Ensure no token is in the response data
-    // Even if backend accidentally sends one, delete it
-    if (data.token) {
-      delete data.token;
-    }
-
-    // Completely purge all browser state IMMEDIATELY
-    // Do this before any other operation
-    purgeBrowserState();
-
-    // IMMEDIATE verification: check for token right after purge
-    const tokenAfterPurge = localStorage.getItem("jwt_token");
-    if (tokenAfterPurge) {
-      // Force clear everything if token still exists
-      localStorage.clear();
-      sessionStorage.clear();
-    }
-
-    // Additional check: verify token is really gone
-    const finalTokenCheck = localStorage.getItem("jwt_token");
-    if (finalTokenCheck) {
-      // Last resort: clear and throw error
-      localStorage.clear();
-      sessionStorage.clear();
-    }
-
-    invalidateSetupStatusCache();
-
-    return {
-      user: data.user ?? null,
-      email_verification_required: data.email_verification_required ?? false,
-      message:
-        data.message ??
-        "Superadmin account created successfully. Please log in to continue.",
-    };
-  },
-
-  /**
-   * Sign up a new user.
-   *
-   * @param {string} email - User email
-   * @param {string} password - User password
-   * @returns {Promise<object>} User and token
-   */
-  async signup(email, password, encryptedVaultSpaceKey = null) {
-    const body = { email, password };
-    if (encryptedVaultSpaceKey) {
-      body.encrypted_vaultspace_key = encryptedVaultSpaceKey;
-    }
-
-    const response = await apiRequest("/auth/signup", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Signup failed");
-    }
-
-    const data = await response.json();
-    if (data.token) {
-      setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Login user.
-   *
-   * @param {string} usernameOrEmail - Username or email
-   * @param {string} password - User password
-   * @param {string} captchaNonce - CAPTCHA nonce (optional)
-   * @param {string} captchaResponse - CAPTCHA response (optional)
-   * @returns {Promise<object>} User and token
-   */
-  async login(
-    usernameOrEmail,
-    password,
-    captchaNonce = "",
-    captchaResponse = "",
-    totpToken = null,
-  ) {
-    const body = { email: usernameOrEmail, password };
-    // CAPTCHA response is now required - always send it (even if empty, backend will validate)
-    body.captcha = captchaResponse || "";
-    // Nonce is optional - only send if provided
-    if (captchaNonce) {
-      body.captcha_nonce = captchaNonce;
-    }
-    // 2FA token is optional - only send if provided
-    if (totpToken) {
-      body.totp_token = totpToken;
-    }
-    const response = await apiRequest("/auth/login", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Login failed");
-    }
-
-    const data = await response.json();
-    if (data.token) {
-      setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Get current user profile.
-   *
-   * @returns {Promise<object>} Current user
-   */
-  async getCurrentUser() {
-    let response;
-    try {
-      response = await apiRequest("/auth/me");
-    } catch (error) {
-      // If it's a network error (including server offline), re-throw it so callers can handle it
-      // Don't wrap it in a generic error message
-      if (isNetworkError(error)) {
-        // Server is offline or network error - don't disconnect user
-        throw error;
-      }
-      // For other errors, throw with original message
-      throw error;
-    }
-
-    if (!response.ok) {
-      // Check if it's a network-related status code
-      const networkStatusCodes = [0, 502, 503, 504];
-      if (networkStatusCodes.includes(response.status)) {
-        // Network error - throw as network error so callers can handle it
-        throw new Error(
-          `Network error: Server temporarily unavailable (${response.status})`,
-        );
-      }
-
-      // For 401, NEVER throw an error that could cause disconnection
-      // If we have a token, it's likely a temporary issue (server restart, etc.)
-      // Just return null or throw a network error so callers don't disconnect
-      if (response.status === 401) {
-        const token = getToken();
-        if (token) {
-          removeToken();
-          try {
-            await clearUserMasterKey();
-          } catch (e) {}
-          if (typeof window !== "undefined") {
-            window.location.replace("/login");
-          }
-          throw new Error("Unauthorized");
-        }
-        const errorData = await parseErrorResponse(response);
-        removeToken();
-        try {
-          await clearUserMasterKey();
-        } catch (e) {}
-        if (typeof window !== "undefined") {
-          window.location.replace("/login");
-        }
-        throw new Error(errorData.error || "Failed to get current user");
-      }
-
-      // For other errors, throw normally
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to get current user");
-    }
-    const data = await response.json();
-
-    // If token is provided in response (from SSO cookie), store it in localStorage
-    // This allows isAuthenticated() to work correctly with SSO flows
-    if (data.token) {
-      setToken(data.token);
-    }
-
-    return data.user;
-  },
-
-  /**
-   * Get master key salt for current user.
-   * Used by SSO users to retrieve their salt for master key derivation.
-   *
-   * @returns {Promise<string>} Base64-encoded master key salt
-   */
-  async getMasterKeySalt() {
-    const response = await apiRequest("/auth/account/master-key-salt");
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to get master key salt");
-    }
-    const data = await response.json();
-    return data.master_key_salt;
-  },
-
-  /**
-   * Logout user.
-   */
-  async logout() {
-    const token = getToken();
-    // Try to call logout API to blacklist token (best effort)
-    if (token) {
-      try {
-        await apiRequest("/auth/logout", {
-          method: "POST",
-        });
-      } catch (error) {
-        // Ignore errors - token might already be invalid
-        // Still continue with local cleanup
-      }
-    }
-    removeToken();
-    // Clear master key and salt from sessionStorage and IndexedDB
-    await clearUserMasterKey();
-  },
-
-  /**
-   * Refresh JWT token.
-   *
-   * @returns {Promise<object>} New token
-   */
-  async refreshToken() {
-    const response = await apiRequest("/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ token: getToken() }),
-    });
-
-    if (!response.ok) {
-      removeToken();
-      throw new Error("Token refresh failed");
-    }
-
-    const data = await response.json();
-    if (data.token) {
-      setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Verify email using verification token.
-   *
-   * @param {string} token - Verification token
-   * @returns {Promise<object>} User (no token - user must log in after verification)
-   */
-  async verifyEmailToken(token) {
-    const response = await apiRequest(`/auth/account/verify/${token}`, {
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to verify email");
-    }
-
-    const data = await response.json();
-    // CRITICAL: Do NOT store token - user must log in after email verification
-    // This ensures master key initialization happens during login
-    // Even if backend accidentally returns a token, ignore it
-    if (data.token) {
-      delete data.token;
-    }
-    return data;
-  },
-
-  /**
-   * Resend verification email.
-   *
-   * @param {string} userId - User ID (optional if email provided)
-   * @param {string} email - Email address (optional if userId provided)
-   * @returns {Promise<object>} Response with user_id if email was used
-   */
-  async resendVerificationEmail(userId, email = null) {
-    const body = {};
-    if (userId) {
-      body.user_id = userId;
-    } else if (email) {
-      body.email = email;
-    } else {
-      throw new Error("Either userId or email is required");
-    }
-
-    const response = await apiRequest(`/auth/account/resend-verification`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to resend verification email");
-    }
-    return await response.json();
-  },
-};
-
-/**
- * Two-Factor Authentication API methods.
- */
-export const twoFactor = {
-  /**
-   * Get current user's 2FA status.
-   *
-   * @returns {Promise<object>} 2FA status
-   */
-  async getStatus() {
-    const response = await apiRequest("/auth/2fa/status");
-    if (!response.ok) {
-      const error = await parseErrorResponse(response);
-      throw new Error(error.error);
-    }
-    return await response.json();
-  },
-
-  /**
-   * Start 2FA setup process.
-   * Generates a new TOTP secret and QR code.
-   *
-   * @returns {Promise<object>} Setup data with secret, URI, and QR code
-   */
-  async setup() {
-    const response = await apiRequest("/auth/2fa/setup", {
-      method: "POST",
-    });
-    if (!response.ok) {
-      const error = await parseErrorResponse(response);
-      throw new Error(error.error);
-    }
-    return await response.json();
-  },
-
-  /**
-   * Verify 2FA setup by providing a TOTP token.
-   *
-   * @param {string} token - 6-digit TOTP token
-   * @returns {Promise<object>} Result with backup codes
-   */
-  async verifySetup(token) {
-    const response = await apiRequest("/auth/2fa/verify-setup", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    });
-    if (!response.ok) {
-      const error = await parseErrorResponse(response);
-      throw new Error(error.error);
-    }
-    return await response.json();
-  },
-
-  /**
-   * Disable 2FA for the current user.
-   *
-   * @param {string} password - User's password for confirmation
-   * @returns {Promise<object>} Result
-   */
-  async disable(password) {
-    const response = await apiRequest("/auth/2fa/disable", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    });
-    if (!response.ok) {
-      const error = await parseErrorResponse(response);
-      throw new Error(error.error);
-    }
-    return await response.json();
-  },
-
-  /**
-   * Regenerate backup recovery codes.
-   *
-   * @param {string} password - User's password for confirmation
-   * @returns {Promise<object>} New backup codes
-   */
-  async regenerateBackupCodes(password) {
-    const response = await apiRequest("/auth/2fa/regenerate-backup", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    });
-    if (!response.ok) {
-      const error = await parseErrorResponse(response);
-      throw new Error(error.error);
-    }
-    return await response.json();
-  },
-};
-
-/**
- * Account API methods
- */
-export const account = {
-  /**
-   * Get current user account information.
-   *
-   * @returns {Promise<object>} Current user account info
-   */
-  async getAccount() {
-    let response;
-    try {
-      response = await apiRequest("/auth/me");
-    } catch (error) {
-      // If it's a network error (including server offline), re-throw it so callers can handle it
-      if (isNetworkError(error)) {
-        // Server is offline or network error - don't disconnect user
-        throw error;
-      }
-      throw error;
-    }
-
-    if (!response.ok) {
-      // Check if it's a network-related status code
-      const networkStatusCodes = [0, 502, 503, 504];
-      if (networkStatusCodes.includes(response.status)) {
-        // Network error - throw as network error so callers can handle it
-        throw new Error(
-          `Network error: Server temporarily unavailable (${response.status})`,
-        );
-      }
-
-      // For 401, NEVER throw an error that could cause disconnection
-      // If we have a token, it's likely a temporary issue (server restart, etc.)
-      if (response.status === 401) {
-        const token = getToken();
-        if (token) {
-          removeToken();
-          try {
-            await clearUserMasterKey();
-          } catch (e) {}
-          if (typeof window !== "undefined") {
-            window.location.replace("/login");
-          }
-          throw new Error("Unauthorized");
-        }
-        const errorData = await parseErrorResponse(response);
-        removeToken();
-        try {
-          await clearUserMasterKey();
-        } catch (e) {}
-        if (typeof window !== "undefined") {
-          window.location.replace("/login");
-        }
-        throw new Error(errorData.error || "Failed to get account information");
-      }
-
-      // For other errors, throw normally
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to get account information");
-    }
-    const data = await response.json();
-
-    // If token is provided in response (from SSO cookie), store it in localStorage
-    // This allows isAuthenticated() to work correctly with SSO flows
-    if (data.token) {
-      setToken(data.token);
-    }
-
-    return data.user;
-  },
-
-  /**
-   * Update user email.
-   *
-   * @param {string} email - New email address
-   * @param {string} password - Current password for verification
-   * @returns {Promise<object>} Updated user info
-   */
-  async updateEmail(email, password) {
-    const response = await apiRequest("/auth/account/email", {
-      method: "PUT",
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to update email");
-    }
-
-    const data = await response.json();
-    return data.user;
-  },
-
-  /**
-   * Change user password.
-   *
-   * @param {string} currentPassword - Current password
-   * @param {string} newPassword - New password
-   * @returns {Promise<void>}
-   */
-  async changePassword(currentPassword, newPassword) {
-    const response = await apiRequest("/auth/account/password", {
-      method: "POST",
-      body: JSON.stringify({
-        current_password: currentPassword,
-        new_password: newPassword,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to change password");
-    }
-  },
-
-  /**
-   * Delete user account.
-   *
-   * @param {string} password - Current password for confirmation
-   * @returns {Promise<void>}
-   */
-  async deleteAccount(password) {
-    const response = await apiRequest("/auth/account", {
-      method: "DELETE",
-      body: JSON.stringify({ password }),
-    });
-
-    if (!response.ok) {
-      const errorData = await parseErrorResponse(response);
-      throw new Error(errorData.error || "Failed to delete account");
-    }
-  },
-};
 
 /**
  * VaultSpace API methods
@@ -1438,32 +668,46 @@ export const files = {
     const promise = new Promise((resolve, reject) => {
       xhr = new XMLHttpRequest();
 
-      // Progress tracking
-      let lastLoaded = 0;
-      let lastTime = Date.now();
-      const PROGRESS_MARGIN = 2.5; // Margin of 2-3 seconds for remaining time
+      // Progress tracking (Sliding Window)
+      const samples = []; // [{time, loaded}]
+      const WINDOW_DURATION = 2000; // 2 seconds window
+      let lastSpeed = 0;
+      let lastTimeRemaining = null;
 
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable && onProgress && !isCancelled) {
-          const currentTime = Date.now();
-          const timeDiff = (currentTime - lastTime) / 1000; // seconds
-          const loadedDiff = e.loaded - lastLoaded; // bytes
+          const now = Date.now();
 
-          let speed = 0;
-          let timeRemaining = null;
+          // Add new sample
+          samples.push({ time: now, loaded: e.loaded });
 
-          if (timeDiff > 0 && loadedDiff > 0) {
-            speed = loadedDiff / timeDiff; // bytes per second
-            const remaining = e.total - e.loaded;
-            const calculatedTime = remaining / speed;
-            // Add the margin of 2-3 seconds
-            timeRemaining = calculatedTime + PROGRESS_MARGIN;
+          // Prune old samples (keep only within window)
+          while (
+            samples.length > 0 &&
+            now - samples[0].time > WINDOW_DURATION
+          ) {
+            samples.shift();
           }
 
-          onProgress(e.loaded, e.total, speed, timeRemaining);
+          // Only calculate speed if we have enough history or at least 2 samples
+          if (samples.length >= 2) {
+            const first = samples[0];
+            const last = samples[samples.length - 1];
+            const timeSpan = (last.time - first.time) / 1000; // seconds
 
-          lastLoaded = e.loaded;
-          lastTime = currentTime;
+            // Relaxed threshold to 0.1s for faster feedback
+            if (timeSpan >= 0.1) {
+              const bytesSpan = last.loaded - first.loaded;
+              if (bytesSpan > 0) {
+                lastSpeed = bytesSpan / timeSpan; // bytes/sec
+
+                const remaining = e.total - e.loaded;
+                lastTimeRemaining = remaining / lastSpeed;
+              }
+            }
+          }
+
+          onProgress(e.loaded, e.total, lastSpeed, lastTimeRemaining);
         }
       });
 
@@ -1727,32 +971,46 @@ export const files = {
       const xhr = new XMLHttpRequest();
       xhr.responseType = "arraybuffer";
 
-      // Progress tracking
-      let lastLoaded = 0;
-      let lastTime = Date.now();
-      const PROGRESS_MARGIN = 2.5; // Margin of 2-3 seconds for remaining time
+      // Progress tracking (Sliding Window)
+      const samples = []; // [{time, loaded}]
+      const WINDOW_DURATION = 2000; // 2 seconds window
+      let lastSpeed = 0;
+      let lastTimeRemaining = null;
 
       xhr.addEventListener("progress", (e) => {
         if (e.lengthComputable && onProgress) {
-          const currentTime = Date.now();
-          const timeDiff = (currentTime - lastTime) / 1000; // seconds
-          const loadedDiff = e.loaded - lastLoaded; // bytes
+          const now = Date.now();
 
-          let speed = 0;
-          let timeRemaining = null;
+          // Add new sample
+          samples.push({ time: now, loaded: e.loaded });
 
-          if (timeDiff > 0 && loadedDiff > 0) {
-            speed = loadedDiff / timeDiff; // bytes per second
-            const remaining = e.total - e.loaded;
-            const calculatedTime = remaining / speed;
-            // Add the margin of 2-3 seconds
-            timeRemaining = calculatedTime + PROGRESS_MARGIN;
+          // Prune old samples (keep only within window)
+          while (
+            samples.length > 0 &&
+            now - samples[0].time > WINDOW_DURATION
+          ) {
+            samples.shift();
           }
 
-          onProgress(e.loaded, e.total, speed, timeRemaining);
+          // Only calculate speed if we have enough history or at least 2 samples
+          if (samples.length >= 2) {
+            const first = samples[0];
+            const last = samples[samples.length - 1];
+            const timeSpan = (last.time - first.time) / 1000; // seconds
 
-          lastLoaded = e.loaded;
-          lastTime = currentTime;
+            // Relaxed threshold to 0.1s for faster feedback
+            if (timeSpan >= 0.1) {
+              const bytesSpan = last.loaded - first.loaded;
+              if (bytesSpan > 0) {
+                lastSpeed = bytesSpan / timeSpan; // bytes/sec
+
+                const remaining = e.total - e.loaded;
+                lastTimeRemaining = remaining / lastSpeed;
+              }
+            }
+          }
+
+          onProgress(e.loaded, e.total, lastSpeed, lastTimeRemaining);
         }
       });
 
@@ -3306,8 +2564,6 @@ export const sharing = {
 };
 
 export default {
-  auth,
-  account,
   vaultspaces,
   files,
   config,

@@ -213,7 +213,7 @@
 <script>
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { trash, auth } from "../services/api";
+import { trash } from "../services/api";
 import BatchActionsTrash from "../components/BatchActionsTrash.vue";
 
 export default {

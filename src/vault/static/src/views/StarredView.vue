@@ -81,12 +81,11 @@
   />
 
   <!-- Encryption Overlay -->
-  <Teleport to="body">
+  <Teleport to="#encryption-overlay-portal">
     <div
       v-if="showEncryptionOverlay && isMasterKeyRequired"
       class="encryption-overlay"
       :style="{
-        ...overlayStyle,
         'pointer-events': showPasswordModal ? 'none' : 'auto',
       }"
       data-encryption-overlay="true"
@@ -250,7 +249,8 @@
 <script>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { files, auth, vaultspaces, config } from "../services/api";
+import { files, vaultspaces, config } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import FileListView from "../components/FileListView.vue";
 import FileProperties from "../components/FileProperties.vue";
 import FilePreview from "../components/FilePreview.vue";
@@ -285,6 +285,7 @@ export default {
   setup() {
     const router = useRouter();
     const route = useRoute();
+    const authStore = useAuthStore();
 
     const loading = ref(false);
     const error = ref(null);
@@ -381,7 +382,7 @@ export default {
 
             if (!vaultspaceKeyData) {
               // Key doesn't exist, create it
-              const currentUser = await auth.getCurrentUser();
+              const currentUser = await authStore.fetchCurrentUser();
               const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
               await vaultspaces.share(
                 vaultspaceId,
@@ -430,7 +431,7 @@ export default {
       passwordModalPassword,
       passwordModalError,
       passwordModalLoading,
-      overlayStyle,
+      isSelected,
       handleSelectionChange,
       handleViewChange,
       clearSelection,
@@ -679,7 +680,7 @@ export default {
               );
               if (!vaultspaceKeyData) {
                 // Key doesn't exist, create it
-                const currentUser = await auth.getCurrentUser();
+                const currentUser = await authStore.fetchCurrentUser();
                 const { encryptedKey } =
                   await createVaultSpaceKey(userMasterKey);
                 await vaultspaces.share(
@@ -1084,7 +1085,6 @@ export default {
       passwordModalPassword,
       passwordModalError,
       passwordModalLoading,
-      overlayStyle,
       handleSelectionChange,
       handleViewChange,
       clearSelection,

@@ -178,7 +178,7 @@ class FileEventService:
         try:
             # Stream new events with heartbeat to keep connection alive
             # Use a longer sleep interval to reduce CPU usage
-            # Gunicorn timeout is 120s, so we send heartbeat every 30s to stay well under
+            # Uvicorn timeout is 120s, so we send heartbeat every 30s to stay well under
             last_heartbeat = time.time()
             heartbeat_interval = (
                 25.0  # Send heartbeat every 25 seconds (well under 120s timeout)
@@ -200,7 +200,7 @@ class FileEventService:
                     current_time = time.time()
                     if current_time - last_heartbeat >= heartbeat_interval:
                         # Send heartbeat to keep connection alive
-                        # This prevents Gunicorn from timing out
+                        # This prevents Uvicorn from timing out
                         yield FileEvent(
                             event_type=FileEventType.UPDATE,
                             file_id="",

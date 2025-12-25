@@ -2,7 +2,7 @@
   <img src="https://leyzen.com/images/vault-text-logo.png" alt="Leyzen Vault logo" height="30" />
 </p>
 <p align="center">
-  <i>A secure alternative to traditional cloud storage, built around client-side encryption.</i>
+  <i>A secure alternative to traditional cloud storage, for people who hate configuring cloud storage.</i>
   <br/>
   <img width="1640" style="border-radius: 12px;" alt="Vault dashboard" src="https://leyzen.com/images/vault-dashboard.png">
 </p>
@@ -24,40 +24,63 @@
   </a>
 </p>
 
-## What It's About
+## Overview
 
-Leyzen Vault brings together:
+Leyzen Vault is a self-hosted, end-to-end encrypted file storage solution. We built it because we wanted security, but we also really, really hate spending our weekends configuring servers.
 
-- file encryption on the client side
-- regular rebuilding of backend containers (learn about [Moving Target Defense](https://www.dhs.gov/archive/science-and-technology/csd-mtd))
-- clear boundaries of trust between different parts
+## 1. Deployment for the Laziest Among Us
 
-The aim here isn't to get rid of all risk. Instead, it's about restricting what a compromised backend can keep or get to over time. (_Maybe yes, try to get rid of all risk finally..._)
+Let's be honest: you don't want to edit `.env` files. You don't want to generate secrets manually. You just want it to work.
 
-## Getting Started
+We get it. That's why we automated the boring work for you. FYI: you don't have to touch your _.env_.
+
+**Clone. Install. Run.**
 
 ```bash
 git clone https://github.com/3xpyth0n/leyzen-vault.git
 cd leyzen-vault
-cp env.template .env
 ./install.sh
-./leyzenctl start
 ```
 
-You can do the first setup at /setup.
+### Configuration
+
+If you insist on changing something, please don't open a text editor,
+Use the CLI, typing one line is faster than finding a config file, for example :
+
+```bash
+./leyzenctl config set SMTP_HOST mx1.mycompany.com
+```
+
+Don't know what a variable does? Don't open the documentation. Just ask:
+
+```bash
+./leyzenctl config explain
+```
+
+## 2. Integrated HAProxy
+
+We included a custom, pre-configured HAProxy container to simplify deployment:
+
+- **Single Entry Point**: Acts as the sole gateway for your cluster, handling **TLS termination** and isolating backend services from direct internet exposure.
+- **No Manual Config**: Replaces the need for an external reverse proxy like Nginx. It configures itself automatically based on your environment.
+- **Environment Driven**: Change ports or enable SSL directly via the CLI, without editing complex configuration files.
+
+## 3. Moving Target Defense (Experimental)
+
+We are actively exploring **Moving Target Defense (MTD)**. This strategy involves rotating backend containers periodically to limit the attack surface.
+
+- **Objective**: By constantly shifting the infrastructure, we aim to **limit attacker dwell time** and prevent persistence. It makes it significantly harder for threats to establish a foothold.
+
+This feature is opt-in for those who want to test proactive defense strategies. If you enable it, please **share your feedback**. We are refining this technology to make it a standard "set and forget" security layer.
 
 ## Documentation
 
-For complete documentation, see:
+For when you actually want to read things:
 [docs.leyzen.com](https://docs.leyzen.com)
 
 ## Contributing
 
-Contributions are welcome, either by requesting features, including bug reports, or documentation improvements. And of course, code contributions are welcome!
-
-## Activity
-
-![Alt](https://repobeats.axiom.co/api/embed/dacac14edc54fdcb66274584d1ba09544c99d929.svg "Repobeats analytics image")
+Found a bug? Have a lazy idea? Contributions are welcome! We love code that makes our lives easier.
 
 ## License
 

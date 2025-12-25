@@ -82,8 +82,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { auth } from "../services/api";
+import { useAuthStore } from "../store/auth";
 
+const authStore = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -136,7 +137,7 @@ const handleVerifyToken = async (token) => {
   success.value = "";
 
   try {
-    const response = await auth.verifyEmailToken(token);
+    const response = await authStore.verifyEmailToken(token);
     // CRITICAL: Do NOT store any token - user must log in after email verification
     // This ensures master key initialization happens during login
     // Even if response contains a token, ignore it
@@ -183,7 +184,7 @@ const handleResendEmail = async () => {
   success.value = "";
 
   try {
-    const response = await auth.resendVerificationEmail(
+    const response = await authStore.resendVerificationEmail(
       userId.value || null,
       email.value || null,
     );

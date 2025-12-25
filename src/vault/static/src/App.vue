@@ -22,7 +22,7 @@
 <script setup>
 import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { auth } from "./services/api";
+import { useAuthStore } from "./store/auth";
 import AppLayout from "./components/AppLayout.vue";
 import { initMobileMode } from "./utils/mobileMode";
 
@@ -45,7 +45,8 @@ const needsAppLayout = computed(() => {
 });
 
 const handleLogout = () => {
-  auth.logout();
+  const authStore = useAuthStore();
+  authStore.logout();
 };
 
 onMounted(() => {

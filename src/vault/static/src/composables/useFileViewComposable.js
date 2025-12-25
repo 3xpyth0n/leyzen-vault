@@ -13,7 +13,7 @@ import {
   getStoredSalt,
   initializeUserMasterKey,
 } from "../services/keyManager";
-import { auth } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import { clipboardManager } from "../utils/clipboard";
 import { logger } from "../utils/logger.js";
 
@@ -27,6 +27,7 @@ import { logger } from "../utils/logger.js";
  * @returns {Object} Composable API
  */
 export function useFileViewComposable(options = {}) {
+  const authStore = useAuthStore();
   const {
     viewType = "vaultspace",
     enableEncryptionCheck = false,
@@ -47,17 +48,6 @@ export function useFileViewComposable(options = {}) {
   const passwordModalPassword = ref("");
   const passwordModalError = ref("");
   const passwordModalLoading = ref(false);
-  const overlayStyle = ref({});
-
-  // Resize observers and intervals for cleanup
-  const _overlayResizeHandler = ref(null);
-  const _mobileModeChangeHandler = ref(null);
-  const _sidebarResizeObserver = ref(null);
-  const _mainContentResizeObserver = ref(null);
-  const _pageContentResizeObserver = ref(null);
-  const _bottomBarResizeObserver = ref(null);
-  const _overlayProtectionInterval = ref(null);
-  const _overlayMutationObserver = ref(null);
 
   /**
    * Check if an item is selected
@@ -173,42 +163,12 @@ export function useFileViewComposable(options = {}) {
         // No salt and no master key
         // Check if user is still authenticated (could be SSO user without password)
         try {
-          const currentUser = await auth.getCurrentUser();
+          const currentUser = await authStore.fetchCurrentUser();
           if (currentUser) {
             // User is authenticated but has no master key or salt
             // This is normal for SSO users - show encryption overlay
             showEncryptionOverlay.value = true;
             isMasterKeyRequired.value = true;
-
-            // Calculate overlay position after DOM is ready
-            await nextTick();
-            calculateOverlayPosition();
-
-            // Recalculate on window resize
-            const resizeHandler = () => calculateOverlayPosition();
-            window.addEventListener("resize", resizeHandler);
-            _overlayResizeHandler.value = resizeHandler;
-
-            // Recalculate when mobile mode changes
-            const mobileModeChangeHandler = () => {
-              // Wait a bit for DOM to update after mode change
-              setTimeout(() => {
-                calculateOverlayPosition();
-                // Re-observe elements as they may have changed
-                observeSidebarChanges();
-              }, 100);
-            };
-            window.addEventListener(
-              "mobile-mode-changed",
-              mobileModeChangeHandler,
-            );
-            _mobileModeChangeHandler.value = mobileModeChangeHandler;
-
-            // Recalculate when sidebar toggles (observe sidebar width changes)
-            observeSidebarChanges();
-
-            // Protect overlay from being removed via DevTools
-            protectOverlay();
           }
         } catch (err) {
           // User is not authenticated - don't show overlay
@@ -234,24 +194,8 @@ export function useFileViewComposable(options = {}) {
 
     try {
       // Get master key salt from server
-      const response = await fetch("/api/auth/account/master-key-salt", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("jwt_token")}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const saltBase64 = await authStore.getMasterKeySalt();
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Authentication failed. Please log in again.");
-        }
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to get master key salt");
-      }
-
-      const data = await response.json();
-      const saltBase64 = data.master_key_salt;
       if (!saltBase64) {
         throw new Error("Master key salt not available");
       }
@@ -313,254 +257,9 @@ export function useFileViewComposable(options = {}) {
   };
 
   /**
-   * Calculate overlay position to cover main-content
-   * The overlay should cover the entire main-content area with the same border-radius
-   * In mobile mode, exclude header and bottom bar to keep them accessible
-   */
-  const calculateOverlayPosition = () => {
-    nextTick(() => {
-      const mainContent = document.querySelector(".main-content");
-      const isMobileMode = document.body.classList.contains("mobile-mode");
-      if (mainContent) {
-        const mainContentRect = mainContent.getBoundingClientRect();
-
-        let overlayTop = mainContentRect.top;
-        let overlayLeft = mainContentRect.left;
-        let overlayWidth = mainContentRect.width;
-        let overlayHeight = mainContentRect.height;
-
-        // In mobile mode, adjust overlay to exclude header and bottom bar
-        if (isMobileMode) {
-          // Get header height
-          const header = document.querySelector(".app-header");
-          const headerHeight = header ? header.offsetHeight : 0;
-
-          // Get bottom bar position and dimensions
-          const bottomBar = document.querySelector(".bottom-navigation");
-          if (bottomBar) {
-            const bottomBarRect = bottomBar.getBoundingClientRect();
-            const bottomBarTop = bottomBarRect.top;
-
-            // Add a gap between overlay and bottom bar for visual separation
-            const gap = 16;
-            const availableHeight = bottomBarTop - headerHeight - gap;
-
-            overlayTop = headerHeight;
-            overlayHeight = Math.max(0, availableHeight);
-          } else {
-            // No bottom bar, just exclude header
-            overlayTop = headerHeight;
-            overlayHeight = window.innerHeight - headerHeight;
-          }
-
-          // Full width in mobile
-          overlayLeft = 0;
-          overlayWidth = window.innerWidth;
-
-          overlayStyle.value = {
-            position: "fixed",
-            top: `${overlayTop}px`,
-            left: `${overlayLeft}px`,
-            width: `${overlayWidth}px`,
-            height: `${overlayHeight}px`,
-            borderRadius: "1rem",
-            zIndex: 50, // Above content but below header (100), dropdown (1000), and bottom bar (99999)
-            pointerEvents: "auto", // Ensure overlay is interactive
-          };
-        } else {
-          // Desktop mode - use original logic
-          overlayStyle.value = {
-            position: "fixed",
-            top: `${overlayTop}px`,
-            left: `${overlayLeft}px`,
-            width: `${overlayWidth}px`,
-            height: `${overlayHeight}px`,
-            borderRadius: "1rem",
-            zIndex: 50,
-            pointerEvents: "auto",
-          };
-        }
-      }
-    });
-  };
-
-  /**
-   * Observe sidebar changes to recalculate overlay position
-   */
-  const observeSidebarChanges = () => {
-    // Clean up existing observers first
-    if (_sidebarResizeObserver.value) {
-      _sidebarResizeObserver.value.disconnect();
-      _sidebarResizeObserver.value = null;
-    }
-    if (_mainContentResizeObserver.value) {
-      _mainContentResizeObserver.value.disconnect();
-      _mainContentResizeObserver.value = null;
-    }
-    if (_pageContentResizeObserver.value) {
-      _pageContentResizeObserver.value.disconnect();
-      _pageContentResizeObserver.value = null;
-    }
-    if (_bottomBarResizeObserver.value) {
-      _bottomBarResizeObserver.value.disconnect();
-      _bottomBarResizeObserver.value = null;
-    }
-
-    // Observe sidebar width changes
-    const sidebar = document.querySelector(".sidebar");
-    if (sidebar && window.ResizeObserver) {
-      const observer = new ResizeObserver(() => {
-        requestAnimationFrame(() => {
-          calculateOverlayPosition();
-        });
-      });
-      observer.observe(sidebar);
-      _sidebarResizeObserver.value = observer;
-    }
-
-    // Observe header changes (height might change)
-    const header = document.querySelector(".app-header");
-    if (header && window.ResizeObserver) {
-      const observer = new ResizeObserver(() => {
-        requestAnimationFrame(() => {
-          calculateOverlayPosition();
-        });
-      });
-      observer.observe(header);
-    }
-
-    // Observe main-content changes (which moves when sidebar toggles)
-    const mainContent = document.querySelector(".main-content");
-    if (mainContent && window.ResizeObserver) {
-      const observer = new ResizeObserver(() => {
-        requestAnimationFrame(() => {
-          calculateOverlayPosition();
-        });
-      });
-      observer.observe(mainContent);
-      _mainContentResizeObserver.value = observer;
-    }
-
-    // Observe page-content directly
-    const pageContent = document.querySelector(".page-content");
-    if (pageContent && window.ResizeObserver) {
-      const observer = new ResizeObserver(() => {
-        requestAnimationFrame(() => {
-          calculateOverlayPosition();
-        });
-      });
-      observer.observe(pageContent);
-      _pageContentResizeObserver.value = observer;
-    }
-
-    // Observe bottom bar changes (height changes when collapsed/expanded)
-    const bottomBar = document.querySelector(".bottom-navigation");
-    if (bottomBar && window.ResizeObserver) {
-      const observer = new ResizeObserver(() => {
-        requestAnimationFrame(() => {
-          calculateOverlayPosition();
-        });
-      });
-      observer.observe(bottomBar);
-      _bottomBarResizeObserver.value = observer;
-    }
-  };
-
-  /**
-   * Protect overlay from being removed via DevTools
-   */
-  const protectOverlay = () => {
-    // Check periodically if overlay still exists and recreate if needed
-    if (_overlayProtectionInterval.value) {
-      clearInterval(_overlayProtectionInterval.value);
-    }
-
-    _overlayProtectionInterval.value = setInterval(() => {
-      if (showEncryptionOverlay.value && isMasterKeyRequired.value) {
-        const overlay = document.querySelector(
-          '[data-encryption-overlay="true"]',
-        );
-        if (!overlay) {
-          // Overlay was removed, force re-render
-          // Note: This requires access to component instance, so we'll handle it in the component
-          calculateOverlayPosition();
-        }
-      }
-    }, 500);
-
-    // Also use MutationObserver to detect removal
-    const observer = new MutationObserver(() => {
-      if (showEncryptionOverlay.value && isMasterKeyRequired.value) {
-        const overlay = document.querySelector(
-          '[data-encryption-overlay="true"]',
-        );
-        if (!overlay) {
-          // Overlay was removed, force re-render
-          calculateOverlayPosition();
-        }
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    _overlayMutationObserver.value = observer;
-  };
-
-  /**
    * Cleanup function to remove event listeners and observers
    */
-  const cleanup = () => {
-    // Remove resize handler
-    if (_overlayResizeHandler.value) {
-      window.removeEventListener("resize", _overlayResizeHandler.value);
-      _overlayResizeHandler.value = null;
-    }
-
-    // Remove mobile mode change handler
-    if (_mobileModeChangeHandler.value) {
-      window.removeEventListener(
-        "mobile-mode-changed",
-        _mobileModeChangeHandler.value,
-      );
-      _mobileModeChangeHandler.value = null;
-    }
-
-    // Disconnect resize observers
-    if (_sidebarResizeObserver.value) {
-      _sidebarResizeObserver.value.disconnect();
-      _sidebarResizeObserver.value = null;
-    }
-
-    if (_mainContentResizeObserver.value) {
-      _mainContentResizeObserver.value.disconnect();
-      _mainContentResizeObserver.value = null;
-    }
-
-    if (_pageContentResizeObserver.value) {
-      _pageContentResizeObserver.value.disconnect();
-      _pageContentResizeObserver.value = null;
-    }
-
-    if (_bottomBarResizeObserver.value) {
-      _bottomBarResizeObserver.value.disconnect();
-      _bottomBarResizeObserver.value = null;
-    }
-
-    // Clear protection interval
-    if (_overlayProtectionInterval.value) {
-      clearInterval(_overlayProtectionInterval.value);
-      _overlayProtectionInterval.value = null;
-    }
-
-    // Disconnect mutation observer
-    if (_overlayMutationObserver.value) {
-      _overlayMutationObserver.value.disconnect();
-      _overlayMutationObserver.value = null;
-    }
-  };
+  const cleanup = () => {};
 
   // Cleanup on unmount
   onMounted(() => {
@@ -592,12 +291,10 @@ export function useFileViewComposable(options = {}) {
     passwordModalPassword,
     passwordModalError,
     passwordModalLoading,
-    overlayStyle,
     checkEncryptionAccess,
     handlePasswordSubmit,
     closePasswordModal,
     openPasswordModal,
-    calculateOverlayPosition,
 
     // Cleanup
     cleanup,

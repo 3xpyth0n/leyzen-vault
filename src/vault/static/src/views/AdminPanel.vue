@@ -229,7 +229,7 @@
 <script>
 import { ref, onMounted, watch, nextTick, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
-import { admin, auth } from "../services/api";
+import { admin } from "../services/api";
 import UserManagement from "../components/admin/UserManagement.vue";
 import InvitationManagement from "../components/admin/InvitationManagement.vue";
 import QuotaManagement from "../components/admin/QuotaManagement.vue";

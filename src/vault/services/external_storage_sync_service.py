@@ -1222,7 +1222,10 @@ class ExternalStorageSyncService:
                         # All checks passed - file really doesn't exist, safe to delete
                         try:
                             # Delete the file completely (hard delete, not soft delete)
-                            db.session.delete(file_obj)
+                            # Use query-based delete to avoid StaleDataError/warnings if file was already deleted concurrently
+                            db.session.query(File).filter(File.id == file_id).delete(
+                                synchronize_session=False
+                            )
                             db.session.commit()
                             cleaned.append(file_id)
                             orphaned_count += 1

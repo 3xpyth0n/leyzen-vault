@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getUserMasterKey, getStoredSalt } from "../services/keyManager";
-import { auth, isNetworkError } from "../services/api";
+import { isNetworkError } from "../services/api";
+import { useAuthStore } from "../store/auth";
 
 /**
  * Clear all browser storage (cookies, localStorage, sessionStorage).
@@ -75,13 +76,14 @@ async function hasMasterKey() {
  * @param {function} next - Next function
  */
 async function requireAuth(to, from, next) {
+  const authStore = useAuthStore();
   const authenticated = await isAuthenticated();
   if (!authenticated) {
     next("/login");
     return;
   }
   try {
-    await auth.getCurrentUser();
+    await authStore.fetchCurrentUser();
   } catch (err) {
     if (isNetworkError(err)) {
       next();
@@ -150,7 +152,8 @@ async function requireAdmin(to, from, next) {
 
   // Check user role
   try {
-    const user = await auth.getCurrentUser();
+    const authStore = useAuthStore();
+    const user = await authStore.fetchCurrentUser();
 
     if (!user || !user.global_role) {
       // User info not available or missing role - redirect to dashboard
@@ -206,7 +209,8 @@ const routes = [
       // Check if setup is already complete
       // If check fails (network error, database not available), allow access to setup page
       try {
-        const setupComplete = await auth.isSetupComplete();
+        const authStore = useAuthStore();
+        const setupComplete = await authStore.checkSetupStatus();
         if (setupComplete) {
           // Setup is complete, redirect to login
           next("/login");
@@ -280,7 +284,8 @@ const routes = [
 
       // Check if setup is complete
       try {
-        const setupComplete = await auth.isSetupComplete();
+        const authStore = useAuthStore();
+        const setupComplete = await authStore.checkSetupStatus();
         if (!setupComplete) {
           // Setup not complete, redirect to setup
           next("/setup");
@@ -307,13 +312,17 @@ const routes = [
 
       // Check if signup is enabled
       try {
-        const signupEnabled = await auth.isSignupEnabled();
+        const authStore = useAuthStore();
+        const config = await authStore.fetchAuthConfig();
+        const signupEnabled = config.allow_signup;
         if (!signupEnabled) {
           next("/login");
           return;
         }
       } catch (err) {
-        // Allow access by default if check fails
+        // Redirect to login if check fails for security
+        next("/login");
+        return;
       }
 
       next();
@@ -426,7 +435,8 @@ router.beforeEach(async (to, from, next) => {
     // On fresh install, the API might not be ready yet
     // Try to check setup status, but redirect to setup if it fails
     try {
-      const setupComplete = await auth.isSetupComplete();
+      const authStore = useAuthStore();
+      const setupComplete = await authStore.checkSetupStatus();
       if (!setupComplete) {
         // Setup not complete, redirect to setup immediately
         next("/setup");
@@ -474,6 +484,7 @@ router.beforeEach(async (to, from, next) => {
     to.name === "Register" ||
     to.name === "EmailVerification" ||
     to.name === "AcceptInvitation" ||
+    to.name === "SSOCallback" ||
     to.name === "Share"
   ) {
     next();
@@ -482,7 +493,8 @@ router.beforeEach(async (to, from, next) => {
 
   // Check setup status for all other routes
   try {
-    const setupComplete = await auth.isSetupComplete();
+    const authStore = useAuthStore();
+    const setupComplete = await authStore.checkSetupStatus();
     if (!setupComplete) {
       next("/setup");
       return;

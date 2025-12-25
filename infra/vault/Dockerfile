@@ -27,8 +27,6 @@ RUN npm install
 # Copy Vue.js source files and build
 # IMPORTANT: Copy all source files to ensure build uses latest code
 COPY src/vault/static/src/ /app/src/vault/static/src/
-# Remove any existing dist directory to ensure clean build
-RUN rm -rf /app/src/vault/static/dist || true
 # Build Vue.js application - dist/ will be created in /app/src/vault/static/dist/
 RUN npm run build
 # Verify build succeeded and dist directory exists
@@ -39,10 +37,6 @@ WORKDIR /app
 
 # Copy application code (Python and other files)
 COPY src/vault/ /app/src/vault/
-# Remove any Python cache files that might have been copied (shouldn't happen due to .dockerignore, but be safe)
-RUN find /app/src -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/src -type f -name "*.pyc" -delete 2>/dev/null || true && \
-    find /app/src -type f -name "*.pyo" -delete 2>/dev/null || true
 # Docker automatically invalidates cache when source files change (content-based hashing)
 # The RUN command below ensures cache invalidation by creating a marker based on file content
 RUN find /app/src -type f \( -name "*.py" -o -name "*.js" -o -name "*.html" \) -exec sha256sum {} \; | sha256sum > /tmp/.src_hash 2>/dev/null || echo "0" > /tmp/.src_hash

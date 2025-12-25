@@ -466,7 +466,9 @@
 </template>
 
 <script>
-import { account, auth, vaultspaces } from "../services/api";
+import { vaultspaces } from "../services/api";
+import { useAuthStore } from "../store/auth";
+import { mapState, mapActions } from "pinia";
 import {
   initializeUserMasterKey,
   getStoredSalt,
@@ -476,7 +478,6 @@ import {
 } from "../services/keyManager";
 import { encryptVaultSpaceKey } from "../services/encryption";
 import { clearEncryptedMasterKey } from "../services/masterKeyStorage";
-import { twoFactor } from "../services/api";
 import PasswordInput from "../components/PasswordInput.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";
@@ -491,6 +492,9 @@ export default {
     AlertModal,
     ReEncryptionModal,
     TwoFactorSetup,
+  },
+  computed: {
+    ...mapState(useAuthStore, ["user"]),
   },
   data() {
     return {
@@ -569,11 +573,22 @@ export default {
     await this.load2FAStatus();
   },
   methods: {
+    ...mapActions(useAuthStore, [
+      "fetchCurrentUser",
+      "getMasterKeySalt",
+      "updateEmail",
+      "changePassword",
+      "deleteAccount",
+      "logout",
+      "get2FAStatus",
+      "disable2FA",
+      "regenerateBackupCodes",
+    ]),
     async loadAccountInfo() {
       this.loading = true;
       this.accountError = null;
       try {
-        this.accountInfo = await account.getAccount();
+        this.accountInfo = await this.fetchCurrentUser();
       } catch (err) {
         this.accountError = err.message || "Failed to load account information";
       } finally {
@@ -622,7 +637,7 @@ export default {
       }
 
       try {
-        const updatedUser = await account.updateEmail(
+        const updatedUser = await this.updateEmail(
           this.emailForm.newEmail,
           this.emailForm.password,
         );
@@ -673,7 +688,7 @@ export default {
         let salt = getStoredSalt();
         if (!salt) {
           try {
-            const saltBase64 = await auth.getMasterKeySalt();
+            const saltBase64 = await this.getMasterKeySalt();
             if (saltBase64) {
               const saltStr = atob(saltBase64);
               salt = Uint8Array.from(saltStr, (c) => c.charCodeAt(0));
@@ -700,7 +715,7 @@ export default {
         );
 
         // Get current user ID
-        const currentUser = await auth.getCurrentUser();
+        const currentUser = await this.fetchCurrentUser();
         if (!currentUser || !currentUser.id) {
           throw new Error("Failed to get current user");
         }
@@ -767,7 +782,7 @@ export default {
           // No VaultSpaces to re-encrypt, skip to password change
           this.reEncryptionProgress = 95;
           this.reEncryptionStep = "Finalizing...";
-          await account.changePassword(
+          await this.changePassword(
             this.passwordForm.currentPassword,
             this.passwordForm.newPassword,
           );
@@ -1001,7 +1016,7 @@ export default {
         }
 
         // Change password on server
-        await account.changePassword(
+        await this.changePassword(
           this.passwordForm.currentPassword,
           this.passwordForm.newPassword,
         );
@@ -1105,9 +1120,9 @@ export default {
       }
 
       try {
-        await account.deleteAccount(this.deleteForm.password);
+        await this.deleteAccount(this.deleteForm.password);
         // Logout and redirect to login
-        auth.logout();
+        await this.logout();
         this.$router.push("/login");
       } catch (err) {
         this.deleteForm.error = err.message || "Failed to delete account";
@@ -1124,7 +1139,7 @@ export default {
       this.twoFactorLoading = true;
       this.twoFactorError = null;
       try {
-        const status = await twoFactor.getStatus();
+        const status = await this.get2FAStatus();
         this.twoFactorEnabled = status.enabled;
         this.twoFactorEnabledAt = status.enabled_at;
       } catch (err) {
@@ -1154,7 +1169,7 @@ export default {
       this.disable2FAForm.error = null;
 
       try {
-        await twoFactor.disable(this.disable2FAForm.password);
+        await this.disable2FA(this.disable2FAForm.password);
         this.showDisable2FAModal = false;
         this.disable2FAForm.password = "";
         // Reload 2FA status
@@ -1176,7 +1191,7 @@ export default {
       this.regenerateBackupForm.error = null;
 
       try {
-        const result = await twoFactor.regenerateBackupCodes(
+        const result = await this.regenerateBackupCodes(
           this.regenerateBackupForm.password,
         );
         this.regeneratedBackupCodes = result.backup_codes;

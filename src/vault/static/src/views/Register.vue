@@ -60,7 +60,8 @@
 <script setup>
 import { ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { auth, vaultspaces, sso } from "../services/api";
+import { vaultspaces, sso } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import {
   initializeUserMasterKey,
   createVaultSpaceKey,
@@ -70,6 +71,7 @@ import { logger } from "../utils/logger.js";
 import PasswordInput from "../components/PasswordInput.vue";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const email = ref("");
 const password = ref("");
 const confirmPassword = ref("");
@@ -113,7 +115,8 @@ watch(email, (newEmail) => {
 
 onMounted(async () => {
   // Check if signup is enabled
-  const signupEnabled = await auth.isSignupEnabled();
+  const config = await authStore.fetchAuthConfig();
+  const signupEnabled = config.allow_signup;
   if (!signupEnabled) {
     error.value =
       "Public registration is disabled. Contact an administrator for an invitation.";
@@ -156,7 +159,7 @@ const handleRegister = async () => {
 
   try {
     // Signup first to get the server-generated salt
-    const response = await auth.signup(email.value, password.value);
+    const response = await authStore.signup(email.value, password.value);
 
     // Check if email verification is required
     if (response.email_verification_required) {

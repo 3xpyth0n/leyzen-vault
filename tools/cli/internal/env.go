@@ -315,3 +315,136 @@ func LoadAllEnvVariables(envFilePath string) (map[string]string, error) {
 
 	return result, nil
 }
+
+// EnvDoc represents documentation for an environment variable parsed from the template.
+type EnvDoc struct {
+	Name        string
+	Summary     string
+	Description string
+}
+
+// FindEnvTemplatePath locates the env.template file relative to the given env file path.
+func FindEnvTemplatePath(envFilePath string) (string, error) {
+	// Resolve the env file path to get its directory
+	resolvedEnvPath, err := ResolveEnvFilePath(envFilePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve env file path: %w", err)
+	}
+
+	envDir := filepath.Dir(resolvedEnvPath)
+
+	// Try to find env.template in the same directory or parent directory
+	templatePath := filepath.Join(envDir, "env.template")
+
+	// If not found, try parent directory (project root)
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		parentTemplatePath := filepath.Join(filepath.Dir(envDir), "env.template")
+		if _, err := os.Stat(parentTemplatePath); os.IsNotExist(err) {
+			return "", os.ErrNotExist
+		}
+		templatePath = parentTemplatePath
+	}
+	return templatePath, nil
+}
+
+// LoadEnvDocumentation parses comments from env.template to create variable documentation.
+func LoadEnvDocumentation(envFilePath string) (map[string]EnvDoc, error) {
+	templatePath, err := FindEnvTemplatePath(envFilePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return make(map[string]EnvDoc), nil
+		}
+		return nil, fmt.Errorf("find env template: %w", err)
+	}
+
+	f, err := os.Open(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("open template: %w", err)
+	}
+	defer f.Close()
+
+	docs := make(map[string]EnvDoc)
+	var currentComments []string
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Empty line resets the comment accumulator
+		if trimmed == "" {
+			currentComments = nil
+			continue
+		}
+
+		// Comment line (could be documentation OR a commented-out variable)
+		if strings.HasPrefix(trimmed, "#") {
+			// Strip the leading # and optional space
+			content := strings.TrimPrefix(trimmed, "#")
+			content = strings.TrimSpace(content)
+
+			// Check if this comment is actually a commented-out variable assignment (e.g., "# KEY=VALUE")
+			// But we must be careful: it must look like a valid assignment.
+			// Simple check: contains "=" and key doesn't have spaces.
+			if idx := strings.Index(content, "="); idx != -1 {
+				key := strings.TrimSpace(content[:idx])
+				// Basic validation: key should not contain spaces and should be uppercase (convention)
+				if key != "" && !strings.Contains(key, " ") {
+					// It's likely a commented variable!
+					// Treat it as a variable definition using the PREVIOUSLY accumulated comments.
+					if len(currentComments) > 0 {
+						doc := EnvDoc{
+							Name:        key,
+							Summary:     currentComments[0],
+							Description: strings.Join(currentComments, "\n"),
+						}
+						// Only set if not already present (uncommented takes precedence)
+						if _, exists := docs[key]; !exists {
+							docs[key] = doc
+						}
+					}
+					// Reset comments because we consumed them for this variable
+					currentComments = nil
+					continue
+				}
+			}
+
+			// It's a regular documentation comment
+			currentComments = append(currentComments, content)
+			continue
+		}
+
+		// Variable assignment
+		if idx := strings.Index(trimmed, "="); idx != -1 {
+			// If we have accumulated comments, associate them with this variable
+			if len(currentComments) > 0 {
+				key := strings.TrimSpace(trimmed[:idx])
+
+				// Skip if key is empty or commented out (though commented out assignment is handled by # check above)
+				if key == "" {
+					currentComments = nil
+					continue
+				}
+
+				// Create documentation entry
+				doc := EnvDoc{
+					Name:        key,
+					Summary:     currentComments[0],
+					Description: strings.Join(currentComments, "\n"),
+				}
+				docs[key] = doc
+			}
+			// Reset comments after assignment
+			currentComments = nil
+		} else {
+			// Line is neither comment nor assignment (garbage?), reset comments
+			currentComments = nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan template: %w", err)
+	}
+
+	return docs, nil
+}

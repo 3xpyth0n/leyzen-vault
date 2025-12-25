@@ -160,7 +160,7 @@
 </template>
 
 <script>
-import { vaultspaces, auth } from "../services/api";
+import { vaultspaces } from "../services/api";
 import QuotaDisplay from "../components/QuotaDisplay.vue";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import AlertModal from "../components/AlertModal.vue";

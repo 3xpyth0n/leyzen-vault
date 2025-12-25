@@ -1,14 +1,14 @@
 # Ignore dist directory - it's built inside the container
-dist/
+**/dist/
 
 # Ignore node_modules - they're installed inside the container
-node_modules/
+**/node_modules/
 
 # Ignore Python cache files - they're regenerated in containers
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
 .Python
 
 # Ignore build artifacts
@@ -16,3 +16,4 @@ __pycache__/
 *.swp
 *.swo
 *~
+**/.vite/

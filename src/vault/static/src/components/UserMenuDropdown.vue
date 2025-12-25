@@ -32,7 +32,7 @@
           </router-link>
 
           <router-link
-            v-if="isAdmin"
+            v-if="isAdminRole"
             to="/admin"
             class="user-menu-item"
             @click="closeMenu"
@@ -45,7 +45,7 @@
           </router-link>
 
           <a
-            v-if="isSuperAdmin && orchestratorEnabled"
+            v-if="isSuperAdminRole && orchestratorEnabled"
             href="/orchestrator"
             target="_blank"
             rel="noreferrer noopener"
@@ -95,22 +95,33 @@
 
 <script>
 import { isMobileMode, setMobileMode } from "../utils/mobileMode";
+import { useAuthStore } from "../store/auth";
+import { computed } from "vue";
 
 export default {
   name: "UserMenuDropdown",
-  props: {
-    isAdmin: {
-      type: Boolean,
-      default: false,
-    },
-    isSuperAdmin: {
-      type: Boolean,
-      default: false,
-    },
-    orchestratorEnabled: {
-      type: Boolean,
-      default: true,
-    },
+  setup() {
+    const authStore = useAuthStore();
+
+    const isAdminRole = computed(() => {
+      const user = authStore.user;
+      if (!user) return false;
+      const role = user.global_role;
+      return role === "admin" || role === "superadmin";
+    });
+
+    const isSuperAdminRole = computed(() => {
+      const user = authStore.user;
+      if (!user) return false;
+      const role = user.global_role;
+      return role === "superadmin";
+    });
+
+    const orchestratorEnabled = computed(() => {
+      return authStore.authConfig?.orchestrator_enabled ?? false;
+    });
+
+    return { authStore, isAdminRole, isSuperAdminRole, orchestratorEnabled };
   },
   emits: ["logout", "menu-open", "menu-close"],
   data() {

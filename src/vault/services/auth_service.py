@@ -6,6 +6,7 @@ import base64
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import jwt
 from argon2 import PasswordHasher
@@ -589,12 +590,30 @@ class AuthService:
         """
         return db.session.query(User).filter_by(id=user_id).first()
 
+    def get_user_vaultspace_keys(self, user_id: str) -> list[dict[str, Any]]:
+        """Get all encrypted VaultSpace keys for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of dictionaries containing vaultspace_id and encrypted_key
+        """
+        from vault.database.schema import VaultSpaceKey
+
+        keys = db.session.query(VaultSpaceKey).filter_by(user_id=user_id).all()
+        return [
+            {"vaultspace_id": key.vaultspace_id, "encrypted_key": key.encrypted_key}
+            for key in keys
+        ]
+
     def update_user(
         self,
         user_id: str,
         email: str | None = None,
         password: str | None = None,
         global_role: GlobalRole | None = None,
+        reencrypted_keys: list[dict[str, str]] | None = None,
     ) -> User | None:
         """Update user information.
 
@@ -603,6 +622,8 @@ class AuthService:
             email: New email (optional)
             password: New password (optional, will be hashed)
             global_role: New global role (optional)
+            reencrypted_keys: List of re-encrypted keys (optional)
+                Format: [{"vaultspace_id": "...", "encrypted_key": "..."}]
 
         Returns:
             Updated User object if found, None otherwise
@@ -626,6 +647,22 @@ class AuthService:
 
         if global_role is not None:
             user.global_role = global_role
+
+        if reencrypted_keys is not None:
+            from vault.database.schema import VaultSpaceKey
+
+            for key_data in reencrypted_keys:
+                vaultspace_id = key_data.get("vaultspace_id")
+                encrypted_key = key_data.get("encrypted_key")
+
+                if vaultspace_id and encrypted_key:
+                    key = (
+                        db.session.query(VaultSpaceKey)
+                        .filter_by(user_id=user_id, vaultspace_id=vaultspace_id)
+                        .first()
+                    )
+                    if key:
+                        key.encrypted_key = encrypted_key
 
         db.session.commit()
         return user

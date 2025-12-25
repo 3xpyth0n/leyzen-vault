@@ -62,9 +62,10 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { auth } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import PasswordInput from "../components/PasswordInput.vue";
 
+const authStore = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -86,20 +87,10 @@ onMounted(async () => {
   }
 
   try {
-    const response = await fetch(
-      `/api/auth/invitations/accept/${token.value}`,
-      {
-        method: "GET",
-      },
-    );
-    if (response.ok) {
-      invitation.value = await response.json();
-    } else {
-      const errorData = await response.json();
-      error.value = errorData.error || "Invalid invitation";
-    }
+    const data = await authStore.getInvitation(token.value);
+    invitation.value = data;
   } catch (err) {
-    error.value = "Failed to load invitation";
+    error.value = err.message || "Failed to load invitation";
   } finally {
     loading.value = false;
   }
@@ -126,49 +117,34 @@ const handleAcceptInvitation = async () => {
   success.value = "";
 
   try {
-    const response = await fetch(
-      `/api/auth/invitations/accept/${token.value}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ password: password.value }),
-      },
-    );
+    const data = await authStore.acceptInvitation(token.value, password.value);
+    accepted.value = true;
+    success.value = "Account created successfully!";
+    password.value = "";
+    confirmPassword.value = "";
 
-    if (response.ok) {
-      const data = await response.json();
-      accepted.value = true;
-      success.value = "Account created successfully!";
-      password.value = "";
-      confirmPassword.value = "";
-
+    // Redirect to email verification page with email
+    // The backend sends verification email automatically, so redirect to verification page
+    if (data.user && data.user.email) {
       // Redirect to email verification page with email
-      // The backend sends verification email automatically, so redirect to verification page
-      if (data.user && data.user.email) {
-        // Redirect to email verification page with email
-        setTimeout(() => {
-          router.push({
-            name: "EmailVerification",
-            query: { email: data.user.email },
-          });
-        }, 2000);
-      } else if (invitation.value && invitation.value.email) {
-        // Fallback: use email from invitation
-        setTimeout(() => {
-          router.push({
-            name: "EmailVerification",
-            query: { email: invitation.value.email },
-          });
-        }, 2000);
-      }
-    } else {
-      const errorData = await response.json();
-      error.value = errorData.error || "Failed to accept invitation";
+      setTimeout(() => {
+        router.push({
+          name: "EmailVerification",
+          query: { email: data.user.email },
+        });
+      }, 2000);
+    } else if (invitation.value && invitation.value.email) {
+      // Fallback: use email from invitation
+      setTimeout(() => {
+        router.push({
+          name: "EmailVerification",
+          query: { email: invitation.value.email },
+        });
+      }, 2000);
     }
   } catch (err) {
-    error.value = "Failed to accept invitation. Please try again.";
+    error.value =
+      err.message || "Failed to accept invitation. Please try again.";
   } finally {
     accepting.value = false;
   }

@@ -347,12 +347,16 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                 # Query user count
                 user_count = db.session.query(User).count()
                 result = user_count > 0
-                if not quiet and not result:
-                    log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
-                    if app_logger:
-                        app_logger.warning(log_msg)
-                    else:
-                        logger.warning(log_msg)
+
+                # ALWAYS log user count for debugging redirection issues
+                log_msg = (
+                    f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
+                )
+                if app_logger:
+                    app_logger.info(log_msg)
+                else:
+                    logger.info(log_msg)
+
                 return result
             except Exception as db_error:
                 error_msg = f"[SETUP CHECK] Database query failed: {db_error}"
@@ -378,12 +382,14 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                     # Query user count
                     user_count = db.session.query(User).count()
                     result = user_count > 0
-                    if not quiet and not result:
-                        log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
-                        if app_logger:
-                            app_logger.warning(log_msg)
-                        else:
-                            logger.warning(log_msg)
+
+                    # ALWAYS log user count for debugging redirection issues
+                    log_msg = f"[SETUP CHECK] User count: {user_count}, setup complete: {result}"
+                    if app_logger:
+                        app_logger.info(log_msg)
+                    else:
+                        logger.info(log_msg)
+
                     return result
                 except Exception as db_error:
                     error_msg = f"[SETUP CHECK] Database query failed: {db_error}"

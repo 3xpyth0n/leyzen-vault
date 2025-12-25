@@ -296,13 +296,13 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		"VAULT_URL":          2,
 	}
 	authSecurityOrder := map[string]int{
-		"ORCH_USER":               0,
-		"ORCH_PASS":               1,
-		"SECRET_KEY":              2,
-		"SESSION_COOKIE_SECURE":   3,
-		"CAPTCHA_LENGTH":          4,
+		"ORCH_USER":                 0,
+		"ORCH_PASS":                 1,
+		"SECRET_KEY":                2,
+		"SESSION_COOKIE_SECURE":     3,
+		"CAPTCHA_LENGTH":            4,
 		"CAPTCHA_STORE_TTL_SECONDS": 5,
-		"LOGIN_CSRF_TTL_SECONDS":  6,
+		"LOGIN_CSRF_TTL_SECONDS":    6,
 	}
 	vaultOrder := map[string]int{
 		"VAULT_MAX_FILE_SIZE_MB":     0,
@@ -322,21 +322,21 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		"ORCH_SSE_INTERVAL_MS": 7,
 	}
 	postgresOrder := map[string]int{
-		"POSTGRES_DB":        0,
-		"POSTGRES_USER":      1,
-		"POSTGRES_PASSWORD": 2,
-		"POSTGRES_HOST":      3,
-		"POSTGRES_PORT":      4,
+		"POSTGRES_DB":          0,
+		"POSTGRES_USER":        1,
+		"POSTGRES_PASSWORD":    2,
+		"POSTGRES_HOST":        3,
+		"POSTGRES_PORT":        4,
 		"POSTGRES_DATA_VOLUME": 5,
 	}
 	smtpOrder := map[string]int{
-		"SMTP_HOST":                     0,
-		"SMTP_PORT":                     1,
-		"SMTP_USER":                     2,
-		"SMTP_PASSWORD":                 3,
-		"SMTP_USE_TLS":                  4,
-		"SMTP_FROM_EMAIL":               5,
-		"SMTP_FROM_NAME":                6,
+		"SMTP_HOST":                         0,
+		"SMTP_PORT":                         1,
+		"SMTP_USER":                         2,
+		"SMTP_PASSWORD":                     3,
+		"SMTP_USE_TLS":                      4,
+		"SMTP_FROM_EMAIL":                   5,
+		"SMTP_FROM_NAME":                    6,
 		"EMAIL_VERIFICATION_EXPIRY_MINUTES": 7,
 	}
 	haproxyOrder := map[string]int{
@@ -758,10 +758,10 @@ func (m *Model) renderHelp() string {
 // getWizardHint returns a helpful hint for a configuration field
 func (m *Model) getWizardHint(key string) string {
 	hints := map[string]string{
-		"SECRET_KEY":           "Secret key used for encryption (shared)",
-		"ROTATION_INTERVAL":    "Time in seconds between container rotations",
-		"WEB_REPLICAS":         "Number of web container replicas",
-		"DOCKER_PROXY_URL":     "URL of the Docker proxy service",
+		"SECRET_KEY":        "Secret key used for encryption (shared)",
+		"ROTATION_INTERVAL": "Time in seconds between container rotations",
+		"WEB_REPLICAS":      "Number of web container replicas",
+		"DOCKER_PROXY_URL":  "URL of the Docker proxy service",
 		// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY
 		// "DOCKER_PROXY_TOKEN":   "Authentication token for Docker proxy (auto-generated)",
 		"ORCH_USER":            "Username for Orchestrator authentication",
@@ -792,7 +792,7 @@ func (m *Model) renderContainerSelectionView() string {
 	for i, item := range m.containerItems {
 		prefix := "  "
 		if item.Selected {
-			prefix = m.theme.SuccessStatus.Render("✓ ")
+			prefix = m.theme.SuccessStatus.Copy().UnsetBackground().Render("✓ ")
 		} else {
 			prefix = "  "
 		}

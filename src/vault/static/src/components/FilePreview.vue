@@ -2632,7 +2632,7 @@ export default {
   left: 0;
   top: 0;
   height: 100%;
-  background: transparent;
+  background: var(--accent);
 
   transition: width 0.1s linear;
 }

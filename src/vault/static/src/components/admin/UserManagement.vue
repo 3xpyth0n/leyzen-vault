@@ -515,7 +515,8 @@
 
 <script>
 import { ref, onMounted, computed } from "vue";
-import { admin, auth } from "../../services/api";
+import { admin } from "../../services/api";
+import { useAuthStore } from "../../store/auth";
 import ConfirmationModal from "../ConfirmationModal.vue";
 import AlertModal from "../AlertModal.vue";
 import CustomSelect from "../CustomSelect.vue";
@@ -528,6 +529,7 @@ export default {
     CustomSelect,
   },
   setup() {
+    const authStore = useAuthStore();
     const users = ref([]);
     const allFilteredUsers = ref([]); // Store all filtered users for client-side pagination
     const loading = ref(false);
@@ -720,7 +722,7 @@ export default {
 
     const loadCurrentUser = async () => {
       try {
-        currentUser.value = await auth.getCurrentUser();
+        currentUser.value = await authStore.fetchCurrentUser();
       } catch (err) {}
     };
 

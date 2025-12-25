@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout" :class="{ 'mobile-active': isMobileMode }">
+  <div class="app-layout" :class="{ 'mobile-mode': isMobileMode }">
     <!-- Header (Mobile Only) -->
     <header v-if="isMobileMode" class="app-header">
       <div class="header-left">
@@ -19,8 +19,6 @@
         <div class="header-actions">
           <ServerStatusIndicator />
           <UserMenuDropdown
-            :is-admin="isAdmin"
-            :is-super-admin="isSuperAdmin"
             :orchestrator-enabled="orchestratorEnabled"
             @logout="handleLogout"
           />
@@ -59,7 +57,6 @@
           @click="handleNavigation('/dashboard')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/dashboard' }"
-          :disabled="isServerOffline"
         >
           <span v-html="getIcon('home', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Home</span>
@@ -68,7 +65,6 @@
           @click="handleNavigation('/starred')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/starred' }"
-          :disabled="isServerOffline"
         >
           <span v-html="getIcon('star', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Starred</span>
@@ -77,7 +73,6 @@
           @click="handleNavigation('/recent')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/recent' }"
-          :disabled="isServerOffline"
         >
           <span v-html="getIcon('clock', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Recent</span>
@@ -86,7 +81,6 @@
           @click="handleNavigation('/shared')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/shared' }"
-          :disabled="isServerOffline"
         >
           <span v-html="getIcon('link', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Shared</span>
@@ -95,7 +89,6 @@
           @click="handleNavigation('/trash')"
           class="sidebar-item"
           :class="{ 'router-link-active': $route.path === '/trash' }"
-          :disabled="isServerOffline"
         >
           <span v-html="getIcon('trash', 20)" class="sidebar-icon"></span>
           <span class="sidebar-label">Trash</span>
@@ -144,7 +137,6 @@
                 'drag-over-bottom':
                   dragOverIndex === index && dragOverPosition === 'bottom',
               }"
-              :disabled="isServerOffline"
               draggable="true"
               @dragstart="handleDragStart($event, index)"
               @dragend="handleDragEnd($event)"
@@ -167,8 +159,6 @@
       <div class="sidebar-footer">
         <ServerStatusIndicator />
         <UserMenuDropdown
-          :is-admin="isAdmin"
-          :is-super-admin="isSuperAdmin"
           :orchestrator-enabled="orchestratorEnabled"
           @logout="handleLogout"
           @menu-open="handleMenuOpen"
@@ -180,10 +170,14 @@
     <!-- Main Content Area -->
     <div
       class="main-content"
+      id="main-content-container"
       :class="{
-        'mobile-active': isMobileMode,
+        'mobile-mode': isMobileMode,
       }"
     >
+      <!-- Encryption Overlay Target -->
+      <div id="encryption-overlay-portal"></div>
+
       <!-- Page Content -->
       <main
         class="page-content"
@@ -279,7 +273,8 @@ import UserMenuDropdown from "./UserMenuDropdown.vue";
 import BottomNavigation from "./BottomNavigation.vue";
 import OfflineModal from "./OfflineModal.vue";
 import MaintenanceModal from "./MaintenanceModal.vue";
-import { auth, account, vaultspaces } from "../services/api";
+import { vaultspaces } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import { isMobileMode as checkMobileMode } from "../utils/mobileMode";
 
 export default {
@@ -296,8 +291,6 @@ export default {
   data() {
     return {
       showLogoutModal: false,
-      isAdmin: false,
-      isSuperAdmin: false,
       orchestratorEnabled: true, // Default to true for compatibility
       loading: true,
       pinnedVaultSpaces: [],
@@ -338,15 +331,26 @@ export default {
         <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     },
-    isServerOffline() {
-      // Check server status via global function
-      if (typeof window !== "undefined" && window.getServerStatus) {
-        return !window.getServerStatus();
-      }
-      return false; // Default to online if status not available
-    },
     isCollapsed() {
       return !this.sidebarExpanded;
+    },
+    authStore() {
+      return useAuthStore();
+    },
+    currentUser() {
+      return this.authStore.user;
+    },
+    isAdmin() {
+      const user = this.currentUser;
+      if (!user) return false;
+      const role = user.global_role || user.role;
+      return role === "admin" || role === "superadmin";
+    },
+    isSuperAdmin() {
+      const user = this.currentUser;
+      if (!user) return false;
+      const role = user.global_role || user.role;
+      return role === "superadmin";
     },
   },
   watch: {
@@ -686,17 +690,9 @@ export default {
       this.draggedItemIndex = null;
     },
     openVaultSpace(vaultspaceId) {
-      // Block navigation if server is offline
-      if (this.isServerOffline) {
-        return;
-      }
       this.$router.push(`/vaultspace/${vaultspaceId}`);
     },
     handleNavigation(path) {
-      // Block navigation if server is offline
-      if (this.isServerOffline) {
-        return;
-      }
       this.$router.push(path);
     },
     handleMenuOpen() {
@@ -742,6 +738,7 @@ export default {
     },
     async performLogout() {
       this.showLogoutModal = false;
+      const authStore = useAuthStore();
 
       try {
         if (
@@ -753,7 +750,7 @@ export default {
           });
         }
 
-        await auth.logout();
+        await authStore.logout();
         // Navigate to login page - use push to trigger Vue Router transition
         await this.$router.push("/login");
         this.$emit("logout");
@@ -801,13 +798,10 @@ export default {
       }
     });
 
-    // Check if user is admin or superadmin
+    // Check if user is admin or superadmin and load config
     try {
-      const accountInfo = await account.getAccount();
-      this.isAdmin =
-        accountInfo.global_role === "admin" ||
-        accountInfo.global_role === "superadmin";
-      this.isSuperAdmin = accountInfo.global_role === "superadmin";
+      const authStore = useAuthStore();
+      await authStore.fetchCurrentUser();
 
       // Load orchestrator_enabled if user is admin/superadmin
       if (this.isAdmin || this.isSuperAdmin) {
@@ -1650,9 +1644,13 @@ button.sidebar-item.pinned-item,
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  /* CSS Variables for layout offsets */
+  --header-offset: 0px;
+  --bottom-nav-offset: 0px;
+  --content-padding: 2rem;
 }
 
-.main-content:not(.mobile-active) {
+.main-content:not(.mobile-mode) {
   position: fixed;
   top: 1rem;
   right: 1rem;
@@ -1667,15 +1665,42 @@ button.sidebar-item.pinned-item,
   z-index: 1;
 }
 
-body.sidebar-collapsed .main-content:not(.mobile-active) {
+body.sidebar-collapsed .main-content:not(.mobile-mode) {
   left: calc(70px + 0px);
 }
 
 .mobile-mode .main-content {
+  --header-offset: var(--header-height, 80px);
+  --bottom-nav-offset: 80px; /* Approximate height of bottom navigation */
+  --content-padding: 1rem;
+
   margin-left: 0 !important;
   margin-top: 0 !important;
-  padding-top: var(--header-height, 100px);
+  padding-top: var(--header-offset);
+  padding-bottom: var(--bottom-nav-offset);
   border: none;
+  border-radius: 0;
+}
+
+/* Encryption Overlay - CSS only implementation */
+#encryption-overlay-portal :deep(.encryption-overlay) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 1rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  transition: all 0.3s ease;
+}
+
+.mobile-mode #encryption-overlay-portal :deep(.encryption-overlay) {
   border-radius: 0;
 }
 
@@ -1749,7 +1774,7 @@ body.sidebar-collapsed .main-content:not(.mobile-active) {
 
 .page-content {
   flex: 1;
-  padding: 2rem;
+  padding: var(--content-padding);
   padding-top: 0rem;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1835,11 +1860,6 @@ body.sidebar-collapsed .main-content:not(.mobile-active) {
   width: 100%;
   height: 100%;
   min-height: 0;
-}
-
-.mobile-mode .page-content {
-  padding-bottom: calc(2rem + 64px);
-  padding: 1rem;
 }
 
 /* Mobile Mode Styles */

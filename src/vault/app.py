@@ -1000,7 +1000,8 @@ def create_app(
         stream_handler = log_module.StreamHandler(sys.stdout)
         stream_handler.setLevel(log_module.DEBUG)
         formatter = log_module.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            "[%(asctime)s] - [%(levelname)s] - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         stream_handler.setFormatter(formatter)
         root_logger.addHandler(stream_handler)
@@ -2391,25 +2392,8 @@ def create_app(
     @app.route("/")
     def serve_vue_app_root():
         """Serve Vue.js SPA root - return index.html."""
-        from flask import make_response, redirect, request
+        from flask import make_response, request
         import re
-
-        # Check setup status within app context
-        # is_setup_complete() already uses app.app_context() internally,
-        # but we ensure we're in the request context here
-        try:
-            setup_complete = is_setup_complete(app)
-            if not setup_complete:
-                return redirect("/setup", code=302)
-        except Exception as setup_error:
-            # If setup check fails, log error but allow access to setup page
-            logger = app.config.get("LOGGER", None)
-            if logger:
-                logger.warning(
-                    f"[WARNING] Failed to check setup status in root route: {setup_error}"
-                )
-            # On error, redirect to setup to be safe
-            return redirect("/setup", code=302)
 
         dist_index = static_dir / "index.html"
         if dist_index.exists():
@@ -2731,11 +2715,6 @@ def create_app(
                     f"File location: {robots_file}. "
                     "The route will serve correct content, but please fix the file."
                 )
-            else:
-                if db_initialized_by_this_worker:
-                    validation_logger.info(
-                        "[INIT] robots.txt validated: properly configured to disallow all indexing"
-                    )
         else:
             validation_logger.warning(
                 "[WARNING] robots.txt file not found at expected location. "
@@ -2754,7 +2733,7 @@ def create_app(
     return app
 
 
-# For Gunicorn
+# For Uvicorn
 application = create_app()
 
 

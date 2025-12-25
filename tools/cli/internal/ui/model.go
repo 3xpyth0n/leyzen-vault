@@ -129,16 +129,16 @@ func NewModel(envFile string, runner *Runner) *Model {
 	vp.MouseWheelEnabled = true
 
 	theme := Theme{
-		Title:         lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true),
+		Title:         lipgloss.NewStyle().Foreground(lipgloss.Color("#004225")).Bold(true),
 		Subtitle:      lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		Pane:          lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")),
 		ActiveStatus:  lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true),
 		ErrorStatus:   lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true),
 		WarningStatus: lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
-		HelpKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true),
+		HelpKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("#004225")).Bold(true),
 		HelpDesc:      lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 		Spinner:       lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true),
-		Accent:        lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Bold(true),
+		Accent:        lipgloss.NewStyle().Foreground(lipgloss.Color("#004225")).Bold(true),
 		SuccessStatus: lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true).Background(lipgloss.Color("235")),
 		Footer:        lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1),
 	}

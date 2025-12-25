@@ -325,14 +325,12 @@
   />
 
   <!-- Encryption Overlay -->
-  <Teleport to="body">
+  <Teleport to="#encryption-overlay-portal">
     <div
       v-if="showEncryptionOverlay && isMasterKeyRequired"
       class="encryption-overlay"
       :style="{
-        ...overlayStyle,
         'pointer-events': showPasswordModal ? 'none' : 'auto',
-        'z-index': '50',
       }"
       data-encryption-overlay="true"
     >
@@ -413,7 +411,8 @@
 <script>
 import { ref, onMounted, nextTick, watch } from "vue";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
-import { files, vaultspaces, auth, config } from "../services/api";
+import { files, vaultspaces, config } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import BatchActions from "../components/BatchActions.vue";
 import DragDropUpload from "../components/DragDropUpload.vue";
 import FileListView from "../components/FileListView.vue";
@@ -479,6 +478,7 @@ export default {
     BackgroundContextMenu,
   },
   setup(props, { emit }) {
+    const authStore = useAuthStore();
     const {
       selectedItems,
       viewMode,
@@ -488,7 +488,6 @@ export default {
       passwordModalPassword,
       passwordModalError,
       passwordModalLoading,
-      overlayStyle,
       isSelected,
       toggleSelection,
       handleSelectionChange,
@@ -505,6 +504,7 @@ export default {
     });
 
     return {
+      authStore,
       selectedItems,
       viewMode,
       showEncryptionOverlay,
@@ -513,7 +513,6 @@ export default {
       passwordModalPassword,
       passwordModalError,
       passwordModalLoading,
-      overlayStyle,
       isSelected,
       toggleSelection,
       handleSelectionChange,
@@ -634,7 +633,7 @@ export default {
       } else {
         // No salt and no master key and not an SSO user
         try {
-          const currentUser = await auth.getCurrentUser();
+          const currentUser = await this.authStore.fetchCurrentUser();
           if (!currentUser) {
             throw new Error("Not authenticated");
           }
@@ -646,7 +645,7 @@ export default {
             message: "You must be logged in to access this VaultSpace.",
           });
           setTimeout(() => {
-            auth.logout();
+            this.authStore.logout();
             this.$router.push("/login");
           }, 2000);
           return;
@@ -882,7 +881,7 @@ export default {
 
         if (!vaultspaceKeyData) {
           // Key doesn't exist, create it
-          const currentUser = await auth.getCurrentUser();
+          const currentUser = await this.authStore.fetchCurrentUser();
 
           // Create VaultSpace key and store it
           const { encryptedKey } = await createVaultSpaceKey(userMasterKey);
@@ -922,7 +921,7 @@ export default {
               // Create a new VaultSpace key with the current master key
               // Files encrypted with the previous VaultSpace key will become inaccessible
               try {
-                const currentUser = await auth.getCurrentUser();
+                const currentUser = await this.authStore.fetchCurrentUser();
 
                 // Create new VaultSpace key and store it
                 // The backend will update the existing key if it already exists
@@ -943,17 +942,19 @@ export default {
                   encryptedKey,
                 );
                 cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
-
-                // Show warning about existing files
-                this.showAlert({
-                  type: "warning",
-                  title: "Warning",
-                  message:
-                    "Warning: A new VaultSpace key has been created. " +
-                    "Existing files encrypted with the old key will no longer be accessible. " +
-                    "You can now use this VaultSpace normally.",
-                });
               } catch (recreateErr) {
+                // Check if we have a valid key from a concurrent request or cache before failing
+                const cachedKey = getCachedVaultSpaceKey(this.$route.params.id);
+                if (cachedKey || this.vaultspaceKey) {
+                  logger.warn(
+                    "VaultSpace key loading failed in this attempt, but key is already available. Suppressing error.",
+                  );
+                  if (cachedKey && !this.vaultspaceKey) {
+                    this.vaultspaceKey = cachedKey;
+                  }
+                  return;
+                }
+
                 this.error =
                   "Unable to decrypt VaultSpace key and failed to create a new key. " +
                   "Please contact support.";
@@ -1570,7 +1571,7 @@ export default {
                 message: errorMessage,
               });
               setTimeout(() => {
-                auth.logout();
+                this.authStore.logout();
                 this.$router.push("/login");
               }, 2000);
               return;
@@ -2032,6 +2033,17 @@ export default {
       this.uploadedFileIds = []; // Reset uploaded file IDs for this upload batch
 
       try {
+        // Global Batch Progress Variables
+        const totalBatchSize = this.selectedFiles.reduce(
+          (acc, f) => acc + f.size,
+          0,
+        );
+        let bytesUploadedFromPreviousFiles = 0;
+
+        // Sliding Window for Global Speed
+        const batchSamples = []; // [{time, loaded}]
+        const WINDOW_DURATION = 2000; // 2 seconds window
+
         const totalFiles = this.selectedFiles.length;
         let uploadedCount = 0;
 
@@ -2162,6 +2174,54 @@ export default {
                         this.uploadProgress = Math.round(
                           baseProgress + chunkProgressBase + chunkProgress,
                         );
+
+                        // Global Batch Progress Calculation
+                        const currentFileLoaded =
+                          chunkIndex * chunkSize + loaded;
+
+                        // Calculate global bytes loaded based on original file size ratio
+                        // This normalizes encrypted size to original size for accurate global progress
+                        const fileProgressRatio =
+                          currentFileLoaded / encryptedSize;
+                        const currentFileContribution =
+                          fileProgressRatio * file.size;
+                        const globalBytesLoaded =
+                          bytesUploadedFromPreviousFiles +
+                          currentFileContribution;
+
+                        // Update Sliding Window
+                        const now = Date.now();
+                        batchSamples.push({
+                          time: now,
+                          loaded: globalBytesLoaded,
+                        });
+
+                        // Prune old samples
+                        while (
+                          batchSamples.length > 0 &&
+                          now - batchSamples[0].time > WINDOW_DURATION
+                        ) {
+                          batchSamples.shift();
+                        }
+
+                        // Calculate speed and time
+                        if (batchSamples.length >= 2) {
+                          const first = batchSamples[0];
+                          const last = batchSamples[batchSamples.length - 1];
+                          const timeSpan = (last.time - first.time) / 1000;
+
+                          if (timeSpan >= 0.1) {
+                            const bytesSpan = last.loaded - first.loaded;
+                            if (bytesSpan > 0) {
+                              const speed = bytesSpan / timeSpan;
+                              this.uploadSpeed = speed;
+
+                              const remainingBytes =
+                                totalBatchSize - globalBytesLoaded;
+                              this.uploadTimeRemaining = remainingBytes / speed;
+                            }
+                          }
+                        }
                       }
                     },
                   );
@@ -2227,8 +2287,45 @@ export default {
                     this.uploadProgress = Math.round(
                       baseProgress + fileProgress,
                     );
-                    this.uploadSpeed = speed || 0;
-                    this.uploadTimeRemaining = timeRemaining;
+
+                    // Global Batch Progress Calculation
+                    const fileProgressRatio = loaded / total;
+                    const currentFileContribution =
+                      fileProgressRatio * file.size;
+                    const globalBytesLoaded =
+                      bytesUploadedFromPreviousFiles + currentFileContribution;
+
+                    // Update Sliding Window
+                    const now = Date.now();
+                    batchSamples.push({ time: now, loaded: globalBytesLoaded });
+
+                    // Prune old samples
+                    while (
+                      batchSamples.length > 0 &&
+                      now - batchSamples[0].time > WINDOW_DURATION
+                    ) {
+                      batchSamples.shift();
+                    }
+
+                    // Calculate speed and time
+                    if (batchSamples.length >= 2) {
+                      const first = batchSamples[0];
+                      const last = batchSamples[batchSamples.length - 1];
+                      const timeSpan = (last.time - first.time) / 1000;
+
+                      if (timeSpan >= 0.1) {
+                        const bytesSpan = last.loaded - first.loaded;
+                        if (bytesSpan > 0) {
+                          const globalSpeed = bytesSpan / timeSpan;
+                          this.uploadSpeed = globalSpeed;
+
+                          const remainingBytes =
+                            totalBatchSize - globalBytesLoaded;
+                          this.uploadTimeRemaining =
+                            remainingBytes / globalSpeed;
+                        }
+                      }
+                    }
                   }
                 },
               );
@@ -2252,6 +2349,9 @@ export default {
             if (result && result.file) {
               this.uploadedFileIds.push(result.file.id);
               uploadedCount++;
+
+              // Update bytes uploaded from previous files for global progress tracking
+              bytesUploadedFromPreviousFiles += file.size;
             }
           } catch (err) {
             // Check if error is due to cancellation

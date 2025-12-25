@@ -283,7 +283,7 @@ class FilePromotionService:
 
                                             if s3_config:
                                                 # Start background process for sync
-                                                # This avoids blocking the Gunicorn worker
+                                                # This avoids blocking the Uvicorn worker
                                                 p = multiprocessing.Process(
                                                     target=_bg_sync_to_external_storage,
                                                     args=(

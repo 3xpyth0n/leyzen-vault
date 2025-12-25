@@ -211,7 +211,8 @@
 
 <script>
 import { ref, onMounted, computed, nextTick } from "vue";
-import { admin, auth } from "../../services/api";
+import { admin } from "../../services/api";
+import { useAuthStore } from "../../store/auth";
 import ConfirmationModal from "../ConfirmationModal.vue";
 import AlertModal from "../AlertModal.vue";
 import CustomSelect from "../CustomSelect.vue";
@@ -443,7 +444,7 @@ export default {
       // Ensure currentUser is loaded
       if (!currentUser.value) {
         try {
-          currentUser.value = await auth.getCurrentUser();
+          currentUser.value = await authStore.fetchCurrentUser();
         } catch (err) {}
       }
       // Ensure users are loaded before opening modal
@@ -517,7 +518,7 @@ export default {
 
     onMounted(async () => {
       try {
-        currentUser.value = await auth.getCurrentUser();
+        currentUser.value = await authStore.fetchCurrentUser();
       } catch (err) {}
       await loadUsers();
       await loadApiKeys();

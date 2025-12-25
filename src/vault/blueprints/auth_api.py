@@ -15,7 +15,6 @@ from flask import (
     url_for,
 )
 
-from vault.config import is_setup_complete
 from vault.database.schema import GlobalRole
 from vault.extensions import csrf
 from vault.middleware import get_current_user, jwt_required
@@ -149,53 +148,6 @@ def _get_auth_service() -> AuthService:
     secret_key = current_app.config.get("SECRET_KEY", "")
     settings = _settings()
     return AuthService(secret_key, jwt_expiration_hours=settings.jwt_expiration_hours)
-
-
-@auth_api_bp.route("/config", methods=["GET"])
-@csrf.exempt  # Public endpoint
-def get_auth_config():
-    """Get authentication configuration (public endpoint).
-
-    Returns all authentication-related configuration including:
-    - allow_signup: Whether public signup is enabled
-    - password_authentication_enabled: Whether password authentication is enabled
-
-    Returns:
-        JSON with authentication configuration
-    """
-    from vault.database.schema import SystemSettings, db
-
-    # Get all auth-related settings
-    settings = (
-        db.session.query(SystemSettings)
-        .filter(
-            SystemSettings.key.in_(["allow_signup", "password_authentication_enabled"])
-        )
-        .all()
-    )
-    settings_dict = {s.key: s.value for s in settings}
-
-    # Get allow_signup (default: True)
-    allow_signup = True
-    if "allow_signup" in settings_dict:
-        allow_signup = settings_dict["allow_signup"].lower() == "true"
-
-    # Get password_authentication_enabled (default: True)
-    password_auth_enabled = True
-    if "password_authentication_enabled" in settings_dict:
-        password_auth_enabled = (
-            settings_dict["password_authentication_enabled"].lower() == "true"
-        )
-
-    return (
-        jsonify(
-            {
-                "allow_signup": allow_signup,
-                "password_authentication_enabled": password_auth_enabled,
-            }
-        ),
-        200,
-    )
 
 
 @auth_api_bp.route("/sso/providers", methods=["GET"])
@@ -937,25 +889,6 @@ def logout():
     return response
 
 
-@auth_api_bp.route("/setup/status", methods=["GET"])
-def setup_status():
-    """Check if setup is complete.
-
-    Returns:
-        JSON with is_setup_complete boolean
-    """
-    try:
-        setup_complete = is_setup_complete(current_app)
-        return jsonify({"is_setup_complete": setup_complete}), 200
-    except Exception as e:
-        # If database is not available or any error occurs, assume setup is not complete
-        # This allows access to /setup page on fresh installs without database
-        current_app.logger.warning(
-            f"Error checking setup status (assuming incomplete): {e}"
-        )
-        return jsonify({"is_setup_complete": False}), 200
-
-
 @auth_api_bp.route("/setup", methods=["POST"])
 @csrf.exempt  # Public endpoint (first-run setup), CSRF not needed
 def setup():
@@ -1216,6 +1149,24 @@ def get_master_key_salt():
     return jsonify({"master_key_salt": user.master_key_salt}), 200
 
 
+@auth_api_bp.route("/account/keys", methods=["GET"])
+@jwt_required
+def get_account_keys():
+    """Get all encrypted VaultSpace keys for the current user.
+
+    Returns:
+        JSON with list of keys
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    auth_service = _get_auth_service()
+    keys = auth_service.get_user_vaultspace_keys(user.id)
+
+    return jsonify({"keys": keys}), 200
+
+
 @auth_api_bp.route("/account/password", methods=["POST"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
@@ -1228,7 +1179,10 @@ def change_password():
     Request body:
         {
             "current_password": "old_password",
-            "new_password": "new_secure_password"
+            "new_password": "new_secure_password",
+            "reencrypted_keys": [
+                {"vaultspace_id": "...", "encrypted_key": "..."}
+            ]
         }
 
     Returns:
@@ -1244,6 +1198,7 @@ def change_password():
 
     current_password = data.get("current_password", "").strip()
     new_password = data.get("new_password", "").strip()
+    reencrypted_keys = data.get("reencrypted_keys")
 
     if not current_password or not new_password:
         return jsonify({"error": "Current password and new password are required"}), 400
@@ -1257,7 +1212,9 @@ def change_password():
 
     try:
         # Update password
-        updated_user = auth_service.update_user(user.id, password=new_password)
+        updated_user = auth_service.update_user(
+            user.id, password=new_password, reencrypted_keys=reencrypted_keys
+        )
         if not updated_user:
             return jsonify({"error": "Failed to update password"}), 500
 

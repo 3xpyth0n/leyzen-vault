@@ -114,6 +114,9 @@ export default {
       if (!seconds || !isFinite(seconds)) {
         return "";
       }
+      if (seconds < 1) {
+        return "< 1s remaining";
+      }
       if (seconds < 60) {
         return `${Math.round(seconds)}s remaining`;
       }
@@ -137,8 +140,7 @@ export default {
 .progress-container {
   margin: 1rem 0;
   padding: 1rem;
-  background: var(--bg-glass, rgba(30, 41, 59, 0.4));
-
+  background: var(--bg-primary, #0a0a0a);
   border: 1px solid var(--border-color, #004225);
 }
 
@@ -152,14 +154,20 @@ export default {
   margin: 0;
   padding: 1.25rem 1.5rem;
   z-index: 10002;
-  background: transparent;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: none;
 
+  /* Dark background with slight transparency */
+  background: rgba(10, 10, 10, 0.95);
+
+  /* Subtle blur */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  /* Subtle border and shadow */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+
   animation: slideUp 0.3s ease-out;
 }
 

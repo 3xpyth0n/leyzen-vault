@@ -186,6 +186,20 @@ def _sanitize_log_value(value: Any, enable_secret_detection: bool = True) -> Any
     return _sanitize_log_value(str(value), enable_secret_detection)
 
 
+class TimezoneFormatter(logging.Formatter):
+    """Formatter that respects a specific timezone."""
+
+    def __init__(self, fmt: str, datefmt: str, timezone: ZoneInfo) -> None:
+        super().__init__(fmt, datefmt)
+        self.timezone = timezone
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=self.timezone)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
+
+
 class FileLogger:
     """Write structured log lines to a dedicated file with automatic rotation.
 
@@ -228,8 +242,13 @@ class FileLogger:
             backupCount=LOG_FILE_BACKUP_COUNT,
             encoding="utf-8",
         )
-        # We write our own formatted lines, so disable default formatting
-        self._handler.setFormatter(logging.Formatter("%(message)s"))
+        # Use custom formatter with timezone support
+        formatter = TimezoneFormatter(
+            fmt="[%(asctime)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            timezone=settings.timezone,
+        )
+        self._handler.setFormatter(formatter)
 
         # Create a logger instance just for the handler
         self._logger = logging.getLogger(f"file_logger_{id(self)}")
@@ -261,12 +280,10 @@ class FileLogger:
         if not self._logger.isEnabledFor(level):
             return
 
-        timezone: ZoneInfo = self._settings.timezone
-        timestamp = datetime.now(timezone).strftime("%Y-%m-%d %H:%M:%S")
         sanitized_msg = _sanitize_log_value(
             str(msg), enable_secret_detection=self._enable_secret_detection
         )
-        line = f"[{timestamp}] {sanitized_msg}"
+        line = sanitized_msg
 
         if context is not None:
             sanitized_context = _sanitize_log_value(

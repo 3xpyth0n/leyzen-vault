@@ -36,11 +36,13 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { auth, sso } from "../services/api";
+import { sso } from "../services/api";
+import { useAuthStore } from "../store/auth";
 import { clearUserMasterKey } from "../services/keyManager";
 import { logger } from "../utils/logger.js";
 import TwoFactorVerify from "../components/TwoFactorVerify.vue";
 
+const authStore = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 const loading = ref(true);
@@ -82,7 +84,7 @@ onMounted(async () => {
     // Get user info to verify authentication
     // The JWT token is automatically sent via HttpOnly cookie
     try {
-      const user = await auth.getCurrentUser();
+      const user = await authStore.fetchCurrentUser();
       if (!user) {
         throw new Error("User verification failed");
       }
@@ -128,7 +130,7 @@ const handle2FAVerify = async (totpToken) => {
       // Get user info to verify authentication
       // The JWT token is automatically sent via HttpOnly cookie
       try {
-        const user = await auth.getCurrentUser();
+        const user = await authStore.fetchCurrentUser();
         if (!user) {
           throw new Error("User verification failed");
         }

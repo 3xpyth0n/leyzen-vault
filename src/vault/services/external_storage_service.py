@@ -9,6 +9,7 @@ from collections import defaultdict
 from threading import Lock
 from typing import Any
 
+from werkzeug.local import LocalProxy
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
@@ -83,7 +84,10 @@ class ExternalStorageService:
             app: Flask app instance
         """
         self.secret_key = secret_key
-        self.app = app
+        if isinstance(app, LocalProxy):
+            self.app = app._get_current_object()
+        else:
+            self.app = app
         self._client = None
         self._bucket_name = None
         self._config = None
@@ -237,20 +241,24 @@ class ExternalStorageService:
             addressing_style: The addressing style to persist ("virtual" or "path")
         """
         try:
-            config = self._get_config()
-            if not config:
-                return
+            # Explicitly use app context to ensure database access works in threads
+            with self.app.app_context():
+                config = self._get_config()
+                if not config:
+                    return
 
-            # Update config with addressing style
-            config["addressing_style"] = addressing_style
+                # Update config with addressing style
+                config["addressing_style"] = addressing_style
 
-            # Persist to database
-            ExternalStorageConfigService.store_config(self.secret_key, config, self.app)
-            # Invalidate cache to ensure next _get_config() call reads fresh data from DB
-            self._config = None
-            logger.debug(
-                f"Persisted addressing style '{addressing_style}' to database configuration"
-            )
+                # Persist to database
+                ExternalStorageConfigService.store_config(
+                    self.secret_key, config, self.app
+                )
+                # Invalidate cache to ensure next _get_config() call reads fresh data from DB
+                self._config = None
+                logger.debug(
+                    f"Persisted addressing style '{addressing_style}' to database configuration"
+                )
         except Exception as e:
             # Log error but don't fail - addressing style will be detected again on next run
             logger.warning(

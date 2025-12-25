@@ -131,7 +131,8 @@
 </template>
 
 <script>
-import { twoFactor } from "../services/api";
+import { useAuthStore } from "../store/auth";
+import { mapActions } from "pinia";
 
 export default {
   name: "TwoFactorSetup",
@@ -153,9 +154,10 @@ export default {
     await this.initializeSetup();
   },
   methods: {
+    ...mapActions(useAuthStore, ["setup2FA", "verify2FASetup"]),
     async initializeSetup() {
       try {
-        const data = await twoFactor.setup();
+        const data = await this.setup2FA();
         this.secret = data.secret;
         this.qrCode = data.qr_code;
         this.step = "scan";
@@ -177,7 +179,7 @@ export default {
       this.errorMessage = "";
 
       try {
-        const result = await twoFactor.verifySetup(this.verificationCode);
+        const result = await this.verify2FASetup(this.verificationCode);
         this.backupCodes = result.backup_codes;
         this.step = "backup";
       } catch (error) {

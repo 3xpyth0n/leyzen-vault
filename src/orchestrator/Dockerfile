@@ -22,10 +22,6 @@ RUN apk add --no-cache su-exec curl \
 
 COPY . .
 
-# Remove any Python cache files that might have been copied (shouldn't happen due to .dockerignore, but be safe)
-RUN find /app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app -type f -name "*.pyc" -delete 2>/dev/null || true && \
-    find /app -type f -name "*.pyo" -delete 2>/dev/null || true
 
 # Copy compiled CSS only
 COPY --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
