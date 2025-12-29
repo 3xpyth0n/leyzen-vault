@@ -127,14 +127,12 @@ function sanitizeHTML(html) {
   function isAttributeSafe(attrName, attrValue) {
     const lowerAttrName = attrName.toLowerCase();
 
-    // Check against dangerous patterns
     for (const pattern of dangerousAttributePatterns) {
       if (pattern.test(lowerAttrName)) {
         return false;
       }
     }
 
-    // Check if attribute is in allowed list (or starts with data-)
     if (
       !allowedAttributes.has(lowerAttrName) &&
       !lowerAttrName.startsWith("data-")
@@ -142,7 +140,6 @@ function sanitizeHTML(html) {
       return false;
     }
 
-    // Check for dangerous protocols in URLs
     if (["href", "src", "action", "formaction"].includes(lowerAttrName)) {
       const value = (attrValue || "").trim().toLowerCase();
       if (
@@ -155,7 +152,6 @@ function sanitizeHTML(html) {
       }
     }
 
-    // Check for dangerous content in style attributes
     if (lowerAttrName === "style") {
       const value = (attrValue || "").toLowerCase();
       if (
@@ -236,7 +232,6 @@ function sanitizeHTML(html) {
 function createSafeElement(tag, attributes = {}, content = null) {
   const element = document.createElement(tag);
 
-  // Set attributes safely
   for (const [key, value] of Object.entries(attributes)) {
     if (value !== null && value !== undefined) {
       // For data attributes and other safe attributes
@@ -259,7 +254,6 @@ function createSafeElement(tag, attributes = {}, content = null) {
     }
   }
 
-  // Set content safely
   if (content !== null && content !== undefined) {
     if (typeof content === "string") {
       // Always use textContent for strings
@@ -316,7 +310,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Export functions for use in other modules
 if (typeof window !== "undefined") {
   window.sanitizeHTML = sanitizeHTML;
   window.createSafeElement = createSafeElement;

@@ -1,4 +1,3 @@
-// Initialize Trusted Types policies before CSP enforcement
 // This script must be loaded before any other scripts that use Trusted Types
 // CRITICAL: This script must execute IMMEDIATELY to patch DOM methods before
 // third-party scripts inject code that uses innerHTML
@@ -117,7 +116,6 @@
   ) {
     Object.defineProperty(Element.prototype, "innerHTML", {
       set: function (value) {
-        // If value is already a TrustedHTML, use it directly
         if (value && typeof value === "object" && value.toString) {
           try {
             originalInnerHTML.set.call(this, value);
@@ -132,7 +130,6 @@
           }
         }
 
-        // Try to use vaultHTMLPolicy first
         if (window.vaultHTMLPolicy && typeof value === "string") {
           try {
             const trustedHTML = window.vaultHTMLPolicy.createHTML(value);
@@ -143,7 +140,6 @@
           }
         }
 
-        // Try defaultPolicy
         if (
           window.trustedTypes &&
           window.trustedTypes.defaultPolicy &&
@@ -188,7 +184,6 @@
   const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
   if (originalInsertAdjacentHTML && !window.__insertAdjacentHTMLPatched) {
     Element.prototype.insertAdjacentHTML = function (position, text) {
-      // If text is already a TrustedHTML, use it directly
       if (text && typeof text === "object" && text.toString) {
         try {
           return originalInsertAdjacentHTML.call(this, position, text);
@@ -197,7 +192,6 @@
         }
       }
 
-      // Try to use vaultHTMLPolicy first
       if (window.vaultHTMLPolicy && typeof text === "string") {
         try {
           const trustedHTML = window.vaultHTMLPolicy.createHTML(text);
@@ -207,7 +201,6 @@
         }
       }
 
-      // Try defaultPolicy
       if (
         window.trustedTypes &&
         window.trustedTypes.defaultPolicy &&
@@ -251,7 +244,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
     if (windowProperty && window[windowProperty]) {
       return window[windowProperty];
     }
-    // If it doesn't exist, try to create it
+
     try {
       const policy = window.trustedTypes.createPolicy(name, config);
       // Store it on window for future access
@@ -260,12 +253,11 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
       }
       return policy;
     } catch (error) {
-      // If createPolicy fails (e.g., policy already exists), check window again
       // in case it was set by another script
       if (windowProperty && window[windowProperty]) {
         return window[windowProperty];
       }
-      // If we can't create or find it, rethrow the error
+
       throw error;
     }
   }
@@ -307,7 +299,6 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
     );
   } catch (error) {}
 } else {
-  // Try to wait for Trusted Types to become available (in case it's loaded asynchronously)
   let retryCount = 0;
   const maxRetries = 10;
   const checkInterval = setInterval(() => {
@@ -322,7 +313,7 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
           if (windowProperty && window[windowProperty]) {
             return window[windowProperty];
           }
-          // If it doesn't exist, try to create it
+
           try {
             const policy = window.trustedTypes.createPolicy(name, config);
             // Store it on window for future access
@@ -331,12 +322,11 @@ if (window.trustedTypes && window.trustedTypes.createPolicy) {
             }
             return policy;
           } catch (error) {
-            // If createPolicy fails (e.g., policy already exists), check window again
             // in case it was set by another script
             if (windowProperty && window[windowProperty]) {
               return window[windowProperty];
             }
-            // If we can't create or find it, rethrow the error
+
             throw error;
           }
         }

@@ -7,6 +7,16 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Go CLI Integration**: Fully migrated Docker Compose generation from dynamic Python scripts to a native Go implementation within `leyzenctl`.
+- **Host Independence**: Removed Python dependency on the host machine by integrating all orchestration and configuration management directly into the Go-based CLI.
+- **CLI Documentation**: Integrated environment variable documentation directly into the CLI via the `leyzenctl config explain` command
+- **Cron Expression Description**: Added human-readable descriptions and next execution time for database backup schedules.
+- **Keyboard Workflows**: Native keyboard shortcuts (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`) for seamless file and folder manipulation.
+- **Contextual Actions**: New actions on empty space to upload files, create folders, paste elements, and view current folder properties.
+- **Breadcrumb Navigation**: New navigation element to quickly reach files and folders from Favorites and Recents.
+
 ### Changed
 
 - **Application UI Refactor**: Leyzen Vault’s interface has been fully reworked to improve readability, consistency, and long-term usability across the entire application.
@@ -17,10 +27,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **File Management**:
 
-  - Improved file and folder manipulation with native drag-and-drop and full keyboard workflows (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`).
-  - Added contextual actions on empty space to upload files and create folders, paste cutted/copied elements, and view current folder properties.
+  - Improved file and folder manipulation with native drag-and-drop.
   - Enhanced file and folder properties for clearer and more useful metadata.
-  - Introduced breadcrumb navigation to quickly reach files and folders from Favorites and Recents.
   - Fixed folder deletion to correctly handle nested contents.
   - Strengthened deletion and restoration logic across the system, with more precise actions and improved database consistency.
   - Various internal refinements to improve reliability and overall file management behavior.

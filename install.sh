@@ -38,13 +38,6 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 echo -e "${GREEN}[OK] Go is installed.${NC}"
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo -e "${RED}[ERROR] Python 3 is not installed. Please install Python 3 first.${NC}"
-    echo -e "Example: ${CYAN}sudo apt install python3${NC}"
-    exit 1
-fi
-echo -e "${GREEN}[OK] Python 3 is installed.${NC}"
-
 if ! command -v docker >/dev/null 2>&1; then
     echo -e "${RED}[ERROR] Docker is not installed. Please install Docker first.${NC}"
     echo -e "See: https://docs.docker.com/engine/install/${NC}"

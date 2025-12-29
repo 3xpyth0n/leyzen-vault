@@ -38,7 +38,7 @@ class ShareService:
             because share links can work with relative URLs as fallback.
             However, VAULT_URL should be configured for proper functionality.
         """
-        # Try to get from VAULT_SETTINGS
+
         try:
             settings = current_app.config.get("VAULT_SETTINGS")
             if settings and hasattr(settings, "vault_url") and settings.vault_url:

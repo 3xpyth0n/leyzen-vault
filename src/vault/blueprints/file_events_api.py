@@ -80,13 +80,11 @@ def stream_file_events():
     if not secret_key:
         return Response("Server configuration error", status=500)
 
-    # Try JWT authentication first
     settings = current_app.config.get("VAULT_SETTINGS")
     jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
     auth_service = AuthService(secret_key, jwt_expiration_hours=jwt_expiration_hours)
     user = auth_service.verify_token(token)
 
-    # If JWT authentication failed, try API key authentication
     if not user:
         api_key_service = ApiKeyService(secret_key=secret_key)
         user = api_key_service.verify_api_key(token)

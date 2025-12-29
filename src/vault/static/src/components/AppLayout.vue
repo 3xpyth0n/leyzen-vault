@@ -1,6 +1,5 @@
 <template>
   <div class="app-layout" :class="{ 'mobile-mode': isMobileMode }">
-    <!-- Header (Mobile Only) -->
     <header v-if="isMobileMode" class="app-header">
       <div class="header-left">
         <div class="app-title-wrapper">
@@ -18,26 +17,21 @@
       <div class="header-right">
         <div class="header-actions">
           <ServerStatusIndicator />
-          <UserMenuDropdown
-            :orchestrator-enabled="orchestratorEnabled"
-            @logout="handleLogout"
-          />
+          <UserMenuDropdown @logout="handleLogout" />
         </div>
       </div>
     </header>
 
-    <!-- Sidebar (hidden on mobile) -->
     <aside
       v-if="!isMobileMode"
       class="sidebar"
       :class="{ collapsed: isCollapsed }"
       @click="toggleSidebar"
     >
-      <!-- Sidebar Header: Title -->
       <div class="sidebar-header">
         <div class="sidebar-title-section">
           <div class="app-title-wrapper">
-            <transition name="title-fade" mode="out-in">
+            <Transition name="title-fade">
               <img
                 v-if="isCollapsed"
                 :src="faviconUrl"
@@ -46,12 +40,11 @@
                 key="logo"
               />
               <h1 v-else class="app-title" key="title">Leyzen Vault</h1>
-            </transition>
+            </Transition>
           </div>
         </div>
       </div>
 
-      <!-- Sidebar Navigation -->
       <nav class="sidebar-nav">
         <button
           @click="handleNavigation('/dashboard')"
@@ -94,10 +87,9 @@
           <span class="sidebar-label">Trash</span>
         </button>
 
-        <!-- Pinned VaultSpaces Section -->
         <div v-if="pinnedVaultSpaces.length > 0" class="pinned-section">
           <div class="pinned-section-header">
-            <transition name="pinned-header-fade" mode="out-in">
+            <Transition name="pinned-header-fade">
               <span
                 v-if="!isCollapsed"
                 class="pinned-section-title"
@@ -111,9 +103,9 @@
                 v-html="getIcon('pin', 20)"
                 key="icon"
               ></span>
-            </transition>
+            </Transition>
           </div>
-          <transition-group
+          <TransitionGroup
             name="pinned-item"
             tag="div"
             class="pinned-items-container"
@@ -151,15 +143,13 @@
               ></span>
               <span class="sidebar-label">{{ vaultspace.name }}</span>
             </button>
-          </transition-group>
+          </TransitionGroup>
         </div>
       </nav>
 
-      <!-- Sidebar Footer: Status + User Menu -->
       <div class="sidebar-footer">
         <ServerStatusIndicator />
         <UserMenuDropdown
-          :orchestrator-enabled="orchestratorEnabled"
           @logout="handleLogout"
           @menu-open="handleMenuOpen"
           @menu-close="handleMenuClose"
@@ -167,7 +157,6 @@
       </div>
     </aside>
 
-    <!-- Main Content Area -->
     <div
       class="main-content"
       id="main-content-container"
@@ -175,24 +164,21 @@
         'mobile-mode': isMobileMode,
       }"
     >
-      <!-- Encryption Overlay Target -->
       <div id="encryption-overlay-portal"></div>
 
-      <!-- Page Content -->
       <main
         class="page-content"
         ref="pageContentRef"
         @scroll="updateScrollProgress"
         @contextmenu="handlePageContentContextMenu"
       >
-        <transition name="page" mode="out-in">
+        <Transition name="page">
           <div :key="$route.path" class="page-transition-wrapper">
             <slot />
           </div>
-        </transition>
+        </Transition>
       </main>
 
-      <!-- Circular Scroll Progress Indicator -->
       <div v-if="!isMobileMode" class="scroll-progress-indicator">
         <svg class="progress-circle" viewBox="0 0 36 36">
           <circle
@@ -219,7 +205,7 @@
             transform="rotate(-90 18 18)"
           />
         </svg>
-        <!-- Scroll to Top Button -->
+
         <button
           v-if="scrollProgress > 0"
           class="scroll-to-top-button"
@@ -245,10 +231,8 @@
       </div>
     </div>
 
-    <!-- Bottom Navigation (Mobile Only) -->
     <BottomNavigation v-if="isMobileMode" />
 
-    <!-- Logout Confirmation Modal -->
     <ConfirmationModal
       :show="showLogoutModal"
       title="Logout"
@@ -260,7 +244,6 @@
       @close="showLogoutModal = false"
     />
 
-    <!-- Offline Modal -->
     <OfflineModal />
     <MaintenanceModal />
   </div>
@@ -291,7 +274,6 @@ export default {
   data() {
     return {
       showLogoutModal: false,
-      orchestratorEnabled: true, // Default to true for compatibility
       loading: true,
       pinnedVaultSpaces: [],
       loadingPinned: false,
@@ -322,7 +304,6 @@ export default {
       return `${path}.ico`;
     },
     logoutIcon() {
-      // Return logout icon as SVG string
       if (window.Icons && window.Icons.logout) {
         return window.Icons.logout(48, "#ef4444");
       }
@@ -408,7 +389,6 @@ export default {
         return;
       }
 
-      // Check if target is interactive
       const target = event.target;
       const isInteractive =
         target.closest("button") ||
@@ -421,7 +401,6 @@ export default {
         return;
       }
 
-      // If we got here, it's a right click on an empty area of the page
       event.preventDefault();
 
       // Dispatch custom event for VaultSpaceView to catch
@@ -508,7 +487,7 @@ export default {
           vaultspaceMap.delete(id);
         }
       }
-      // Then add any remaining items (newly pinned, not in localStorage)
+
       for (const vs of vaultspaceMap.values()) {
         sorted.push(vs);
       }
@@ -526,7 +505,7 @@ export default {
             pinnedList,
             storedOrder,
           );
-          // Update localStorage with current vaultspaces (in case some were removed)
+
           const currentIds = this.pinnedVaultSpaces.map((vs) => vs.id);
           this.savePinnedOrderToStorage(currentIds);
         } else {
@@ -543,30 +522,8 @@ export default {
     },
     async loadOrchestratorEnabled() {
       try {
-        // Use fetch with JWT token from localStorage
-        const token = localStorage.getItem("jwt_token");
-        const headers = {
-          "Content-Type": "application/json",
-        };
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-
-        const response = await fetch("/api/v2/config", {
-          method: "GET",
-          credentials: "same-origin",
-          headers,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.orchestrator_enabled !== undefined) {
-            this.orchestratorEnabled = data.orchestrator_enabled === true;
-          }
-        }
-      } catch (err) {
-        // If API call fails, keep default value (true for compatibility)
-      }
+        await this.authStore.fetchAuthConfig();
+      } catch (err) {}
     },
     refreshPinnedVaultSpaces() {
       // Force refresh pinned VaultSpaces
@@ -608,7 +565,7 @@ export default {
     handleDragLeave(event, index) {
       // Only clear dragOverIndex if we're actually leaving the container
       // Don't clear if we're moving to a sibling pinned item
-      // Check if relatedTarget is another pinned item (sibling)
+
       let isMovingToSibling = false;
       if (event.relatedTarget && event.relatedTarget.closest) {
         const siblingPinnedItem = event.relatedTarget.closest(".pinned-item");
@@ -642,7 +599,6 @@ export default {
       const newOrder = [...this.pinnedVaultSpaces];
       const [draggedItem] = newOrder.splice(this.draggedItemIndex, 1);
 
-      // Calculate the insertion index based on drop position
       // When we remove an element, all indices after it shift down by 1
       let insertIndex;
       const position = this.dragOverPosition || "top"; // Default to 'top' if not set
@@ -672,7 +628,6 @@ export default {
       this.dragOverIndex = null;
       this.dragOverPosition = null;
 
-      // Update local state immediately
       this.pinnedVaultSpaces = newOrder;
 
       // Save to localStorage immediately
@@ -683,7 +638,6 @@ export default {
       try {
         await vaultspaces.updatePinnedOrder(order);
       } catch (err) {
-        // If API call fails, keep localStorage order
         // It will be synced on next load
       }
 
@@ -762,7 +716,6 @@ export default {
     },
   },
   async mounted() {
-    // Initialize mobile mode state
     this.isMobileMode = checkMobileMode();
 
     // Load sidebar state from localStorage (only if not in mobile mode)
@@ -789,7 +742,7 @@ export default {
       // Setup scroll progress indicator
       if (this.$refs.pageContentRef && !this.isMobileMode) {
         this.updateScrollProgress();
-        // Update on content changes
+
         const resizeObserver = new ResizeObserver(() => {
           this.updateScrollProgress();
         });
@@ -798,7 +751,6 @@ export default {
       }
     });
 
-    // Check if user is admin or superadmin and load config
     try {
       const authStore = useAuthStore();
       await authStore.fetchCurrentUser();
@@ -808,7 +760,6 @@ export default {
         await this.loadOrchestratorEnabled();
       }
     } catch (err) {
-      // Check if it's a network error (server offline, etc.)
       // Don't log as error if it's just a network issue
       const isNetworkErr =
         err?.message?.toLowerCase().includes("network") ||
@@ -837,7 +788,7 @@ export default {
     // Listen for VaultSpace updates (rename, icon change)
     this.vaultspaceUpdatedHandler = (event) => {
       const { vaultspaceId, vaultspace } = event.detail;
-      // Update the vaultspace in pinned list if it exists
+
       const index = this.pinnedVaultSpaces.findIndex(
         (vs) => vs.id === vaultspaceId,
       );
@@ -850,7 +801,7 @@ export default {
 
         // Replace the vaultspace object completely to trigger reactivity
         this.pinnedVaultSpaces.splice(index, 1, vaultspace);
-        // Update localStorage order
+
         const order = this.pinnedVaultSpaces.map((vs) => vs.id);
         this.savePinnedOrderToStorage(order);
       } else {
@@ -866,7 +817,7 @@ export default {
     // Listen for VaultSpace deletion
     this.vaultspaceDeletedHandler = async (event) => {
       const { vaultspaceId } = event.detail;
-      // Check if item is in pinned list
+
       const exists = this.pinnedVaultSpaces.some(
         (vs) => vs.id === vaultspaceId,
       );
@@ -874,7 +825,6 @@ export default {
         // Start disintegration animation
         this.disintegratingPinnedItems.add(vaultspaceId);
 
-        // Wait for animation to complete (600ms)
         await new Promise((resolve) => setTimeout(resolve, 600));
 
         // Remove from pinned list after animation
@@ -882,7 +832,6 @@ export default {
           (vs) => vs.id !== vaultspaceId,
         );
 
-        // Update localStorage order
         const order = this.pinnedVaultSpaces.map((vs) => vs.id);
         this.savePinnedOrderToStorage(order);
 
@@ -1178,8 +1127,7 @@ export default {
 
 .sidebar-item.router-link-active {
   background: rgba(0, 66, 37, 0.2);
-  color: #a9b7aa;
-  border-bottom: solid 1px var(--accent);
+  border-radius: 0.5rem;
 }
 
 .sidebar-icon {
@@ -1860,6 +1808,8 @@ body.sidebar-collapsed .main-content:not(.mobile-mode) {
   width: 100%;
   height: 100%;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Mobile Mode Styles */

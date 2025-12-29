@@ -441,7 +441,7 @@ class FilePromotionService:
         lock_acquired = False
 
         try:
-            # Try to acquire lock
+
             lock_acquired = self._acquire_lock(lock_file, lock_timeout)
             if not lock_acquired:
                 self._logger.info(
@@ -537,7 +537,6 @@ class FilePromotionService:
             if lock_file.exists():
                 lock_age = time.time() - lock_file.stat().st_mtime
 
-                # Try to read PID from lock file
                 pid = None
                 try:
                     with open(lock_file, "r") as f:
@@ -597,7 +596,7 @@ class FilePromotionService:
             lock_fd = os.open(str(lock_file), os.O_CREAT | os.O_WRONLY | os.O_EXCL)
 
             try:
-                # Try to acquire exclusive lock
+
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 # Write PID to lock file for debugging
                 os.write(lock_fd, str(os.getpid()).encode())

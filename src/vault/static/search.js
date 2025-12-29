@@ -298,7 +298,6 @@ async function performSearch(query, filters = {}) {
   return await manager.index.search(query, filters);
 }
 
-// Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", async () => {
   await initSearchManager();
 
@@ -325,13 +324,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             const filteredFiles = window.filesList.filter((file) =>
               fileIds.includes(file.file_id),
             );
-            // Render with highlights
+
             if (window.renderFiles) {
               window.renderFiles(filteredFiles);
               highlightSearchResults(query);
             }
           } else {
-            // Fallback to simple filter
             if (window.renderFilteredFiles) {
               window.renderFilteredFiles();
             }
@@ -394,7 +392,6 @@ function clearHighlights() {
   });
 }
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.SearchIndex = SearchIndex;
   window.SearchManager = SearchManager;

@@ -11,13 +11,11 @@ const STORAGE_KEY = "forceMobileMode";
  * @returns {boolean}
  */
 export function isMobileMode() {
-  // Check for forced mode first
   const forced = localStorage.getItem(STORAGE_KEY);
   if (forced !== null) {
     return forced === "true";
   }
 
-  // Fallback to viewport detection
   return window.innerWidth <= 768;
 }
 
@@ -32,7 +30,6 @@ export function setMobileMode(enabled) {
     localStorage.setItem(STORAGE_KEY, "false");
   }
 
-  // Update body class
   updateBodyClass();
 
   // Dispatch event for components to react

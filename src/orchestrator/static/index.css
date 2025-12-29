@@ -1,6 +1,5 @@
 @import "./tailwind.css";
 
-/* TT Alientz Serif Font */
 @font-face {
   font-family: "TT Alientz Serif";
   src:
@@ -11,10 +10,8 @@
   font-display: swap;
 }
 
-/* Import Google Fonts */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
-/* Reset and base styles */
 * {
   margin: 0;
   padding: 0;
@@ -32,20 +29,19 @@ html {
   --safe-y: max(env(safe-area-inset-top), 0px);
   --safe-y-bottom: max(env(safe-area-inset-bottom), 0px);
 
-  /* Typography */
   --font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --font-family-mono: "JetBrains Mono", "Courier New", monospace;
   --font-family-branding: "TT Alientz Serif", sans-serif;
 
-  --font-size-xs: 0.75rem; /* 12px */
-  --font-size-sm: 0.875rem; /* 14px */
-  --font-size-base: 1rem; /* 16px */
-  --font-size-lg: 1.125rem; /* 18px */
-  --font-size-xl: 1.25rem; /* 20px */
-  --font-size-2xl: 1.5rem; /* 24px */
-  --font-size-3xl: 1.875rem; /* 30px */
-  --font-size-4xl: 2.25rem; /* 36px */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
 
   --font-weight-light: 300;
   --font-weight-normal: 400;
@@ -57,25 +53,22 @@ html {
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* Spacing Scale */
-  --space-1: 0.25rem; /* 4px */
-  --space-2: 0.5rem; /* 8px */
-  --space-3: 0.75rem; /* 12px */
-  --space-4: 1rem; /* 16px */
-  --space-5: 1.25rem; /* 20px */
-  --space-6: 1.5rem; /* 24px */
-  --space-8: 2rem; /* 32px */
-  --space-10: 2.5rem; /* 40px */
-  --space-12: 3rem; /* 48px */
-  --space-16: 4rem; /* 64px */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
 
-  /* Transitions */
   --transition-fast: 150ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
   --transition-slower: 500ms ease;
 
-  /* Z-Index Scale */
   --z-base: 0;
   --z-dropdown: 1000;
   --z-sticky: 1020;
@@ -131,7 +124,6 @@ body {
   position: relative;
 }
 
-/* Utility classes */
 .hidden {
   display: none !important;
 }
@@ -467,7 +459,7 @@ footer {
   border: 1px solid var(--ash-grey);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
-  /* Prevent backdrop-filter blur from affecting canvas */
+
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -476,7 +468,7 @@ footer {
   width: 100%;
   height: 100%;
   display: block;
-  /* Ensure canvas is never blurred */
+
   filter: none !important;
 }
 
@@ -697,6 +689,7 @@ footer {
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.25);
   border-top-color: var(--accent);
+  border-radius: 50%;
 
   animation: spin 0.6s linear infinite;
   vertical-align: middle;
@@ -1019,9 +1012,6 @@ body.modal-open {
   opacity: 0.9;
 }
 
-/* ===== Global Scrollbar Styles ===== */
-
-/* Firefox Scrollbar Styles */
 * {
   scrollbar-width: thin;
   scrollbar-color: #004225 rgba(30, 41, 59, 0.2);
@@ -1031,7 +1021,6 @@ body.modal-open {
   scrollbar-color: #004225 rgba(255, 255, 255, 0.3);
 }
 
-/* WebKit Scrollbar Styles (Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -128,14 +128,14 @@ def generate_thumbnail(file_id: str):
             file_data = base64.b64decode(file_data_b64)
         else:
             # Fetch encrypted file from storage and decrypt
-            # Note: In production, this would require the file key
+
             # For now, we'll require file_data to be provided
             return jsonify({"error": "file_data required"}), 400
 
         # Detect actual MIME type from file data
         detected_mime_type = file_obj.mime_type
         if not detected_mime_type or detected_mime_type == "application/octet-stream":
-            # Try to detect image type from file data using PIL
+
             try:
                 from PIL import Image
                 import io
@@ -155,7 +155,7 @@ def generate_thumbnail(file_id: str):
                     image.format, detected_mime_type
                 )
             except Exception:
-                # If PIL can't open it, it's not an image
+
                 pass
 
         # Only generate thumbnails for images

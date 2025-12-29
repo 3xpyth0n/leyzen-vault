@@ -204,7 +204,7 @@ class RateLimiter:
                 user_key = None
 
             # SECURITY: Detect distributed attacks by tracking global action counts
-            # If same action is attempted from many IPs in short time, it's likely an attack
+
             global_action_key = f"global:{action_name}"
             global_window_start = now - timedelta(seconds=window_seconds)
             global_window_start_rounded = global_window_start.replace(microsecond=0)

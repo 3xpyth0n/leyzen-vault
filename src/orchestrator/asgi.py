@@ -13,7 +13,7 @@ from types import ModuleType
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: This local calculation is ONLY needed for the initial bootstrap before
+
 # common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
 # In Docker, /common is mounted as a volume, so we check that first.
 _COMMON_DIR = Path("/common")
@@ -41,6 +41,7 @@ from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-fo
 _rotation_service = None
 _storage_cleanup_service = None
 _logger = None
+_shutdown_logged = False
 
 
 class HealthCheckMiddleware:
@@ -130,7 +131,7 @@ def create_app() -> WSGIMiddleware:
     try:
         configured_app = get_configured_app()
     except RuntimeError:
-        # If app configuration fails, still provide a minimal health check endpoint
+
         minimal_app = Flask(__name__)
 
         @minimal_app.route("/healthz")
@@ -147,25 +148,45 @@ def create_app() -> WSGIMiddleware:
     _storage_cleanup_service = configured_app.config.get("STORAGE_CLEANUP_SERVICE")
     _logger = configured_app.config["LOGGER"]
 
+    # Log startup messages
+    settings = configured_app.config["SETTINGS"]
+    _logger.warning("=== Orchestrator started ===")
+
     # Start background workers
     _rotation_service.start_background_workers()
     if _storage_cleanup_service:
         _storage_cleanup_service.start_background_worker()
 
+    _logger.warning("Moving Target Defense (MTD) system is active and monitoring")
+    _logger.warning(
+        f"Orchestrator server started successfully on port {settings.orchestrator_port}"
+    )
+
     def log_shutdown(sig: int | None = None) -> None:
         """Log shutdown message and flush logger."""
-        if _logger is None:
+        global _shutdown_logged
+        if _logger is None or _shutdown_logged:
             return
+
+        _shutdown_logged = True
+
+        # Stop storage cleanup worker first so its log appears before "stopped"
+        if _storage_cleanup_service is not None:
+            _storage_cleanup_service.stop_background_worker()
+
         if sig is not None:
-            _logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
+            _logger.warning(f"=== Orchestrator stopped (signal {sig}) ===")
         else:
-            _logger.log("=== Orchestrator stopped ===")
+            _logger.warning("=== Orchestrator stopped ===")
+
+        # Flush immediately after logging stopped message to ensure it's written
+        _logger.flush()
+
         # Clean up rotation service resources
         if _rotation_service is not None:
             _rotation_service.cleanup()
-        # Stop storage cleanup worker
-        if _storage_cleanup_service is not None:
-            _storage_cleanup_service.stop_background_worker()
+
+        # Final flush after other cleanups
         _logger.flush()
 
     def handle_shutdown(

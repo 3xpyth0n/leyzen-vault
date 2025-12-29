@@ -237,7 +237,6 @@ class SyncValidationService:
             ):
                 return file_id
 
-            # If it doesn't look like a UUID, it might still be valid (legacy format)
             # Return it anyway and let the whitelist check decide
             return file_id
 
@@ -321,7 +320,7 @@ class SyncValidationService:
             expected_hash = file_metadata["encrypted_hash"]
 
             if not expected_hash:
-                # If no hash is stored, compute and warn (should not happen in production)
+
                 self._logger.warning(
                     f"File {file_id} has no stored hash - computing and accepting"
                 )
@@ -333,7 +332,7 @@ class SyncValidationService:
 
             # Verify magic bytes (content-based validation)
             # Only check magic bytes if hash validation passed
-            # If hash matches, file is valid regardless of magic bytes
+
             # This check is mainly for detecting unencrypted files when hash is missing
             if not expected_hash:
                 # Only check magic bytes if no hash is stored (should not happen in production)
@@ -355,7 +354,6 @@ class SyncValidationService:
                         b"<?xml",  # XML
                     ]
 
-                    # If file starts with plaintext signature and is supposed to be encrypted,
                     # this might indicate tampering (unless it's a known format)
                     # For now, we just log a warning but don't reject
                     for sig in plaintext_signatures:

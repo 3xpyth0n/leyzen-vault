@@ -137,7 +137,6 @@ async function deriveSessionKeyFromJWT(jwtToken) {
   const encoder = new TextEncoder();
   const userIdBytes = encoder.encode(`leyzen_master_key:${userId}`);
 
-  // Import user ID as key material
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     userIdBytes,
@@ -203,7 +202,6 @@ export async function storeEncryptedMasterKey(masterKey, jwtToken) {
       throw new Error("Invalid JWT token");
     }
 
-    // Export master key (must be extractable for this to work)
     // We need to make it extractable temporarily
     const exportedKey = await crypto.subtle.exportKey("raw", masterKey);
 
@@ -296,7 +294,6 @@ export async function getEncryptedMasterKey(jwtToken) {
       encrypted,
     );
 
-    // Import as CryptoKey
     const masterKey = await crypto.subtle.importKey(
       "raw",
       decrypted,
@@ -310,7 +307,6 @@ export async function getEncryptedMasterKey(jwtToken) {
 
     return masterKey;
   } catch (error) {
-    // If decryption fails (e.g., JWT changed), return null
     logger.warn("Failed to retrieve encrypted master key:", error);
     return null;
   }

@@ -25,41 +25,6 @@ type EnvFile struct {
 
 // LoadEnvFile reads an environment file from disk. If the file does not exist,
 // an empty representation is returned.
-//
-// Parser synchronization:
-// This Go implementation must maintain compatible behavior with the Python implementation
-// in src/common/env.py::read_env_file(). Both parsers are synchronized to ensure identical
-// parsing semantics:
-//
-// - Quote handling: Both strip matching single and double quotes from values
-//   - Go: Checks if first and last characters are matching quotes (" or ')
-//   - Python: `value[0] == value[-1] and value[0] in {'"', "'"}`
-//
-// - Comment handling: Both ignore lines starting with #
-//   - Go: `strings.HasPrefix(trimmed, "#")`
-//   - Python: `line.startswith("#")`
-//
-// - Empty lines: Both are ignored
-//   - Go: `trimmed == ""`
-//   - Python: `if not line`
-//
-// - Whitespace: Both trim keys and values
-//   - Go: `strings.TrimSpace(key)`, `strings.TrimSpace(value)`
-//   - Python: `key.strip()`, `value.strip()`
-//
-// - Key-value separation: Both split on first `=` only
-//   - Go: `strings.Index(line, "=")` then split
-//   - Python: `line.split("=", 1)`
-//
-// Synchronization rules:
-//  1. When modifying parsing logic in this file, update the Python implementation in
-//     src/common/env.py::read_env_file() to match
-//  2. When modifying parsing logic in Python, update this Go implementation to match
-//  3. Test both implementations with the same .env file to verify compatibility
-//  4. Document any intentional differences in behavior
-//
-// This duplication is necessary for linguistic reasons (Python services vs Go CLI)
-// but both implementations must stay synchronized to avoid configuration inconsistencies.
 func LoadEnvFile(path string) (*EnvFile, error) {
 	cleaned := filepath.Clean(path)
 	file := &EnvFile{Path: cleaned}
@@ -85,11 +50,10 @@ func LoadEnvFile(path string) (*EnvFile, error) {
 		idx := strings.Index(line, "=")
 		key := strings.TrimSpace(line[:idx])
 		value := strings.TrimSpace(line[idx+1:])
-		// Strip matching quotes from value (single or double) to match Python/Docker semantics
 		if len(value) >= 2 {
 			first := value[0]
 			last := value[len(value)-1]
-			if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			if (first == '"' && last == '"') || (first == '\'' && last == '\'') || (first == '`' && last == '`') {
 				value = value[1 : len(value)-1]
 			}
 		}
@@ -154,7 +118,6 @@ func (f *EnvFile) Write() error {
 	}
 
 	if len(f.Entries) == 0 {
-		// ensure file ends with newline even if empty
 		builder.WriteString("")
 	}
 
@@ -165,11 +128,6 @@ func (f *EnvFile) Write() error {
 }
 
 // ResolveEnvFilePath returns an absolute path for the provided env file, defaulting to .env when empty.
-// This function aligns with the Python implementation in src/common/env.py::load_env_with_override():
-// - If LEYZEN_ENV_FILE is set and non-empty, use that file
-// - Relative paths are resolved relative to the repository root (not current working directory)
-// - Absolute paths are used as-is
-// - If no path is provided and LEYZEN_ENV_FILE is not set, default to .env in repository root
 func ResolveEnvFilePath(path string) (string, error) {
 	repoRoot, err := FindRepoRoot()
 	if err != nil {
@@ -178,7 +136,6 @@ func ResolveEnvFilePath(path string) (string, error) {
 
 	cleaned := strings.TrimSpace(path)
 
-	// Check for LEYZEN_ENV_FILE override (same as Python logic)
 	if cleaned == "" {
 		if override := os.Getenv("LEYZEN_ENV_FILE"); override != "" {
 			cleaned = strings.TrimSpace(override)
@@ -187,7 +144,6 @@ func ResolveEnvFilePath(path string) (string, error) {
 		}
 	}
 
-	// Expand user home directory (~)
 	expanded := cleaned
 	if strings.HasPrefix(cleaned, "~") {
 		homeDir, err := os.UserHomeDir()
@@ -197,7 +153,6 @@ func ResolveEnvFilePath(path string) (string, error) {
 		expanded = strings.Replace(cleaned, "~", homeDir, 1)
 	}
 
-	// Resolve path: if absolute, use as-is; if relative, resolve from repo root
 	var resolved string
 	if filepath.IsAbs(expanded) {
 		resolved = expanded
@@ -205,7 +160,6 @@ func ResolveEnvFilePath(path string) (string, error) {
 		resolved = filepath.Join(repoRoot, expanded)
 	}
 
-	// Make absolute path canonical
 	abs, err := filepath.Abs(resolved)
 	if err != nil {
 		return "", fmt.Errorf("resolve env file path: %w", err)
@@ -215,30 +169,23 @@ func ResolveEnvFilePath(path string) (string, error) {
 }
 
 // LoadEnvTemplate loads variables from env.template file located in the project root.
-// It finds env.template by looking for it relative to the provided env file path.
 func LoadEnvTemplate(envFilePath string) (map[string]string, error) {
-	// Resolve the env file path to get its directory
 	resolvedEnvPath, err := ResolveEnvFilePath(envFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve env file path: %w", err)
 	}
 
 	envDir := filepath.Dir(resolvedEnvPath)
-
-	// Try to find env.template in the same directory or parent directory
 	templatePath := filepath.Join(envDir, "env.template")
 
-	// If not found, try parent directory (project root)
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		parentTemplatePath := filepath.Join(filepath.Dir(envDir), "env.template")
 		if _, err := os.Stat(parentTemplatePath); os.IsNotExist(err) {
-			// Template not found anywhere, return empty map
 			return make(map[string]string), nil
 		}
 		templatePath = parentTemplatePath
 	}
 
-	// Try to load the template
 	templateFile, err := LoadEnvFile(templatePath)
 	if err != nil {
 		return nil, fmt.Errorf("load env template: %w", err)
@@ -250,28 +197,22 @@ func LoadEnvTemplate(envFilePath string) (map[string]string, error) {
 // InitializeEnvFromTemplate initializes an empty env file with variables from env.template.
 // Returns the merged variables.
 func InitializeEnvFromTemplate(envFilePath string) (map[string]string, error) {
-	// Load current env file
 	envFile, err := LoadEnvFile(envFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("load env file: %w", err)
 	}
 
-	// Check if file is empty (no key-value pairs)
 	if len(envFile.Pairs()) == 0 {
-		// Load template
 		templatePairs, err := LoadEnvTemplate(envFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("load template: %w", err)
 		}
 
-		// If template has variables, copy them to env file
 		if len(templatePairs) > 0 {
-			// Copy all template variables to env file
 			for key, value := range templatePairs {
 				envFile.Set(key, value)
 			}
 
-			// Save the initialized file
 			if err := envFile.Write(); err != nil {
 				return nil, fmt.Errorf("write initialized env file: %w", err)
 			}
@@ -280,22 +221,17 @@ func InitializeEnvFromTemplate(envFilePath string) (map[string]string, error) {
 		return envFile.Pairs(), nil
 	}
 
-	// File already has variables, return them
 	return envFile.Pairs(), nil
 }
 
 // LoadAllEnvVariables loads all environment variables by merging env.template with .env.
 // Values from .env take priority over template values.
-// This function is used to display all available variables in the Config view and Wizard,
-// even if they are not yet set in the .env file.
 func LoadAllEnvVariables(envFilePath string) (map[string]string, error) {
-	// Load template first (all available variables)
 	templatePairs, err := LoadEnvTemplate(envFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("load template: %w", err)
 	}
 
-	// Load current .env file
 	envFile, err := LoadEnvFile(envFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("load env file: %w", err)
@@ -303,12 +239,10 @@ func LoadAllEnvVariables(envFilePath string) (map[string]string, error) {
 
 	envPairs := envFile.Pairs()
 
-	// Merge: start with template, then override with .env values
 	result := make(map[string]string)
 	for key, value := range templatePairs {
 		result[key] = value
 	}
-	// Override with .env values (they take priority)
 	for key, value := range envPairs {
 		result[key] = value
 	}
@@ -325,18 +259,14 @@ type EnvDoc struct {
 
 // FindEnvTemplatePath locates the env.template file relative to the given env file path.
 func FindEnvTemplatePath(envFilePath string) (string, error) {
-	// Resolve the env file path to get its directory
 	resolvedEnvPath, err := ResolveEnvFilePath(envFilePath)
 	if err != nil {
 		return "", fmt.Errorf("resolve env file path: %w", err)
 	}
 
 	envDir := filepath.Dir(resolvedEnvPath)
-
-	// Try to find env.template in the same directory or parent directory
 	templatePath := filepath.Join(envDir, "env.template")
 
-	// If not found, try parent directory (project root)
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		parentTemplatePath := filepath.Join(filepath.Dir(envDir), "env.template")
 		if _, err := os.Stat(parentTemplatePath); os.IsNotExist(err) {
@@ -371,62 +301,46 @@ func LoadEnvDocumentation(envFilePath string) (map[string]EnvDoc, error) {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Empty line resets the comment accumulator
 		if trimmed == "" {
 			currentComments = nil
 			continue
 		}
 
-		// Comment line (could be documentation OR a commented-out variable)
 		if strings.HasPrefix(trimmed, "#") {
-			// Strip the leading # and optional space
 			content := strings.TrimPrefix(trimmed, "#")
 			content = strings.TrimSpace(content)
 
-			// Check if this comment is actually a commented-out variable assignment (e.g., "# KEY=VALUE")
-			// But we must be careful: it must look like a valid assignment.
-			// Simple check: contains "=" and key doesn't have spaces.
 			if idx := strings.Index(content, "="); idx != -1 {
 				key := strings.TrimSpace(content[:idx])
-				// Basic validation: key should not contain spaces and should be uppercase (convention)
 				if key != "" && !strings.Contains(key, " ") {
-					// It's likely a commented variable!
-					// Treat it as a variable definition using the PREVIOUSLY accumulated comments.
 					if len(currentComments) > 0 {
 						doc := EnvDoc{
 							Name:        key,
 							Summary:     currentComments[0],
 							Description: strings.Join(currentComments, "\n"),
 						}
-						// Only set if not already present (uncommented takes precedence)
 						if _, exists := docs[key]; !exists {
 							docs[key] = doc
 						}
 					}
-					// Reset comments because we consumed them for this variable
 					currentComments = nil
 					continue
 				}
 			}
 
-			// It's a regular documentation comment
 			currentComments = append(currentComments, content)
 			continue
 		}
 
-		// Variable assignment
 		if idx := strings.Index(trimmed, "="); idx != -1 {
-			// If we have accumulated comments, associate them with this variable
 			if len(currentComments) > 0 {
 				key := strings.TrimSpace(trimmed[:idx])
 
-				// Skip if key is empty or commented out (though commented out assignment is handled by # check above)
 				if key == "" {
 					currentComments = nil
 					continue
 				}
 
-				// Create documentation entry
 				doc := EnvDoc{
 					Name:        key,
 					Summary:     currentComments[0],
@@ -434,10 +348,8 @@ func LoadEnvDocumentation(envFilePath string) (map[string]EnvDoc, error) {
 				}
 				docs[key] = doc
 			}
-			// Reset comments after assignment
 			currentComments = nil
 		} else {
-			// Line is neither comment nor assignment (garbage?), reset comments
 			currentComments = nil
 		}
 	}

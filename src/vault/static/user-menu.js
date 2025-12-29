@@ -32,7 +32,6 @@ function createDropdownHTML() {
 function positionDropdown(button, dropdown) {
   const buttonRect = button.getBoundingClientRect();
 
-  // Ensure dropdown is displayed (but don't override display here, it's set by caller)
   dropdown.style.setProperty("display", "flex", "important");
   dropdown.style.setProperty("visibility", "visible", "important");
 
@@ -45,7 +44,6 @@ function positionDropdown(button, dropdown) {
   let top = buttonRect.bottom + 8;
   let left = buttonRect.right - dropdownWidth;
 
-  // Ensure dropdown stays within viewport bounds
   if (left < 16) {
     left = 16;
   }
@@ -59,7 +57,6 @@ function positionDropdown(button, dropdown) {
     }
   }
 
-  // Set position using inline styles with !important
   dropdown.style.setProperty("top", `${Math.round(top)}px`, "important");
   dropdown.style.setProperty("left", `${Math.round(left)}px`, "important");
   dropdown.style.setProperty("position", "fixed", "important");
@@ -70,14 +67,12 @@ function positionDropdown(button, dropdown) {
 function ensureDropdownInBody(dropdown) {
   if (!dropdown) return;
 
-  // If dropdown exists but is NOT in body, move it
   if (dropdown.parentNode && dropdown.parentNode !== document.body) {
     const oldParent = dropdown.parentNode;
     oldParent.removeChild(dropdown);
     document.body.appendChild(dropdown);
   }
 
-  // If dropdown has no parent, add it to body
   if (!dropdown.parentNode) {
     document.body.appendChild(dropdown);
   }
@@ -130,7 +125,6 @@ document.addEventListener("DOMContentLoaded", () => {
       dropdown.id = "user-menu-dropdown";
       dropdown.classList.add("hidden");
 
-      // Set styles BEFORE adding to DOM
       dropdown.style.cssText =
         "position: fixed !important; z-index: 2147483647 !important; top: 0; left: 0; display: none !important;";
 
@@ -210,7 +204,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Position after render
       requestAnimationFrame(() => {
-        // Double-check location
         ensureDropdownInBody(dropdown);
 
         // Position it
@@ -240,7 +233,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       };
     } else {
-      // Hide dropdown
       dropdown.style.setProperty("display", "none", "important");
       dropdown.classList.add("hidden");
       userMenuContainer.classList.remove("active");
@@ -251,7 +243,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Close dropdown when clicking outside
   document.addEventListener("click", (e) => {
     if (dropdown && !dropdown.classList.contains("hidden")) {
       if (
@@ -269,7 +260,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Close dropdown on Escape key
   document.addEventListener("keydown", (e) => {
     if (
       dropdown &&

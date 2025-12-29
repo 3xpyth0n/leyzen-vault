@@ -92,11 +92,9 @@ def _check_jti_column_exists() -> bool:
     """
     global _jti_column_exists_cache
 
-    # If cache is True, return immediately (column definitely exists)
     if _jti_column_exists_cache is True:
         return True
 
-    # If cache is False or None, always check (handles migration case)
     # Check if column exists - wrap everything in try/except to ensure no exceptions escape
     try:
         from sqlalchemy.exc import ProgrammingError, InternalError
@@ -111,7 +109,7 @@ def _check_jti_column_exists() -> bool:
                 # Don't cache False here - might be called before context is ready
                 return False
         except Exception:
-            # If has_app_context() itself fails, assume no context
+
             # Don't cache False here - might be transient
             return False
 
@@ -141,7 +139,6 @@ def _check_jti_column_exists() -> bool:
             # Table doesn't exist yet - don't cache, might be created later
             return False
 
-        # Try multiple methods to verify column exists for robustness
         # Method 1: Use inspector to check columns directly (more reliable for newly created tables)
         try:
             from sqlalchemy import inspect as sql_inspect
@@ -164,7 +161,7 @@ def _check_jti_column_exists() -> bool:
         try:
             # Use a query that will fail gracefully if column doesn't exist
             db.session.execute(sql_text("SELECT jti FROM jwt_blacklist LIMIT 0"))
-            # If query succeeds, column exists
+
             _jti_column_exists_cache = True
             return True
         except (ProgrammingError, InternalError) as e:
@@ -174,7 +171,7 @@ def _check_jti_column_exists() -> bool:
                 "does not exist" in error_str and "jti" in error_str
             ):
                 # Column doesn't exist - cache False only if we're certain
-                # But allow retry by not caching in case of transient issues
+
                 _jti_column_exists_cache = False
                 return False
             else:
@@ -296,10 +293,9 @@ class AuthService:
         Raises:
             ValueError: If email is not verified (with error message)
         """
-        # Try to find user by email
+
         user = db.session.query(User).filter_by(email=username_or_email).first()
 
-        # If user found in database, verify password
         if user:
             try:
                 self.password_hasher.verify(user.password_hash, password)
@@ -316,7 +312,7 @@ class AuthService:
 
             # Check if 2FA is enabled
             if user.totp_enabled:
-                # If no TOTP token provided, indicate 2FA is required
+
                 if not totp_token:
                     return user, None  # Signal that 2FA is required
 
@@ -330,7 +326,6 @@ class AuthService:
             # Update last login
             user.last_login = datetime.now(timezone.utc)
 
-            # If user doesn't have a master_key_salt, generate one now
             # This handles initialization for users created before master_key_salt was required
             if not user.master_key_salt:
                 salt_bytes = secrets.token_bytes(16)
@@ -339,7 +334,6 @@ class AuthService:
                 prefixed_salt = b"argon2:" + salt_bytes
                 user.master_key_salt = base64.b64encode(prefixed_salt).decode("utf-8")
 
-            # If user doesn't have a session_key_salt, generate one now
             # This handles initialization for users created before session_key_salt was required
             if not user.session_key_salt:
                 session_key_salt_bytes = secrets.token_bytes(32)
@@ -448,7 +442,7 @@ class AuthService:
                         return None
             elif jti and not jti_column_exists and not is_production:
                 # Column doesn't exist in development: fallback to full token check
-                # But log a warning
+
                 logger.warning(
                     "JWT replay protection (jti) not available - database migration required. "
                     "Falling back to full token blacklist check."
@@ -856,7 +850,7 @@ class AuthService:
                 )
                 db.session.commit()
             except Exception as e2:
-                # If that also fails, log and re-raise
+
                 logger.error(f"Failed to create blacklist entry: {e2}")
                 raise
 
@@ -984,7 +978,6 @@ class AuthService:
 
         totp_service = get_totp_service()
 
-        # Try TOTP token first
         try:
             decrypted_secret = totp_service.decrypt_secret(user.totp_secret)
             if totp_service.verify_token(decrypted_secret, token):
@@ -993,7 +986,6 @@ class AuthService:
             # Decryption failed or invalid token
             pass
 
-        # Try backup codes if TOTP token failed
         if user.totp_backup_codes:
             try:
                 decrypted_codes = totp_service.decrypt_backup_codes(

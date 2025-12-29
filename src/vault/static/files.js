@@ -5,7 +5,6 @@ let currentShareFileId = null;
 let currentShareKey = null;
 let currentView = "list"; // "grid" or "list"
 
-// Export currentView for use in folders.js
 if (typeof window !== "undefined") {
   window.currentView = currentView;
   Object.defineProperty(window, "currentView", {
@@ -97,7 +96,6 @@ function getFileIcon(fileName) {
       return iconFunction.call(window.Icons, 48, "currentColor");
     }
 
-    // Fallback to generic file icon
     if (window.Icons.file) {
       return window.Icons.file(48, "currentColor");
     }
@@ -140,7 +138,6 @@ function createFileCardElement(file, index) {
     </div>
   `;
 
-  // Set innerHTML using TrustedHTML if available
   if (window.vaultHTMLPolicy) {
     try {
       card.innerHTML = window.vaultHTMLPolicy.createHTML(cardHTML);
@@ -204,7 +201,6 @@ function attachFileActionListeners(container) {
         if (window.sharingManager && window.sharingManager.showShareModal) {
           window.sharingManager.showShareModal(fileId);
         } else if (window.shareFile) {
-          // Fallback to alternative share method
           shareFile(fileId);
         }
         break;
@@ -216,7 +212,6 @@ function attachFileActionListeners(container) {
   });
 }
 
-// Render files list
 function renderFiles(files) {
   const container = document.getElementById("files-list");
   if (!container) return;
@@ -234,7 +229,6 @@ function renderFiles(files) {
   }
 }
 
-// Render files in grid view
 function renderFilesGridView(files) {
   const container = document.getElementById("files-list");
   if (!container) return;
@@ -281,7 +275,6 @@ function renderFilesGridView(files) {
   if (container) setInnerHTML(container, filesHTML);
 }
 
-// Render files in list view
 function renderFilesListView(files) {
   const container = document.getElementById("files-list");
   if (!container) return;
@@ -307,7 +300,6 @@ function renderFilesListView(files) {
     }
   }
 
-  // Fallback to regular rendering for small lists
   const filesHTML = files
     .map((file) => {
       const escapedFileName = escapeHtml(file.original_name);
@@ -368,7 +360,6 @@ function createFileRowElement(file, index) {
     </div>
   `;
 
-  // Set innerHTML using TrustedHTML if available
   if (window.vaultHTMLPolicy) {
     try {
       row.innerHTML = window.vaultHTMLPolicy.createHTML(rowHTML);
@@ -485,7 +476,6 @@ function debounce(func, wait) {
   };
 }
 
-// Render files with current filters
 function renderFilteredFiles() {
   const searchInput = document.getElementById("search-input");
   const sortSelect = document.getElementById("sort-select");
@@ -498,7 +488,6 @@ function renderFilteredFiles() {
 
   renderFiles(filtered);
 
-  // Update result count if needed
   const container = document.getElementById("files-list");
   if (container && query) {
     const resultCount = filtered.length;
@@ -619,7 +608,6 @@ async function uploadFile(file) {
     statusEl.classList.remove("hidden");
   }
 
-  // Hide progress initially
   if (progressEl) {
     progressEl.classList.add("hidden");
   }
@@ -680,7 +668,6 @@ async function uploadFile(file) {
             progressPercent.textContent = `${percent}%`;
           }
 
-          // Calculate speed
           if (timeDiff > 0) {
             const speed = loadedDiff / timeDiff; // bytes per second
             const speedFormatted = formatFileSize(speed) + "/s";
@@ -771,7 +758,6 @@ async function uploadFile(file) {
 
     const fileId = result.file_id;
 
-    // Hide progress
     if (progressEl) {
       progressEl.classList.add("hidden");
     }
@@ -784,7 +770,6 @@ async function uploadFile(file) {
       statusEl.textContent = `Upload successful: ${file.name}`;
     }
 
-    // Show success notification
     if (window.Notifications) {
       window.Notifications.success(`File "${file.name}" uploaded successfully`);
     }
@@ -812,7 +797,7 @@ async function uploadFile(file) {
 }
 
 // Store key in localStorage (client-side only)
-// Import IndexedDB-based file key storage
+
 let fileKeyStorage = null;
 (async () => {
   try {
@@ -829,7 +814,7 @@ async function storeFileKey(fileId, key) {
       return;
     } catch (e) {}
   }
-  // Fallback to localStorage
+
   try {
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     keys[fileId] = keyStr;
@@ -847,7 +832,7 @@ async function getFileKey(fileId) {
       }
     } catch (e) {}
   }
-  // Fallback to localStorage
+
   try {
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     const keyStr = keys[fileId];
@@ -887,7 +872,6 @@ async function downloadFile(fileId) {
       }
     }
 
-    // Show info notification
     if (window.Notifications) {
       window.Notifications.info(`Downloading "${file.original_name}"...`);
     }
@@ -925,7 +909,6 @@ async function downloadFile(fileId) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    // Show success notification
     if (window.Notifications) {
       window.Notifications.success(
         `File "${file.original_name}" downloaded successfully`,
@@ -947,7 +930,6 @@ async function generateExistingLinksHTML(activeLinks, fileId, key) {
   // Get base URL using VAULT_URL (with fallback to window.location.origin)
   let baseUrl;
   try {
-    // Try to use the vault-config service if available
     if (window.getVaultBaseUrl) {
       baseUrl = await window.getVaultBaseUrl();
     } else {
@@ -1023,7 +1005,6 @@ async function shareFile(fileId, key = null) {
 
   currentShareKey = key;
 
-  // Show modal first
   const modal = document.getElementById("share-modal");
   const shareUrlInput = document.getElementById("share-url");
   const existingLinksContainer = document.getElementById("existing-links");
@@ -1130,7 +1111,6 @@ async function shareFile(fileId, key = null) {
     // Get base URL using VAULT_URL (with fallback to window.location.origin)
     let baseUrl;
     try {
-      // Try to use the vault-config service if available
       if (window.getVaultBaseUrl) {
         baseUrl = await window.getVaultBaseUrl();
       } else {
@@ -1207,7 +1187,6 @@ async function shareFile(fileId, key = null) {
       }
     }
   } catch (error) {
-    // Fallback to alternative URL format
     try {
       const shareUrl = await VaultCrypto.createShareUrl(fileId, key);
       if (shareUrlInput) shareUrlInput.value = shareUrl;
@@ -1394,8 +1373,7 @@ function copyShareUrl() {
   }
 }
 
-// Initialize
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   // Setup file selection
   const filesContainer = document.getElementById("files-list");
   if (filesContainer) {
@@ -1492,7 +1470,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const label = uploadArea.querySelector("label[for='file-input']");
 
     // Remove the 'for' attribute from label to prevent native behavior
-    // We'll handle the click manually
+
     if (label) {
       label.removeAttribute("for");
       label.addEventListener("click", (e) => {
@@ -1517,7 +1495,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (files.length > 0 && window.uploadManager) {
         window.uploadManager.queueFiles(files);
       } else if (files.length > 0) {
-        // Fallback to alternative upload method
         files.forEach((file) => uploadFile(file));
       }
     });
@@ -1539,7 +1516,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (files.length > 0 && window.uploadManager) {
         window.uploadManager.queueFiles(files);
       } else if (files.length > 0) {
-        // Fallback to alternative upload method
         files.forEach((file) => uploadFile(file));
       }
     });

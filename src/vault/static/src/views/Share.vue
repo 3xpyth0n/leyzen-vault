@@ -7,7 +7,6 @@
       </div>
     </div>
     <div v-else-if="shareInfo" class="share-card">
-      <!-- Status Badge -->
       <div
         class="status-badge"
         :class="{
@@ -21,7 +20,6 @@
         }}</span>
       </div>
 
-      <!-- File Information -->
       <div class="file-header">
         <div class="file-icon">
           <svg
@@ -65,17 +63,14 @@
         </div>
       </div>
 
-      <!-- Error Message (if expired/invalid) -->
       <div v-if="isExpired && shareInfo.error" class="error-message">
         <p>{{ shareInfo.error }}</p>
       </div>
 
-      <!-- Error Message (for download errors) -->
       <div v-if="error && !isExpired" class="error-message">
         <p>{{ error }}</p>
       </div>
 
-      <!-- Password Input (if password protected) -->
       <div
         v-if="shareInfo?.has_password && isAvailable"
         class="password-section"
@@ -135,7 +130,6 @@
         </div>
       </div>
 
-      <!-- Download Progress Bar -->
       <ProgressBar
         v-if="downloadProgress !== null && downloadProgress >= 0"
         :progress="downloadProgress"
@@ -145,7 +139,6 @@
         :status="downloadStatus"
       />
 
-      <!-- Download Button -->
       <div class="action-section">
         <button
           @click="downloadFile"
@@ -241,12 +234,10 @@ const getIcon = (iconName, size = 24) => {
 const isExpired = computed(() => {
   if (!shareInfo.value) return false;
 
-  // Check if explicitly marked as invalid
   if (shareInfo.value.is_valid === false) {
     return true;
   }
 
-  // Check expiration date
   if (shareInfo.value.expires_at) {
     const expiresDate = new Date(shareInfo.value.expires_at);
     const now = new Date();
@@ -255,7 +246,6 @@ const isExpired = computed(() => {
     }
   }
 
-  // Check max downloads
   if (shareInfo.value.max_downloads) {
     const remaining =
       shareInfo.value.max_downloads - (shareInfo.value.download_count || 0);
@@ -327,7 +317,7 @@ const loadShareInfo = async () => {
     const data = await response.json();
     // API v2 returns data in legacy format for compatibility
     // Store shareInfo even if invalid/expired to show status
-    // Check if has_password is in share_link or directly in data
+
     if (data.share_link && data.share_link.has_password !== undefined) {
       data.has_password = data.share_link.has_password;
     }
@@ -363,7 +353,6 @@ const downloadFile = async () => {
   // Clear previous errors
   error.value = "";
 
-  // Check if password is required
   if (shareInfo.value?.has_password && !sharePassword.value) {
     error.value = "Password is required to download this file";
     return;
@@ -409,7 +398,6 @@ const downloadFile = async () => {
   }
 
   try {
-    // Initialize download progress
     downloadProgress.value = 0;
     downloadSpeed.value = 0;
     downloadTimeRemaining.value = null;
@@ -517,7 +505,6 @@ const downloadFile = async () => {
     // Convert ArrayBuffer to Uint8Array
     const encryptedData = new Uint8Array(encryptedDataArrayBuffer);
 
-    // Update status for decryption phase
     downloadProgress.value = 95;
     downloadSpeed.value = 0;
     downloadTimeRemaining.value = null;
@@ -526,7 +513,6 @@ const downloadFile = async () => {
     // Decrypt the file client-side
     const decryptedBuffer = await decryptFileLegacy(encryptedData, key);
 
-    // Update progress to complete
     downloadProgress.value = 100;
     downloadStatus.value = "Download complete";
 
@@ -539,13 +525,12 @@ const downloadFile = async () => {
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    // Wait a bit before removing to ensure download starts
+
     setTimeout(() => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     }, 100);
 
-    // Hide progress after a short delay
     setTimeout(() => {
       downloadProgress.value = null;
       downloadSpeed.value = 0;

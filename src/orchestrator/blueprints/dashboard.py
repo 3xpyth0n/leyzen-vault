@@ -85,7 +85,7 @@ def api_control():
     try:
         data = request.get_json(force=True)
     except Exception:
-        _logger().log("[CONTROL ERROR] Invalid JSON body received")
+        _logger().error("[CONTROL ERROR] Invalid JSON body received")
         return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
 
     action = (data.get("action") or "").strip().lower()
@@ -323,7 +323,7 @@ def api_stream():
             except GeneratorExit:
                 break
             except Exception as exc:
-                _logger().log(f"[SSE ERROR] {exc}")
+                _logger().error(f"[SSE ERROR] {exc}")
             elapsed = time.perf_counter() - loop_start
             delay = max(sleep_interval - elapsed, 0.0)
             if delay:

@@ -139,7 +139,7 @@ class CachePromotionService:
                 current_app.logger.error(
                     f"[CACHE PROMOTION ERROR] Error in promotion loop: {e}"
                 )
-                time.sleep(30)  # Wait longer on error
+                time.sleep(30)
 
     def _send_batch_to_orchestrator(self, batch: list[dict[str, Any]]) -> None:
         """Send a batch of validated files to orchestrator for promotion.

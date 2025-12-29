@@ -15,16 +15,15 @@ if (typeof window !== "undefined") {
   global.Buffer = Buffer;
 }
 
-// Initialize global utilities
 import { modalManager } from "./utils/ModalManager.js";
-// Import encryption.js to initialize VaultCrypto wrapper for compatibility
+
 import "./services/encryption.js";
 import { decryptFileKey } from "./services/encryption.js";
-// Import vault config service
+
 import { getVaultBaseUrl } from "./services/vault-config.js";
-// Import new icon system (replaces static icons.js)
+
 import "./utils/icons.js";
-// Import share modal composable to expose globally
+
 import "./composables/useShareModal.js";
 
 // Make available globally for non-module scripts
@@ -34,7 +33,6 @@ if (typeof window !== "undefined") {
   window.getVaultBaseUrl = getVaultBaseUrl;
 }
 
-// Note: The new icon system is imported above and automatically sets window.Icons
 // The old static icons.js is still loaded in index.html for backward compatibility
 // but will be replaced by the new system
 
@@ -50,7 +48,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
   if (originalInnerHTML && originalInnerHTML.set) {
     Object.defineProperty(Element.prototype, "innerHTML", {
       set: function (value) {
-        // If value is already a TrustedHTML, use it directly
         if (value && typeof value === "object" && value.toString) {
           try {
             originalInnerHTML.set.call(this, value);
@@ -60,7 +57,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
           }
         }
 
-        // Try to use vaultHTMLPolicy first
         if (window.vaultHTMLPolicy && typeof value === "string") {
           try {
             const trustedHTML = window.vaultHTMLPolicy.createHTML(value);
@@ -71,7 +67,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
           }
         }
 
-        // Try defaultPolicy
         if (
           window.trustedTypes &&
           window.trustedTypes.defaultPolicy &&
@@ -100,7 +95,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
   const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
   if (originalInsertAdjacentHTML) {
     Element.prototype.insertAdjacentHTML = function (position, text) {
-      // If text is already a TrustedHTML, use it directly
       if (text && typeof text === "object" && text.toString) {
         try {
           return originalInsertAdjacentHTML.call(this, position, text);
@@ -109,7 +103,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
         }
       }
 
-      // Try to use vaultHTMLPolicy first
       if (window.vaultHTMLPolicy && typeof text === "string") {
         try {
           const trustedHTML = window.vaultHTMLPolicy.createHTML(text);
@@ -119,7 +112,6 @@ if (typeof Element !== "undefined" && Element.prototype) {
         }
       }
 
-      // Try defaultPolicy
       if (
         window.trustedTypes &&
         window.trustedTypes.defaultPolicy &&

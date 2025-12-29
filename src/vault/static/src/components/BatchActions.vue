@@ -1,6 +1,6 @@
 <template>
-  <Teleport to="body">
-    <div v-if="selectedCount > 0" class="batch-actions-bar">
+  <Teleport v-if="selectedCount > 0" to="body">
+    <div class="batch-actions-bar">
       <div class="batch-info">
         <span class="batch-count">{{ selectedCount }} item(s) selected</span>
       </div>
@@ -21,7 +21,6 @@
         </button>
       </div>
 
-      <!-- Delete Confirmation Modal -->
       <ConfirmationModal
         :show="showDeleteConfirm"
         title="Delete Selected Items"
@@ -33,7 +32,6 @@
         @close="showDeleteConfirm = false"
       />
 
-      <!-- Alert Modal -->
       <AlertModal
         :show="showAlertModal"
         :type="alertModalConfig.type"

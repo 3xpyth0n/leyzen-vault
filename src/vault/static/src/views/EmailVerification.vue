@@ -56,7 +56,6 @@
       </div>
     </div>
 
-    <!-- Modal for logged-in users -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
@@ -100,12 +99,10 @@ const tokenInUrl = ref(false);
 const showModal = ref(false);
 let cooldownInterval = null;
 
-// Check if user is logged in
 const isLoggedIn = computed(() => {
   return localStorage.getItem("jwt_token") !== null;
 });
 
-// Check if we came from a verification link (token in query)
 onMounted(() => {
   const token = route.query.token;
   if (token) {
@@ -148,7 +145,6 @@ const handleVerifyToken = async (token) => {
     verified.value = true;
     tokenInUrl.value = false;
 
-    // If user was logged in, show modal instead of redirecting
     if (response.user_was_logged_in) {
       showModal.value = true;
     } else {
@@ -173,7 +169,6 @@ const goToDashboard = () => {
 };
 
 const handleResendEmail = async () => {
-  // If user_id is not available, use email instead
   if (!userId.value && !email.value) {
     error.value = "User ID or email missing";
     return;
@@ -188,7 +183,7 @@ const handleResendEmail = async () => {
       userId.value || null,
       email.value || null,
     );
-    // If user_id was missing but email was used, update user_id from response
+
     if (!userId.value && response.user_id) {
       userId.value = response.user_id;
     }

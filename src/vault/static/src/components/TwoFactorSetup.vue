@@ -1,6 +1,5 @@
 <template>
   <div class="two-factor-setup">
-    <!-- Step 1: Scan QR Code -->
     <div v-if="step === 'scan'" class="setup-step">
       <h3>Set Up Two-Factor Authentication</h3>
       <p class="description">
@@ -86,7 +85,6 @@
       </div>
     </div>
 
-    <!-- Step 2: Show Backup Codes -->
     <div v-else-if="step === 'backup'" class="setup-step">
       <h3>Save Your Backup Codes</h3>
       <p class="description warning">
@@ -122,7 +120,6 @@
       </div>
     </div>
 
-    <!-- Loading State -->
     <div v-else-if="step === 'loading'" class="loading-container">
       <div class="spinner"></div>
       <p>Generating QR code...</p>

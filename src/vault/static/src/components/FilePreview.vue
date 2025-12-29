@@ -1,6 +1,6 @@
 <template>
-  <teleport to="body">
-    <div v-if="show" class="file-preview-overlay" @click="close">
+  <Teleport v-if="show" to="body">
+    <div class="file-preview-overlay" @click="close">
       <div
         ref="modalRef"
         class="file-preview-modal"
@@ -25,7 +25,7 @@
           </div>
         </div>
 
-        <Transition name="fade" mode="out-in">
+        <Transition name="fade">
           <div
             ref="previewContentRef"
             class="preview-content"
@@ -50,7 +50,6 @@
             v-else
             key="content"
           >
-            <!-- Image Preview -->
             <div v-if="isImage" class="image-preview">
               <img
                 :src="previewUrl"
@@ -61,7 +60,6 @@
               <div v-if="imageLoading" class="loading-overlay">Loading...</div>
             </div>
 
-            <!-- Video Preview -->
             <div v-else-if="isVideo" class="video-preview">
               <div
                 ref="videoContainer"
@@ -199,7 +197,6 @@
               </div>
             </div>
 
-            <!-- Audio Preview -->
             <div v-else-if="isAudio" class="audio-preview">
               <div class="audio-player">
                 <div class="audio-player__artwork">
@@ -296,17 +293,14 @@
               ></audio>
             </div>
 
-            <!-- Markdown Preview -->
             <div v-else-if="isMarkdown" class="markdown-preview">
               <div class="markdown-content" ref="markdownContentRef"></div>
             </div>
 
-            <!-- Text Preview -->
             <div v-else-if="isText" class="text-preview">
               <pre class="text-content">{{ textContent }}</pre>
             </div>
 
-            <!-- ZIP Preview -->
             <div v-else-if="isZip" class="zip-preview">
               <div v-if="zipLoading" class="loading">
                 Loading ZIP contents...
@@ -383,11 +377,10 @@
               </div>
             </div>
 
-            <!-- Unsupported Type -->
             <div v-else class="unsupported-preview">
               <div class="unsupported-icon" ref="defaultIconRef"></div>
               <p>Preview not available for this file type.</p>
-              <p class="mime-type">{{ mimeType }}</p>
+              <p class="mime-type">{{ normalizedMimeType }}</p>
               <button @click="download" class="btn btn-primary">
                 Download File
               </button>
@@ -396,7 +389,7 @@
         </Transition>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>
@@ -444,7 +437,6 @@ export default {
   },
   emits: ["close", "download", "unzip"],
   setup(props, { emit }) {
-    // Initialize global thumbnail cache if not exists
     if (!window.__leyzenThumbnailUrls) {
       window.__leyzenThumbnailUrls = new Map();
     }
@@ -552,45 +544,28 @@ export default {
     });
 
     const isMarkdown = computed(() => {
-      if (!props.fileName && !props.mimeType) return false;
-      const fileName = props.fileName.toLowerCase();
       return (
-        fileName.endsWith(".md") ||
-        fileName.endsWith(".markdown") ||
-        props.mimeType === "text/markdown" ||
-        props.mimeType === "text/x-markdown"
+        normalizedMimeType.value === "text/markdown" ||
+        normalizedMimeType.value === "text/x-markdown"
       );
     });
 
     const isText = computed(() => {
-      if (!props.fileName && !props.mimeType) return false;
-      const fileName = props.fileName.toLowerCase();
-      const textExtensions = [".txt", ".log", ".csv", ".ini", ".conf", ".cfg"];
-      const hasTextExtension = textExtensions.some((ext) =>
-        fileName.endsWith(ext),
-      );
+      if (!normalizedMimeType.value) return false;
       return (
-        hasTextExtension ||
-        (props.mimeType &&
-          (props.mimeType.startsWith("text/") ||
-            props.mimeType === "application/json" ||
-            props.mimeType === "application/xml" ||
-            props.mimeType.includes("javascript") ||
-            props.mimeType.includes("css") ||
-            props.mimeType.includes("html")) &&
-          !isMarkdown.value)
+        normalizedMimeType.value.startsWith("text/") ||
+        normalizedMimeType.value === "application/json" ||
+        normalizedMimeType.value === "application/xml" ||
+        normalizedMimeType.value.includes("javascript") ||
+        normalizedMimeType.value.includes("css") ||
+        normalizedMimeType.value.includes("html")
       );
     });
 
     const isZip = computed(() => {
-      if (!props.fileName && !props.mimeType) return false;
-      const fileName = props.fileName.toLowerCase();
       return (
-        fileName.endsWith(".zip") ||
         normalizedMimeType.value === "application/zip" ||
-        normalizedMimeType.value === "application/x-zip-compressed" ||
-        props.mimeType === "application/zip" ||
-        props.mimeType === "application/x-zip-compressed"
+        normalizedMimeType.value === "application/x-zip-compressed"
       );
     });
 
@@ -624,7 +599,7 @@ export default {
     // Simple Markdown to HTML converter (basic implementation)
     const markdownToHtml = (markdown) => {
       if (!markdown) return "";
-      // Ensure markdown is a string
+
       if (typeof markdown !== "string") {
         markdown = String(markdown);
       }
@@ -634,7 +609,7 @@ export default {
       const escapeHtml = (text) => {
         const div = document.createElement("div");
         div.textContent = text;
-        // Return as string (not TrustedHTML) so we can use .replace() on it
+
         return div.innerHTML;
       };
 
@@ -686,7 +661,7 @@ export default {
 
         const safeUrl = escapeUrl(cleanUrl);
         const safeAlt = alt || "";
-        // Return image tag with CSS class (no inline styles for CSP compliance)
+
         return `<img src="${safeUrl}" alt="${safeAlt}" class="markdown-image">`;
       });
 
@@ -884,14 +859,13 @@ export default {
           // For images, check cache first before downloading
           if (isImage.value) {
             imageLoading.value = true;
-            // Check global cache first
+
             const cachedUrl = window.__leyzenThumbnailUrls.get(props.fileId);
             if (cachedUrl) {
               previewUrl.value = cachedUrl;
               // Image from cache should load quickly, but still wait for load event
               // onImageLoad will set imageLoading to false
             } else {
-              // Check IndexedDB cache
               const cachedBlob = await getThumbnail(props.fileId);
               if (cachedBlob) {
                 const blobUrl = URL.createObjectURL(cachedBlob);
@@ -900,7 +874,6 @@ export default {
                 window.__leyzenThumbnailUrls.set(props.fileId, blobUrl);
                 // Image will trigger onImageLoad when loaded
               } else {
-                // Fallback to download and decrypt
                 // Get VaultSpace key
                 const vaultspaceKey = getCachedVaultSpaceKey(
                   props.vaultspaceId,
@@ -989,7 +962,6 @@ export default {
 
             // Extract cover art for audio files (check cache first)
             if (isAudio.value) {
-              // Check cache for audio cover art
               const cachedCoverUrl = window.__leyzenThumbnailUrls.get(
                 props.fileId,
               );
@@ -997,7 +969,6 @@ export default {
                 audioCoverUrl.value = cachedCoverUrl;
                 hasAudioCover.value = true;
               } else {
-                // Check IndexedDB cache
                 const cachedCoverBlob = await getThumbnail(props.fileId);
                 if (cachedCoverBlob) {
                   const coverBlobUrl = URL.createObjectURL(cachedCoverBlob);
@@ -1006,7 +977,6 @@ export default {
                   // Store in global cache
                   window.__leyzenThumbnailUrls.set(props.fileId, coverBlobUrl);
                 } else {
-                  // Fallback to extraction
                   extractAudioCover(decryptedData).then(async (coverUrl) => {
                     if (coverUrl) {
                       audioCoverUrl.value = coverUrl;
@@ -1070,7 +1040,6 @@ export default {
           const html = markdownToHtml(markdownText);
           markdownContent.value = html;
 
-          // Set HTML using Trusted Types - wait for ref to be available
           await nextTick();
           await nextTick();
           await nextTick();
@@ -1130,7 +1099,6 @@ export default {
       }
     };
 
-    // Build hierarchical structure from paths
     const buildTreeStructure = (items) => {
       const tree = {};
       const seenPaths = new Set();
@@ -1159,7 +1127,6 @@ export default {
               seenPaths.add(currentPath);
             }
           } else if (isLast && item.type === "file") {
-            // Update existing entry if it's a file
             current[part].type = "file";
             current[part].size = item.size;
           }
@@ -1217,7 +1184,6 @@ export default {
               Object.keys(item.children || {}).length > 0,
           });
 
-          // If it's a folder and it's expanded, traverse its children
           if (
             item.type === "folder" &&
             expanded.has(item.path) &&
@@ -1246,7 +1212,6 @@ export default {
       );
     };
 
-    // Check if folder is expanded
     const isFolderExpanded = (folderPath) => {
       return expandedFolders.value.has(folderPath);
     };
@@ -1311,7 +1276,6 @@ export default {
 
         // Add missing folder entries
         folderPaths.forEach((folderPath) => {
-          // Check if folder is already in itemsList
           const exists = itemsList.some(
             (item) => item.path === folderPath && item.type === "folder",
           );
@@ -1325,7 +1289,6 @@ export default {
           }
         });
 
-        // Build hierarchical structure
         const treeStructure = buildTreeStructure(itemsList);
         zipTree.value = treeStructure;
 
@@ -1365,7 +1328,7 @@ export default {
       if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
         return window.Icons.getIcon(iconName, size, "currentColor");
       }
-      // Fallback to old method
+
       if (window.Icons[iconName]) {
         const iconFunction = window.Icons[iconName];
         if (typeof iconFunction === "function") {
@@ -1385,8 +1348,11 @@ export default {
       }
 
       // Use the centralized icon helper function
-      const iconName = window.Icons.getFileIconName
-        ? window.Icons.getFileIconName(props.mimeType, props.fileName)
+      const iconName = window.Icons
+        ? window.Icons.getFileIconName(
+            normalizedMimeType.value || props.mimeType,
+            props.fileName,
+          )
         : "file";
 
       // Get the icon function and call it with proper context
@@ -1395,7 +1361,6 @@ export default {
         return iconFunction.call(window.Icons, 64, "currentColor");
       }
 
-      // Fallback to generic file icon
       return window.Icons.file(64, "currentColor");
     });
 
@@ -1425,7 +1390,7 @@ export default {
       if (audioCoverUrl.value) {
         const cachedCoverUrl = window.__leyzenThumbnailUrls?.get(props.fileId);
         // Only revoke if this is a different URL (not shared)
-        // Note: For audio, the cover URL might be the same as the thumbnail URL
+
         if (audioCoverUrl.value !== cachedCoverUrl) {
           URL.revokeObjectURL(audioCoverUrl.value);
         }
@@ -1450,7 +1415,7 @@ export default {
 
     const onImageLoad = () => {
       imageLoading.value = false;
-      // Update modal height after image loads
+
       nextTick(() => {
         updateModalHeight();
       });
@@ -1610,7 +1575,6 @@ export default {
           blob.type,
         );
 
-        // Check if there's a picture/cover art in the metadata
         if (metadata.common?.picture && metadata.common.picture.length > 0) {
           // Get the first picture (usually the album cover)
           const picture = metadata.common.picture[0];
@@ -1680,7 +1644,7 @@ export default {
         videoElement.value.play().catch((err) => {
           error.value = "Failed to play video: " + err.message;
         });
-        showVideoControls(); // Show controls when starting to play
+        showVideoControls();
       }
     };
 
@@ -1696,7 +1660,7 @@ export default {
     const onVideoLoadedMetadata = () => {
       if (!videoElement.value) return;
       videoDuration.value = videoElement.value.duration;
-      // Show controls initially when video is loaded
+
       showControls.value = true;
     };
 
@@ -1886,9 +1850,8 @@ export default {
       () => [props.show, props.fileId],
       async ([newShow, newFileId]) => {
         if (newShow && newFileId) {
-          // Set initial height to a small value for smooth transition
           modalHeight.value = "200px";
-          // Wait for DOM to be ready before loading preview
+
           // Use multiple nextTick to ensure Vue has rendered everything
           await nextTick();
           await nextTick();
@@ -1898,7 +1861,7 @@ export default {
           // Setup resize observer after content is loaded
           await nextTick();
           await nextTick();
-          // Wait a bit more for images to start loading
+
           await new Promise((resolve) => setTimeout(resolve, 100));
           if (previewContentRef.value) {
             setupResizeObserver();
@@ -1924,7 +1887,7 @@ export default {
               "MSFullscreenChange",
               handleFullscreenChange,
             );
-            // Check initial fullscreen state
+
             checkFullscreenState();
           }
         } else if (!newShow) {
@@ -2142,6 +2105,7 @@ export default {
       textContent,
       markdownContent,
       imageLoading,
+      normalizedMimeType,
       isImage,
       isVideo,
       isAudio,
@@ -2728,9 +2692,6 @@ export default {
   height: 64px;
 }
 
-.mobile-mode .audio-player__artwork-image {
-}
-
 .mobile-mode .audio-player__container {
   width: 100%;
   align-items: center;
@@ -3127,11 +3088,9 @@ export default {
 }
 
 .btn-primary {
-  background: transparent;
-  color: var(--text-primary, #a9b7aa);
-  border: none;
-  padding: 0.5rem 1rem;
-
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;

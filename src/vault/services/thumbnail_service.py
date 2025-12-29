@@ -52,7 +52,7 @@ class ThumbnailService:
             return None
 
         try:
-            # Note: This assumes file_data is decrypted
+
             # In production, we'd decrypt client-side or use a secure thumbnail service
             image = Image.open(io.BytesIO(file_data))
 
@@ -78,7 +78,7 @@ class ThumbnailService:
             return output.getvalue()
 
         except Exception:
-            # If thumbnail generation fails, return None
+
             return None
 
     def generate_thumbnail_hash(self, file_id: str, size: tuple[int, int]) -> str:

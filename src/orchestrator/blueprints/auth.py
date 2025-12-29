@@ -209,7 +209,7 @@ def verify_credentials(username: str, password: str) -> bool:
     try:
         return check_password_hash(settings.password_hash, password)
     except Exception:
-        _logger().log("[ERROR] check_password_hash failure")
+        _logger().error("[ERROR] check_password_hash failure")
         return False
 
 
@@ -224,7 +224,7 @@ def login():
     if request.method == "POST":
         submitted_login_csrf = request.form.get("login_csrf_token", "").strip()
         if not _touch_login_csrf_token(submitted_login_csrf):
-            _logger().log(
+            _logger().warning(
                 "[AUTH FAIL] Missing or expired login CSRF token",
                 context={"client_ip": client_ip},
             )
@@ -243,7 +243,7 @@ def login():
 
         _consume_login_csrf_token(submitted_login_csrf)
         if is_blocked(client_ip):
-            _logger().log(
+            _logger().warning(
                 "[AUTH BLOCKED] Too many attempts",
                 context={"client_ip": client_ip},
             )
@@ -332,7 +332,7 @@ def login():
             session.permanent = True
             if captcha_nonce_field:
                 _drop_captcha_from_store(captcha_nonce_field)
-            _logger().log(
+            _logger().warning(
                 "[AUTH SUCCESS] Login allowed",
                 context={"username": username, "client_ip": client_ip},
             )
@@ -343,7 +343,7 @@ def login():
             return redirect(next_url)
 
         register_failed_attempt(client_ip)
-        _logger().log(
+        _logger().warning(
             "[AUTH FAIL] Invalid credentials",
             context={"username": username, "client_ip": client_ip},
         )
@@ -407,7 +407,7 @@ def captcha_image():
     # Ensure we have valid text
     if not text:
         # This should never happen, but handle gracefully
-        _logger().log("[ERROR] Failed to get CAPTCHA text")
+        _logger().error("[ERROR] Failed to get CAPTCHA text")
         abort(500, description="Failed to generate CAPTCHA")
 
     image_bytes, mimetype = _build_captcha_image(str(text))

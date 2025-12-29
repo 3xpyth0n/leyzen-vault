@@ -2,7 +2,6 @@
 
 // Create and show logout confirmation modal
 function showLogoutModal() {
-  // Remove existing modal if any
   const existingModal = document.getElementById("logout-confirmation-modal");
   if (existingModal) {
     existingModal.remove();
@@ -111,7 +110,6 @@ function showLogoutModal() {
   overlay.addEventListener("click", handleBackdropClick);
   document.addEventListener("keydown", handleEscape);
 
-  // Focus on cancel button
   setTimeout(() => {
     cancelBtn.focus();
   }, 100);
@@ -125,7 +123,6 @@ function showLogoutModal() {
   };
 }
 
-// Hide logout modal
 function hideLogoutModal() {
   const modal = document.getElementById("logout-confirmation-modal");
   if (modal) {

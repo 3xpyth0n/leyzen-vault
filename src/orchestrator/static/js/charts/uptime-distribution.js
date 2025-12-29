@@ -14,7 +14,6 @@ export class UptimeDistributionChart extends BaseChart {
         tooltip: {
           trigger: "item",
           position: function (point, params, dom, rect, size) {
-            // If hovering over the legend, display tooltip above
             if (params.componentType === "legend") {
               return [point[0], point[1] - size.contentSize[1] - 10];
             }

@@ -53,7 +53,6 @@ export function useFileSync(options = {}) {
 
     const { event_type, file_id, data } = event;
 
-    // Update last event timestamp
     if (event.timestamp) {
       lastEventTimestamp.value = event.timestamp;
     }
@@ -184,7 +183,6 @@ export function useFileSync(options = {}) {
     // Connect to SSE stream
     fileEventsClient.connect(vaultspaceId, lastEventTimestamp.value);
 
-    // Check if polling is active (indicates SSE fallback)
     const checkPollingStatus = () => {
       // Access internal state via a workaround
       // In a real implementation, we might expose this via the client

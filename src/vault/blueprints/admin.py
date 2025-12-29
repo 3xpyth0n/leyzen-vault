@@ -307,7 +307,7 @@ def update_user_role(user_id: str):
 
     try:
         # Update the user's role
-        # If this is a superadmin transfer, all other superadmins have already been
+
         # changed to admin in this transaction, so this will make the target user the only superadmin
         user = auth_service.update_user(
             user_id=user_id,
@@ -827,7 +827,7 @@ def manage_settings():
             ):
                 settings_dict["vault_url"] = vault_settings.vault_url.rstrip("/")
         except Exception:
-            # If VAULT_URL is not configured, don't include it
+
             # Frontend will fall back to window.location.origin
             pass
 
@@ -1120,7 +1120,6 @@ def update_auth_sso_provider(provider_id: str):
     if not provider:
         return jsonify({"error": "SSO provider not found"}), 404
 
-    # If config is provided, validate it based on provider type
     if config is not None:
         if provider.provider_type.value == "saml":
             required_fields = ["entity_id", "sso_url", "x509_cert"]
@@ -1357,7 +1356,6 @@ def test_smtp():
 
     email_service = EmailService()
 
-    # Try to send a test email
     test_subject = "Leyzen Vault - SMTP Configuration Test"
     test_body_html = """
     <!DOCTYPE html>

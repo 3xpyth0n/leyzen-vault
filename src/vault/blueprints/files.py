@@ -140,14 +140,13 @@ def upload_file():
                 413,
             )
 
-        # If original_size is provided, validate it for consistency but don't trust it
         # This helps detect potential client-side issues or attacks
         original_size_param = request.form.get("original_size")
         if original_size_param:
             try:
                 declared_original_size = int(original_size_param)
                 # Encrypted data should be larger than original (due to encryption overhead)
-                # But not suspiciously larger (allow up to 2x for encryption overhead)
+
                 if declared_original_size > encrypted_size * 2:
                     current_app.logger.warning(
                         f"Suspicious original_size declared: {declared_original_size} "
@@ -610,8 +609,6 @@ def list_share_links(file_id: str):
 
 @files_bp.route("/api/files/<file_id>", methods=["GET"])
 def download_file(file_id: str):
-    # Note: No @login_required to allow sharing via /share page
-    # But we check if user is logged in and verify ownership
     """Download an encrypted file."""
     user_ip = get_client_ip() or "unknown"
     audit = _get_audit()
@@ -759,9 +756,8 @@ def download_file(file_id: str):
         # Fallback to file_id for old system compatibility
         storage_ref = actual_file_id
 
-    # Try storage_ref first, then fallback to file_id if not found
     if not storage.file_exists(storage_ref):
-        # If storage_ref is different from file_id, try file_id as fallback
+
         if storage_ref != actual_file_id and storage.file_exists(actual_file_id):
             storage_ref = actual_file_id
         else:
@@ -906,7 +902,7 @@ def list_files():
             files.sort(key=lambda x: x.created_at, reverse=True)
         elif view_type == "shared":
             # Show files that have active share links
-            # Note: Only share links are used for sharing
+
             files_with_shares = []
             for file_metadata in files:
                 try:
@@ -944,7 +940,7 @@ def list_files():
                     file_dict["has_active_share"] = len(active_links) > 0
                     file_dict["active_share_count"] = len(active_links)
                 except Exception as e:
-                    # If share service fails, log and skip share info
+
                     current_app.logger.warning(
                         f"Failed to retrieve share links for file {file_metadata.file_id}: {e}"
                     )

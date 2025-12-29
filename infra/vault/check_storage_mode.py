@@ -40,7 +40,19 @@ try:
 
         env_values = dict(os.environ)
 
-    app.config["SECRET_KEY"] = env_values.get("SECRET_KEY", "")
+    # Load application settings including S3 configuration
+    from vault.config import load_settings
+
+    try:
+        settings = load_settings()
+        app.config["VAULT_SETTINGS"] = settings
+        app.config["SECRET_KEY"] = settings.secret_key
+    except Exception as e:
+        print(
+            f"[check_storage_mode] Warning: Failed to load settings: {e}",
+            file=sys.stderr,
+        )
+        app.config["SECRET_KEY"] = env_values.get("SECRET_KEY", "")
 
     # Configure database (same as in app.py)
     try:
@@ -51,7 +63,7 @@ try:
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     except Exception as e:
         print(f"[check_storage_mode] Failed to get postgres URL: {e}", file=sys.stderr)
-        # If get_postgres_url fails, try to get from environment directly
+
         app.config["SQLALCHEMY_DATABASE_URI"] = env_values.get("DATABASE_URL", "")
 
     # Initialize database connection
@@ -60,7 +72,6 @@ try:
 
         db.init_app(app)
 
-        # Try to connect to database with retries (database may not be ready yet)
         import time
 
         max_retries = 3
@@ -68,7 +79,7 @@ try:
 
         for attempt in range(max_retries):
             try:
-                # Try to connect to database
+
                 db.session.execute(db.text("SELECT 1"))
 
                 # Connection successful, check storage mode
@@ -100,7 +111,7 @@ try:
                     )
                     pass
 except Exception as e:
-    # If anything fails, return empty (will default to normal message)
+
     print(f"[check_storage_mode] Fatal error: {e}", file=sys.stderr)
     import traceback
 

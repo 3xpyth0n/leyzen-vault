@@ -122,12 +122,8 @@
     </div>
 
     <!-- Edit User Modal (Actions) -->
-    <teleport to="body">
-      <div
-        v-if="showActionsModal"
-        class="modal-overlay"
-        @click.self="showActionsModal = false"
-      >
+    <Teleport v-if="showActionsModal" to="body">
+      <div class="modal-overlay" @click.self="showActionsModal = false">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>
@@ -307,15 +303,11 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
     <!-- User Details Modal -->
-    <teleport to="body">
-      <div
-        v-if="viewingUserDetails"
-        class="modal-overlay"
-        @click.self="viewingUserDetails = null"
-      >
+    <Teleport to="body" v-if="viewingUserDetails">
+      <div class="modal-overlay" @click.self="viewingUserDetails = null">
         <div class="modal modal-wide modal-view" @click.stop>
           <div class="modal-header">
             <h3>
@@ -424,7 +416,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
     <!-- Confirmation Modal -->
     <ConfirmationModal
@@ -449,12 +441,8 @@
     />
 
     <!-- Invite User Modal -->
-    <teleport to="body">
-      <div
-        v-if="showInviteModal"
-        class="modal-overlay"
-        @click.self="showInviteModal = false"
-      >
+    <Teleport to="body" v-if="showInviteModal">
+      <div class="modal-overlay" @click.self="showInviteModal = false">
         <div class="modal" @click.stop>
           <div class="modal-header">
             <h3>Invite User</h3>
@@ -509,7 +497,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
   </div>
 </template>
 
@@ -1445,7 +1433,6 @@ export default {
   flex-shrink: 0;
   position: sticky;
   top: 0;
-  -webkit-backdrop-filter: blur(20px);
   z-index: 20;
   width: 100%;
   box-sizing: border-box;

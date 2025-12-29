@@ -97,8 +97,8 @@ def db_transaction(max_retries: int = MAX_RETRIES) -> Generator[None, None, None
             with db_transaction():
                 user = User(email="test@example.com")
                 db.session.add(user)
-                # If any exception occurs, transaction is rolled back
-                # If it's a transient error, it will be retried automatically
+
+
         except Exception:
             # Transaction already rolled back after all retries exhausted
             pass

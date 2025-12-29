@@ -60,7 +60,7 @@ class MemoryCleanupService:
             pass
 
         try:
-            # Note: We can't enumerate all cache instances, but this is best effort
+
             cleared += 1
         except ImportError:
             pass
@@ -100,7 +100,7 @@ class MemoryCleanupService:
         Args:
             variables: Dictionary of variable names to values to clean
         """
-        # Note: In Python, we can't truly "erase" memory, but we can
+
         # overwrite references and let garbage collection handle the rest
         for var_name, var_value in variables.items():
             try:

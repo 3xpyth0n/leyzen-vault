@@ -18,7 +18,6 @@ class ContextMenu {
       this.menu = document.getElementById("context-menu");
     }
 
-    // Close menu when clicking outside
     document.addEventListener("click", (e) => {
       if (
         !this.menu.contains(e.target) &&
@@ -28,7 +27,6 @@ class ContextMenu {
       }
     });
 
-    // Close menu on Escape key
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !this.menu.classList.contains("hidden")) {
         this.hide();
@@ -47,7 +45,6 @@ class ContextMenu {
       this.init();
     }
 
-    // Build menu HTML
     const menuHTML = menuItems
       .map((item) => {
         if (item === "divider") {
@@ -81,7 +78,6 @@ class ContextMenu {
     this.menu.style.left = `${x}px`;
     this.menu.style.top = `${y}px`;
 
-    // Ensure menu stays within viewport
     this.menu.classList.remove("hidden");
     const rect = this.menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
@@ -365,7 +361,6 @@ class ContextMenu {
             : localStorage.getItem("current_vaultspace_id");
         })();
 
-      // Try to find file/folder in lists to get vaultspace ID
       let fileVaultspaceId = vaultspaceId;
       if (!fileVaultspaceId) {
         const filesList = window.filesList || [];
@@ -388,13 +383,11 @@ class ContextMenu {
         return;
       }
 
-      // Try to use global showFileProperties function if available
       if (window.showFileProperties) {
         window.showFileProperties(id, fileVaultspaceId);
         return;
       }
 
-      // Try to dispatch custom event that Vue components can listen to
       const propertiesEvent = new CustomEvent("showFileProperties", {
         detail: {
           fileId: id,
@@ -404,7 +397,6 @@ class ContextMenu {
       });
       document.dispatchEvent(propertiesEvent);
 
-      // If still no handler, try to trigger via Vue component if available
       // This is a fallback for Vue components that might be listening
       if (window.Notifications) {
         window.Notifications.info(
@@ -434,7 +426,6 @@ function initContextMenu() {
   return contextMenu;
 }
 
-// Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", () => {
   initContextMenu();
 
@@ -453,7 +444,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.ContextMenu = ContextMenu;
   window.initContextMenu = initContextMenu;

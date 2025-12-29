@@ -18,3 +18,4 @@ qrcode
 python3-saml
 boto3
 croniter
+cron-descriptor

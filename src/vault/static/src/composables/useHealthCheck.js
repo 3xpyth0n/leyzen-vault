@@ -112,7 +112,6 @@ export function useHealthCheck() {
               restoreError.value = restoreStatus.error || null;
               maintenanceMode.value = restoreStatus.maintenance_mode || false;
 
-              // Update global restore status
               if (typeof window !== "undefined") {
                 if (!window._restoreStatus) {
                   window._restoreStatus = {};

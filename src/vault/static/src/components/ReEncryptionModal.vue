@@ -1,7 +1,6 @@
 <template>
-  <teleport to="body">
+  <Teleport v-if="show" to="body">
     <div
-      v-if="show"
       class="modal-overlay"
       role="dialog"
       aria-labelledby="reencryption-modal-title"
@@ -9,14 +8,11 @@
     >
       <div class="modal-container" @click.stop>
         <div class="modal-content">
-          <!-- Main content -->
           <div class="modal-body">
-            <!-- Spinner -->
             <div class="spinner-container" v-if="!error">
               <div class="spinner"></div>
             </div>
 
-            <!-- Error icon -->
             <div class="error-icon" v-if="error">
               <svg
                 width="64"
@@ -32,20 +28,16 @@
               </svg>
             </div>
 
-            <!-- Title -->
             <h2 id="reencryption-modal-title" class="modal-title">
               {{ error ? "Re-encryption Failed" : "Re-encrypting Keys" }}
             </h2>
 
-            <!-- Current step -->
             <p class="current-step">{{ currentStep }}</p>
 
-            <!-- VaultSpace name (if available) -->
             <p class="vaultspace-name" v-if="vaultspaceName && !error">
               {{ vaultspaceName }}
             </p>
 
-            <!-- Progress percentage -->
             <div class="progress-info" v-if="!error">
               <span class="progress-percentage">{{ progress }}%</span>
               <span class="progress-count" v-if="totalCount > 0">
@@ -53,10 +45,8 @@
               </span>
             </div>
 
-            <!-- Error message -->
             <p class="error-message" v-if="error">{{ error }}</p>
 
-            <!-- Cancel button (only show if not in error state and not complete) -->
             <div class="modal-actions" v-if="!error && progress < 100">
               <button
                 class="cancel-btn"
@@ -70,7 +60,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>

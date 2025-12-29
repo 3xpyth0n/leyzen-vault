@@ -30,9 +30,7 @@ class SelectionManager {
       }
     });
 
-    // Update selection state on click
     document.addEventListener("click", (e) => {
-      // Check if clicking outside selection area
       if (
         !e.target.closest(".file-card, .folder-card, .file-row, .folder-row")
       ) {
@@ -189,7 +187,6 @@ class SelectionManager {
    * Update UI to reflect selection state
    */
   updateUI() {
-    // Update checkboxes/selection indicators
     const allItems = this.getAllSelectableItems();
     allItems.forEach((item) => {
       const id =
@@ -215,7 +212,6 @@ class SelectionManager {
       }
     });
 
-    // Update batch toolbar
     const batchToolbar = document.getElementById("batch-toolbar");
     const batchCount = document.getElementById("batch-count");
 
@@ -256,7 +252,6 @@ class SelectionManager {
     if (confirm(message)) {
       // Trigger delete for each selected item
       this.selectedIds.forEach((id) => {
-        // Check if it's a file or folder
         const fileElement = document.querySelector(`[data-file-id="${id}"]`);
         const folderElement = document.querySelector(
           `[data-folder-id="${id}"]`,
@@ -350,7 +345,6 @@ class SelectionManager {
       const vaultspaceId =
         window.currentVaultspaceId ||
         (() => {
-          // Try to extract from URL
           const match = window.location.pathname.match(/\/vaultspace\/([^/]+)/);
           return match
             ? match[1]
@@ -430,7 +424,6 @@ class SelectionManager {
         }
       }
 
-      // Show folder picker
       const selectedFolderId = await folderPicker.show(
         folders,
         currentFolderId,
@@ -542,7 +535,6 @@ class SelectionManager {
   }
 }
 
-// Initialize selection manager
 let selectionManager = null;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -559,14 +551,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.SelectionManager = SelectionManager;
     window.selectionManager = selectionManager;
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.SelectionManager = SelectionManager;
 }

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import logging.handlers
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -106,7 +108,7 @@ def _sanitize_log_value(value: Any, enable_secret_detection: bool = True) -> Any
                 # JWT tokens have 3 parts, are much longer, and contain letters (base64 encoding)
                 if re.search(r"[A-Za-z]", candidate) and len(candidate) > 50:
                     return "[REDACTED_JWT_TOKEN]"
-                # If it doesn't match JWT criteria, don't redact
+
                 return candidate
 
             sanitized = re.sub(jwt_pattern, is_jwt_not_ip, sanitized)
@@ -117,7 +119,6 @@ def _sanitize_log_value(value: Any, enable_secret_detection: bool = True) -> Any
                 bearer_pattern, "Bearer [REDACTED]", sanitized, flags=re.IGNORECASE
             )
 
-            # Then apply other secret patterns
             for pattern in _SECRET_PATTERNS:
                 # Skip JWT/Bearer patterns as we already handled them
                 if (
@@ -142,7 +143,7 @@ def _sanitize_log_value(value: Any, enable_secret_detection: bool = True) -> Any
             )
 
             # Redact tokens in query strings and headers
-            # But don't redact client_ip (it's not a secret, it's metadata)
+
             sanitized = re.sub(
                 r"(token|key|secret|password|auth)(?!\w)[=:]\s*[^\s,}]+",
                 r"\1=[REDACTED]",
@@ -159,7 +160,7 @@ def _sanitize_log_value(value: Any, enable_secret_detection: bool = True) -> Any
         result = {}
         for k, v in value.items():
             key_str = str(k)
-            # If the key is client_ip, ip, or similar, and the value looks like an IP, don't sanitize it
+
             if key_str.lower() in (
                 "client_ip",
                 "ip",
@@ -233,15 +234,20 @@ class FileLogger:
 
         # Configure rotating file handler
         log_path = Path(settings.log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            # Rotate at 10MB, keep 5 backups
+            self._handler = logging.handlers.RotatingFileHandler(
+                str(log_path),
+                maxBytes=LOG_FILE_MAX_BYTES,
+                backupCount=LOG_FILE_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+        except (OSError, PermissionError) as e:
+            # Fallback to a NullHandler if file cannot be opened, but we'll still have StreamHandler
+            print(f"CRITICAL: Failed to open log file {log_path}: {e}", file=sys.stderr)
+            self._handler = logging.NullHandler()
 
-        # Rotate at 10MB, keep 5 backups
-        self._handler = logging.handlers.RotatingFileHandler(
-            str(log_path),
-            maxBytes=LOG_FILE_MAX_BYTES,
-            backupCount=LOG_FILE_BACKUP_COUNT,
-            encoding="utf-8",
-        )
         # Use custom formatter with timezone support
         formatter = TimezoneFormatter(
             fmt="[%(asctime)s] %(message)s",
@@ -250,12 +256,18 @@ class FileLogger:
         )
         self._handler.setFormatter(formatter)
 
-        # Create a logger instance just for the handler
+        # Configure stream handler for Docker logs (stdout)
+        self._stream_handler = logging.StreamHandler(sys.stdout)
+        self._stream_handler.setFormatter(formatter)
+
+        # Create a logger instance just for the handlers
         self._logger = logging.getLogger(f"file_logger_{id(self)}")
+        # Prevent propagation to root logger to avoid duplicate logs if root also has handlers
+        self._logger.propagate = False
         # Default to WARNING in production, INFO in development
         default_level = logging.WARNING if is_production else logging.INFO
         self._logger.setLevel(default_level)
-        self._logger.handlers = [self._handler]
+        self._logger.handlers = [self._handler, self._stream_handler]
 
     @property
     def log_file(self) -> Path:
@@ -267,7 +279,12 @@ class FileLogger:
         self._logger.setLevel(level)
 
     def log(
-        self, msg: Any, *, context: Any | None = None, level: int = logging.INFO
+        self,
+        msg: Any,
+        *,
+        context: Any | None = None,
+        level: int = logging.INFO,
+        to_stdout: bool = True,
     ) -> None:
         """Log a message with optional context and specific level.
 
@@ -275,6 +292,7 @@ class FileLogger:
             msg: Message to log
             context: Optional context dictionary to include in the log entry
             level: The logging level to use (default: INFO)
+            to_stdout: If True, also send to stdout (Docker logs). Default True.
         """
         # Respect the configured level before logging anything
         if not self._logger.isEnabledFor(level):
@@ -304,30 +322,49 @@ class FileLogger:
             line = f"{line} {context_str}"
 
         with self._lock:
-            # Use the logger's handler for automatic rotation
-            # Log at the requested level
-            self._logger.log(level, line)
+            if not to_stdout:
+                # Temporarily remove stream handler to log only to file
+                self._logger.removeHandler(self._stream_handler)
+                try:
+                    self._logger.log(level, line)
+                finally:
+                    self._logger.addHandler(self._stream_handler)
+            else:
+                # Use the logger's handlers (both file and stream)
+                self._logger.log(level, line)
+                # Flush immediately in production to ensure visibility in Docker logs
+                if self._is_production:
+                    self._stream_handler.flush()
 
     def flush(self) -> None:
-        """Flush the log handler to ensure all buffered messages are written to disk."""
+        """Flush the log handlers to ensure all buffered messages are written."""
         with self._lock:
             self._handler.flush()
+            self._stream_handler.flush()
 
-    def info(self, msg: Any, *, context: Any | None = None) -> None:
+    def info(
+        self, msg: Any, *, context: Any | None = None, to_stdout: bool = True
+    ) -> None:
         """Log an info message."""
-        self.log(msg, context=context, level=logging.INFO)
+        self.log(msg, context=context, level=logging.INFO, to_stdout=to_stdout)
 
-    def error(self, msg: Any, *, context: Any | None = None) -> None:
+    def error(
+        self, msg: Any, *, context: Any | None = None, to_stdout: bool = True
+    ) -> None:
         """Log an error message."""
-        self.log(msg, context=context, level=logging.ERROR)
+        self.log(msg, context=context, level=logging.ERROR, to_stdout=to_stdout)
 
-    def warning(self, msg: Any, *, context: Any | None = None) -> None:
+    def warning(
+        self, msg: Any, *, context: Any | None = None, to_stdout: bool = True
+    ) -> None:
         """Log a warning message."""
-        self.log(msg, context=context, level=logging.WARNING)
+        self.log(msg, context=context, level=logging.WARNING, to_stdout=to_stdout)
 
-    def debug(self, msg: Any, *, context: Any | None = None) -> None:
+    def debug(
+        self, msg: Any, *, context: Any | None = None, to_stdout: bool = True
+    ) -> None:
         """Log a debug message."""
-        self.log(msg, context=context, level=logging.DEBUG)
+        self.log(msg, context=context, level=logging.DEBUG, to_stdout=to_stdout)
 
 
 __all__ = ["FileLogger", "_sanitize_log_value"]

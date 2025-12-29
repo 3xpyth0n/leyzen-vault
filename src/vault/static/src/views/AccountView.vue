@@ -1,397 +1,326 @@
 <template>
-  <div class="account-view">
-    <h1>Account Settings</h1>
+  <div class="account-view-container">
+    <div class="account-view">
+      <h1>Account Settings</h1>
 
-    <!-- Account Information Section -->
-    <section class="account-section">
-      <h2>Account Information</h2>
-      <div v-if="loading" class="loading">Loading...</div>
-      <div v-else-if="accountError" class="error">{{ accountError }}</div>
-      <div v-else class="account-info">
-        <div class="info-item">
-          <label>Email:</label>
-          <span>{{ accountInfo.email }}</span>
+      <section class="account-section">
+        <h2>Account Information</h2>
+        <div v-if="loading" class="loading">Loading...</div>
+        <div v-else-if="accountError" class="error">{{ accountError }}</div>
+        <div v-else class="account-info">
+          <div class="info-item">
+            <label>Email:</label>
+            <span>{{ accountInfo.email }}</span>
+          </div>
+          <div class="info-item">
+            <label>Account Created:</label>
+            <span>{{ formatDate(accountInfo.created_at) }}</span>
+          </div>
+          <div class="info-item" v-if="accountInfo.last_login">
+            <label>Last Login:</label>
+            <span>{{ formatDate(accountInfo.last_login) }}</span>
+          </div>
         </div>
-        <div class="info-item">
-          <label>Account Created:</label>
-          <span>{{ formatDate(accountInfo.created_at) }}</span>
-        </div>
-        <div class="info-item" v-if="accountInfo.last_login">
-          <label>Last Login:</label>
-          <span>{{ formatDate(accountInfo.last_login) }}</span>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Change Email Section -->
-    <section class="account-section">
-      <h2>Change Email</h2>
-      <form @submit.prevent="handleUpdateEmail">
-        <!-- Hidden username field for accessibility (required by browsers for password forms) -->
-        <input
-          type="text"
-          name="username"
-          autocomplete="username"
-          style="position: absolute; left: -9999px; width: 1px; height: 1px"
-          tabindex="-1"
-          aria-hidden="true"
-        />
-        <div class="form-group">
-          <label for="new-email">New Email:</label>
+      <section class="account-section">
+        <h2>Change Email</h2>
+        <form @submit.prevent="handleUpdateEmail">
           <input
-            id="new-email"
-            v-model="emailForm.newEmail"
-            type="email"
-            required
-            :disabled="emailForm.loading"
-            placeholder="newemail@example.com"
-            autocomplete="off"
+            type="text"
+            name="username"
+            autocomplete="username"
+            style="position: absolute; left: -9999px; width: 1px; height: 1px"
+            tabindex="-1"
+            aria-hidden="true"
           />
-        </div>
-        <div class="form-group">
-          <label for="email-password">Current Password:</label>
-          <PasswordInput
-            id="email-password"
-            v-model="emailForm.password"
-            autocomplete="current-password"
-            required
-            :disabled="emailForm.loading"
-            placeholder="Enter your current password"
-          />
-        </div>
-        <div v-if="emailForm.error" class="error-message">
-          {{ emailForm.error }}
-        </div>
-        <div v-if="emailForm.success" class="success-message">
-          {{ emailForm.success }}
-        </div>
-        <div class="form-actions">
-          <button
-            type="submit"
-            :disabled="emailForm.loading"
-            class="btn btn-primary"
-          >
-            {{ emailForm.loading ? "Updating..." : "Update Email" }}
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <!-- Change Password Section -->
-    <section class="account-section">
-      <h2>Change Password</h2>
-      <form @submit.prevent="handleChangePassword">
-        <div class="form-group">
-          <label for="current-password">Current Password:</label>
-          <PasswordInput
-            id="current-password"
-            v-model="passwordForm.currentPassword"
-            autocomplete="current-password"
-            required
-            :disabled="passwordForm.loading"
-            placeholder="Enter your current password"
-          />
-        </div>
-        <div class="form-group">
-          <label for="new-password">New Password:</label>
-          <PasswordInput
-            id="new-password"
-            v-model="passwordForm.newPassword"
-            autocomplete="new-password"
-            :minlength="12"
-            required
-            :disabled="passwordForm.loading"
-            placeholder="Enter new password (min 12 characters)"
-          />
-        </div>
-        <div class="form-group">
-          <label for="confirm-password">Confirm New Password:</label>
-          <PasswordInput
-            id="confirm-password"
-            v-model="passwordForm.confirmPassword"
-            autocomplete="new-password"
-            required
-            :disabled="passwordForm.loading"
-            placeholder="Confirm new password"
-          />
-        </div>
-        <div v-if="passwordForm.error" class="error-message">
-          {{ passwordForm.error }}
-        </div>
-        <div v-if="passwordForm.success" class="success-message">
-          {{ passwordForm.success }}
-        </div>
-        <div class="form-actions">
-          <button
-            type="submit"
-            :disabled="passwordForm.loading"
-            class="btn btn-primary"
-          >
-            {{ passwordForm.loading ? "Changing..." : "Change Password" }}
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <!-- Two-Factor Authentication Section -->
-    <section class="account-section">
-      <div class="section-header-with-badge">
-        <h2>Two-Factor Authentication</h2>
-        <div
-          v-if="!twoFactorLoading"
-          class="status-badge"
-          :class="twoFactorEnabled ? 'enabled' : 'disabled'"
-        >
-          <span class="status-icon">{{ twoFactorEnabled ? "✓" : "✗" }}</span>
-          {{ twoFactorEnabled ? "2FA Enabled" : "2FA Disabled" }}
-        </div>
-      </div>
-
-      <div v-if="twoFactorLoading" class="loading">Loading...</div>
-      <div v-else>
-        <p class="section-description">
-          Add an extra layer of security to your account with two-factor
-          authentication (2FA). You'll need to enter a code from your
-          authenticator app when you log in.
-        </p>
-
-        <p v-if="twoFactorEnabled && twoFactorEnabledAt" class="enabled-date">
-          Enabled on {{ formatDate(twoFactorEnabledAt) }}
-        </p>
-
-        <div v-if="twoFactorError" class="error-message">
-          {{ twoFactorError }}
-        </div>
-
-        <div v-if="twoFactorEnabled" class="button-group">
-          <button
-            @click="showRegenerateBackupModal = true"
-            class="btn btn-secondary"
-          >
-            Regenerate Backup Codes
-          </button>
-          <button @click="showDisable2FAModal = true" class="btn btn-danger">
-            Disable 2FA
-          </button>
-        </div>
-
-        <div v-else class="button-group">
-          <button @click="start2FASetup" class="btn btn-primary">
-            Enable 2FA
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Delete Account Section -->
-    <section class="account-section danger-section">
-      <h2>Delete Account</h2>
-      <p class="warning-text">
-        Warning: Deleting your account will permanently remove all your data.
-        This action cannot be undone.
-      </p>
-      <p
-        v-if="accountInfo.global_role === 'superadmin'"
-        class="warning-text"
-        style="margin-bottom: 1rem"
-      >
-        Superadmin accounts cannot be deleted. Transfer the superadmin role to
-        another user first.
-      </p>
-      <button
-        @click="
-          if (accountInfo.global_role !== 'superadmin') {
-            showDeleteModal = true;
-          }
-        "
-        class="btn btn-danger"
-        :disabled="accountInfo.global_role === 'superadmin'"
-      >
-        Delete Account
-      </button>
-    </section>
-
-    <!-- Delete Account Modal -->
-    <div
-      v-if="showDeleteModal"
-      class="modal-overlay"
-      @click="showDeleteModal = false"
-    >
-      <div class="modal" @click.stop>
-        <h2>Confirm Account Deletion</h2>
-        <p class="warning-text">
-          This action cannot be undone. All your data will be permanently
-          deleted.
-        </p>
-        <p
-          v-if="accountInfo.global_role === 'superadmin'"
-          class="error-message"
-        >
-          Superadmin accounts cannot be deleted. Transfer the superadmin role to
-          another user first.
-        </p>
-        <form @submit.prevent="handleDeleteAccount">
           <div class="form-group">
-            <label for="delete-password">Enter your password to confirm:</label>
-            <PasswordInput
-              id="delete-password"
-              v-model="deleteForm.password"
-              autocomplete="current-password"
+            <label for="new-email">New Email:</label>
+            <input
+              id="new-email"
+              v-model="emailForm.newEmail"
+              type="email"
               required
-              :disabled="
-                deleteForm.loading || accountInfo.global_role === 'superadmin'
-              "
-              placeholder="Enter your password"
+              :disabled="emailForm.loading"
+              placeholder="newemail@example.com"
+              autocomplete="off"
             />
           </div>
-          <div v-if="deleteForm.error" class="error-message">
-            {{ deleteForm.error }}
+          <div class="form-group">
+            <label for="email-password">Current Password:</label>
+            <PasswordInput
+              id="email-password"
+              v-model="emailForm.password"
+              autocomplete="current-password"
+              required
+              :disabled="emailForm.loading"
+              placeholder="Enter your current password"
+            />
+          </div>
+          <div v-if="emailForm.error" class="error-message">
+            {{ emailForm.error }}
+          </div>
+          <div v-if="emailForm.success" class="success-message">
+            {{ emailForm.success }}
           </div>
           <div class="form-actions">
             <button
               type="submit"
-              :disabled="
-                deleteForm.loading || accountInfo.global_role === 'superadmin'
-              "
-              class="btn btn-danger"
+              :disabled="emailForm.loading"
+              class="btn btn-primary"
             >
-              {{
-                deleteForm.loading
-                  ? "Deleting..."
-                  : "Delete Account Permanently"
-              }}
-            </button>
-            <button
-              type="button"
-              @click="
-                showDeleteModal = false;
-                deleteForm.password = '';
-                deleteForm.error = '';
-              "
-              class="btn btn-secondary"
-              :disabled="deleteForm.loading"
-            >
-              Cancel
+              {{ emailForm.loading ? "Updating..." : "Update Email" }}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </section>
 
-    <!-- 2FA Setup Modal -->
-    <teleport to="body">
-      <div
-        v-if="show2FASetupModal"
-        class="modal-overlay"
-        @click.self="show2FASetupModal = false"
-      >
-        <div class="modal modal-large" @click.stop>
-          <TwoFactorSetup
-            @success="handle2FASetupSuccess"
-            @cancel="show2FASetupModal = false"
-          />
+      <section class="account-section">
+        <h2>Change Password</h2>
+        <form @submit.prevent="handleChangePassword">
+          <div class="form-group">
+            <label for="current-password">Current Password:</label>
+            <PasswordInput
+              id="current-password"
+              v-model="passwordForm.currentPassword"
+              autocomplete="current-password"
+              required
+              :disabled="passwordForm.loading"
+              placeholder="Enter your current password"
+            />
+          </div>
+          <div class="form-group">
+            <label for="new-password">New Password:</label>
+            <PasswordInput
+              id="new-password"
+              v-model="passwordForm.newPassword"
+              autocomplete="new-password"
+              :minlength="12"
+              required
+              :disabled="passwordForm.loading"
+              placeholder="Enter new password (min 12 characters)"
+            />
+          </div>
+          <div class="form-group">
+            <label for="confirm-password">Confirm New Password:</label>
+            <PasswordInput
+              id="confirm-password"
+              v-model="passwordForm.confirmPassword"
+              autocomplete="new-password"
+              required
+              :disabled="passwordForm.loading"
+              placeholder="Confirm new password"
+            />
+          </div>
+          <div v-if="passwordForm.error" class="error-message">
+            {{ passwordForm.error }}
+          </div>
+          <div v-if="passwordForm.success" class="success-message">
+            {{ passwordForm.success }}
+          </div>
+          <div class="form-actions">
+            <button
+              type="submit"
+              :disabled="passwordForm.loading"
+              class="btn btn-primary"
+            >
+              {{ passwordForm.loading ? "Changing..." : "Change Password" }}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="account-section">
+        <div class="section-header-with-badge">
+          <h2>Two-Factor Authentication</h2>
+          <div
+            v-if="!twoFactorLoading"
+            class="status-badge"
+            :class="twoFactorEnabled ? 'enabled' : 'disabled'"
+          >
+            <span class="status-icon">{{ twoFactorEnabled ? "✓" : "✗" }}</span>
+            {{ twoFactorEnabled ? "2FA Enabled" : "2FA Disabled" }}
+          </div>
         </div>
-      </div>
-    </teleport>
 
-    <!-- Disable 2FA Modal -->
-    <teleport to="body">
-      <div
-        v-if="showDisable2FAModal"
-        class="modal-overlay"
-        @click.self="showDisable2FAModal = false"
-      >
-        <div class="modal" @click.stop>
-          <h2>Disable 2FA</h2>
-          <p class="warning-text">
-            Are you sure you want to disable 2FA? Your account will be less
-            secure.
+        <div v-if="twoFactorLoading" class="loading">Loading...</div>
+        <div v-else>
+          <p class="section-description">
+            Add an extra layer of security to your account with two-factor
+            authentication (2FA). You'll need to enter a code from your
+            authenticator app when you log in.
           </p>
-          <form @submit.prevent="handleDisable2FA">
-            <div class="form-group">
-              <label for="disable-2fa-password"
-                >Enter your password to confirm:</label
-              >
-              <PasswordInput
-                id="disable-2fa-password"
-                v-model="disable2FAForm.password"
-                autocomplete="current-password"
-                required
-                :disabled="disable2FAForm.loading"
-                placeholder="Enter your password"
-              />
-            </div>
-            <div v-if="disable2FAForm.error" class="error-message">
-              {{ disable2FAForm.error }}
-            </div>
-            <div class="form-actions">
-              <button
-                type="submit"
-                :disabled="disable2FAForm.loading"
-                class="btn btn-danger"
-              >
-                {{ disable2FAForm.loading ? "Disabling..." : "Disable 2FA" }}
-              </button>
-              <button
-                type="button"
-                @click="showDisable2FAModal = false"
-                class="btn btn-secondary"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+
+          <p v-if="twoFactorEnabled && twoFactorEnabledAt" class="enabled-date">
+            Enabled on {{ formatDate(twoFactorEnabledAt) }}
+          </p>
+
+          <div v-if="twoFactorError" class="error-message">
+            {{ twoFactorError }}
+          </div>
+
+          <div v-if="twoFactorEnabled" class="button-group">
+            <button
+              @click="showRegenerateBackupModal = true"
+              class="btn btn-secondary"
+            >
+              Regenerate Backup Codes
+            </button>
+            <button @click="showDisable2FAModal = true" class="btn btn-danger">
+              Disable 2FA
+            </button>
+          </div>
+
+          <div v-else class="button-group">
+            <button @click="start2FASetup" class="btn btn-primary">
+              Enable 2FA
+            </button>
+          </div>
         </div>
-      </div>
-    </teleport>
+      </section>
 
-    <!-- Regenerate Backup Codes Modal -->
-    <teleport to="body">
-      <div
-        v-if="showRegenerateBackupModal"
-        class="modal-overlay"
-        @click.self="closeRegenerateBackupModal"
-      >
-        <div class="modal" @click.stop>
-          <h2>Regenerate Backup Codes</h2>
+      <section class="account-section danger-section">
+        <h2>Delete Account</h2>
+        <p class="warning-text">
+          Warning: Deleting your account will permanently remove all your data.
+          This action cannot be undone.
+        </p>
+        <p
+          v-if="accountInfo.global_role === 'superadmin'"
+          class="warning-text"
+          style="margin-bottom: 1rem"
+        >
+          Superadmin accounts cannot be deleted. Transfer the superadmin role to
+          another user first.
+        </p>
+        <button
+          @click="
+            if (accountInfo.global_role !== 'superadmin') {
+              showDeleteModal = true;
+            }
+          "
+          class="btn btn-danger"
+          :disabled="accountInfo.global_role === 'superadmin'"
+        >
+          Delete Account
+        </button>
+      </section>
 
-          <div v-if="!regeneratedBackupCodes">
-            <p>
-              Regenerating backup codes will invalidate your existing codes.
-              Make sure to save the new codes in a secure place.
+      <Teleport v-if="showDeleteModal" to="body">
+        <div class="modal-overlay" @click="showDeleteModal = false">
+          <div class="modal" @click.stop>
+            <h2>Confirm Account Deletion</h2>
+            <p class="warning-text">
+              This action cannot be undone. All your data will be permanently
+              deleted.
             </p>
-            <form @submit.prevent="handleRegenerateBackupCodes">
+            <p
+              v-if="accountInfo.global_role === 'superadmin'"
+              class="error-message"
+            >
+              Superadmin accounts cannot be deleted. Transfer the superadmin
+              role to another user first.
+            </p>
+            <form @submit.prevent="handleDeleteAccount">
               <div class="form-group">
-                <label for="regenerate-password"
+                <label for="delete-password"
                   >Enter your password to confirm:</label
                 >
                 <PasswordInput
-                  id="regenerate-password"
-                  v-model="regenerateBackupForm.password"
+                  id="delete-password"
+                  v-model="deleteForm.password"
                   autocomplete="current-password"
                   required
-                  :disabled="regenerateBackupForm.loading"
+                  :disabled="
+                    deleteForm.loading ||
+                    accountInfo.global_role === 'superadmin'
+                  "
                   placeholder="Enter your password"
                 />
               </div>
-              <div v-if="regenerateBackupForm.error" class="error-message">
-                {{ regenerateBackupForm.error }}
+              <div v-if="deleteForm.error" class="error-message">
+                {{ deleteForm.error }}
               </div>
               <div class="form-actions">
                 <button
                   type="submit"
-                  :disabled="regenerateBackupForm.loading"
-                  class="btn btn-primary"
+                  :disabled="
+                    deleteForm.loading ||
+                    accountInfo.global_role === 'superadmin'
+                  "
+                  class="btn btn-danger"
                 >
                   {{
-                    regenerateBackupForm.loading
-                      ? "Generating..."
-                      : "Regenerate Codes"
+                    deleteForm.loading
+                      ? "Deleting..."
+                      : "Delete Account Permanently"
                   }}
                 </button>
                 <button
                   type="button"
-                  @click="closeRegenerateBackupModal"
+                  @click="
+                    showDeleteModal = false;
+                    deleteForm.password = '';
+                    deleteForm.error = '';
+                  "
+                  class="btn btn-secondary"
+                  :disabled="deleteForm.loading"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport v-if="show2FASetupModal" to="body">
+        <div class="modal-overlay" @click.self="show2FASetupModal = false">
+          <div class="modal modal-large" @click.stop>
+            <TwoFactorSetup
+              @success="handle2FASetupSuccess"
+              @cancel="show2FASetupModal = false"
+            />
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport v-if="showDisable2FAModal" to="body">
+        <div class="modal-overlay" @click.self="showDisable2FAModal = false">
+          <div class="modal" @click.stop>
+            <h2>Disable 2FA</h2>
+            <p class="warning-text">
+              Are you sure you want to disable 2FA? Your account will be less
+              secure.
+            </p>
+            <form @submit.prevent="handleDisable2FA">
+              <div class="form-group">
+                <label for="disable-2fa-password"
+                  >Enter your password to confirm:</label
+                >
+                <PasswordInput
+                  id="disable-2fa-password"
+                  v-model="disable2FAForm.password"
+                  autocomplete="current-password"
+                  required
+                  :disabled="disable2FAForm.loading"
+                  placeholder="Enter your password"
+                />
+              </div>
+              <div v-if="disable2FAForm.error" class="error-message">
+                {{ disable2FAForm.error }}
+              </div>
+              <div class="form-actions">
+                <button
+                  type="submit"
+                  :disabled="disable2FAForm.loading"
+                  class="btn btn-danger"
+                >
+                  {{ disable2FAForm.loading ? "Disabling..." : "Disable 2FA" }}
+                </button>
+                <button
+                  type="button"
+                  @click="showDisable2FAModal = false"
                   class="btn btn-secondary"
                 >
                   Cancel
@@ -399,70 +328,121 @@
               </div>
             </form>
           </div>
+        </div>
+      </Teleport>
 
-          <div v-else>
-            <p class="warning-text">
-              <strong>Save these codes now!</strong> They won't be shown again.
-            </p>
-            <div class="backup-codes-display">
-              <div
-                v-for="(code, index) in regeneratedBackupCodes"
-                :key="index"
-                class="backup-code"
-              >
-                <code>{{ code }}</code>
-              </div>
+      <Teleport v-if="showRegenerateBackupModal" to="body">
+        <div class="modal-overlay" @click.self="closeRegenerateBackupModal">
+          <div class="modal" @click.stop>
+            <h2>Regenerate Backup Codes</h2>
+
+            <div v-if="!regeneratedBackupCodes">
+              <p>
+                Regenerating backup codes will invalidate your existing codes.
+                Make sure to save the new codes in a secure place.
+              </p>
+              <form @submit.prevent="handleRegenerateBackupCodes">
+                <div class="form-group">
+                  <label for="regenerate-password"
+                    >Enter your password to confirm:</label
+                  >
+                  <PasswordInput
+                    id="regenerate-password"
+                    v-model="regenerateBackupForm.password"
+                    autocomplete="current-password"
+                    required
+                    :disabled="regenerateBackupForm.loading"
+                    placeholder="Enter your password"
+                  />
+                </div>
+                <div v-if="regenerateBackupForm.error" class="error-message">
+                  {{ regenerateBackupForm.error }}
+                </div>
+                <div class="form-actions">
+                  <button
+                    type="submit"
+                    :disabled="regenerateBackupForm.loading"
+                    class="btn btn-primary"
+                  >
+                    {{
+                      regenerateBackupForm.loading
+                        ? "Generating..."
+                        : "Regenerate Codes"
+                    }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="closeRegenerateBackupModal"
+                    class="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
-            <div class="form-actions">
-              <button @click="downloadBackupCodes" class="btn btn-secondary">
-                Download Codes
-              </button>
-              <button
-                @click="closeRegenerateBackupModal"
-                class="btn btn-primary"
-              >
-                I've Saved My Codes
-              </button>
+
+            <div v-else>
+              <p class="warning-text">
+                <strong>Save these codes now!</strong> They won't be shown
+                again.
+              </p>
+              <div class="backup-codes-display">
+                <div
+                  v-for="(code, index) in regeneratedBackupCodes"
+                  :key="index"
+                  class="backup-code"
+                >
+                  <code>{{ code }}</code>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button @click="downloadBackupCodes" class="btn btn-secondary">
+                  Download Codes
+                </button>
+                <button
+                  @click="closeRegenerateBackupModal"
+                  class="btn btn-primary"
+                >
+                  I've Saved My Codes
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </teleport>
+      </Teleport>
+    </div>
+
+    <ConfirmationModal
+      :show="showConfirmModal"
+      :title="confirmModalConfig.title"
+      :message="confirmModalConfig.message"
+      :confirmText="confirmModalConfig.confirmText"
+      :dangerous="confirmModalConfig.dangerous"
+      @confirm="handleConfirmModalConfirm"
+      @cancel="handleConfirmModalCancel"
+      @close="handleConfirmModalCancel"
+    />
+
+    <AlertModal
+      :show="showAlertModal"
+      :type="alertModalConfig.type"
+      :title="alertModalConfig.title"
+      :message="alertModalConfig.message"
+      @close="handleAlertModalClose"
+      @ok="handleAlertModalClose"
+    />
+
+    <ReEncryptionModal
+      :show="showReEncryptionModal"
+      :progress="reEncryptionProgress"
+      :currentStep="reEncryptionStep"
+      :vaultspaceName="currentVaultspaceName"
+      :currentIndex="reEncryptionCurrentIndex"
+      :totalCount="reEncryptionTotalCount"
+      :error="reEncryptionError"
+      @cancel="handleReEncryptionCancel"
+    />
   </div>
-
-  <!-- Confirmation Modal -->
-  <ConfirmationModal
-    :show="showConfirmModal"
-    :title="confirmModalConfig.title"
-    :message="confirmModalConfig.message"
-    :confirmText="confirmModalConfig.confirmText"
-    :dangerous="confirmModalConfig.dangerous"
-    @confirm="handleConfirmModalConfirm"
-    @cancel="handleConfirmModalCancel"
-    @close="handleConfirmModalCancel"
-  />
-
-  <!-- Alert Modal -->
-  <AlertModal
-    :show="showAlertModal"
-    :type="alertModalConfig.type"
-    :title="alertModalConfig.title"
-    :message="alertModalConfig.message"
-    @close="handleAlertModalClose"
-    @ok="handleAlertModalClose"
-  />
-
-  <!-- Re-encryption Modal -->
-  <ReEncryptionModal
-    :show="showReEncryptionModal"
-    :progress="reEncryptionProgress"
-    :currentStep="reEncryptionStep"
-    :vaultspaceName="currentVaultspaceName"
-    :currentIndex="reEncryptionCurrentIndex"
-    :totalCount="reEncryptionTotalCount"
-    :error="reEncryptionError"
-    @cancel="handleReEncryptionCancel"
-  />
 </template>
 
 <script>
@@ -731,7 +711,6 @@ export default {
             try {
               const vaultspaceKeyData = await vaultspaces.getKey(vs.id);
               if (vaultspaceKeyData && vaultspaceKeyData.encrypted_key) {
-                // Try to decrypt with old master key
                 await decryptVaultSpaceKeyForUser(
                   oldMasterKey,
                   vaultspaceKeyData.encrypted_key,
@@ -764,7 +743,6 @@ export default {
           }
         }
 
-        // Show re-encryption modal
         this.showReEncryptionModal = true;
         this.reEncryptionProgress = 0;
         this.reEncryptionStep = "Retrieving VaultSpaces...";
@@ -850,7 +828,6 @@ export default {
           }
         }
 
-        // If decryption failed for any VaultSpace, abort the process
         if (decryptErrors.length > 0) {
           const errorDetails = decryptErrors
             .map((e) => `- ${e.vaultspaceName || e.vaultspaceId}: ${e.error}`)
@@ -868,7 +845,7 @@ export default {
         this.currentVaultspaceName = null;
 
         // Derive new master key from new password
-        // Note: Old master key was already cleared from IndexedDB after verification step
+
         const newMasterKey = await initializeUserMasterKey(
           this.passwordForm.newPassword,
           salt,
@@ -973,8 +950,6 @@ export default {
             75 + (updatedCount / reencryptedKeys.size) * 20;
 
           try {
-            // Update key on server (share with self to update own key)
-            // Note: The backend uses the authenticated user, not user_id from body
             // The user_id parameter is sent but ignored by backend - it uses authenticated user
             await vaultspaces.share(vs.id, currentUser.id, newEncryptedKey);
             updatedCount++;
@@ -994,7 +969,6 @@ export default {
         this.reEncryptionStep = "Finalizing...";
         this.currentVaultspaceName = null;
 
-        // Check if any keys were successfully updated
         if (updatedCount === 0 && reencryptedKeys.size > 0) {
           // No keys were successfully updated - build detailed error message
           let errorMessage = `Failed to update any VaultSpace keys (${updateErrors.length} error(s)). Your password will not be changed to prevent data loss.\n\n`;
@@ -1029,7 +1003,6 @@ export default {
             // Get the re-encrypted key from server
             const testKeyData = await vaultspaces.getKey(testVaultSpaceId);
             if (testKeyData && testKeyData.encrypted_key) {
-              // Try to decrypt with the new master key stored in IndexedDB
               const storedMasterKey = await getUserMasterKey();
               if (storedMasterKey) {
                 await decryptVaultSpaceKeyForUser(
@@ -1060,12 +1033,10 @@ export default {
         // This ensures the cached keys are cleared and will be reloaded with the new master key
         clearAllCachedVaultSpaceKeys();
 
-        // Hide modal
         this.reEncryptionProgress = 100;
         await new Promise((resolve) => setTimeout(resolve, 500));
         this.showReEncryptionModal = false;
 
-        // Show success message
         this.passwordForm.success = "Password changed successfully";
         this.passwordForm.currentPassword = "";
         this.passwordForm.newPassword = "";
@@ -1077,7 +1048,7 @@ export default {
             "Re-encryption was cancelled. Your password has not been changed. Please try again.";
         } else {
           this.passwordForm.error = err.message || "Failed to change password";
-          // If re-encryption partially completed, inform user
+
           if (
             err.message &&
             !err.message.includes("cancelled") &&
@@ -1156,7 +1127,7 @@ export default {
       this.show2FASetupModal = false;
       // Reload 2FA status
       await this.load2FAStatus();
-      // Show success message
+
       this.showAlert({
         type: "success",
         title: "2FA Enabled",
@@ -1174,7 +1145,7 @@ export default {
         this.disable2FAForm.password = "";
         // Reload 2FA status
         await this.load2FAStatus();
-        // Show success message
+
         this.showAlert({
           type: "success",
           title: "2FA Disabled",
@@ -1231,11 +1202,9 @@ export default {
 .account-view {
   max-width: 800px;
   margin: 0 auto;
-  padding: 2rem;
 }
 
 .mobile-mode .account-view {
-  padding: 1rem;
   max-width: 100%;
 }
 

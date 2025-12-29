@@ -263,7 +263,7 @@ class AdvancedSharingService:
         Returns:
             True if revoked, False otherwise
         """
-        # Try to find by ID first, then by token
+
         share_link = self._get_share_link_by_identifier(link_id)
 
         if not share_link:
@@ -324,7 +324,7 @@ class AdvancedSharingService:
         Returns:
             Updated PublicShareLink object or None if not found/unauthorized
         """
-        # Try to find by ID first, then by token
+
         share_link = self._get_share_link_by_identifier(link_id)
 
         if not share_link:

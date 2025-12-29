@@ -55,7 +55,6 @@
         class="grid-container"
         :style="{ gridTemplateColumns: getGridTemplateColumns }"
       >
-        <!-- Header Row -->
         <div class="grid-header-row">
           <div class="grid-cell grid-cell-checkbox">
             <input
@@ -127,7 +126,7 @@
           </div>
           <div class="grid-cell grid-cell-actions">Actions</div>
         </div>
-        <!-- Data Rows -->
+
         <template
           v-for="(item, index) in sortedAndFilteredItems"
           :key="item.id"
@@ -336,6 +335,8 @@ import CustomSelect from "./CustomSelect.vue";
 import { isMobileMode } from "../utils/mobileMode";
 import { getThumbnail, setThumbnail } from "../services/thumbnailCache";
 import { clipboardManager } from "../utils/clipboard";
+
+import { normalizeMimeType } from "../utils/mimeType";
 
 export default {
   name: "FileListView",
@@ -658,7 +659,6 @@ export default {
       } catch (e) {}
     }, 300);
 
-    // Calculate default width in pixels based on container width
     const calculateDefaultWidth = (index) => {
       if (defaultColumnPercentages[index] !== undefined) {
         // Get container width or use a default
@@ -681,12 +681,10 @@ export default {
 
     // Get computed width for a column (always in pixels)
     const getColumnWidth = (index) => {
-      // If user has resized this column, use saved width
       if (columnWidths.value[index] !== undefined) {
         return columnWidths.value[index] + "px";
       }
 
-      // Calculate default width in pixels
       const defaultWidth = calculateDefaultWidth(index);
       if (defaultWidth !== null) {
         return defaultWidth + "px";
@@ -767,7 +765,6 @@ export default {
             const widthValue = computedStyle.width;
             startWidth.value = parseFloat(widthValue) || headerCell.offsetWidth;
 
-            // If column hasn't been resized yet, save current width
             if (columnWidths.value[columnIndex] === undefined) {
               columnWidths.value[columnIndex] = startWidth.value;
             }
@@ -792,14 +789,12 @@ export default {
       const minWidth = columnMinWidths[resizingColumnIndex.value] || 50;
       let newWidth = Math.max(minWidth, startWidth.value + diff);
 
-      // Calculate maximum width to ensure Actions column stays visible and never pushed out
       const container = tableContainer.value;
       if (container && container.offsetWidth > 0) {
         const containerWidth = container.offsetWidth;
         const totalColumns = 6;
         const actionsMinWidth = columnMinWidths[totalColumns - 1] || 60;
 
-        // Calculate sum of all other fixed columns (0-4, excluding the one being resized)
         let totalOtherFixedWidth = 0;
         for (let i = 0; i < totalColumns - 1; i++) {
           if (i === resizingColumnIndex.value) {
@@ -815,13 +810,11 @@ export default {
             if (defaultWidth !== null) {
               totalOtherFixedWidth += defaultWidth;
             } else {
-              // Fallback to min width if calculation fails
               totalOtherFixedWidth += columnMinWidths[i] || 80;
             }
           }
         }
 
-        // Calculate maximum width: container width - other fixed columns - minimum Actions width
         // Actions column must always have at least its minimum width visible
         const maxWidth =
           containerWidth - totalOtherFixedWidth - actionsMinWidth;
@@ -830,7 +823,6 @@ export default {
         newWidth = Math.min(newWidth, Math.max(minWidth, maxWidth));
       }
 
-      // Update column width
       columnWidths.value[resizingColumnIndex.value] = newWidth;
     };
 
@@ -864,7 +856,6 @@ export default {
       { deep: true },
     );
 
-    // Initialize column widths on mount
     const initializeColumnWidths = () => {
       loadColumnWidths();
       // Don't initialize default widths - they will be calculated dynamically
@@ -875,7 +866,7 @@ export default {
     onMounted(() => {
       // Setup mobile mode listener
       window.addEventListener("mobile-mode-changed", handleMobileModeChange);
-      // Check on mount
+
       isMobileView.value = isMobileMode();
 
       initializeColumnWidths();
@@ -911,8 +902,8 @@ export default {
         let aVal, bVal;
 
         if (sortBy.value === "name") {
-          aVal = a.original_name.toLowerCase();
-          bVal = b.original_name.toLowerCase();
+          aVal = (a.original_name || "").toLowerCase();
+          bVal = (b.original_name || "").toLowerCase();
         } else if (sortBy.value === "date") {
           aVal = new Date(a.updated_at || a.created_at);
           bVal = new Date(b.updated_at || b.created_at);
@@ -981,7 +972,6 @@ export default {
         return iconFunction.call(window.Icons, iconSize, "currentColor");
       }
 
-      // Fallback to generic file icon
       return window.Icons.file(iconSize, "currentColor");
     };
 
@@ -1083,7 +1073,6 @@ export default {
         return;
       }
 
-      // Close menu if open
       if (showMenu.value) {
         showMenu.value = false;
       }
@@ -1137,7 +1126,6 @@ export default {
         return;
       }
 
-      // Close menu if open
       if (showMenu.value) {
         showMenu.value = false;
       }
@@ -1202,13 +1190,11 @@ export default {
       event.stopPropagation();
       event.preventDefault();
 
-      // Close menu if already open for the same item
       if (showMenu.value && menuItem.value?.id === item.id) {
         showMenu.value = false;
         return;
       }
 
-      // Open menu with exact click coordinates
       openMenuForItem(item, event);
     };
 
@@ -1217,7 +1203,6 @@ export default {
       const clickX = event.clientX;
       const clickY = event.clientY;
 
-      // Update position and item
       menuPosition.value = {
         x: clickX,
         y: clickY,
@@ -1225,7 +1210,6 @@ export default {
 
       menuItem.value = item;
 
-      // Open menu in next tick to ensure DOM is ready
       nextTick(() => {
         showMenu.value = true;
       });
@@ -1368,6 +1352,8 @@ export default {
         return "Folder";
       }
 
+      const mimeType = normalizeMimeType(item.original_name, item.mime_type);
+
       // Mapping of mime_types to readable names
       const mimeTypeMap = {
         // Images
@@ -1446,14 +1432,12 @@ export default {
         "application/x-bash": "Bash Script",
       };
 
-      // Check mime_type first
-      if (item.mime_type && mimeTypeMap[item.mime_type]) {
-        return mimeTypeMap[item.mime_type];
+      if (mimeType && mimeTypeMap[mimeType]) {
+        return mimeTypeMap[mimeType];
       }
 
-      // If mime_type starts with "image/", "video/", "audio/", or "text/", use the subtype
-      if (item.mime_type) {
-        const [type, subtype] = item.mime_type.split("/");
+      if (mimeType) {
+        const [type, subtype] = mimeType.split("/");
         if (type === "image") {
           return `${subtype.toUpperCase()} Image`;
         } else if (type === "video") {
@@ -1520,7 +1504,6 @@ export default {
             return extensionMap[extension];
           }
 
-          // If extension is not in mapping, return extension in uppercase
           return extension.toUpperCase();
         }
       }
@@ -1529,7 +1512,7 @@ export default {
       if (item.mime_type) {
         const parts = item.mime_type.split("/");
         const subtype = parts[parts.length - 1];
-        // If it's "octet-stream", try to guess from extension
+
         if (subtype === "octet-stream" && item.original_name) {
           const ext = item.original_name.split(".").pop()?.toUpperCase();
           return ext || "Binary File";
@@ -1540,7 +1523,6 @@ export default {
       return "Unknown";
     };
 
-    // Initialize global thumbnail cache if not exists
     if (!window.__leyzenThumbnailUrls) {
       window.__leyzenThumbnailUrls = new Map();
     }
@@ -1550,7 +1532,7 @@ export default {
     const getThumbnailUrl = (fileId) => {
       // Access thumbnailUpdateTrigger to create dependency
       void thumbnailUpdateTrigger.value;
-      // Return cached URL from global cache if available
+
       return window.__leyzenThumbnailUrls.get(fileId) || "";
     };
 
@@ -1597,7 +1579,6 @@ export default {
       }
 
       try {
-        // Check cache first
         const cachedBlob = await getThumbnail(file.id);
         if (cachedBlob) {
           const blobUrl = URL.createObjectURL(cachedBlob);
@@ -1660,7 +1641,6 @@ export default {
       }
 
       try {
-        // Check cache first
         const cachedBlob = await getThumbnail(file.id);
         if (cachedBlob) {
           const blobUrl = URL.createObjectURL(cachedBlob);
@@ -1717,7 +1697,6 @@ export default {
           blob.type,
         );
 
-        // Check if there's a picture/cover art in the metadata
         if (metadata.common?.picture && metadata.common.picture.length > 0) {
           // Get the first picture (usually the album cover)
           const picture = metadata.common.picture[0];
@@ -1788,9 +1767,7 @@ export default {
       );
     };
 
-    // Check if file is an image based on mime_type or file extension
     const isImageFile = (file) => {
-      // Check mime_type first
       if (file.mime_type?.startsWith("image/")) {
         return true;
       }
@@ -1816,9 +1793,7 @@ export default {
       return false;
     };
 
-    // Check if file is an audio file based on mime_type or file extension
     const isAudioFile = (file) => {
-      // Check mime_type first
       if (file.mime_type?.startsWith("audio/")) {
         return true;
       }
@@ -1972,19 +1947,16 @@ export default {
         return;
       }
 
-      // Check if we're in an editable element
       const isInEditableElement =
         event.target.tagName === "INPUT" ||
         event.target.tagName === "TEXTAREA" ||
         event.target.isContentEditable;
 
-      // Check if we're within the file-list-view
       const isWithinFileListView = event.target.closest(".file-list-view");
 
       // Handle Ctrl+A / Cmd+A globally to select all files
       // This should work even when clicking on sidebar or other areas
       if ((event.ctrlKey || event.metaKey) && event.key === "a") {
-        // If we're in a search input or textarea outside file-list-view, let it handle CTRL+A normally
         const isInSearchOrInput = isInEditableElement && !isWithinFileListView;
         if (isInSearchOrInput) {
           return;
@@ -2038,13 +2010,11 @@ export default {
     };
 
     const handleViewClick = (event) => {
-      // Check if clicking on a file item
       const clickedFileItem =
         event.target.closest(".file-card") ||
         event.target.closest(".file-row") ||
         event.target.closest(".grid-body-row");
 
-      // Check if clicking on interactive elements
       const clickedInteractive =
         event.target.closest(".btn-menu") ||
         event.target.closest(".btn-menu-grid") ||
@@ -2061,7 +2031,6 @@ export default {
         event.target.closest(".confirmation-modal") ||
         event.target.closest(".alert-modal");
 
-      // Close menu if clicking on view (but not on a specific element)
       if (showMenu.value && !clickedFileItem && !clickedInteractive) {
         showMenu.value = false;
       }
@@ -2084,49 +2053,40 @@ export default {
 
     // Global click handler to close menu and deselect items when clicking outside
     const handleGlobalClick = (event) => {
-      // Check if click is inside the menu
       const menuContainer = document.querySelector(".file-menu-container");
       const isInsideMenu =
         menuContainer && menuContainer.contains(event.target);
 
-      // Check if click is inside file-list-view (handled by handleViewClick)
       const isInsideFileListView = event.target.closest(".file-list-view");
 
-      // Check if click is on batch actions bar (Download, Delete buttons)
       const isInsideBatchActions = event.target.closest(
         ".batch-actions-bar, .batch-info, .batch-buttons",
       );
 
-      // Check if click is on a modal (confirmation, alert, etc.)
       const isInsideModal = event.target.closest(
         ".modal-overlay, .modal, .confirmation-modal, .alert-modal",
       );
 
-      // Check if it's a click on a menu button (3 dots) - don't close/deselect in this case
       const clickedButton = event.target.closest(".btn-menu, .btn-menu-grid");
 
-      // Check if click is on a file/folder item (row or card)
       const clickedFileItem = event.target.closest(
         ".grid-body-row, .file-card",
       );
 
-      // Check if click is on a checkbox
       const clickedCheckbox = event.target.type === "checkbox";
 
-      // Check if click is inside an input or textarea (editing)
       const isInEditableElement =
         event.target.tagName === "INPUT" ||
         event.target.tagName === "TEXTAREA" ||
         event.target.isContentEditable;
 
-      // Close menu if open and clicking outside
       if (showMenu.value && !isInsideMenu && !clickedButton) {
         showMenu.value = false;
       }
 
       // Deselect all items if clicking outside file-list-view (sidebar, header, etc.)
       // Only if there are selected items and we're not clicking on interactive elements
-      // Note: Clicks inside file-list-view are handled by handleViewClick
+
       if (
         !isInsideFileListView &&
         props.selectedItems.length > 0 &&
@@ -2165,7 +2125,6 @@ export default {
 
     // Generate thumbnail for a file
     const generateThumbnailForFile = async (file) => {
-      // Check if file is an image without thumbnail
       if (
         !isImageFile(file) ||
         hasThumbnail(file) ||
@@ -2181,7 +2140,6 @@ export default {
         return;
       }
 
-      // Check if we're at max concurrent generations
       if (generatingThumbnails.value.size >= MAX_CONCURRENT_GENERATIONS) {
         return;
       }
@@ -2201,8 +2159,6 @@ export default {
         try {
           encryptedData = await files.download(file.id, vaultspaceId);
         } catch (downloadError) {
-          // If file not found (404), it might be a new file that's not yet synced
-          // Check if file was created recently (within last 5 minutes)
           const fileCreatedAt = file.created_at
             ? new Date(file.created_at)
             : null;
@@ -2268,7 +2224,6 @@ export default {
         // Mark as generated to refresh display
         generatedThumbnails.value.add(file.id);
 
-        // Wait a bit for database to be updated
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Load thumbnail URL for display
@@ -2337,7 +2292,6 @@ export default {
                   !generatingThumbnails.value.has(file.id) &&
                   !failedThumbnails.value.has(file.id)
                 ) {
-                  // Try to load thumbnail first (will fallback to image/audio cover if needed)
                   // Load immediately for visible items
                   const rect = card.getBoundingClientRect();
                   const isVisible =
@@ -2354,7 +2308,6 @@ export default {
                   if (isImageFile(file)) {
                     thumbnailObserver.observe(card);
 
-                    // Check if card is already visible and trigger generation immediately
                     const rect = card.getBoundingClientRect();
                     const isVisible =
                       rect.top < window.innerHeight + 50 && rect.bottom > -50;
@@ -2393,7 +2346,6 @@ export default {
 
     // Load existing thumbnails on mount
     const loadExistingThumbnails = async () => {
-      // Check if there are any items to process
       if (!allItems.value || allItems.value.length === 0) {
         return;
       }
@@ -2408,7 +2360,6 @@ export default {
         (file) => isImageFile(file) || isAudioFile(file),
       );
 
-      // If no image or audio files, nothing to load
       if (filesToLoad.length === 0) {
         return;
       }
@@ -2416,7 +2367,6 @@ export default {
       isLoadingThumbnails.value = true;
 
       try {
-        // Wait for DOM to be ready
         await nextTick();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -2459,7 +2409,6 @@ export default {
         return;
       }
 
-      // Check if any thumbnails are missing
       const missingThumbnails = imageAndAudioFiles.filter(
         (file) => !window.__leyzenThumbnailUrls.has(file.id),
       );
@@ -2471,7 +2420,6 @@ export default {
 
     // Setup observer on mount
     onMounted(() => {
-      // Wait a bit for props to be available, then load thumbnails
       nextTick(() => {
         if (allItems.value.length > 0) {
           loadExistingThumbnails();
@@ -2488,7 +2436,6 @@ export default {
         }
       }, 500);
 
-      // Set up periodic retry to ensure thumbnails load
       thumbnailRetryInterval = setInterval(() => {
         retryLoadThumbnails();
       }, 1000);

@@ -41,16 +41,28 @@ def get_captcha_store_for_app(
     """
     ttl = getattr(settings, "captcha_store_ttl", 300)
     # Use DatabaseCaptchaStore for multi-worker support
-    # Try to use database store, fallback to in-memory if database is not available
+
     try:
         app = current_app._get_current_object()
         import importlib.util
 
-        spec = importlib.util.find_spec("vault.database.schema")
-        if spec is not None:
-            return DatabaseCaptchaStore(ttl, app=app)
-        else:
-            return CaptchaStore(ttl)
+        # Try to find the spec. Note: this can trigger imports of parent packages.
+        # We catch ImportError and ModuleNotFoundError specifically.
+        try:
+            spec = importlib.util.find_spec("vault.database.schema")
+            if spec is not None:
+                # Also verify we can actually import it to avoid dependency issues
+                # (like missing flask-sqlalchemy in orchestrator)
+                importlib.import_module("vault.database.schema")
+
+                # Check if SQLAlchemy is actually initialized in the app
+                if hasattr(app, "extensions") and "sqlalchemy" in app.extensions:
+                    return DatabaseCaptchaStore(ttl, app=app)
+        except (ImportError, ModuleNotFoundError, AttributeError):
+            # Fallback to in-memory store if anything goes wrong with DB schema
+            pass
+
+        return CaptchaStore(ttl)
     except RuntimeError:
         # No application context, fallback to in-memory store
         return CaptchaStore(ttl)

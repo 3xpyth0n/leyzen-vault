@@ -109,5 +109,4 @@ class ClipboardManager {
   }
 }
 
-// Export singleton instance
 export const clipboardManager = new ClipboardManager();

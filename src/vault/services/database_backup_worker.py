@@ -75,7 +75,7 @@ class DatabaseBackupWorker:
                     # First run, check if we should backup now
                     self._cron_iter = croniter(cron_expression, now)
                     next_time = self._cron_iter.get_next(datetime)
-                    # If next time is very close (within 1 minute), do backup now
+
                     if (next_time - now).total_seconds() < 60:
                         self._do_backup()
                         self._last_backup_time = now
@@ -189,19 +189,18 @@ class DatabaseBackupWorker:
         while not self._stop_event.is_set():
             try:
                 if not self._is_enabled():
-                    # Wait and check again
+
                     self._stop_event.wait(60)  # Check every minute
                     continue
 
                 # Check if it's time for a scheduled backup
                 self._run_scheduled_backup()
 
-                # Wait 1 minute before next check
                 self._stop_event.wait(60)
 
             except Exception as e:
                 logger.error(f"[BACKUP WORKER] Worker loop error: {e}", exc_info=True)
-                # Wait before retrying
+
                 self._stop_event.wait(60)
 
         logger.info("[BACKUP WORKER] Database backup worker stopped")

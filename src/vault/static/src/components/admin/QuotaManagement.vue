@@ -7,7 +7,6 @@
       </button>
     </div>
 
-    <!-- Statistics Summary -->
     <div v-if="!loading && quotas.length > 0" class="stats-summary">
       <div class="stat-item">
         <span class="stat-label">Total Users:</span>
@@ -97,13 +96,8 @@
       </table>
     </div>
 
-    <!-- Create/Edit Quota Modal -->
-    <teleport to="body">
-      <div
-        v-if="showCreateModal"
-        class="modal-overlay"
-        @click.self="closeModal"
-      >
+    <Teleport v-if="showCreateModal" to="body">
+      <div class="modal-overlay" @click.self="closeModal">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>{{ editingQuota ? "Edit Quota" : "Set Quota" }}</h3>
@@ -175,7 +169,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
   </div>
 </template>
 
@@ -326,18 +320,15 @@ export default {
       // This way 0.1 GB = 100 MB, 0.12 GB = 120 MB, etc.
       const mb = Math.round(gb * 1000);
 
-      // If less than 1 MB, show in KB
       if (mb < 1) {
         const kb = Math.round(((bytes / 1024) * 1000) / 1024);
         return kb + " KB";
       }
 
-      // If less than 1000 MB, show in MB
       if (mb < 1000) {
         return mb + " MB";
       }
 
-      // If 1000 MB or more, show in GB with decimals
       const gbDisplay = mb / 1000;
       // Round to 2 decimal places max, removing trailing zeros
       const gbRounded = Math.round(gbDisplay * 100) / 100;
@@ -348,7 +339,6 @@ export default {
     const normalizeQuotaInput = (event) => {
       let value = event.target.value.trim();
 
-      // If empty, set to null
       if (value === "") {
         quotaForm.value.max_storage_gb = null;
         event.target.value = "";
@@ -361,13 +351,11 @@ export default {
       // Remove any non-numeric characters except dot and minus
       value = value.replace(/[^\d.-]/g, "");
 
-      // Ensure only one dot
       const parts = value.split(".");
       if (parts.length > 2) {
         value = parts[0] + "." + parts.slice(1).join("");
       }
 
-      // Ensure only one minus at the start
       if (value.indexOf("-") > 0) {
         value = value.replace(/-/g, "");
       }
@@ -381,11 +369,9 @@ export default {
           ? null
           : parseFloat(value);
 
-      // Update the form value
       quotaForm.value.max_storage_gb =
         isNaN(numValue) || numValue < 0 ? null : numValue;
 
-      // Update the input display value to show the normalized version
       if (quotaForm.value.max_storage_gb !== null) {
         event.target.value = quotaForm.value.max_storage_gb.toString();
       } else {

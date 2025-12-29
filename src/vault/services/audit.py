@@ -151,7 +151,7 @@ class AuditService:
             max_backfill = 10  # Limit backfill to avoid performance issues
 
             for entry, user_email in query.all():
-                # If entry doesn't have location data, try to enrich it (limited backfill)
+
                 if (
                     backfill_count < max_backfill
                     and not entry.ip_location

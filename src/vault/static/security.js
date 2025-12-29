@@ -77,7 +77,6 @@ async function loadStats() {
     const data = await response.json();
     statsData = data;
 
-    // Update storage stats
     document.getElementById("stat-total-files").textContent =
       data.storage.total_files;
     document.getElementById("stat-total-size").textContent = formatFileSize(
@@ -90,7 +89,6 @@ async function loadStats() {
       data.storage.average_size,
     );
 
-    // Update activity stats
     document.getElementById("stat-total-actions").textContent =
       data.activity.recent_actions;
     document.getElementById("stat-successful").textContent =
@@ -98,10 +96,8 @@ async function loadStats() {
     document.getElementById("stat-failed").textContent =
       data.activity.failed_actions;
 
-    // Update activity breakdown
     renderActivityBreakdown(data.activity.by_action);
 
-    // Update audit logs
     renderAuditLogs(data.recent_logs);
   } catch (error) {
     if (window.Notifications) {
@@ -110,7 +106,6 @@ async function loadStats() {
   }
 }
 
-// Render activity breakdown
 function renderActivityBreakdown(byAction) {
   const container = document.getElementById("activity-breakdown");
   if (!container) return;
@@ -149,7 +144,6 @@ function renderActivityBreakdown(byAction) {
   setInnerHTML(container, html);
 }
 
-// Render audit logs
 function renderAuditLogs(logs) {
   const container = document.getElementById("audit-logs");
   if (!container) return;
@@ -220,7 +214,6 @@ function renderAuditLogs(logs) {
   setInnerHTML(container, html);
 }
 
-// Initialize
 document.addEventListener("DOMContentLoaded", () => {
   loadStats();
 

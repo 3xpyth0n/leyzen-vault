@@ -49,7 +49,7 @@ export async function initializeUserMasterKey(
   sessionStorage.setItem(MASTER_KEY_STORAGE_KEY, saltBase64);
 
   // Derive master key from password (extractable=true temporarily to store encrypted version)
-  // We'll make it non-extractable after storing
+
   const masterKey = await deriveUserKey(password, salt, true);
 
   // Get JWT token if not provided
@@ -78,7 +78,7 @@ export async function initializeUserMasterKey(
   window.__leyzenMasterKeyRef = sessionId;
 
   // Make key non-extractable after storing (security)
-  // Note: Once a key is non-extractable, we can't change it, so we keep it extractable
+
   // for now. The encrypted version in IndexedDB is protected by the session key.
 
   return masterKey;
@@ -92,7 +92,6 @@ export async function initializeUserMasterKey(
  * @returns {Promise<CryptoKey|null>} User master key or null if not available
  */
 export async function getUserMasterKey() {
-  // Check if key is available in memory using the stored reference
   if (window.__leyzenMasterKey && window.__leyzenMasterKeyRef) {
     const key = window.__leyzenMasterKey.get(window.__leyzenMasterKeyRef);
     if (key) {
@@ -116,7 +115,6 @@ export async function getUserMasterKey() {
         return encryptedKey;
       }
     } catch (error) {
-      // If decryption fails, it may be due to old key format (using user_id-based derivation)
       // Force clear all encrypted keys to force re-authentication with new secure system
       logger.warn(
         "Failed to retrieve encrypted master key from IndexedDB (may be old format):",
@@ -194,7 +192,6 @@ export async function clearUserMasterKey() {
     if (jwtToken) {
       await clearEncryptedMasterKey(jwtToken);
     } else {
-      // If no JWT, clear all (logout scenario)
       await clearAllEncryptedMasterKeys();
     }
   } catch (error) {

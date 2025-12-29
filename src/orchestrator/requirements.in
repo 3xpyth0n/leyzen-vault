@@ -1,5 +1,6 @@
 Flask
 Flask-WTF
+Flask-SQLAlchemy
 httpx
 Pillow
 uvicorn

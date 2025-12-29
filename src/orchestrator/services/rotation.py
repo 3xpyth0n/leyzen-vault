@@ -239,7 +239,7 @@ class RotationService:
                     cleanup_stats = result.get("cleanup", {})
                     verification_stats = result.get("verification", {})
 
-                    self._logger.log(
+                    self._logger.warning(
                         f"[PREPARE ROTATION] Validation: {validation_stats.get('validated', 0)} validated, "
                         f"{validation_stats.get('rejected', 0)} rejected, "
                         f"{validation_stats.get('deleted', 0)} deleted, "
@@ -248,15 +248,15 @@ class RotationService:
 
                     # Log critical errors and debug info if any
                     if "critical_error" in validation_stats:
-                        self._logger.log(
+                        self._logger.error(
                             f"[PREPARE ROTATION CRITICAL ERROR] {validation_stats['critical_error']}"
                         )
                     if "debug_info" in validation_stats:
-                        self._logger.log(
+                        self._logger.warning(
                             f"[PREPARE ROTATION DEBUG] {validation_stats['debug_info']}"
                         )
                     if "debug" in validation_stats:
-                        self._logger.log(
+                        self._logger.warning(
                             f"[PREPARE ROTATION DEBUG] {validation_stats['debug']}"
                         )
 
@@ -264,15 +264,15 @@ class RotationService:
                     files_in_queue = validation_stats.get("files_in_queue", 0)
                     validated_count = validation_stats.get("validated", 0)
                     if validated_count > 0 and files_in_queue == 0:
-                        self._logger.log(
+                        self._logger.warning(
                             f"[PREPARE ROTATION WARNING] {validated_count} files validated but 0 files in promotion queue. "
                             f"This indicates metadata lookup failed for all validated files."
                         )
-                    self._logger.log(
+                    self._logger.warning(
                         f"[PREPARE ROTATION] Promotion: {promotion_stats.get('promoted', 0)} promoted, "
                         f"{promotion_stats.get('failed', 0)} failed"
                     )
-                    self._logger.log(
+                    self._logger.warning(
                         f"[PREPARE ROTATION] Cleanup: {'success' if cleanup_stats.get('success') else 'failed'}"
                     )
 
@@ -284,7 +284,7 @@ class RotationService:
                     found_in_tmpfs = verification_stats.get("found_in_tmpfs", 0)
                     found_in_source = verification_stats.get("found_in_source", 0)
 
-                    self._logger.log(
+                    self._logger.warning(
                         f"[PREPARE ROTATION] Verification: {'success' if verification_success else 'failed'} "
                         f"(total: {total_files}, missing: {missing_count} ({missing_percentage}%), "
                         f"tmpfs: {found_in_tmpfs}, source: {found_in_source})"
@@ -293,21 +293,23 @@ class RotationService:
                     if not overall_success:
                         # Log why it failed
                         if not verification_success:
-                            self._logger.log(
+                            self._logger.error(
                                 f"[PREPARE ROTATION ERROR] Verification failed: {missing_count} files missing "
                                 f"({missing_percentage}%)"
                             )
                         if promotion_stats.get("failed", 0) > 0:
-                            self._logger.log(
+                            self._logger.error(
                                 f"[PREPARE ROTATION ERROR] Promotion failed: {promotion_stats.get('failed', 0)} files"
                             )
                         if not cleanup_stats.get("success", False):
-                            self._logger.log("[PREPARE ROTATION ERROR] Cleanup failed")
+                            self._logger.error(
+                                "[PREPARE ROTATION ERROR] Cleanup failed"
+                            )
 
                         errors = result.get("errors", [])
                         if errors:
                             for error in errors:
-                                self._logger.log(f"[PREPARE ROTATION ERROR] {error}")
+                                self._logger.error(f"[PREPARE ROTATION ERROR] {error}")
 
                     return overall_success
                 else:
@@ -364,7 +366,7 @@ class RotationService:
             if proxy_error is not None:
                 monotonic_now = time.monotonic()
                 if monotonic_now >= next_wait_log_time:
-                    self._logger.log(
+                    self._logger.warning(
                         "[WAIT] Docker proxy unavailable during rotation startup: "
                         f"{proxy_error}. Retrying in {retry_interval:.0f}s."
                     )
@@ -402,7 +404,7 @@ class RotationService:
         failed_stops = []
         for name in managed_containers:
             # Use shorter timeout for initial cleanup to avoid long waits
-            # If docker-proxy is not ready, we'll continue anyway
+
             stopped = self._docker.stop_container(
                 name, reason="initial cleanup", timeout=10
             )
@@ -670,7 +672,7 @@ class RotationService:
                 if not self._prepare_container_for_rotation(active_name):
                     raise RuntimeError(f"Failed to prepare {active_name} for rotation")
             except Exception as exc:
-                self._logger.log(
+                self._logger.error(
                     f"[ERROR] Failed to prepare {active_name} for rotation: {exc}. Aborting rotation."
                 )
                 # Stop rotation if preparation fails to prevent data loss
@@ -679,7 +681,7 @@ class RotationService:
             # 2. Start the new container WITHOUT stopping the current active one
             next_cont = self._docker.start_container(next_name, reason=start_reason)
             if not next_cont:
-                # If startup fails, try the next candidate (the current active container remains active)
+
                 self._logger.log(
                     f"[WARNING] Failed to start {next_name} - trying next candidate."
                 )
@@ -687,14 +689,14 @@ class RotationService:
 
             # 3. Wait for the new container to be healthy
             if not self._docker.wait_until_healthy(next_cont):
-                # If not healthy, stop the new one and try the next candidate
+
                 self._logger.log(
                     f"[WARNING] {next_name} failed to reach a healthy state - stopping container."
                 )
                 self._docker.stop_container(
                     next_name, reason="failed rotation health check"
                 )
-                continue  # Try the next candidate, the current active container remains active
+                continue
 
             # 4. The new container is healthy: stop the previous active container now
             elapsed = self.accumulate_and_clear_active(active_name)
@@ -727,7 +729,7 @@ class RotationService:
                         f"[ROTATION] Both containers running - forcing stop of {active_name}"
                     )
                     try:
-                        # Try to force stop the old container
+
                         self._docker.stop_container(
                             active_name, reason="force stop after timeout", timeout=5
                         )
@@ -812,7 +814,7 @@ class RotationService:
                     continue
 
             # 6. Rotation successful: mark the new one as active
-            self._logger.log(
+            self._logger.warning(
                 f"{next_name} marked ACTIVE at {datetime.now(self._settings.timezone).strftime('%H:%M:%S')}"
             )
             self.mark_active(next_name)
@@ -1047,11 +1049,11 @@ class RotationService:
                 active_name = self.last_active_container
             else:
                 active_name = random.choice(self._settings.web_containers)
-                self._logger.log(
+                self._logger.warning(
                     f"[RESUME WARN] No previous active container found, selecting {active_name}"
                 )
 
-            self._logger.log(
+            self._logger.warning(
                 f"[RESUME] Cleaning state before rotation - keeping {active_name} active"
             )
 
@@ -1115,7 +1117,7 @@ class RotationService:
             )
 
             if not rotated:
-                self._logger.log(
+                self._logger.warning(
                     "[CONTROL] Manual rotation skipped - no healthy candidates available."
                 )
                 return False, "No healthy candidates were available for rotation.", None
@@ -1144,9 +1146,9 @@ class RotationService:
                 if cont and cont.status == "running":
                     cont.stop()
                     stopped.append(name)
-                    self._logger.log(f"[CONTROL] Killed container: {name}")
+                    self._logger.warning(f"[CONTROL] Killed container: {name}")
             except Exception as exc:
-                self._logger.log(f"[CONTROL ERROR] Failed to kill {name}: {exc}")
+                self._logger.error(f"[CONTROL ERROR] Failed to kill {name}: {exc}")
         return stopped
 
     # ------------------------------------------------------------------
@@ -1271,7 +1273,7 @@ class RotationService:
             self._telemetry.update_snapshot_cache(snapshot)
             return deepcopy(snapshot)
         except (DockerProxyError, DockerProxyNotFound) as exc:
-            self._logger.log(
+            self._logger.warning(
                 f"[STREAM WARN] Snapshot rebuild failed due to Docker error: {exc}"
             )
             cached, _ = self._telemetry.get_snapshot_cache()
@@ -1279,7 +1281,7 @@ class RotationService:
                 return cached
             return {}
         except Exception as exc:  # pragma: no cover - defensive
-            self._logger.log(
+            self._logger.error(
                 f"[STREAM ERROR] Unexpected snapshot rebuild failure: {exc}\n"
                 f"{traceback.format_exc()}"
             )

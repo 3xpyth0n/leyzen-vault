@@ -53,7 +53,7 @@ class SessionKeySaltMigration(Migration):
             return users_without_salt > 0
         except Exception as e:
             logger.debug(f"Error checking users without salt: {e}")
-            # If query fails, assume migration is needed
+
             return True
 
     def apply(self) -> None:

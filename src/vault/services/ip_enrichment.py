@@ -48,7 +48,6 @@ class IPEnrichmentService:
         """
         from ipaddress import IPv4Address, IPv6Address, ip_address
 
-        # Try X-Forwarded-For header
         if request:
             xff = request.headers.get("X-Forwarded-For")
             if xff:
@@ -75,7 +74,7 @@ class IPEnrichmentService:
                     # Check for IPv4-mapped IPv6
                     if ip.ipv4_mapped:
                         return str(ip.ipv4_mapped)
-                    # Try to extract IPv4 from 6to4 or Teredo (limited support)
+
                     # For now, we'll return None if no direct conversion is possible
             except ValueError:
                 pass
@@ -100,7 +99,6 @@ class IPEnrichmentService:
         if not ip_address or ip_address == "unknown":
             return None
 
-        # Try APIs in order of reliability/rate limits
         location = self._get_location_ipapi_com(ip_address)
         if location:
             return location
@@ -267,12 +265,10 @@ class IPEnrichmentService:
         if not user_ip or user_ip == "unknown":
             return result
 
-        # Try to get IPv4 from headers first (may contain real client IP in X-Forwarded-For)
         ipv4_from_headers = self.get_client_ipv4(user_ip)
         if ipv4_from_headers:
             result["ipv4"] = ipv4_from_headers
 
-        # If user_ip is provided, check if it's IPv4 or IPv4-mapped IPv6
         try:
             ip = ip_address(user_ip.strip())
             if isinstance(ip, IPv4Address):
@@ -287,7 +283,7 @@ class IPEnrichmentService:
             pass
 
         # Get location (use IPv4 if available, otherwise use original IP - APIs support IPv6)
-        # Note: All three APIs (ip-api.com, ipwhois.app, ipapi.co) support IPv6
+
         location_ip = result.get("ipv4") or user_ip
         if location_ip:
             try:

@@ -1,8 +1,7 @@
 <template>
-  <Teleport to="body">
+  <Teleport v-if="isMaintenanceMode" to="body">
     <Transition name="fade">
       <div
-        v-if="isMaintenanceMode"
         class="maintenance-modal-overlay"
         @click.stop
         role="dialog"

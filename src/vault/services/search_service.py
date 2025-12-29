@@ -149,7 +149,7 @@ class SearchService:
                     # Filter base query to only include indexed files
                     base_query = base_query.filter(File.id.in_(file_ids_from_index))
                 else:
-                    # If Whoosh returns no results, fallback to ILIKE
+
                     base_query = base_query.filter(
                         File.original_name.ilike(f"%{query}%")
                     )
@@ -411,7 +411,7 @@ class SearchService:
 
             return "/".join(path_parts) if path_parts else file_obj.original_name or ""
         except Exception:
-            # If path calculation fails, return empty string
+
             return ""
 
     def _calculate_match_score(self, filename: str, query: str) -> float:

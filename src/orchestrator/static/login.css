@@ -1,7 +1,5 @@
-/* Import global styles (fonts, variables, base styles) */
 @import "./index.css";
 
-/* Login page specific styles */
 .vault-login .login-wrapper {
   display: flex;
   justify-content: center;
@@ -73,7 +71,7 @@
 .vault-login .login-form input:focus {
   outline: none;
   border-color: #004225;
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.25);
+  box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.25);
 }
 
 .vault-login .login-form input:disabled {
@@ -180,7 +178,11 @@
 }
 
 .vault-login .btn-spinner {
-  font-size: 1rem;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--accent);
+  border-top-color: var(--ash-grey);
+  border-radius: 50%;
   display: inline-block;
   animation: spin 1s linear infinite;
 }
@@ -315,7 +317,6 @@
   color: #a9b7aa;
 }
 
-/* Responsive */
 @media (max-width: 540px) {
   .vault-login .captcha-section {
     flex-direction: column !important;

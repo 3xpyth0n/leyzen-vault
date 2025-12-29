@@ -164,7 +164,7 @@ class ExternalStorageService:
                 f"Using stored addressing style: {addressing_style} for bucket {self._bucket_name}"
             )
         else:
-            # Try virtual-hosted-style first (default for AWS, IDrive, etc.)
+
             addressing_style = "virtual"
             logger.debug(
                 f"Trying default virtual-hosted-style for bucket {self._bucket_name}"
@@ -488,7 +488,7 @@ class ExternalStorageService:
                     f"response type: {type(response)}, "
                     f"response repr (first 500 chars): {str(response)[:500]}"
                 )
-                # Try direct access (boto3 response objects support both dict and attribute access)
+
                 try:
                     last_modified = response["LastModified"]
                 except (KeyError, TypeError):

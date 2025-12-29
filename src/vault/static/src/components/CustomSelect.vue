@@ -28,10 +28,9 @@
         <span v-html="getIcon('chevron-down')"></span>
       </span>
     </button>
-    <teleport to="body">
-      <transition name="dropdown-fade">
+    <Teleport v-if="isOpen" to="body">
+      <Transition name="dropdown-fade">
         <div
-          v-if="isOpen"
           class="custom-select-dropdown-container"
           :style="dropdownStyle"
           ref="dropdownContainer"
@@ -70,8 +69,8 @@
             </div>
           </div>
         </div>
-      </transition>
-    </teleport>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -298,7 +297,7 @@ export default {
       optionMeasure.style.whiteSpace = "nowrap";
 
       // Get actual CSS values from styles
-      // We'll create a temporary option element in the DOM to get its styles
+
       const tempOption = document.createElement("button");
       tempOption.className = "custom-select-option";
       tempOption.style.position = "absolute";
@@ -307,7 +306,6 @@ export default {
       tempOption.style.left = "-9999px";
       document.body.appendChild(tempOption);
 
-      // Wait for styles to be applied
       const optionStyle = window.getComputedStyle(tempOption);
       const optionPaddingLeft = parseFloat(optionStyle.paddingLeft) || 12;
       const optionPaddingRight = parseFloat(optionStyle.paddingRight) || 12;
@@ -315,7 +313,6 @@ export default {
 
       document.body.removeChild(tempOption);
 
-      // Check icon width (16px) + gap
       const checkIconWidth = 16 + optionGap;
 
       // Get dropdown container padding
@@ -334,7 +331,6 @@ export default {
 
       document.body.removeChild(tempContainer);
 
-      // Calculate total required width
       // Add a bit more margin to ensure all text is visible
       const totalPadding =
         containerPaddingLeft +
@@ -361,7 +357,6 @@ export default {
         ?.getBoundingClientRect();
       if (!triggerRect) return;
 
-      // Calculate optimal width based on content
       dropdownWidth.value = calculateDropdownWidth();
       dropdownLeft.value = triggerRect.left;
       dropdownTop.value = triggerRect.bottom + 4; // 0.25rem = 4px
@@ -535,7 +530,6 @@ export default {
     );
 
     onMounted(() => {
-      // Set initial highlighted index
       if (props.modelValue && props.options && Array.isArray(props.options)) {
         highlightedIndex.value = props.options.findIndex(
           (opt) => opt && getOptionValue(opt) === props.modelValue,
@@ -557,7 +551,7 @@ export default {
         if (typeof opt === "string") return true;
         if (!opt || typeof opt !== "object") return false;
         if (opt.separator) return false;
-        // Check if it has at least a value or label property
+
         return (
           opt.value !== undefined ||
           opt.label !== undefined ||

@@ -11,7 +11,7 @@ log() {
   printf '%s\n' "[postgres-init] $*" >&2
 }
 
-# Wait for PostgreSQL to be ready
+
 until pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1; do
   log "Waiting for PostgreSQL to be ready..."
   sleep 1

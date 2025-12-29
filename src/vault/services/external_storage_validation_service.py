@@ -362,7 +362,7 @@ class ExternalStorageValidationService:
                         if not dry_run:
                             # For thumbnails, we need to extract the file_id from the path
                             # Thumbnail paths are like "thumbnails/{hash[:2]}/{hash[2:4]}/{hash}_{size}.jpg"
-                            # We'll use the full path as the identifier
+
                             success = self.external_storage_service.delete_file(
                                 thumbnail_path, is_thumbnail=True
                             )

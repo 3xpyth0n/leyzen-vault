@@ -16,7 +16,7 @@ from flask import Flask
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: This local calculation is ONLY needed for the initial bootstrap before
+
 # common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
 # In Docker, /common is mounted as a volume, so we check that first.
 _COMMON_DIR = Path("/common")
@@ -156,21 +156,29 @@ def main() -> None:
     real_app = get_configured_app()
 
     rotation_service = real_app.config["ROTATION_SERVICE"]
-    rotation_service.start_background_workers()
-
-    # Start storage cleanup worker
     storage_cleanup_service = real_app.config.get("STORAGE_CLEANUP_SERVICE")
+    logger = real_app.config["LOGGER"]
+    settings = real_app.config["SETTINGS"]
+
+    # Log startup message first
+    logger.warning("=== Orchestrator started ===")
+
+    # Start background workers
+    rotation_service.start_background_workers()
     if storage_cleanup_service:
         storage_cleanup_service.start_background_worker()
 
-    logger = real_app.config["LOGGER"]
-
     def log_shutdown(sig: int | None = None) -> None:
         """Log shutdown message and flush logger."""
+        # Stop storage cleanup worker first to get its log before the stopped message
+        if storage_cleanup_service:
+            storage_cleanup_service.stop_background_worker()
+
         if sig is not None:
-            logger.log(f"=== Orchestrator stopped (signal {sig}) ===")
+            logger.warning(f"=== Orchestrator stopped (signal {sig}) ===")
         else:
-            logger.log("=== Orchestrator stopped ===")
+            logger.warning("=== Orchestrator stopped ===")
+
         # Clean up rotation service resources
         rotation_service.cleanup()
         logger.flush()
@@ -179,7 +187,10 @@ def main() -> None:
         sig: int, frame: object
     ) -> None:  # pragma: no cover - runtime signal handler
         """Handle shutdown signals gracefully."""
-        log_shutdown(sig)
+        try:
+            log_shutdown(sig)
+        except Exception:
+            pass
         sys.exit(0)
 
     # Register signal handlers
@@ -190,11 +201,13 @@ def main() -> None:
     # even if signal handler doesn't execute properly
     atexit.register(log_shutdown)
 
-    settings = real_app.config["SETTINGS"]
+    logger.warning("Moving Target Defense system is active and monitoring")
+    logger.warning(
+        f"Orchestrator server started successfully on port {settings.orchestrator_port}"
+    )
+
     # nosec B104: Binding to 0.0.0.0 is intentional and safe in Docker containers.
-    # The orchestrator runs in an isolated Docker network and is only accessible
-    # internally. External access is controlled by HAProxy which exposes only
-    # the configured ports with proper security headers.
+    # The orchestrator runs in an isolated Docker network and is only accessible internally.
     real_app.run(host="0.0.0.0", port=settings.orchestrator_port, debug=False)
 
 

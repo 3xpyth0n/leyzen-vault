@@ -95,7 +95,6 @@ watch(email, (newEmail) => {
   ssoRequired.value = false;
   ssoProvider.value = null;
 
-  // Check if email is valid and contains @
   if (newEmail && newEmail.includes("@") && newEmail.length > 3) {
     // Debounce the check
     emailCheckTimeout = setTimeout(async () => {
@@ -109,12 +108,11 @@ watch(email, (newEmail) => {
         // Don't show error, just log it
         logger.error("Failed to check domain for SSO:", err);
       }
-    }, 500); // Wait 500ms after user stops typing
+    }, 500);
   }
 });
 
 onMounted(async () => {
-  // Check if signup is enabled
   const config = await authStore.fetchAuthConfig();
   const signupEnabled = config.allow_signup;
   if (!signupEnabled) {
@@ -161,7 +159,6 @@ const handleRegister = async () => {
     // Signup first to get the server-generated salt
     const response = await authStore.signup(email.value, password.value);
 
-    // Check if email verification is required
     if (response.email_verification_required) {
       // Clear password from memory
       password.value = "";
@@ -196,7 +193,6 @@ const handleRegister = async () => {
         return;
       }
 
-      // Initialize user master key with the server's persistent salt
       // Pass JWT token so the key can be stored encrypted in IndexedDB
       await initializeUserMasterKey(password.value, salt, response.token);
 
@@ -223,13 +219,12 @@ const handleRegister = async () => {
     }
   } catch (err) {
     error.value = err.message || "Registration failed. Please try again.";
-    // Check if error is about SSO requirement
+
     if (
       err.message &&
       (err.message.includes("requires SSO") ||
         err.message.includes("SSO authentication"))
     ) {
-      // Try to get the provider info from the error or check domain again
       try {
         const domainInfo = await sso.checkDomain(email.value);
         if (domainInfo.requires_sso && domainInfo.provider) {

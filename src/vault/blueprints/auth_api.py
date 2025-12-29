@@ -306,7 +306,6 @@ def signup():
             encrypted_metadata=None,
         )
 
-        # If encrypted VaultSpace key is provided, store it
         if encrypted_vaultspace_key:
             from vault.services.encryption_service import EncryptionService
 
@@ -337,7 +336,6 @@ def signup():
                 user_id=user.id,
             )
 
-        # Note: User cannot login until email is verified
         # Don't return token - user must verify email first
         return (
             jsonify(
@@ -408,7 +406,7 @@ def login():
         rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
         client_ip = get_client_ip() or "unknown"
         if rate_limiter:
-            # Try to get user_id from email if user exists (for multi-factor rate limiting)
+
             user_id_for_rate_limit = None
             if username_or_email:
                 from vault.database.schema import User, db
@@ -603,7 +601,7 @@ def login():
             # Log authentication failure
             audit = _get_audit()
             if audit:
-                # Try to get user_id if user exists
+
                 user_id_for_log = None
                 if username_or_email:
                     from vault.database.schema import User, db
@@ -769,7 +767,6 @@ def get_me():
     has_auth_header = auth_header and auth_header.startswith("Bearer ")
     has_cookie_token = request.cookies.get("jwt_token")
 
-    # If token is in cookie but not in header, include it in response
     # This happens during SSO callback flow
     if has_cookie_token and not has_auth_header:
         # Token is in cookie - include it in response so frontend can store in localStorage
@@ -789,7 +786,7 @@ def check_auth():
     Returns:
         JSON with authenticated status and token (if authenticated)
     """
-    # Try to get token from cookie (SSO flow)
+
     token = request.cookies.get("jwt_token")
 
     if not token:
@@ -1015,7 +1012,6 @@ def setup():
             encrypted_metadata=None,
         )
 
-        # If encrypted VaultSpace key is provided, store it
         if encrypted_vaultspace_key:
             from vault.services.encryption_service import EncryptionService
 
@@ -1029,7 +1025,6 @@ def setup():
             except ValueError as e:
                 current_app.logger.debug(f"Failed to store VaultSpace key: {e}")
 
-        # Note: Superadmin can login without email verification, but other users cannot
         # Return email_verification_required to show verification modal in frontend
         return (
             jsonify(
@@ -1328,7 +1323,7 @@ def verify_email(token: str):
                     if current_user:
                         user_was_logged_in = True
         except Exception:
-            # If JWT verification fails, treat as unauthenticated
+
             pass
 
     if request.method == "POST":
@@ -1352,7 +1347,7 @@ def verify_email(token: str):
                 200,
             )
         else:
-            # If user was logged in but token doesn't belong to them, return 403
+
             if user_was_logged_in and expected_user_id:
                 return jsonify({"error": error_message or "Invalid token"}), 403
             return jsonify({"error": error_message or "Invalid token"}), 400
@@ -1370,7 +1365,6 @@ def verify_email(token: str):
         if verification_token.is_expired():
             return jsonify({"error": "Token expired"}), 400
 
-        # If user is logged in, verify token belongs to them
         if current_user and verification_token.user_id != current_user.id:
             return (
                 jsonify({"error": "Token does not belong to the authenticated user"}),
@@ -1523,11 +1517,11 @@ def accept_invitation(token: str):
 
         user, error_message = invitation_service.accept_invitation(token, password)
         if user:
-            # Note: User email is not verified yet, but we allow login for invited users
+
             # They will need to verify email after first login
             # For now, we mark email as verified since admin invited them
             # Actually, no - email verification is always required
-            # So we don't return token, user must verify email first
+
             return (
                 jsonify(
                     {
@@ -1628,7 +1622,7 @@ def captcha_refresh():
         JSON with nonce and image_url
     """
     # CSRF token is optional for captcha refresh (public endpoint before login)
-    # If provided, validate it; if not, still allow refresh (session-based)
+
     submitted_login_csrf = (
         request.headers.get("X-Login-CSRF", "").strip()
         or request.form.get("login_csrf_token", "").strip()

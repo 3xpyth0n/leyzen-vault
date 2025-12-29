@@ -52,13 +52,11 @@ export { removeToken };
  * @returns {boolean} True if error is a network error
  */
 export function isNetworkError(error) {
-  // Check if it's a fetch error (network failure)
   if (error instanceof TypeError) {
     // TypeError usually indicates network failure (fetch failed)
     return true;
   }
 
-  // Check error message for network-related keywords
   const errorMessage = error?.message || error?.error || "";
   const networkKeywords = [
     "network",
@@ -77,7 +75,6 @@ export function isNetworkError(error) {
     "bad gateway",
   ];
 
-  // Check if error has isOffline flag (set when server is offline)
   if (error?.isOffline) {
     return true;
   }
@@ -89,7 +86,6 @@ export function isNetworkError(error) {
     return true;
   }
 
-  // Check error name
   const errorName = error?.name || "";
   if (
     errorName === "TypeError" ||
@@ -99,14 +95,12 @@ export function isNetworkError(error) {
     return true;
   }
 
-  // Check if it's a Response object with network-related status
   // 0 status usually means network error (CORS, connection refused, etc.)
   // 503 (Service Unavailable) indicates temporary server issues (e.g., database unavailable)
   if (error?.status === 0 || error?.status === 503) {
     return true;
   }
 
-  // Check if error has explicit isNetworkError flag
   if (error?.isNetworkError === true) {
     return true;
   }
@@ -164,7 +158,6 @@ export async function apiRequest(endpoint, options = {}) {
     ...fetchOptions
   } = options;
 
-  // Check if server is offline (unless allowOffline is true)
   // Health check endpoint is always allowed to check server status
   if (
     !allowOffline &&
@@ -178,7 +171,6 @@ export async function apiRequest(endpoint, options = {}) {
     }
 
     if (!isServerOnline) {
-      // Return a rejected promise with a network error
       // This error will be caught by callers and should NOT cause disconnection
       const error = new Error("Network error: Server is offline");
       error.isOffline = true;
@@ -219,7 +211,6 @@ export async function apiRequest(endpoint, options = {}) {
   // Handle token refresh if needed (for 401 errors)
   if (response.status === 401 && token && !skipAutoRefresh) {
     try {
-      // Try to refresh the token before giving up
       // Call refresh endpoint directly to avoid circular dependency
       let refreshResponse;
       try {
@@ -233,14 +224,12 @@ export async function apiRequest(endpoint, options = {}) {
           body: JSON.stringify({ token }),
         });
       } catch (refreshNetworkError) {
-        // If refresh request itself fails with network error, don't disconnect
         // This happens during container restarts - server is temporarily unavailable
         if (isNetworkError(refreshNetworkError)) {
-          // Return the original 401 response - caller can retry later when server is back
           // Don't disconnect user for network errors during rotations
           return response;
         }
-        // If it's not a network error, re-throw it
+
         throw refreshNetworkError;
       }
 
@@ -260,16 +249,12 @@ export async function apiRequest(endpoint, options = {}) {
               credentials: "same-origin",
             });
           } catch (retryNetworkError) {
-            // If retry fails with network error, don't disconnect
             if (isNetworkError(retryNetworkError)) {
-              // Return the original 401 response - caller can retry later
               return response;
             }
             throw retryNetworkError;
           }
 
-          // If still 401 after refresh, token might be invalid
-          // But don't disconnect automatically - let caller handle it
           // This could be a temporary issue during container restart
           if (response.status === 401) {
             removeToken();
@@ -283,17 +268,17 @@ export async function apiRequest(endpoint, options = {}) {
           }
         } else {
           // Refresh returned OK but no token - this might be an auth error
-          // But don't disconnect automatically - could be temporary issue
+
           // Always return response - let caller handle it
           return response;
         }
       } else {
         // Refresh failed with non-OK status
-        // Check if it's a network-related status (0, 502, 503, 504)
+
         const networkStatusCodes = [0, 502, 503, 504];
         if (networkStatusCodes.includes(refreshResponse.status)) {
           // Network error during refresh - don't disconnect
-          // Return the original 401 response - caller can retry later
+
           return response;
         }
 
@@ -303,11 +288,10 @@ export async function apiRequest(endpoint, options = {}) {
         return response;
       }
     } catch (refreshError) {
-      // Check if refresh failed due to network error (rotation) vs auth error
       if (isNetworkError(refreshError)) {
         // Network error during refresh - don't disconnect user
         // The rotation will complete and requests will work again
-        // Return the original 401 response - caller can retry later
+
         return response;
       }
 
@@ -317,7 +301,7 @@ export async function apiRequest(endpoint, options = {}) {
     }
   } else if (response.status === 401) {
     // No token at all or skipAutoRefresh is true
-    // Check if it's a network-related status
+
     const networkStatusCodes = [0, 502, 503, 504];
     if (networkStatusCodes.includes(response.status)) {
       // Network error - don't disconnect
@@ -450,7 +434,6 @@ export const vaultspaces = {
   async getKey(vaultspaceId) {
     const response = await apiRequest(`/vaultspaces/${vaultspaceId}/keys`);
     if (!response.ok) {
-      // Return null for 404 (key not found) - this is expected and handled by caller
       if (response.status === 404) {
         return null;
       }
@@ -629,11 +612,9 @@ export const files = {
    * @returns {object} Object with `promise` and `cancel` function
    */
   upload(fileData, onProgress = null) {
-    // Check if server is offline
     if (typeof window !== "undefined" && window.getServerStatus) {
       const isServerOnline = window.getServerStatus();
       if (!isServerOnline) {
-        // Return a rejected promise immediately
         return {
           promise: Promise.reject(
             new Error("Network error: Server is offline"),
@@ -678,7 +659,6 @@ export const files = {
         if (e.lengthComputable && onProgress && !isCancelled) {
           const now = Date.now();
 
-          // Add new sample
           samples.push({ time: now, loaded: e.loaded });
 
           // Prune old samples (keep only within window)
@@ -955,7 +935,6 @@ export const files = {
    * @returns {Promise<ArrayBuffer>} Encrypted file data
    */
   async download(fileId, vaultspaceId, onProgress = null) {
-    // Check if server is offline
     if (typeof window !== "undefined" && window.getServerStatus) {
       const isServerOnline = window.getServerStatus();
       if (!isServerOnline) {
@@ -981,7 +960,6 @@ export const files = {
         if (e.lengthComputable && onProgress) {
           const now = Date.now();
 
-          // Add new sample
           samples.push({ time: now, loaded: e.loaded });
 
           // Prune old samples (keep only within window)
@@ -1185,11 +1163,9 @@ export const files = {
     sessionData = null,
     onProgress = null,
   ) {
-    // Check if server is offline
     if (typeof window !== "undefined" && window.getServerStatus) {
       const isServerOnline = window.getServerStatus();
       if (!isServerOnline) {
-        // Return a rejected promise immediately
         let rejectPromise;
         const promise = new Promise((resolve, reject) => {
           rejectPromise = reject;
@@ -1236,7 +1212,6 @@ export const files = {
       }
 
       if (xhr.status >= 200 && xhr.status < 300) {
-        // Check if response is empty
         if (!xhr.responseText || xhr.responseText.trim() === "") {
           if (rejectPromise)
             rejectPromise(new Error("Empty response from server"));
@@ -2338,6 +2313,31 @@ export const admin = {
 };
 
 /**
+ * Cron API methods
+ */
+export const cron = {
+  /**
+   * Describe a cron expression.
+   *
+   * @param {string} cronExpression - Cron expression to describe
+   * @returns {Promise<object>} Description and next run date
+   */
+  async describe(cronExpression) {
+    const response = await apiRequest("/v2/cron/describe", {
+      method: "POST",
+      body: JSON.stringify({ cron: cronExpression }),
+    });
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new Error(errorData.error || "Failed to describe cron expression");
+    }
+
+    return await response.json();
+  },
+};
+
+/**
  * SSO API methods
  */
 export const sso = {
@@ -2572,17 +2572,12 @@ export default {
   sharing,
 };
 
-// Export search service
 export { search } from "./search";
 
-// Export preview service
 export { preview } from "./preview";
 
-// Export trash service
 export { trash } from "./trash";
 
-// Export quota service
 export { quota } from "./quota";
 
-// Export thumbnails service
 export { thumbnails } from "./thumbnails";

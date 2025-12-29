@@ -42,7 +42,7 @@ def _validate_host_header() -> None:
     try:
         settings = current_app.config.get("VAULT_SETTINGS")
         if not settings or not hasattr(settings, "vault_url") or not settings.vault_url:
-            # If VAULT_URL is not configured, skip validation (will be caught by _get_base_url)
+
             return
 
         vault_url = settings.vault_url.rstrip("/")
@@ -335,7 +335,7 @@ def handle_callback(provider_id: str):
         share_service = ShareService()
         frontend_base = share_service._get_base_url()
         if not frontend_base:
-            # If VAULT_URL is not configured, use relative URL
+
             current_app.logger.warning(
                 "VAULT_URL not configured, using relative URL for SSO callback"
             )

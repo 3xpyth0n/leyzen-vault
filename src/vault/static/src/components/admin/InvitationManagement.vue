@@ -53,7 +53,6 @@
       </div>
     </div>
 
-    <!-- Confirmation Modal -->
     <ConfirmationModal
       :show="showConfirmModal"
       :title="confirmModalConfig.title"
@@ -65,7 +64,6 @@
       @close="handleConfirmModalCancel"
     />
 
-    <!-- Alert Modal -->
     <AlertModal
       :show="showAlertModal"
       :type="alertModalConfig.type"

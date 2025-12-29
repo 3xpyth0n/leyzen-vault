@@ -629,8 +629,7 @@ class FileStorage:
 
             return file_path
         except Exception as e:
-            # If save failed, keep temp file for potential retry
-            # But log the error
+
             import logging
 
             logger = logging.getLogger(__name__)

@@ -108,7 +108,6 @@ class MigrationRegistry:
         if not migration.needs_application():
             return False
 
-        # If migration needs to be applied, check if it's already recorded
         # This prevents duplicate application attempts
         if self.is_migration_applied(migration.name, migration.version):
             # Migration is marked as applied but database state says it's not

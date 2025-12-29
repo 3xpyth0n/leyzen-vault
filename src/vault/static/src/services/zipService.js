@@ -116,7 +116,7 @@ export async function zipFolder(
         }
       } catch (error) {
         logger.error(`Failed to process file ${fileInfo.name}:`, error);
-        // Check for specific error types
+
         if (error.message && error.message.includes("quota")) {
           throw new Error(
             `Storage quota exceeded while processing ${fileInfo.name}. Please free up space and try again.`,
@@ -227,7 +227,7 @@ export async function zipFolder(
 
       if (!uploadResponse.ok) {
         const errorData = await parseErrorResponse(uploadResponse);
-        // Check for quota errors
+
         if (
           uploadResponse.status === 403 &&
           errorData.error &&
@@ -237,7 +237,7 @@ export async function zipFolder(
             "Storage quota exceeded. Please free up space before creating ZIP files.",
           );
         }
-        // Check for conflict errors (409)
+
         if (uploadResponse.status === 409) {
           const conflictError = new Error(
             errorData.error || "A file with this name already exists",
@@ -394,7 +394,7 @@ export async function extractZip(
         createdFolders.set("", rootFolderId);
       } else {
         const errorData = await parseErrorResponse(createFolderResponse);
-        // Check if it's a conflict error (409)
+
         if (createFolderResponse.status === 409) {
           const conflictError = new Error(
             errorData.error || "A folder with this name already exists",
@@ -409,7 +409,6 @@ export async function extractZip(
         );
       }
     } catch (error) {
-      // If it's a conflict error, re-throw it
       if (error.isConflict) {
         throw error;
       }
@@ -540,7 +539,7 @@ export async function extractZip(
 
         if (!uploadResponse.ok) {
           const errorData = await parseErrorResponse(uploadResponse);
-          // Check for quota errors
+
           if (
             uploadResponse.status === 403 &&
             errorData.error &&
@@ -568,7 +567,7 @@ export async function extractZip(
         }
       } catch (error) {
         logger.error(`Failed to process file ${zipFileEntry.path}:`, error);
-        // Check for specific error types
+
         if (error.message && error.message.includes("quota")) {
           throw error; // Re-throw quota errors immediately
         } else if (error.message && error.message.includes("network")) {
@@ -753,14 +752,13 @@ export async function zipFiles(
           fileVaultspaceId,
           (loaded, total) => {
             if (onProgress) {
-              // Calculate file progress as a fraction (0-1)
               const fileProgressFraction = total > 0 ? loaded / total : 0;
-              // Calculate overall progress: base progress for completed files + current file progress
+
               // Each file represents 1/totalFiles of the total progress
               const baseProgress = processedFiles / totalFiles;
               const currentFileProgress = fileProgressFraction / totalFiles;
               const overallProgress = baseProgress + currentFileProgress;
-              // Ensure progress doesn't exceed 1.0 (100%)
+
               const normalizedProgress = Math.min(overallProgress, 1.0);
               onProgress(
                 normalizedProgress,
@@ -815,7 +813,7 @@ export async function zipFiles(
           `Failed to process file ${fileItem.original_name || fileItem.name}:`,
           error,
         );
-        // Check for specific error types
+
         if (error.message && error.message.includes("quota")) {
           throw new Error(
             `Storage quota exceeded while processing ${

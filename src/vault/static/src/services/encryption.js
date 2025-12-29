@@ -180,8 +180,7 @@ export async function generateVaultSpaceKey() {
  */
 async function deriveSigningKey(masterKey) {
   const cryptoAPI = getCryptoAPI();
-  // Import master key as key material for HKDF
-  // Try to export key first, if it fails, use the key directly
+
   let keyMaterial;
   try {
     const rawKey = await cryptoAPI.subtle.exportKey("raw", masterKey);
@@ -196,7 +195,6 @@ async function deriveSigningKey(masterKey) {
       ["deriveBits", "deriveKey"],
     );
   } catch (error) {
-    // If export fails, try to use the key directly if it's already HKDF-compatible
     // Otherwise, we need to derive from a different approach
     // For now, skip signature if key is not extractable
     throw new Error("Master key is not extractable, cannot derive signing key");
@@ -233,7 +231,7 @@ async function deriveSigningKey(masterKey) {
  */
 export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
   const cryptoAPI = getCryptoAPI();
-  // Export VaultSpace key to raw bytes
+
   const rawKey = await cryptoAPI.subtle.exportKey("raw", vaultspaceKey);
 
   // Generate IV
@@ -264,10 +262,8 @@ export async function encryptVaultSpaceKey(userKey, vaultspaceKey) {
     withSignature.set(combined, 0);
     withSignature.set(new Uint8Array(signature), combined.length);
 
-    // Return as base64
     return btoa(String.fromCharCode(...withSignature));
   } catch (error) {
-    // If signature generation fails, return without signature for backward compatibility
     logger.warn("Failed to generate signature for encrypted key:", error);
     return btoa(String.fromCharCode(...combined));
   }
@@ -289,13 +285,12 @@ export async function decryptVaultSpaceKey(
   // Decode base64
   const combined = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
 
-  // Check if signature is present (last 32 bytes)
   const cryptoAPI = getCryptoAPI();
   let encryptedData = combined;
   let hasSignature = false;
   if (combined.length >= 92) {
     // Minimum size with signature: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes
-    // Try to verify signature if present
+
     const signature = combined.slice(-32);
     const dataWithoutSignature = combined.slice(0, -32);
     try {
@@ -311,7 +306,6 @@ export async function decryptVaultSpaceKey(
         hasSignature = true;
       }
     } catch (error) {
-      // If signature verification fails, continue without signature (backward compatibility)
       logger.debug(
         "Signature verification failed, using key without signature:",
         error,
@@ -333,7 +327,6 @@ export async function decryptVaultSpaceKey(
     encrypted,
   );
 
-  // Import as key
   return await cryptoAPI.subtle.importKey(
     "raw",
     decrypted,
@@ -372,7 +365,7 @@ export async function generateFileKey() {
  */
 export async function encryptFileKey(vaultspaceKey, fileKey) {
   const cryptoAPI = getCryptoAPI();
-  // Export file key to raw bytes
+
   const rawKey = await cryptoAPI.subtle.exportKey("raw", fileKey);
 
   // Generate IV
@@ -403,10 +396,8 @@ export async function encryptFileKey(vaultspaceKey, fileKey) {
     withSignature.set(combined, 0);
     withSignature.set(new Uint8Array(signature), combined.length);
 
-    // Return as base64
     return btoa(String.fromCharCode(...withSignature));
   } catch (error) {
-    // If signature generation fails, return without signature for backward compatibility
     logger.warn("Failed to generate signature for encrypted key:", error);
     return btoa(String.fromCharCode(...combined));
   }
@@ -428,13 +419,12 @@ export async function decryptFileKey(
   // Decode base64
   const combined = Uint8Array.from(atob(encryptedKey), (c) => c.charCodeAt(0));
 
-  // Check if signature is present (last 32 bytes)
   const cryptoAPI = getCryptoAPI();
   let encryptedData = combined;
   let hasSignature = false;
   if (combined.length >= 92) {
     // Minimum size with signature: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes
-    // Try to verify signature if present
+
     const signature = combined.slice(-32);
     const dataWithoutSignature = combined.slice(0, -32);
     try {
@@ -450,7 +440,6 @@ export async function decryptFileKey(
         hasSignature = true;
       }
     } catch (error) {
-      // If signature verification fails, continue without signature (backward compatibility)
       logger.debug(
         "Signature verification failed, using key without signature:",
         error,
@@ -472,7 +461,6 @@ export async function decryptFileKey(
     encrypted,
   );
 
-  // Import as key
   return await cryptoAPI.subtle.importKey(
     "raw",
     decrypted,
@@ -669,7 +657,6 @@ export async function encryptFileLegacy(file) {
   // Encrypt the file
   const { encrypted, iv } = await encryptFile(fileKey, fileBuffer);
 
-  // Export the key to raw format
   const cryptoAPI = getCryptoAPI();
   const exportedKey = await cryptoAPI.subtle.exportKey("raw", fileKey);
   const keyArray = new Uint8Array(exportedKey);
@@ -694,7 +681,6 @@ export async function encryptFileLegacy(file) {
  * @returns {Promise<ArrayBuffer>} Decrypted file data
  */
 export async function decryptFileLegacy(encryptedData, keyArray) {
-  // Import the key
   const cryptoAPI = getCryptoAPI();
   const fileKey = await cryptoAPI.subtle.importKey(
     "raw",

@@ -25,7 +25,7 @@ class SearchIndexService:
             index_dir: Directory for Whoosh index (default: /data/search_index)
         """
         if index_dir is None:
-            # Try to get from Flask app config, fallback to default
+
             try:
                 storage_dir = current_app.config.get("VAULT_STORAGE_DIR")
                 if storage_dir:
@@ -97,7 +97,7 @@ class SearchIndexService:
                 logger = logging.getLogger(__name__)
                 logger.debug(f"Failed to index file {file_obj.id}: {e}")
         except Exception as e:
-            # If index is locked or unavailable, silently fail
+
             # This prevents blocking workers when index operations conflict
             import logging
 
@@ -125,7 +125,7 @@ class SearchIndexService:
                 logger = logging.getLogger(__name__)
                 logger.debug(f"Failed to remove file {file_id} from index: {e}")
         except Exception as e:
-            # If index is locked or unavailable, silently fail
+
             # This prevents blocking workers when index operations conflict
             import logging
 
@@ -198,7 +198,7 @@ class SearchIndexService:
                         }
                     )
         except Exception as e:
-            # If index is locked or unavailable, return empty results
+
             # This prevents blocking workers when index operations conflict
             import logging
 
@@ -272,7 +272,7 @@ class SearchIndexService:
                 logger.warning(f"Failed to rebuild search index: {e}")
                 return count  # Return count of files processed before error
         except Exception as e:
-            # If index is locked or unavailable, return 0
+
             import logging
 
             logger = logging.getLogger(__name__)

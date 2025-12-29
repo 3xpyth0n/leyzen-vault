@@ -35,23 +35,14 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderDashboard() string {
-	// Ensure we're really on the dashboard and clean up if necessary
-	if m.viewState != ViewDashboard {
-		// Protection: if we call renderDashboard but we're not on the dashboard,
-		// we shouldn't get here, but force cleanup anyway
-		m.viewState = ViewDashboard
-	}
-
 	header := m.renderHeader()
 	status := m.renderStatusPanel()
 
-	// Temporary success message
 	successMsg := ""
 	if m.successMessage != "" {
 		successMsg = m.renderSuccessMessage()
 	}
 
-	// Quit confirmation message
 	quitMsg := ""
 	if m.quitConfirm {
 		quitMsg = m.renderQuitConfirmation()
@@ -64,8 +55,6 @@ func (m *Model) renderDashboard() string {
 		help = m.renderHints()
 	}
 
-	// ALWAYS use "dashboard" as context for the footer
-	// Explicitly force dashboard context to avoid wizard hints
 	footer := m.renderFooter("dashboard")
 
 	var parts []string
@@ -85,22 +74,17 @@ func (m *Model) renderDashboard() string {
 }
 
 func (m *Model) renderLogsView() string {
-	// In raw mode, display only the raw logs without any UI elements
 	if m.logModeRaw {
-		// Update viewport content to raw logs
 		content := strings.Join(m.logsRaw, "\n")
 		m.viewport.SetContent(content)
-		// Restore saved scroll position or go to bottom
 		if m.viewportYOffsetRaw > 0 {
 			m.viewport.SetYOffset(m.viewportYOffsetRaw)
 		}
-		// Ensure viewport takes full screen
 		m.viewport.Width = m.width
 		m.viewport.Height = m.height
 		return m.viewport.View()
 	}
 
-	// Normal mode: display with header, panel, and footer
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
 
@@ -124,7 +108,6 @@ func (m *Model) renderLogsView() string {
 }
 
 func (m *Model) renderActionView() string {
-	// In raw mode, display only the raw logs without any UI elements
 	if m.logModeRaw {
 		// Update viewport content to raw logs
 		content := strings.Join(m.logsRaw, "\n")
@@ -139,7 +122,6 @@ func (m *Model) renderActionView() string {
 		return m.viewport.View()
 	}
 
-	// Normal mode: display with header, panel, and footer
 	header := m.renderHeader()
 	logs := m.renderLogPanel()
 
@@ -165,7 +147,6 @@ func (m *Model) renderActionView() string {
 func (m *Model) renderConfigView() string {
 	header := m.renderHeader()
 
-	// Ensure the viewport is sized
 	if m.viewport.Height == 0 && m.height > 0 {
 		viewportHeight := m.height - 10
 		if viewportHeight < 6 {
@@ -178,25 +159,19 @@ func (m *Model) renderConfigView() string {
 		m.viewport.Height = viewportHeight
 	}
 
-	// Build the complete config content
 	configContent := m.buildConfigContent()
 
-	// Preserve current Y offset before updating content
 	currentYOffset := m.viewport.YOffset
 
-	// Update the viewport with the content
 	m.viewport.SetContent(configContent)
 
-	// Restore Y offset to preserve scroll position
 	m.viewport.SetYOffset(currentYOffset)
 
-	// Ensure the viewport is synchronized
 	m.viewport.Width = m.width - 6
 	if m.viewport.Width < 20 {
 		m.viewport.Width = 20
 	}
 
-	// Render the viewport in the pane
 	config := m.theme.Pane.Render(m.viewport.View())
 
 	quitMsg := ""
@@ -238,7 +213,7 @@ func (m *Model) buildConfigContent() string {
 		}
 	}
 	if hasPasswords {
-		rows = append(rows, m.theme.Subtitle.Render("💡 Press SPACE to toggle password visibility"))
+		rows = append(rows, m.theme.Subtitle.Render("[HINT] Press SPACE to toggle password visibility"))
 		rows = append(rows, "")
 	}
 
@@ -280,8 +255,6 @@ func (m *Model) buildConfigContent() string {
 }
 
 func (m *Model) renderConfigPanel() string {
-	// This function is no longer used, content is built via buildConfigContent
-	// and displayed via the viewport in renderConfigView
 	return ""
 }
 
@@ -411,7 +384,6 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		categories[category] = append(categories[category], key)
 	}
 
-	// Sort each category according to the defined order
 	for category, keys := range categories {
 		var orderMap map[string]int
 
@@ -444,7 +416,6 @@ func (m *Model) categorizeConfigPairs(pairs map[string]string) map[string][]stri
 		}
 
 		if orderMap != nil {
-			// Sort according to defined order, then alphabetically for others
 			sort.Slice(keys, func(i, j int) bool {
 				orderI, hasOrderI := orderMap[keys[i]]
 				orderJ, hasOrderJ := orderMap[keys[j]]
@@ -523,11 +494,10 @@ func (m *Model) renderWizardPanel() string {
 	// Add helpful hint based on field name
 	hint := m.getWizardHint(field.Key)
 	if hint != "" {
-		rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("💡 %s", hint)))
+		rows = append(rows, m.theme.Subtitle.Render(fmt.Sprintf("[HINT] %s", hint)))
 	}
 	rows = append(rows, "")
 
-	// Input field with focus
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("81")).
@@ -542,7 +512,7 @@ func (m *Model) renderWizardPanel() string {
 	rows = append(rows, "")
 
 	if m.wizardError != "" {
-		rows = append(rows, m.theme.ErrorStatus.Render("❌ "+m.wizardError))
+		rows = append(rows, m.theme.ErrorStatus.Render("[ERROR] "+m.wizardError))
 		rows = append(rows, "")
 	}
 
@@ -587,7 +557,7 @@ func padRightColored(s string, width int) string {
 
 func (m *Model) renderStatusPanel() string {
 	if len(m.statuses) == 0 {
-		return m.theme.Pane.Render("No containers running. Press 'a' to start the stack or 'w' to configure.")
+		return m.theme.Pane.Render("No services defined. Press 'w' to configure and generate the stack.")
 	}
 
 	// Calculate the maximum width for the AGE column
@@ -651,7 +621,7 @@ func (m *Model) renderLogPanel() string {
 
 func (m *Model) renderQuitConfirmation() string {
 	message := fmt.Sprintf(
-		"\n⚠️  Quit application? Press %s again to confirm quit, or any other key to cancel",
+		"\nQuit application? Press %s again to confirm quit, or any other key to cancel",
 		m.theme.HelpKey.Render("CTRL+C"),
 	)
 	return m.theme.WarningStatus.
@@ -661,7 +631,7 @@ func (m *Model) renderQuitConfirmation() string {
 }
 
 func (m *Model) renderSuccessMessage() string {
-	return m.theme.SuccessStatus.Padding(0, 1).Render(fmt.Sprintf("✅ %s", m.successMessage))
+	return m.theme.SuccessStatus.Padding(0, 1).Render(m.successMessage)
 }
 
 func (m *Model) renderFooter(context string) string {
@@ -729,8 +699,6 @@ func (m *Model) renderFooter(context string) string {
 }
 
 func (m *Model) renderHints() string {
-	// Hints are now in the footer, this method can be simplified or removed
-	// We keep it for compatibility with renderHelp() which still uses it
 	return ""
 }
 
@@ -758,12 +726,10 @@ func (m *Model) renderHelp() string {
 // getWizardHint returns a helpful hint for a configuration field
 func (m *Model) getWizardHint(key string) string {
 	hints := map[string]string{
-		"SECRET_KEY":        "Secret key used for encryption (shared)",
-		"ROTATION_INTERVAL": "Time in seconds between container rotations",
-		"WEB_REPLICAS":      "Number of web container replicas",
-		"DOCKER_PROXY_URL":  "URL of the Docker proxy service",
-		// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY
-		// "DOCKER_PROXY_TOKEN":   "Authentication token for Docker proxy (auto-generated)",
+		"SECRET_KEY":           "Secret key used for encryption (shared)",
+		"ROTATION_INTERVAL":    "Time in seconds between container rotations",
+		"WEB_REPLICAS":         "Number of web container replicas",
+		"DOCKER_PROXY_URL":     "URL of the Docker proxy service",
 		"ORCH_USER":            "Username for Orchestrator authentication",
 		"ORCH_PASS":            "Password for Orchestrator authentication",
 		"ORCH_PORT":            "Port for the orchestrator service",
@@ -787,7 +753,6 @@ func (m *Model) renderContainerSelectionView() string {
 	rows = append(rows, m.theme.Subtitle.Render("Use SPACE to select/deselect, ENTER to confirm, ESC to cancel"))
 	rows = append(rows, "")
 
-	// Build list items display
 	var items []string
 	for i, item := range m.containerItems {
 		prefix := "  "
@@ -798,11 +763,7 @@ func (m *Model) renderContainerSelectionView() string {
 		}
 
 		itemText := item.Name
-		if item.IsAllOption {
-			itemText = m.theme.Accent.Bold(true).Render(item.Name)
-		}
 
-		// Highlight current selection with a pointer
 		if m.containerIndex == i {
 			itemText = m.theme.HelpKey.Render("> " + itemText)
 		} else {
@@ -812,7 +773,6 @@ func (m *Model) renderContainerSelectionView() string {
 		items = append(items, prefix+itemText)
 	}
 
-	// Display the list
 	listContent := strings.Join(items, "\n")
 	if listContent == "" {
 		listContent = "No containers available"

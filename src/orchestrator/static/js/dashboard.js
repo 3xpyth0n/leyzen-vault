@@ -210,7 +210,7 @@ function autoFadeStatus() {
 document.getElementById("btn-start").onclick = () => sendControl("start");
 document.getElementById("btn-stop").onclick = () => sendControl("stop");
 document.getElementById("btn-rotate").onclick = () => sendControl("rotate");
-// Confirmation Modal Functions
+
 function showConfirmationModal(options) {
   const modal = document.getElementById("confirmationModal");
   const iconEl = document.getElementById("modalIcon");
@@ -227,7 +227,6 @@ function showConfirmationModal(options) {
     !cancelBtn ||
     !confirmBtn
   ) {
-    // Fallback to native confirm if modal elements not found
     const confirmed = confirm(options.message || "Are you sure?");
     if (confirmed && options.onConfirm) {
       options.onConfirm();
@@ -241,20 +240,17 @@ function showConfirmationModal(options) {
     options.message || "Are you sure you want to proceed?";
   confirmBtn.textContent = options.confirmText || "Confirm";
 
-  // Apply different styles based on action type
   if (options.dangerous) {
     confirmBtn.className = "modal-btn modal-btn-confirm modal-btn-danger";
   } else {
     confirmBtn.className = "modal-btn modal-btn-confirm modal-btn-primary";
   }
 
-  // Remove existing listeners
   const newCancelBtn = cancelBtn.cloneNode(true);
   const newConfirmBtn = confirmBtn.cloneNode(true);
   cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
   confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
 
-  // Add new listeners
   newCancelBtn.addEventListener("click", hideConfirmationModal);
   newConfirmBtn.addEventListener("click", () => {
     hideConfirmationModal();
@@ -263,7 +259,6 @@ function showConfirmationModal(options) {
     }
   });
 
-  // Close on backdrop click (one-time handler)
   const backdropHandler = (e) => {
     if (e.target === modal) {
       hideConfirmationModal();
@@ -272,14 +267,11 @@ function showConfirmationModal(options) {
   };
   modal.addEventListener("click", backdropHandler);
 
-  // Show modal
   modal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
 
-  // Focus on cancel button for accessibility
   setTimeout(() => newCancelBtn.focus(), 100);
 
-  // Close on Escape key
   const escapeHandler = (e) => {
     if (e.key === "Escape") {
       hideConfirmationModal();
@@ -327,7 +319,6 @@ function updateControlButtons() {
   const btnKill = document.getElementById("btn-kill");
   const btnRotate = document.getElementById("btn-rotate");
 
-  // Rotate button is always enabled for manual rotation
   if (btnRotate) {
     btnRotate.disabled = false;
     btnRotate.classList.remove("disabled");
@@ -1012,7 +1003,7 @@ function initStateWaveChartLoading() {
 
   setTimeout(() => {
     loadingEl.classList.add("fade-out");
-    // Ensure canvas has no blur
+
     if (canvas) {
       canvas.style.filter = "none";
       canvas.style.transition = "";
@@ -1023,7 +1014,7 @@ function initStateWaveChartLoading() {
       if (loadingEl.parentNode) {
         loadingEl.remove();
       }
-      // Double-check canvas has no blur
+
       if (canvas) {
         canvas.style.filter = "none";
       }
@@ -1284,7 +1275,6 @@ function initStateWaveChart(initialSnapshot = null) {
 
   chart._stateWave.ready = true;
 
-  // Initialize loading overlay with 2 second delay
   initStateWaveChartLoading();
 }
 
@@ -1474,7 +1464,6 @@ function updateStateWaveChart(timestamp, containers, options = {}) {
   });
 }
 
-// Track scroll state to prevent animation issues during scroll
 let isScrolling = false;
 let scrollTimeout = null;
 
@@ -1599,7 +1588,6 @@ function renderStateWaveHealthyUptime(summary) {
   listEl.innerHTML = "";
   listEl.appendChild(fragment);
 
-  // Skip animation if scrolling
   if (isScrolling) {
     const hasEntries = entries.length > 0;
     listEl.style.display = hasEntries ? "" : "none";
@@ -1610,7 +1598,6 @@ function renderStateWaveHealthyUptime(summary) {
   }
 
   const animate = () => {
-    // Double-check scroll state before animating
     if (isScrolling) {
       return;
     }
@@ -1622,7 +1609,6 @@ function renderStateWaveHealthyUptime(summary) {
       const currentRect = item.getBoundingClientRect();
 
       if (previousRect) {
-        // Calculate relative positions within parent container
         const currentRelLeft = currentRect.left - parentRect.left;
         const currentRelTop = currentRect.top - parentRect.top;
         const deltaX = previousRect.left - currentRelLeft;
@@ -1636,7 +1622,6 @@ function renderStateWaveHealthyUptime(summary) {
               item.style.transition = "";
               item.style.transform = "";
             } else {
-              // Reset immediately if scrolling started during animation
               item.style.transition = "none";
               item.style.transform = "";
             }
@@ -1652,7 +1637,6 @@ function renderStateWaveHealthyUptime(summary) {
             item.style.opacity = "";
             item.style.transform = "";
           } else {
-            // Reset immediately if scrolling started during animation
             item.style.transition = "none";
             item.style.opacity = "";
             item.style.transform = "";
@@ -2258,7 +2242,6 @@ if (initialSnapshot) {
 
 setupSse();
 
-// Handle logout confirmation
 document.addEventListener("DOMContentLoaded", () => {
   const logoutForm = document.querySelector(".logout-form");
   const logoutButton = logoutForm?.querySelector(".logout-button");

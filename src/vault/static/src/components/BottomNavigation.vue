@@ -7,12 +7,10 @@
     @mouseleave="onMouseLeave"
     @touchstart="onTouchStart"
   >
-    <!-- Collapsed indicator icon -->
     <div class="bottom-nav-collapsed-icon" v-if="!isExpanded">
       <span v-html="getIcon('map', 20)"></span>
     </div>
 
-    <!-- Expanded content -->
     <div class="bottom-nav-content">
       <button
         @click.stop="handleNavClickToPath('/dashboard')"
@@ -91,7 +89,6 @@ export default {
     let clickableTimeout = null;
 
     const handleNavClick = (event) => {
-      // Check if click is on a navigation button
       const navButton = event.target.closest(".bottom-nav-item");
 
       if (navButton) {
@@ -110,7 +107,7 @@ export default {
       }
 
       // Click is on the nav container itself (not on a button)
-      // If collapsed, expand it
+
       if (!isExpanded.value) {
         event.preventDefault();
         event.stopPropagation();
@@ -220,7 +217,6 @@ export default {
     };
 
     const handleClickOutside = (event) => {
-      // Check if click is outside the bottom navigation
       const navElement = event.target.closest(".bottom-navigation");
       if (!navElement && isExpanded.value) {
         // On mobile, collapse immediately on outside click

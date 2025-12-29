@@ -1,254 +1,262 @@
 <template>
-  <ConfirmationModal
-    :show="showDeleteConfirm"
-    title="Move to Trash"
-    :message="getDeleteMessage()"
-    confirm-text="Move to Trash"
-    :dangerous="true"
-    :disabled="deleting"
-    @confirm="handleDeleteConfirm"
-    @close="
-      if (!deleting) {
-        showDeleteConfirm = false;
-        deleteError = null;
-      }
-    "
-  />
-  <!-- Alert Modal -->
-  <AlertModal
-    :show="showAlertModal"
-    :type="alertModalConfig.type"
-    :title="alertModalConfig.title"
-    :message="alertModalConfig.message"
-    @close="handleAlertModalClose"
-    @ok="handleAlertModalClose"
-  />
-
-  <!-- Confirmation Modal for share link revocation -->
-  <ConfirmationModal
-    :show="showRevokeConfirm"
-    title="Revoke Share Link"
-    :message="revokeConfirmMessage"
-    confirm-text="Revoke"
-    :dangerous="true"
-    @confirm="handleRevokeConfirm"
-    @close="showRevokeConfirm = false"
-  />
-
-  <!-- File Properties Modal -->
-  <FileProperties
-    :show="showProperties"
-    :fileId="propertiesFileId"
-    :vaultspaceId="propertiesVaultspaceId"
-    @close="
-      showProperties = false;
-      propertiesFileId = null;
-      propertiesVaultspaceId = null;
-    "
-    @navigate="handleNavigate"
-    @action="handlePropertiesAction"
-  />
-
-  <!-- File Preview Modal -->
-  <FilePreview
-    :show="showPreview"
-    :fileId="previewFileId"
-    :fileName="previewFileName"
-    :mimeType="previewMimeType"
-    :vaultspaceId="
-      previewFileId
-        ? starredFiles.find((f) => f.id === previewFileId)?.vaultspace_id ||
-          null
-        : null
-    "
-    @close="
-      showPreview = false;
-      previewFileId = null;
-      previewFileName = '';
-      previewMimeType = '';
-    "
-    @download="handlePreviewDownload"
-  />
-
-  <!-- Batch Actions Bar -->
-  <BatchActions
-    v-if="selectedItems.length > 0"
-    :selectedItems="selectedItems"
-    :availableFolders="[]"
-    @delete="handleBatchDelete"
-    @download="handleBatchDownload"
-    @clear="clearSelection"
-  />
-
-  <!-- Encryption Overlay -->
-  <Teleport to="#encryption-overlay-portal">
-    <div
-      v-if="showEncryptionOverlay && isMasterKeyRequired"
-      class="encryption-overlay"
-      :style="{
-        'pointer-events': showPasswordModal ? 'none' : 'auto',
-      }"
-      data-encryption-overlay="true"
-    >
-      <div class="encryption-overlay-content">
-        <div class="encryption-icon-wrapper">
-          <svg
-            class="encryption-icon"
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M12 12V16"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </div>
-        <h2 class="encryption-title">Files are encrypted</h2>
-        <p class="encryption-description">
-          Enter your encryption password to decrypt and access your files. This
-          password is used to decrypt your files and is not stored on the
-          server.
-        </p>
-        <button
-          @click="openPasswordModal"
-          class="encryption-unlock-btn"
-          type="button"
-        >
-          Unlock Files
-        </button>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Password Modal for SSO Users -->
-  <Teleport to="body">
-    <div
-      v-if="showPasswordModal"
-      class="password-modal-overlay"
-      @click="closePasswordModal"
-      role="dialog"
-      aria-labelledby="password-modal-title"
-      aria-modal="true"
-    >
-      <div class="password-modal-container" @click.stop>
-        <div class="password-modal-content">
-          <div class="password-modal-header">
-            <h2 id="password-modal-title">Enter Encryption Password</h2>
-            <button
-              @click="closePasswordModal"
-              class="password-modal-close"
-              :disabled="passwordModalLoading"
-              aria-label="Close modal"
-            >
-              &times;
-            </button>
-          </div>
-          <div class="password-modal-body">
-            <p class="password-modal-description">
-              Enter your encryption password to access your files. This password
-              is used to decrypt your files and is not stored on the server.
-            </p>
-            <div class="form-group">
-              <label for="password-modal-password">Password</label>
-              <PasswordInput
-                id="password-modal-password"
-                v-model="passwordModalPassword"
-                placeholder="Enter your encryption password"
-                @keyup.enter="handlePasswordSubmit"
-                :disabled="passwordModalLoading"
-                autofocus
-              />
-            </div>
-            <div v-if="passwordModalError" class="password-modal-error">
-              {{ passwordModalError }}
-            </div>
-          </div>
-          <div class="password-modal-footer">
-            <button
-              @click="closePasswordModal"
-              class="password-modal-btn password-modal-btn-cancel"
-              :disabled="passwordModalLoading"
-            >
-              Cancel
-            </button>
-            <button
-              @click="handlePasswordSubmit"
-              class="password-modal-btn password-modal-btn-unlock"
-              :disabled="passwordModalLoading || !passwordModalPassword"
-            >
-              {{ passwordModalLoading ? "Processing..." : "Unlock" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <div
-    class="starred-view"
-    v-if="!showEncryptionOverlay || !isMasterKeyRequired"
-  >
-    <header class="view-header">
-      <h1>
-        <span class="header-icon" v-html="getIcon('star', 28)"></span>
-        Starred Files
-      </h1>
-      <div class="header-actions">
-        <button
-          @click="refreshStarred"
-          :disabled="loading"
-          class="btn btn-secondary"
-        >
-          {{ loading ? "Loading..." : "Refresh" }}
-        </button>
-      </div>
-    </header>
-
-    <main class="view-main">
-      <div v-if="loading" class="loading">Loading starred files...</div>
-      <div v-else-if="error" class="error">{{ error }}</div>
-      <div v-else-if="starredFiles.length === 0" class="empty-state">
-        <p>No starred files</p>
-        <p class="empty-hint">Star files by clicking the ☆ icon on any file</p>
-      </div>
-      <div v-else class="files-list">
-        <div class="files-info">
-          <p>{{ starredFiles.length }} starred file(s)</p>
-        </div>
-        <FileListView
-          :folders="folders"
-          :files="filesList"
-          :selectedItems="selectedItems"
-          :viewMode="viewMode"
-          :editingItemId="editingItemId"
-          @view-change="handleViewChange"
-          @item-click="handleItemClick"
-          @action="handleFileAction"
-          @selection-change="handleSelectionChange"
-          @rename="handleRename"
-          @item-context-menu="handleContextMenu"
+  <div class="starred-view-container">
+    <template v-if="!showEncryptionOverlay || !isMasterKeyRequired">
+      <div class="starred-view">
+        <ConfirmationModal
+          :show="showDeleteConfirm"
+          title="Move to Trash"
+          :message="getDeleteMessage()"
+          confirm-text="Move to Trash"
+          :dangerous="true"
+          :disabled="deleting"
+          @confirm="handleDeleteConfirm"
+          @close="
+            if (!deleting) {
+              showDeleteConfirm = false;
+              deleteError = null;
+            }
+          "
         />
+        <!-- Alert Modal -->
+        <AlertModal
+          :show="showAlertModal"
+          :type="alertModalConfig.type"
+          :title="alertModalConfig.title"
+          :message="alertModalConfig.message"
+          @close="handleAlertModalClose"
+          @ok="handleAlertModalClose"
+        />
+
+        <!-- Confirmation Modal for share link revocation -->
+        <ConfirmationModal
+          :show="showRevokeConfirm"
+          title="Revoke Share Link"
+          :message="revokeConfirmMessage"
+          confirm-text="Revoke"
+          :dangerous="true"
+          @confirm="handleRevokeConfirm"
+          @close="showRevokeConfirm = false"
+        />
+
+        <!-- File Properties Modal -->
+        <FileProperties
+          :show="showProperties"
+          :fileId="propertiesFileId"
+          :vaultspaceId="propertiesVaultspaceId"
+          @close="
+            showProperties = false;
+            propertiesFileId = null;
+            propertiesVaultspaceId = null;
+          "
+          @navigate="handleNavigate"
+          @action="handlePropertiesAction"
+        />
+
+        <!-- File Preview Modal -->
+        <FilePreview
+          :show="showPreview"
+          :fileId="previewFileId"
+          :fileName="previewFileName"
+          :mimeType="previewMimeType"
+          :vaultspaceId="
+            previewFileId
+              ? starredFiles.find((f) => f.id === previewFileId)
+                  ?.vaultspace_id || null
+              : null
+          "
+          @close="
+            showPreview = false;
+            previewFileId = null;
+            previewFileName = '';
+            previewMimeType = '';
+          "
+          @download="handlePreviewDownload"
+        />
+
+        <!-- Batch Actions Bar -->
+        <BatchActions
+          v-if="selectedItems.length > 0"
+          :selectedItems="selectedItems"
+          :availableFolders="[]"
+          @delete="handleBatchDelete"
+          @download="handleBatchDownload"
+          @clear="clearSelection"
+        />
+
+        <header class="view-header">
+          <h1>
+            <span class="header-icon" v-html="getIcon('star', 28)"></span>
+            Starred Files
+          </h1>
+          <div class="header-actions">
+            <button
+              @click="refreshStarred"
+              :disabled="loading"
+              class="btn btn-secondary"
+            >
+              {{ loading ? "Loading..." : "Refresh" }}
+            </button>
+          </div>
+        </header>
+
+        <main class="view-main">
+          <div v-if="loading" class="loading">Loading starred files...</div>
+          <div v-else-if="error" class="error">{{ error }}</div>
+          <div v-else-if="starredFiles.length === 0" class="empty-state">
+            <p>No starred files</p>
+            <p class="empty-hint">
+              Files you mark as favorite will appear here
+            </p>
+          </div>
+          <div v-else class="files-list">
+            <div class="files-info">
+              <p>{{ starredFiles.length }} starred file(s)</p>
+            </div>
+            <FileListView
+              :folders="folders"
+              :files="filesList"
+              :selectedItems="selectedItems"
+              :viewMode="viewMode"
+              :editingItemId="editingItemId"
+              defaultSortBy="date"
+              defaultSortOrder="desc"
+              @view-change="handleViewChange"
+              @item-click="handleItemClick"
+              @action="handleFileAction"
+              @selection-change="handleSelectionChange"
+              @rename="handleRename"
+              @item-context-menu="handleContextMenu"
+            />
+          </div>
+        </main>
       </div>
-    </main>
+    </template>
+
+    <!-- Encryption Overlay -->
+    <Teleport
+      v-if="showEncryptionOverlay && isMasterKeyRequired"
+      to="#encryption-overlay-portal"
+    >
+      <div
+        class="encryption-overlay"
+        :style="{
+          'pointer-events': showPasswordModal ? 'none' : 'auto',
+        }"
+        data-encryption-overlay="true"
+      >
+        <div class="encryption-overlay-content">
+          <div class="encryption-icon-wrapper">
+            <svg
+              class="encryption-icon"
+              width="64"
+              height="64"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 12V16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 class="encryption-title">Files are encrypted</h2>
+          <p class="encryption-description">
+            Enter your encryption password to decrypt and access your files.
+            This password is used to decrypt your files and is not stored on the
+            server.
+          </p>
+          <button
+            @click="openPasswordModal"
+            class="encryption-unlock-btn"
+            type="button"
+          >
+            Unlock Files
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Password Modal for SSO Users -->
+    <Teleport v-if="showPasswordModal" to="body">
+      <div
+        class="password-modal-overlay"
+        @click="closePasswordModal"
+        role="dialog"
+        aria-labelledby="password-modal-title"
+        aria-modal="true"
+      >
+        <div class="password-modal-container" @click.stop>
+          <div class="password-modal-content">
+            <div class="password-modal-header">
+              <h2 id="password-modal-title">Enter Encryption Password</h2>
+              <button
+                @click="closePasswordModal"
+                class="password-modal-close"
+                :disabled="passwordModalLoading"
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="password-modal-body">
+              <p class="password-modal-description">
+                Enter your encryption password to access your files. This
+                password is used to decrypt your files and is not stored on the
+                server.
+              </p>
+              <div class="form-group">
+                <label for="password-modal-password">Password</label>
+                <PasswordInput
+                  id="password-modal-password"
+                  v-model="passwordModalPassword"
+                  placeholder="Enter your encryption password"
+                  @keyup.enter="handlePasswordSubmit"
+                  :disabled="passwordModalLoading"
+                  autofocus
+                />
+              </div>
+              <div v-if="passwordModalError" class="password-modal-error">
+                {{ passwordModalError }}
+              </div>
+            </div>
+            <div class="password-modal-footer">
+              <button
+                @click="closePasswordModal"
+                class="password-modal-btn password-modal-btn-cancel"
+                :disabled="passwordModalLoading"
+              >
+                Cancel
+              </button>
+              <button
+                @click="handlePasswordSubmit"
+                class="password-modal-btn password-modal-btn-unlock"
+                :disabled="passwordModalLoading || !passwordModalPassword"
+              >
+                {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { normalizeMimeType } from "../utils/mimeType";
 import { files, vaultspaces, config } from "../services/api";
 import { useAuthStore } from "../store/auth";
 import FileListView from "../components/FileListView.vue";
@@ -745,7 +753,10 @@ export default {
         // Show file preview
         previewFileId.value = item.id;
         previewFileName.value = item.original_name || item.name || "File";
-        previewMimeType.value = item.mime_type || "";
+        previewMimeType.value = normalizeMimeType(
+          previewFileName.value,
+          item.mime_type || "",
+        );
         showPreview.value = true;
       } else if (action === "copy") {
         handleCopyAction(item);
@@ -1103,13 +1114,9 @@ export default {
 
 <style scoped>
 .starred-view {
-  min-height: 100vh;
-  padding: 2rem;
-}
-
-.mobile-mode .starred-view {
-  padding: 1rem;
-  padding-bottom: calc(1rem + 64px);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-header {
@@ -1117,14 +1124,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
-  padding: 1.5rem 2rem;
-}
-
-.mobile-mode .view-header {
-  padding: 1rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  padding: 1.5rem 0;
 }
 
 .view-header h1 {
@@ -1134,11 +1134,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.mobile-mode .view-header h1 {
-  font-size: 1.25rem;
-  width: 100%;
 }
 
 .header-icon {
@@ -1151,16 +1146,13 @@ export default {
 .header-actions {
   display: flex;
   gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.mobile-mode .header-actions {
-  width: 100%;
-  justify-content: flex-start;
+  align-items: center;
 }
 
 .view-main {
-  padding: 1rem 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .loading,
@@ -1601,9 +1593,6 @@ export default {
   .password-modal-container {
     max-width: 100%;
     margin: 0 1rem;
-  }
-
-  .password-modal-content {
   }
 
   .password-modal-header,

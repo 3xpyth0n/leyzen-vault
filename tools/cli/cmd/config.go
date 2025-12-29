@@ -13,9 +13,9 @@ import (
 )
 
 var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage Leyzen Vault environment configuration",
-	Long:  "Commands for managing and validating Leyzen Vault configuration files.",
+	Use:          "config",
+	Short:        "Manage Leyzen Vault environment configuration",
+	Long:         "Commands for managing and validating Leyzen Vault configuration files.",
 	SilenceUsage: true,
 }
 
@@ -23,8 +23,8 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 
 	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List configured environment variables",
+		Use:          "list",
+		Short:        "List configured environment variables",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			envFilePath := EnvFilePath()
@@ -92,9 +92,9 @@ func init() {
 	}
 
 	setCmd := &cobra.Command{
-		Use:   "set <KEY> <VALUE>",
-		Short: "Set an environment variable",
-		Args:  cobra.ExactArgs(2),
+		Use:          "set <KEY> <VALUE>",
+		Short:        "Set an environment variable",
+		Args:         cobra.ExactArgs(2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
@@ -115,7 +115,7 @@ func init() {
 			}
 
 			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
-				fmt.Println("⚠️ Failed to rebuild configuration:", err)
+				fmt.Println("[WARN] Failed to rebuild configuration:", err)
 			}
 
 			color.HiGreen("%s updated", key)
@@ -123,7 +123,21 @@ func init() {
 		},
 	}
 
-	configCmd.AddCommand(listCmd, setCmd)
+	generateCmd := &cobra.Command{
+		Use:          "generate",
+		Short:        "Generate Docker Compose and HAProxy configuration files",
+		Long:         "Regenerates docker-generated.yml and haproxy.cfg based on the current .env configuration without starting the stack.",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internal.RunBuildScript(EnvFilePath()); err != nil {
+				return fmt.Errorf("failed to generate configuration: %w", err)
+			}
+			color.HiGreen("Configuration generated successfully")
+			return nil
+		},
+	}
+
+	configCmd.AddCommand(listCmd, setCmd, generateCmd)
 }
 
 func padCell(raw string, visibleWidth int, colored string) string {

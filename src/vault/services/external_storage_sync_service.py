@@ -287,16 +287,15 @@ class ExternalStorageSyncService:
             # Check for LastModified (native S3 metadata) first
             last_modified = metadata.get("LastModified")
 
-            # If LastModified is not found, check if we have custom metadata with last_modified (lowercase)
             # Some S3-compatible services store last_modified in custom metadata instead of native LastModified
             if last_modified is None:
-                # Try to get from custom metadata (fallback for S3-compatible services)
+
                 custom_last_modified = metadata.get("last_modified")
                 if custom_last_modified:
                     logger.debug(
                         f"get_s3_file_timestamp: Using custom 'last_modified' for {file_id} instead of native LastModified"
                     )
-                    # Try to parse if it's a string
+
                     if isinstance(custom_last_modified, str):
                         try:
                             from dateutil import parser
@@ -326,7 +325,7 @@ class ExternalStorageSyncService:
             # LastModified from S3 is already timezone-aware
             if isinstance(last_modified, datetime):
                 return last_modified
-            # If it's a string, parse it (shouldn't happen with boto3, but just in case)
+
             logger.warning(
                 f"get_s3_file_timestamp: LastModified is not a datetime object for {file_id}, type: {type(last_modified)}, value: {last_modified}"
             )
@@ -347,12 +346,12 @@ class ExternalStorageSyncService:
             datetime object with modification timestamp, or None if file doesn't exist
         """
         try:
-            # Try to get file path
+
             storage_path = self.local_storage.get_file_path(file_id)
             if storage_path.exists():
                 mtime = storage_path.stat().st_mtime
                 return datetime.fromtimestamp(mtime, tz=timezone.utc)
-            # Try source path if storage path doesn't exist
+
             if self.local_storage.source_dir:
                 source_path = self.local_storage.get_source_file_path(file_id)
                 if source_path.exists():
@@ -706,7 +705,6 @@ class ExternalStorageSyncService:
                                 (s3_timestamp - local_timestamp).total_seconds()
                             )
 
-                            # If difference is less than 5 seconds, consider them identical
                             if time_diff < 5:
                                 logger.debug(
                                     f"[SYNC] File {file_id} (storage_ref: {storage_ref}) is up to date (diff: {time_diff:.1f}s), skipping"

@@ -229,7 +229,7 @@ export const useAuthStore = defineStore("auth", {
 
     async fetchAuthConfig() {
       try {
-        const response = await fetch("/api/v2/config");
+        const response = await apiRequest("/v2/config");
         if (!response.ok) throw new Error("Config request failed");
         const data = await response.json();
         this.authConfig = {
@@ -240,13 +240,18 @@ export const useAuthStore = defineStore("auth", {
         // Explicitly set isSetupComplete from response
         this.isSetupComplete = data.is_setup_complete === true;
       } catch (err) {
+        if (isNetworkError(err)) {
+          // Keep current state on network error during rotation
+          return this.authConfig;
+        }
         console.error("fetchAuthConfig error:", err);
         // Fallback for existing installations to avoid redirect loops
         this.authConfig = {
           allow_signup: false,
           password_authentication_enabled: true,
+          orchestrator_enabled: false,
         };
-        // If config fails, assume setup is complete for safety
+
         if (this.isSetupComplete === null) {
           this.isSetupComplete = true;
         }

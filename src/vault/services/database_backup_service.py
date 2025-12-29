@@ -143,7 +143,7 @@ class BackupEncryption:
             return "fernet"
         else:
             # Use AES-GCM for large files
-            # Note: AES-GCM requires unique nonce per encryption
+
             # For simplicity, we'll encrypt the entire file with one nonce
             # For very large files, this may require significant memory
             aesgcm = self._get_aesgcm()
@@ -460,7 +460,7 @@ class DatabaseBackupService:
                 if storage_location and not storage_location.startswith("s3://"):
                     local_path = Path(storage_location)
                 else:
-                    # Try to find in backup directory
+
                     filename = f"backup_{backup_record.created_at.strftime('%Y%m%d_%H%M%S')}_{backup_record.id}.dump"
                     local_path = self.backup_dir / filename
 
@@ -497,7 +497,7 @@ class DatabaseBackupService:
             Dictionary with validation result (valid, error)
         """
         try:
-            # If metadata.json is provided, validate checksum and size first
+
             if metadata_path and metadata_path.exists():
                 metadata = self._read_backup_metadata(metadata_path)
                 if metadata:
@@ -837,7 +837,7 @@ class DatabaseBackupService:
             if s3_location and s3_location.startswith("s3://"):
                 # Extract key from s3://bucket/key/path or s3://key/path
                 path_without_scheme = s3_location[5:]  # Remove "s3://"
-                # If path starts with bucket name, remove it (format: s3://bucket/key)
+
                 if path_without_scheme.startswith(f"{bucket_name}/"):
                     s3_key = path_without_scheme[len(bucket_name) + 1 :]
                 else:
@@ -852,7 +852,7 @@ class DatabaseBackupService:
                 path_without_scheme = backup_record.storage_location[
                     5:
                 ]  # Remove "s3://"
-                # If path starts with bucket name, remove it
+
                 if path_without_scheme.startswith(f"{bucket_name}/"):
                     s3_key = path_without_scheme[len(bucket_name) + 1 :]
                 else:
@@ -1120,7 +1120,7 @@ class DatabaseBackupService:
         Returns:
             Tuple of (backup_path, metadata_path) or (None, None) if not found
         """
-        # Try local storage first
+
         backup_path = self._find_local_backup_by_id(backup_id)
         if backup_path and backup_path.exists():
             metadata_path = backup_path.with_suffix(".metadata.json")
@@ -1129,7 +1129,6 @@ class DatabaseBackupService:
             )
             return backup_path, metadata_path if metadata_path.exists() else None
 
-        # Try S3 storage
         try:
             from vault.services.external_storage_service import ExternalStorageService
 
@@ -1172,7 +1171,6 @@ class DatabaseBackupService:
                                     with open(temp_backup_path, "wb") as f:
                                         f.write(file_response["Body"].read())
 
-                                    # Try to download metadata
                                     metadata_key = s3_key[:-5] + ".metadata.json"
                                     temp_metadata_path = None
                                     try:
@@ -1669,7 +1667,7 @@ class DatabaseBackupService:
             )
             if result.returncode != 0:
                 error_msg = result.stderr or result.stdout or "Unknown error"
-                # If schema already exists, that's fine (shouldn't happen, but handle it)
+
                 if "already exists" not in error_msg.lower():
                     raise RuntimeError(f"Failed to create schema 'public': {error_msg}")
 
@@ -1744,7 +1742,7 @@ class DatabaseBackupService:
                     raise RuntimeError(f"Failed to decrypt backup: {e}") from e
 
             # Restore backup using superuser
-            # Note: We don't use --single-transaction because some backups contain invalid
+
             # SET commands (like SET transaction_timeout = 0;) that cause pg_restore to fail
             # Instead, we rely on the fact that the database is completely empty (DROP SCHEMA CASCADE)
             # and pg_restore will restore in the correct order automatically
@@ -1821,7 +1819,6 @@ class DatabaseBackupService:
                 logger.error(f"[RESTORE] {error_msg}")
                 raise RuntimeError(error_msg)
 
-            # If returncode != 0 but no critical errors, log a warning but continue
             # This handles cases where pg_restore returns non-zero for non-critical errors
             # (like transaction_timeout) but the restore actually completed
             if result.returncode != 0:
@@ -1836,8 +1833,6 @@ class DatabaseBackupService:
                 logger.info(
                     "[RESTORE] pg_restore completed, proceeding to wait for connections..."
                 )
-
-                # Wait a moment for pg_restore to fully release database connections
 
                 # This prevents "server closed the connection unexpectedly" errors
 
@@ -2153,7 +2148,7 @@ class DatabaseBackupService:
 
             # Optionally sync to database for caching (non-blocking)
             try:
-                # Try to update database records, but don't fail if DB is unavailable
+
                 for backup_id, backup_dict in backup_map.items():
                     try:
                         backup_record = (
@@ -2243,7 +2238,6 @@ class DatabaseBackupService:
             else:
                 metadata_key = s3_key + ".metadata.json"
 
-            # Try to download metadata file
             try:
                 response = client.get_object(Bucket=bucket_name, Key=metadata_key)
                 metadata_json = response["Body"].read().decode("utf-8")
@@ -2312,7 +2306,7 @@ class DatabaseBackupService:
                         continue
 
                     try:
-                        # Try to read metadata.json first (storage-first)
+
                         metadata = self._read_s3_metadata(client, bucket_name, s3_key)
 
                         if metadata:
@@ -3010,7 +3004,6 @@ class DatabaseBackupService:
             # Determine S3 key
             s3_key = None
 
-            # Try to get from metadata
             metadata = {}
             if backup.backup_metadata:
                 try:
@@ -3024,7 +3017,7 @@ class DatabaseBackupService:
                         # Our format is s3://database-backups/filename usually (which is NOT s3://bucket/key)
                         # Wait, in create_backup: s3_key = f"database-backups/{backup_filename}"
                         # initial_storage_location = f"s3://{s3_key}"
-                        # So s3_location = s3://database-backups/filename
+
                         s3_key = path_without_scheme
                 except Exception:
                     # Error parsing S3 key from storage_location - expected for some formats
@@ -3037,8 +3030,7 @@ class DatabaseBackupService:
 
             # Fallback: construct from filename if we can assume standard naming
             if not s3_key:
-                # Try to guess from local path name if available, or just skip
-                # If we can't find the key, we can't delete
+
                 logger.warning(
                     f"Could not determine S3 key for backup {backup.id}, skipping S3 deletion"
                 )

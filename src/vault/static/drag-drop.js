@@ -133,7 +133,6 @@ class DragDropManager {
     // Add visual feedback
     card.classList.add("dragging");
 
-    // Set drag data
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("application/json", JSON.stringify(this.dragData));
 
@@ -264,7 +263,6 @@ class DragDropManager {
     element.dataset.dropFolderId = folderId || "";
     element.classList.add("drop-target");
 
-    // Show overlay
     this.showDropOverlay(element);
   }
 
@@ -395,20 +393,17 @@ class DragDropManager {
   }
 }
 
-// Initialize drag & drop manager
 let dragDropManager = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   dragDropManager = new DragDropManager();
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.DragDropManager = DragDropManager;
     window.dragDropManager = dragDropManager;
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.DragDropManager = DragDropManager;
 }

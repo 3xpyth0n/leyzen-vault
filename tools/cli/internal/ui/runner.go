@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fatih/color"
 
 	"leyzenctl/internal"
 )
@@ -95,17 +96,24 @@ func (r *Runner) restart(writer *actionWriter) error {
 }
 
 func (r *Runner) restartWithServices(writer *actionWriter, services []string) error {
-	writer.emit("🔄 [RESTART] Restarting Leyzen Vault...")
+	writer.emit(color.HiBlueString("Restarting Leyzen Vault..."))
+
+	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
+		return err
+	}
+
 	if err := r.stopWithServices(writer, services); err != nil {
 		return err
 	}
-	if err := r.buildWithServices(writer, services); err != nil {
-		return err
+
+	if len(services) == 0 {
+		writer.emit(color.HiGreenString("Starting Docker stack..."))
+		return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--remove-orphans")
 	}
-	if err := r.startWithServices(writer, services); err != nil {
-		return err
-	}
-	return nil
+	writer.emit(color.HiGreenString(fmt.Sprintf("Starting services: %s", strings.Join(services, ", "))))
+	args := []string{"up", "-d", "--remove-orphans"}
+	args = append(args, services...)
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
 }
 
 func (r *Runner) start(writer *actionWriter) error {
@@ -113,11 +121,15 @@ func (r *Runner) start(writer *actionWriter) error {
 }
 
 func (r *Runner) startWithServices(writer *actionWriter, services []string) error {
+	if err := internal.RunBuildScriptWithWriter(writer, writer, r.envFile); err != nil {
+		return err
+	}
+
 	if len(services) == 0 {
-		writer.emit("▶ [START] Starting Docker stack...")
+		writer.emit(color.HiGreenString("Starting Docker stack..."))
 		return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--remove-orphans")
 	}
-	writer.emit(fmt.Sprintf("▶ [START] Starting services: %s", strings.Join(services, ", ")))
+	writer.emit(color.HiGreenString(fmt.Sprintf("Starting services: %s", strings.Join(services, ", "))))
 	args := []string{"up", "-d", "--remove-orphans"}
 	args = append(args, services...)
 	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
@@ -129,11 +141,10 @@ func (r *Runner) stop(writer *actionWriter) error {
 
 func (r *Runner) stopWithServices(writer *actionWriter, services []string) error {
 	if len(services) == 0 {
-		writer.emit("⏹ [STOP] Stopping Docker stack...")
+		writer.emit(color.HiRedString("Stopping Docker stack..."))
 		return internal.RunComposeWithWriter(writer, writer, r.envFile, "down", "--remove-orphans")
 	}
-	writer.emit(fmt.Sprintf("⏹ [STOP] Stopping services: %s", strings.Join(services, ", ")))
-	// For stop, we need to use 'stop' command instead of 'down' for specific services
+	writer.emit(color.HiRedString(fmt.Sprintf("Stopping services: %s", strings.Join(services, ", "))))
 	args := []string{"stop"}
 	args = append(args, services...)
 	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
@@ -144,7 +155,6 @@ func (r *Runner) build(writer *actionWriter) error {
 }
 
 func (r *Runner) buildWithServices(writer *actionWriter, services []string) error {
-	// Stop containers before building
 	if err := r.stopWithServices(writer, services); err != nil {
 		return err
 	}
@@ -152,26 +162,17 @@ func (r *Runner) buildWithServices(writer *actionWriter, services []string) erro
 		return err
 	}
 	if len(services) == 0 {
-		writer.emit("🔨 [BUILD] Rebuilding Docker stack...")
+		writer.emit(color.HiGreenString("Rebuilding Docker stack..."))
 		return internal.RunComposeWithWriter(writer, writer, r.envFile, "up", "-d", "--build", "--remove-orphans")
 	}
-	writer.emit(fmt.Sprintf("🔨 [BUILD] Rebuilding services: %s", strings.Join(services, ", ")))
-	// Build only the specified services
-	buildArgs := []string{"build"}
-	buildArgs = append(buildArgs, services...)
-	if err := internal.RunComposeWithWriter(writer, writer, r.envFile, buildArgs...); err != nil {
-		return err
-	}
-	// Then start the specified services
-	upArgs := []string{"up", "-d", "--remove-orphans"}
-	upArgs = append(upArgs, services...)
-	return internal.RunComposeWithWriter(writer, writer, r.envFile, upArgs...)
+	writer.emit(color.HiGreenString(fmt.Sprintf("Rebuilding services: %s", strings.Join(services, ", "))))
+	args := []string{"up", "-d", "--build", "--remove-orphans"}
+	args = append(args, services...)
+	return internal.RunComposeWithWriter(writer, writer, r.envFile, args...)
 }
 
 func (r *Runner) wizard(writer *actionWriter) error {
-	// The wizard is now handled directly in the TUI via ViewWizard
-	// This function should no longer be called, but we keep it for compatibility
-	writer.emit("⚠️  Wizard should be initiated from dashboard (press 'w')")
+	writer.emit(color.HiYellowString("[WARN] Wizard should be initiated from dashboard (press 'w')"))
 	return fmt.Errorf("wizard not available as action - use dashboard")
 }
 
@@ -236,21 +237,15 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 		}
 
 		lineRaw := strings.TrimSuffix(data[:idx], "\r")
-		// Clean the line of control characters
-		line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
-		// Trim whitespace but preserve intentional spaces
+		line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1c\x1d\x1e\x1f")
 		line = strings.TrimSpace(line)
 
-		// Ignore empty lines
 		if line == "" {
 			data = data[idx+1:]
 			continue
 		}
 
-		// Filter isolated single characters that are likely artifacts
-		// These are usually control characters or terminal escape sequence remnants
 		if len(line) == 1 {
-			// Allow only valid special characters that might appear alone
 			validSingleChars := map[string]bool{
 				"[": true,
 				"]": true,
@@ -259,15 +254,12 @@ func (w *actionWriter) Write(p []byte) (int, error) {
 				"{": true,
 				"}": true,
 			}
-			// Filter out isolated letters, numbers, and other single characters
 			if !validSingleChars[line] {
-				// Ignore isolated characters like "d", "C", "B", etc.
 				data = data[idx+1:]
 				continue
 			}
 		}
 
-		// Filter out lines that are just single lowercase letters (common artifacts)
 		if len(line) == 1 && line >= "a" && line <= "z" {
 			data = data[idx+1:]
 			continue
@@ -289,11 +281,9 @@ func (w *actionWriter) flush() {
 	}
 
 	lineRaw := w.buf.String()
-	// Clean the line of control characters
-	line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+	line := strings.Trim(lineRaw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1c\x1d\x1e\x1f")
 	line = strings.TrimSpace(line)
 
-	// Filter out isolated single characters
 	if line != "" {
 		if len(line) == 1 {
 			validSingleChars := map[string]bool{
@@ -305,12 +295,10 @@ func (w *actionWriter) flush() {
 				"}": true,
 			}
 			if !validSingleChars[line] {
-				// Ignore isolated characters
 				w.buf.Reset()
 				return
 			}
 		}
-		// Filter out single lowercase letters
 		if len(line) == 1 && line >= "a" && line <= "z" {
 			w.buf.Reset()
 			return
@@ -320,33 +308,22 @@ func (w *actionWriter) flush() {
 	w.buf.Reset()
 }
 
-func fetchStatusesCmd() tea.Cmd {
+func fetchStatusesCmd(envFile string) tea.Cmd {
 	return func() tea.Msg {
-		output, err := internal.DockerPS("--format", "{{.Names}}\t{{.Status}}\t{{.RunningFor}}")
+		projectStatuses, err := internal.GetProjectStatuses(envFile)
 		if err != nil {
 			return statusMsg{err: err}
 		}
-		return statusMsg{statuses: parseStatuses(output)}
-	}
-}
 
-func parseStatuses(output string) []ContainerStatus {
-	output = strings.TrimSpace(output)
-	if output == "" {
-		return nil
-	}
-	var statuses []ContainerStatus
-	for _, line := range strings.Split(output, "\n") {
-		parts := strings.Split(line, "\t")
-		if len(parts) != 3 {
-			continue
+		var statuses []ContainerStatus
+		for _, ps := range projectStatuses {
+			statuses = append(statuses, ContainerStatus{
+				Name:      ps.Name,
+				Status:    ps.Status,
+				RawStatus: ps.Status,
+				Age:       ps.Age,
+			})
 		}
-		statuses = append(statuses, ContainerStatus{
-			Name:      parts[0],
-			Status:    parts[1],
-			RawStatus: parts[1],
-			Age:       parts[2],
-		})
+		return statusMsg{statuses: statuses}
 	}
-	return statuses
 }

@@ -1,8 +1,7 @@
 <template>
-  <teleport to="body">
-    <transition name="menu-fade">
+  <Teleport v-if="show" to="body">
+    <Transition name="menu-fade">
       <div
-        v-if="show"
         class="file-menu-container"
         ref="menuContainer"
         :style="menuStyle"
@@ -21,8 +20,8 @@
           </button>
         </div>
       </div>
-    </transition>
-  </teleport>
+    </Transition>
+  </Teleport>
 </template>
 
 <script>
@@ -213,7 +212,6 @@ export default {
     position: {
       handler(newPosition) {
         if (this.show && newPosition) {
-          // Update position immediately
           this.menuTop = newPosition.y || newPosition.top || 0;
           this.menuLeft = newPosition.x || newPosition.left || 0;
           this.$nextTick(() => {
@@ -297,13 +295,11 @@ export default {
 
       // Create a new handler
       this.clickOutsideHandler = (event) => {
-        // Check that menu is still open
         if (!this.show) {
           this.cleanupClickOutside();
           return;
         }
 
-        // Check if click is outside menu
         if (!this.$refs.menuContainer) {
           this.cleanupClickOutside();
           return;
@@ -312,12 +308,10 @@ export default {
         const menuContainer = this.$refs.menuContainer;
         const clickedElement = event.target;
 
-        // Check if click is inside menu
         if (menuContainer.contains(clickedElement)) {
           return;
         }
 
-        // Check if it's a click on a menu button (3 dots) - don't close in this case
         const clickedButton = clickedElement.closest(
           ".btn-menu, .btn-menu-grid",
         );
@@ -325,7 +319,6 @@ export default {
           return;
         }
 
-        // Close menu for all other clicks (including sidebar, header, etc.)
         // This will catch clicks anywhere outside the menu, including:
         // - Sidebar
         // - Header
@@ -470,7 +463,6 @@ export default {
             return;
           }
 
-          // Check if element is actually scrollable
           const hasScrollableContent =
             el.scrollHeight > el.clientHeight ||
             el.scrollWidth > el.clientWidth;

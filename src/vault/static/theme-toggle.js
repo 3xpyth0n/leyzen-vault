@@ -1,6 +1,5 @@
 /** @file theme-toggle.js - Theme toggle functionality */
 
-// Initialize theme from localStorage or system preference
 function initTheme() {
   const savedTheme = localStorage.getItem("leyzen-theme");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -38,7 +37,6 @@ function setInnerHTML(element, html) {
   element.innerHTML = html;
 }
 
-// Update theme icon
 function updateThemeIcon(theme) {
   const icon = document.getElementById("theme-toggle-icon");
   if (icon && window.Icons) {
@@ -61,7 +59,6 @@ window
     }
   });
 
-// Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
 
@@ -101,7 +98,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.initTheme = initTheme;
   window.toggleTheme = toggleTheme;

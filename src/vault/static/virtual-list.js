@@ -100,7 +100,6 @@ class VirtualList {
       this.viewMode === "list" ? this.itemHeight : this.gridItemHeight;
     const containerHeight = this.container.clientHeight || this.containerHeight;
 
-    // Calculate grid columns for grid view
     let itemsPerRow = 1;
     if (this.viewMode === "grid") {
       const containerWidth = this.container.clientWidth || 800;
@@ -108,7 +107,6 @@ class VirtualList {
       itemsPerRow = Math.max(1, itemsPerRow);
     }
 
-    // Calculate start and end indices
     const startIndex = Math.max(
       0,
       Math.floor(this.scrollTop / itemHeight) - this.overscan,
@@ -145,7 +143,6 @@ class VirtualList {
     // Get visible items
     this.visibleItems = this.items.slice(adjustedStartIndex, adjustedEndIndex);
 
-    // Update spacers
     const itemHeight =
       this.viewMode === "list" ? this.itemHeight : this.gridItemHeight;
     const spacerBeforeHeight = adjustedStartIndex * itemHeight;
@@ -155,7 +152,6 @@ class VirtualList {
     this.spacerBefore.style.height = `${spacerBeforeHeight}px`;
     this.spacerAfter.style.height = `${spacerAfterHeight}px`;
 
-    // Render items
     this.renderItems();
   }
 
@@ -175,10 +171,8 @@ class VirtualList {
     clearElement(this.itemContainer);
 
     if (this.viewMode === "grid") {
-      // Render grid
       this.renderGrid(adjustedStartIndex, endIndex, itemsPerRow);
     } else {
-      // Render list
       this.renderList(adjustedStartIndex, endIndex);
     }
   }
@@ -228,7 +222,7 @@ class VirtualList {
    */
   createItemElement(item, index) {
     // This will be overridden by the caller
-    // Return a placeholder for now
+
     const element = document.createElement("div");
     element.className = "virtual-list-item";
     element.style.height =
@@ -329,13 +323,11 @@ class VirtualListManager {
   }
 }
 
-// Initialize virtual list manager
 let virtualListManager = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   virtualListManager = new VirtualListManager();
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.VirtualList = VirtualList;
     window.VirtualListManager = VirtualListManager;
@@ -343,7 +335,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.VirtualList = VirtualList;
   window.VirtualListManager = VirtualListManager;

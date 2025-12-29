@@ -38,18 +38,18 @@ try:
 
         env_values = dict(os.environ)
 
-    app.config["SECRET_KEY"] = env_values.get("SECRET_KEY", "")
-    if not app.config["SECRET_KEY"]:
-        # Try to load settings if SECRET_KEY is missing from env
-        try:
-            from vault.config import load_settings
+    # Load application settings including S3 configuration
+    from vault.config import load_settings
 
-            settings = load_settings()
-            app.config["SECRET_KEY"] = settings.secret_key
-        except Exception:
-            pass
+    try:
+        settings = load_settings()
+        app.config["VAULT_SETTINGS"] = settings
+        app.config["SECRET_KEY"] = settings.secret_key
+    except Exception as e:
+        print(f"Warning: Failed to load application settings: {e}", file=sys.stderr)
+        app.config["SECRET_KEY"] = env_values.get("SECRET_KEY", "")
 
-    if not app.config["SECRET_KEY"]:
+    if not app.config.get("SECRET_KEY"):
         print(
             "Warning: SECRET_KEY not found, cannot sync backups",
             file=sys.stderr,
@@ -73,7 +73,6 @@ try:
 
         db.init_app(app)
 
-        # Try to connect to database with retries
         import time
 
         max_retries = 3
@@ -82,7 +81,7 @@ try:
         try:
             for attempt in range(max_retries):
                 try:
-                    # Try to connect to database
+
                     db.session.execute(db.text("SELECT 1"))
 
                     # Connection successful, perform sync

@@ -13,12 +13,10 @@ let configPromise = null;
  * @returns {Promise<string>} The base URL (e.g., "https://vault.leyzen.com" or "http://localhost:5000")
  */
 export async function getVaultBaseUrl() {
-  // Return cached value if available
   if (cachedVaultUrl !== null) {
     return cachedVaultUrl;
   }
 
-  // If a request is already in progress, return the same promise
   if (configPromise) {
     return configPromise;
   }
@@ -47,7 +45,6 @@ export async function getVaultBaseUrl() {
       }
     } catch (error) {}
 
-    // Fallback to window.location.origin if VAULT_URL is not configured or fetch failed
     cachedVaultUrl = window.location.origin;
     return cachedVaultUrl;
   })();

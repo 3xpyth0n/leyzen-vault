@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <router-view v-slot="{ Component, route: currentRoute }">
-      <transition name="page" mode="out-in">
+      <Transition name="page">
         <AppLayout
           v-if="needsAppLayout"
           :key="'layout-authenticated'"
@@ -14,7 +14,7 @@
           :is="Component"
           :key="'public-' + currentRoute.path"
         />
-      </transition>
+      </Transition>
     </router-view>
   </div>
 </template>

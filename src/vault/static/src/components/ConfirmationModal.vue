@@ -1,7 +1,6 @@
 <template>
-  <teleport to="body">
+  <Teleport v-if="show" to="body">
     <div
-      v-if="show"
       ref="modalOverlay"
       class="modal-overlay"
       :aria-hidden="!show"
@@ -40,7 +39,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>
@@ -85,7 +84,7 @@ export default {
     show(newVal) {
       if (newVal) {
         document.body.style.overflow = "hidden";
-        // Focus on cancel button for accessibility
+
         this.$nextTick(() => {
           const cancelBtn = document.getElementById("modal-cancel");
           if (cancelBtn) {

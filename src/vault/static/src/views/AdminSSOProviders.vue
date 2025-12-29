@@ -1,804 +1,796 @@
 <template>
-  <div class="admin-sso-providers">
-    <h1>Authentication Methods</h1>
+  <div class="admin-sso-view-container">
+    <div class="admin-sso-providers">
+      <h1>Authentication Methods</h1>
 
-    <div v-if="loading" class="loading">Loading providers...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
+      <div v-if="loading" class="loading">Loading providers...</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
 
-    <div class="providers-section">
-      <div class="section-header">
-        <h2>Authentication Methods</h2>
-        <button @click="openCreateModal" class="btn btn-primary">
-          Add Provider
-        </button>
-      </div>
+      <div class="providers-section">
+        <div class="section-header">
+          <h2>Authentication Methods</h2>
+          <button @click="openCreateModal" class="btn btn-primary">
+            Add Provider
+          </button>
+        </div>
 
-      <div v-if="providers.length === 0" class="empty-state">
-        <p>No SSO providers configured. Create one to get started.</p>
-      </div>
+        <div v-if="providers.length === 0" class="empty-state">
+          <p>No SSO providers configured. Create one to get started.</p>
+        </div>
 
-      <div class="providers-list">
-        <!-- Password Authentication Setting -->
-        <div
-          class="provider-card password-auth-card"
-          :class="{ 'provider-inactive': !passwordAuthEnabled }"
-        >
-          <div class="provider-header">
-            <div class="provider-info">
-              <h3>Password Authentication</h3>
-              <span class="provider-type">SYSTEM</span>
-            </div>
-            <div class="provider-actions">
-              <div class="toggle-container">
-                <label class="toggle-label">
-                  <div
-                    class="toggle-switch"
-                    :class="{ active: passwordAuthEnabled }"
-                    @click="togglePasswordAuth"
-                  >
-                    <div class="toggle-slider"></div>
-                  </div>
-                </label>
+        <div class="providers-list">
+          <div
+            class="provider-card password-auth-card"
+            :class="{ 'provider-inactive': !passwordAuthEnabled }"
+          >
+            <div class="provider-header">
+              <div class="provider-info">
+                <h3>Password Authentication</h3>
+                <span class="provider-type">SYSTEM</span>
+              </div>
+              <div class="provider-actions">
+                <div class="toggle-container">
+                  <label class="toggle-label">
+                    <div
+                      class="toggle-switch"
+                      :class="{ active: passwordAuthEnabled }"
+                      @click="togglePasswordAuth"
+                    >
+                      <div class="toggle-slider"></div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
+            <div class="provider-details">
+              <p>
+                Default authentication method using email/username and password
+              </p>
+            </div>
           </div>
-          <div class="provider-details">
-            <p>
-              Default authentication method using email/username and password
-            </p>
+
+          <div
+            class="provider-card password-auth-card"
+            :class="{ 'provider-inactive': !allowSignupEnabled }"
+          >
+            <div class="provider-header">
+              <div class="provider-info">
+                <h3>Allow Public Signup</h3>
+                <span class="provider-type">SYSTEM</span>
+              </div>
+              <div class="provider-actions">
+                <div class="toggle-container">
+                  <label class="toggle-label">
+                    <div
+                      class="toggle-switch"
+                      :class="{ active: allowSignupEnabled }"
+                      @click="toggleAllowSignup"
+                    >
+                      <div class="toggle-slider"></div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="provider-details">
+              <p>
+                When disabled, only admins can create user accounts via
+                invitations.
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-for="provider in providers"
+            :key="provider.id"
+            class="provider-card"
+            :class="{ 'provider-inactive': !provider.is_active }"
+          >
+            <div class="provider-header">
+              <div class="provider-info">
+                <h3>{{ provider.name }}</h3>
+                <span class="provider-type">{{
+                  provider.provider_type.toUpperCase()
+                }}</span>
+              </div>
+              <div class="provider-actions">
+                <div class="toggle-container">
+                  <label class="toggle-label">
+                    <div
+                      class="toggle-switch"
+                      :class="{ active: provider.is_active }"
+                      @click="toggleProvider(provider)"
+                    >
+                      <div class="toggle-slider"></div>
+                    </div>
+                  </label>
+                </div>
+                <button
+                  @click="editProvider(provider)"
+                  class="btn btn-small btn-secondary"
+                >
+                  Edit
+                </button>
+                <button
+                  @click="deleteProvider(provider.id)"
+                  class="btn btn-small btn-danger"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+            <div class="provider-details">
+              <p><strong>ID:</strong> {{ provider.id }}</p>
+              <p>
+                <strong>Created:</strong> {{ formatDate(provider.created_at) }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="domain-rules-section">
+        <div class="section-header">
+          <h2>Domain Rules</h2>
+          <div class="button-group">
+            <button @click="showDomainRuleModal = true" class="btn btn-primary">
+              Add Domain Rule
+            </button>
+            <button @click="loadDomainRules" class="btn btn-secondary">
+              Refresh Rules
+            </button>
           </div>
         </div>
 
-        <!-- Allow Public Signup Setting -->
-        <div
-          class="provider-card password-auth-card"
-          :class="{ 'provider-inactive': !allowSignupEnabled }"
-        >
-          <div class="provider-header">
-            <div class="provider-info">
-              <h3>Allow Public Signup</h3>
-              <span class="provider-type">SYSTEM</span>
-            </div>
-            <div class="provider-actions">
-              <div class="toggle-container">
-                <label class="toggle-label">
-                  <div
-                    class="toggle-switch"
-                    :class="{ active: allowSignupEnabled }"
-                    @click="toggleAllowSignup"
-                  >
-                    <div class="toggle-slider"></div>
-                  </div>
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="provider-details">
-            <p>
-              When disabled, only admins can create user accounts via
-              invitations.
-            </p>
-          </div>
+        <div v-if="domainRulesLoading" class="loading">
+          Loading domain rules...
         </div>
-
-        <!-- SSO Providers -->
-        <div
-          v-for="provider in providers"
-          :key="provider.id"
-          class="provider-card"
-          :class="{ 'provider-inactive': !provider.is_active }"
-        >
-          <div class="provider-header">
-            <div class="provider-info">
-              <h3>{{ provider.name }}</h3>
-              <span class="provider-type">{{
-                provider.provider_type.toUpperCase()
-              }}</span>
+        <div v-else-if="domainRulesError" class="error">
+          {{ domainRulesError }}
+        </div>
+        <div v-else-if="domainRules.length === 0" class="empty-state">
+          <p>No domain rules configured</p>
+        </div>
+        <div v-else class="domain-rules-list">
+          <div
+            v-for="rule in domainRules"
+            :key="rule.id"
+            class="domain-rule-item"
+          >
+            <div class="domain-rule-info">
+              <span class="domain-rule-pattern">{{ rule.domain_pattern }}</span>
+              <span
+                class="domain-rule-status"
+                :class="{
+                  active: rule.is_active,
+                  inactive: !rule.is_active,
+                }"
+              >
+                {{ rule.is_active ? "Active" : "Inactive" }}
+              </span>
             </div>
-            <div class="provider-actions">
-              <div class="toggle-container">
-                <label class="toggle-label">
-                  <div
-                    class="toggle-switch"
-                    :class="{ active: provider.is_active }"
-                    @click="toggleProvider(provider)"
-                  >
-                    <div class="toggle-slider"></div>
-                  </div>
-                </label>
-              </div>
+            <div class="domain-rule-actions">
               <button
-                @click="editProvider(provider)"
+                @click="editDomainRule(rule)"
                 class="btn btn-small btn-secondary"
               >
                 Edit
               </button>
               <button
-                @click="deleteProvider(provider.id)"
+                @click="deleteDomainRule(rule.id)"
                 class="btn btn-small btn-danger"
               >
                 Delete
               </button>
             </div>
           </div>
-          <div class="provider-details">
-            <p><strong>ID:</strong> {{ provider.id }}</p>
-            <p>
-              <strong>Created:</strong> {{ formatDate(provider.created_at) }}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Domain Rules Section -->
-    <div class="domain-rules-section">
-      <div class="section-header">
-        <h2>Domain Rules</h2>
-        <div class="button-group">
-          <button @click="showDomainRuleModal = true" class="btn btn-primary">
-            Add Domain Rule
-          </button>
-          <button @click="loadDomainRules" class="btn btn-secondary">
-            Refresh Rules
-          </button>
         </div>
       </div>
 
-      <div v-if="domainRulesLoading" class="loading">
-        Loading domain rules...
-      </div>
-      <div v-else-if="domainRulesError" class="error">
-        {{ domainRulesError }}
-      </div>
-      <div v-else-if="domainRules.length === 0" class="empty-state">
-        <p>No domain rules configured</p>
-      </div>
-      <div v-else class="domain-rules-list">
-        <div
-          v-for="rule in domainRules"
-          :key="rule.id"
-          class="domain-rule-item"
-        >
-          <div class="domain-rule-info">
-            <span class="domain-rule-pattern">{{ rule.domain_pattern }}</span>
-            <span
-              class="domain-rule-status"
-              :class="{
-                active: rule.is_active,
-                inactive: !rule.is_active,
-              }"
-            >
-              {{ rule.is_active ? "Active" : "Inactive" }}
-            </span>
-          </div>
-          <div class="domain-rule-actions">
-            <button
-              @click="editDomainRule(rule)"
-              class="btn btn-small btn-secondary"
-            >
-              Edit
-            </button>
-            <button
-              @click="deleteDomainRule(rule.id)"
-              class="btn btn-small btn-danger"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Create/Edit Modal -->
-    <teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click="closeModal">
-        <div class="modal modal-wide" @click.stop>
-          <div class="modal-header">
-            <h3>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h3>
-            <button
-              @click="closeModal"
-              class="modal-close-btn"
-              aria-label="Close"
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-
-          <div class="modal-body">
-            <form @submit.prevent="handleSaveProvider" class="modal-form">
-              <div class="form-group">
-                <label for="provider-name">Name *</label>
-                <input
-                  id="provider-name"
-                  v-model="form.name"
-                  type="text"
-                  required
-                  autocomplete="off"
-                  placeholder="e.g., Google SSO, Azure AD"
-                />
-              </div>
-
-              <div class="form-group">
-                <label for="provider-type">Provider Type *</label>
-                <CustomSelect
-                  id="provider-type"
-                  v-model="form.provider_type"
-                  :options="providerTypeOptions"
-                  :disabled="editingProvider !== null"
-                  @change="onProviderTypeChange"
-                  placeholder="Select provider..."
-                />
-              </div>
-
-              <!-- Google Configuration -->
-              <div
-                v-if="form.provider_type === 'google'"
-                class="config-section"
+      <Teleport v-if="showModal" to="body">
+        <div class="modal-overlay" @click="closeModal">
+          <div class="modal modal-wide" @click.stop>
+            <div class="modal-header">
+              <h3>{{ editingProvider ? "Edit Provider" : "Add Provider" }}</h3>
+              <button
+                @click="closeModal"
+                class="modal-close-btn"
+                aria-label="Close"
+                type="button"
               >
-                <h3>Google Configuration</h3>
-                <p class="config-description">
-                  Configure Google OAuth2. You'll need to create OAuth
-                  credentials in the
-                  <a
-                    href="https://console.cloud.google.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Google Cloud Console
-                  </a>
-                  and set the redirect URI to:
-                  <code>{{ getRedirectUri() }}</code>
-                </p>
-                <div class="form-group">
-                  <label for="google-client-id">Google Client ID *</label>
-                  <input
-                    id="google-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                    placeholder="xxxxx.apps.googleusercontent.com"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="google-client-secret"
-                    >Google Client Secret *</label
-                  >
-                  <input
-                    id="google-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    placeholder="GOCSPX-xxxxx"
-                  />
-                </div>
-              </div>
+                ×
+              </button>
+            </div>
 
-              <!-- Microsoft Entra Configuration -->
-              <div
-                v-if="form.provider_type === 'microsoft'"
-                class="config-section"
-              >
-                <h3>Microsoft Entra Configuration</h3>
-                <p class="config-description">
-                  Configure Microsoft Entra ID (Azure AD) using OpenID Connect.
-                </p>
+            <div class="modal-body">
+              <form @submit.prevent="handleSaveProvider" class="modal-form">
                 <div class="form-group">
-                  <label for="microsoft-tenant-id">Tenant ID *</label>
+                  <label for="provider-name">Name *</label>
                   <input
-                    id="microsoft-tenant-id"
-                    v-model="form.config.tenant_id"
+                    id="provider-name"
+                    v-model="form.name"
                     type="text"
                     required
                     autocomplete="off"
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or common"
-                  />
-                  <small
-                    >Use "common" for multi-tenant or your specific tenant
-                    ID</small
-                  >
-                </div>
-                <div class="form-group">
-                  <label for="microsoft-client-id"
-                    >Client ID (Application ID) *</label
-                  >
-                  <input
-                    id="microsoft-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    placeholder="e.g., Google SSO, Azure AD"
                   />
                 </div>
-                <div class="form-group">
-                  <label for="microsoft-client-secret">Client Secret *</label>
-                  <input
-                    id="microsoft-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    placeholder="Client secret value"
-                  />
-                </div>
-              </div>
 
-              <!-- Slack Configuration -->
-              <div v-if="form.provider_type === 'slack'" class="config-section">
-                <h3>Slack Configuration</h3>
-                <p class="config-description">
-                  Configure Slack OAuth2. Create an app at
-                  <a
-                    href="https://api.slack.com/apps"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    api.slack.com/apps
-                  </a>
-                  and set the redirect URI to:
-                  <code>{{ getRedirectUri() }}</code>
-                </p>
                 <div class="form-group">
-                  <label for="slack-client-id">Slack Client ID *</label>
-                  <input
-                    id="slack-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                    placeholder="1234567890.1234567890"
+                  <label for="provider-type">Provider Type *</label>
+                  <CustomSelect
+                    id="provider-type"
+                    v-model="form.provider_type"
+                    :options="providerTypeOptions"
+                    :disabled="editingProvider !== null"
+                    @change="onProviderTypeChange"
+                    placeholder="Select provider..."
                   />
                 </div>
-                <div class="form-group">
-                  <label for="slack-client-secret">Slack Client Secret *</label>
-                  <input
-                    id="slack-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    placeholder="Client secret"
-                  />
-                </div>
-              </div>
 
-              <!-- Discord Configuration -->
-              <div
-                v-if="form.provider_type === 'discord'"
-                class="config-section"
-              >
-                <h3>Discord Configuration</h3>
-                <p class="config-description">
-                  Configure Discord OAuth2. Create an application at
-                  <a
-                    href="https://discord.com/developers/applications"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    discord.com/developers
-                  </a>
-                  and set the redirect URI to:
-                  <code>{{ getRedirectUri() }}</code>
-                </p>
-                <div class="form-group">
-                  <label for="discord-client-id">Discord Client ID *</label>
-                  <input
-                    id="discord-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                    placeholder="123456789012345678"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="discord-client-secret"
-                    >Discord Client Secret *</label
-                  >
-                  <input
-                    id="discord-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    placeholder="Client secret"
-                  />
-                </div>
-              </div>
-
-              <!-- GitLab Configuration -->
-              <div
-                v-if="form.provider_type === 'gitlab'"
-                class="config-section"
-              >
-                <h3>GitLab Configuration</h3>
-                <p class="config-description">
-                  Configure GitLab OAuth2. Create an application in your GitLab
-                  instance (Settings → Applications) and set the redirect URI
-                  to:
-                  <code>{{ getRedirectUri() }}</code>
-                </p>
-                <div class="form-group">
-                  <label for="gitlab-instance-url">GitLab Instance URL</label>
-                  <input
-                    id="gitlab-instance-url"
-                    v-model="form.config.instance_url"
-                    type="url"
-                    autocomplete="off"
-                    placeholder="https://gitlab.com (default)"
-                  />
-                  <small
-                    >Leave empty for gitlab.com, or enter your self-hosted
-                    GitLab URL</small
-                  >
-                </div>
-                <div class="form-group">
-                  <label for="gitlab-client-id">GitLab Application ID *</label>
-                  <input
-                    id="gitlab-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                    placeholder="Application ID"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="gitlab-client-secret">GitLab Secret *</label>
-                  <input
-                    id="gitlab-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    placeholder="Secret"
-                  />
-                </div>
-              </div>
-
-              <!-- OIDC Generic Configuration -->
-              <div v-if="form.provider_type === 'oidc'" class="config-section">
-                <h3>OIDC (Generic) Configuration</h3>
-                <p class="config-description">
-                  Configure a generic OpenID Connect provider. OIDC discovery
-                  will be used to find endpoints automatically.
-                </p>
-                <div class="form-group">
-                  <label for="oidc-issuer-url">Issuer URL *</label>
-                  <input
-                    id="oidc-issuer-url"
-                    v-model="form.config.issuer_url"
-                    type="url"
-                    required
-                    autocomplete="off"
-                    placeholder="https://idp.example.com"
-                  />
-                  <small>OIDC discovery will be used to find endpoints</small>
-                </div>
-                <div class="form-group">
-                  <label for="oidc-client-id">Client ID *</label>
-                  <input
-                    id="oidc-client-id"
-                    v-model="form.config.client_id"
-                    type="text"
-                    required
-                    autocomplete="off"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="oidc-client-secret">Client Secret *</label>
-                  <input
-                    id="oidc-client-secret"
-                    v-model="form.config.client_secret"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="oidc-redirect-uri">Redirect URI</label>
-                  <input
-                    id="oidc-redirect-uri"
-                    v-model="form.config.redirect_uri"
-                    type="url"
-                    autocomplete="off"
-                    placeholder="Auto-generated if not provided"
-                  />
-                </div>
-                <div class="form-group">
-                  <label for="oidc-scopes">Scopes</label>
-                  <input
-                    id="oidc-scopes"
-                    v-model="form.config.scopes"
-                    type="text"
-                    autocomplete="off"
-                    placeholder="openid email profile (default)"
-                  />
-                </div>
-              </div>
-
-              <!-- Email Magic Link Configuration -->
-              <div
-                v-if="form.provider_type === 'email-magic-link'"
-                class="config-section"
-              >
-                <h3>Email Magic Link Configuration</h3>
-                <p class="config-description">
-                  Users will receive a magic link via email to sign in. No
-                  password required. Make sure email (SMTP) is configured in
-                  system settings.
-                </p>
-
-                <!-- SMTP Status -->
-                <div class="smtp-status">
-                  <div class="smtp-status-header">
-                    <span class="smtp-status-label">SMTP Configuration:</span>
-                    <button
-                      @click="testSMTP"
-                      class="btn btn-small btn-secondary"
-                      :disabled="smtpTesting"
-                      type="button"
+                <div
+                  v-if="form.provider_type === 'google'"
+                  class="config-section"
+                >
+                  <h3>Google Configuration</h3>
+                  <p class="config-description">
+                    Configure Google OAuth2. You'll need to create OAuth
+                    credentials in the
+                    <a
+                      href="https://console.cloud.google.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >
-                      {{ smtpTesting ? "Testing..." : "Test SMTP" }}
-                    </button>
+                      Google Cloud Console
+                    </a>
+                    and set the redirect URI to:
+                    <code>{{ getRedirectUri() }}</code>
+                  </p>
+                  <div class="form-group">
+                    <label for="google-client-id">Google Client ID *</label>
+                    <input
+                      id="google-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="xxxxx.apps.googleusercontent.com"
+                    />
                   </div>
-                  <div
-                    v-if="smtpStatus !== null"
-                    class="smtp-status-message"
-                    :class="smtpStatus.success ? 'success' : 'error'"
-                  >
-                    <span class="smtp-status-icon">
-                      {{ smtpStatus.success ? "✓" : "✗" }}
-                    </span>
-                    <span class="smtp-status-text">
-                      {{
-                        smtpStatus.success
-                          ? smtpStatus.message
-                          : smtpStatus.error
-                      }}
-                    </span>
+                  <div class="form-group">
+                    <label for="google-client-secret"
+                      >Google Client Secret *</label
+                    >
+                    <input
+                      id="google-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                      placeholder="GOCSPX-xxxxx"
+                    />
                   </div>
                 </div>
 
-                <div class="form-group">
-                  <label for="magic-link-expiry">Link Expiry (minutes)</label>
-                  <input
-                    id="magic-link-expiry"
-                    v-model="form.config.expiry_minutes"
-                    type="number"
-                    min="5"
-                    max="1440"
-                    autocomplete="off"
-                    placeholder="15 (default)"
-                  />
-                  <small
-                    >How long the magic link remains valid (5-1440
-                    minutes)</small
-                  >
+                <div
+                  v-if="form.provider_type === 'microsoft'"
+                  class="config-section"
+                >
+                  <h3>Microsoft Entra Configuration</h3>
+                  <p class="config-description">
+                    Configure Microsoft Entra ID (Azure AD) using OpenID
+                    Connect.
+                  </p>
+                  <div class="form-group">
+                    <label for="microsoft-tenant-id">Tenant ID *</label>
+                    <input
+                      id="microsoft-tenant-id"
+                      v-model="form.config.tenant_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or common"
+                    />
+                    <small
+                      >Use "common" for multi-tenant or your specific tenant
+                      ID</small
+                    >
+                  </div>
+                  <div class="form-group">
+                    <label for="microsoft-client-id"
+                      >Client ID (Application ID) *</label
+                    >
+                    <input
+                      id="microsoft-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="microsoft-client-secret">Client Secret *</label>
+                    <input
+                      id="microsoft-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                      placeholder="Client secret value"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <!-- SAML Generic Configuration -->
-              <div v-if="form.provider_type === 'saml'" class="config-section">
-                <h3>SAML (Generic) Configuration</h3>
+                <div
+                  v-if="form.provider_type === 'slack'"
+                  class="config-section"
+                >
+                  <h3>Slack Configuration</h3>
+                  <p class="config-description">
+                    Configure Slack OAuth2. Create an app at
+                    <a
+                      href="https://api.slack.com/apps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      api.slack.com/apps
+                    </a>
+                    and set the redirect URI to:
+                    <code>{{ getRedirectUri() }}</code>
+                  </p>
+                  <div class="form-group">
+                    <label for="slack-client-id">Slack Client ID *</label>
+                    <input
+                      id="slack-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="1234567890.1234567890"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="slack-client-secret"
+                      >Slack Client Secret *</label
+                    >
+                    <input
+                      id="slack-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                      placeholder="Client secret"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="form.provider_type === 'discord'"
+                  class="config-section"
+                >
+                  <h3>Discord Configuration</h3>
+                  <p class="config-description">
+                    Configure Discord OAuth2. Create an application at
+                    <a
+                      href="https://discord.com/developers/applications"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      discord.com/developers
+                    </a>
+                    and set the redirect URI to:
+                    <code>{{ getRedirectUri() }}</code>
+                  </p>
+                  <div class="form-group">
+                    <label for="discord-client-id">Discord Client ID *</label>
+                    <input
+                      id="discord-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="123456789012345678"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="discord-client-secret"
+                      >Discord Client Secret *</label
+                    >
+                    <input
+                      id="discord-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                      placeholder="Client secret"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="form.provider_type === 'gitlab'"
+                  class="config-section"
+                >
+                  <h3>GitLab Configuration</h3>
+                  <p class="config-description">
+                    Configure GitLab OAuth2. Create an application in your
+                    GitLab instance (Settings → Applications) and set the
+                    redirect URI to:
+                    <code>{{ getRedirectUri() }}</code>
+                  </p>
+                  <div class="form-group">
+                    <label for="gitlab-instance-url">GitLab Instance URL</label>
+                    <input
+                      id="gitlab-instance-url"
+                      v-model="form.config.instance_url"
+                      type="url"
+                      autocomplete="off"
+                      placeholder="https://gitlab.com (default)"
+                    />
+                    <small
+                      >Leave empty for gitlab.com, or enter your self-hosted
+                      GitLab URL</small
+                    >
+                  </div>
+                  <div class="form-group">
+                    <label for="gitlab-client-id"
+                      >GitLab Application ID *</label
+                    >
+                    <input
+                      id="gitlab-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="Application ID"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="gitlab-client-secret">GitLab Secret *</label>
+                    <input
+                      id="gitlab-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                      placeholder="Secret"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="form.provider_type === 'oidc'"
+                  class="config-section"
+                >
+                  <h3>OIDC (Generic) Configuration</h3>
+                  <p class="config-description">
+                    Configure a generic OpenID Connect provider. OIDC discovery
+                    will be used to find endpoints automatically.
+                  </p>
+                  <div class="form-group">
+                    <label for="oidc-issuer-url">Issuer URL *</label>
+                    <input
+                      id="oidc-issuer-url"
+                      v-model="form.config.issuer_url"
+                      type="url"
+                      required
+                      autocomplete="off"
+                      placeholder="https://idp.example.com"
+                    />
+                    <small>OIDC discovery will be used to find endpoints</small>
+                  </div>
+                  <div class="form-group">
+                    <label for="oidc-client-id">Client ID *</label>
+                    <input
+                      id="oidc-client-id"
+                      v-model="form.config.client_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="oidc-client-secret">Client Secret *</label>
+                    <input
+                      id="oidc-client-secret"
+                      v-model="form.config.client_secret"
+                      type="password"
+                      required
+                      autocomplete="new-password"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="oidc-redirect-uri">Redirect URI</label>
+                    <input
+                      id="oidc-redirect-uri"
+                      v-model="form.config.redirect_uri"
+                      type="url"
+                      autocomplete="off"
+                      placeholder="Auto-generated if not provided"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="oidc-scopes">Scopes</label>
+                    <input
+                      id="oidc-scopes"
+                      v-model="form.config.scopes"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="openid email profile (default)"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="form.provider_type === 'email-magic-link'"
+                  class="config-section"
+                >
+                  <h3>Email Magic Link Configuration</h3>
+                  <p class="config-description">
+                    Users will receive a magic link via email to sign in. No
+                    password required. Make sure email (SMTP) is configured in
+                    system settings.
+                  </p>
+
+                  <div class="smtp-status">
+                    <div class="smtp-status-header">
+                      <span class="smtp-status-label">SMTP Configuration:</span>
+                      <button
+                        @click="testSMTP"
+                        class="btn btn-small btn-secondary"
+                        :disabled="smtpTesting"
+                        type="button"
+                      >
+                        {{ smtpTesting ? "Testing..." : "Test SMTP" }}
+                      </button>
+                    </div>
+                    <div
+                      v-if="smtpStatus !== null"
+                      class="smtp-status-message"
+                      :class="smtpStatus.success ? 'success' : 'error'"
+                    >
+                      <span class="smtp-status-icon">
+                        {{ smtpStatus.success ? "✓" : "✗" }}
+                      </span>
+                      <span class="smtp-status-text">
+                        {{
+                          smtpStatus.success
+                            ? smtpStatus.message
+                            : smtpStatus.error
+                        }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="magic-link-expiry">Link Expiry (minutes)</label>
+                    <input
+                      id="magic-link-expiry"
+                      v-model="form.config.expiry_minutes"
+                      type="number"
+                      min="5"
+                      max="1440"
+                      autocomplete="off"
+                      placeholder="15 (default)"
+                    />
+                    <small
+                      >How long the magic link remains valid (5-1440
+                      minutes)</small
+                    >
+                  </div>
+                </div>
+
+                <div
+                  v-if="form.provider_type === 'saml'"
+                  class="config-section"
+                >
+                  <h3>SAML (Generic) Configuration</h3>
+                  <div class="form-group">
+                    <label for="saml-entity-id">IdP Entity ID *</label>
+                    <input
+                      id="saml-entity-id"
+                      v-model="form.config.entity_id"
+                      type="text"
+                      required
+                      autocomplete="off"
+                      placeholder="https://idp.example.com/metadata"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="saml-sso-url">SSO URL *</label>
+                    <input
+                      id="saml-sso-url"
+                      v-model="form.config.sso_url"
+                      type="url"
+                      required
+                      autocomplete="off"
+                      placeholder="https://idp.example.com/sso"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="saml-x509-cert">X.509 Certificate *</label>
+                    <textarea
+                      id="saml-x509-cert"
+                      v-model="form.config.x509_cert"
+                      required
+                      rows="5"
+                      autocomplete="off"
+                      placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                    ></textarea>
+                  </div>
+                  <div class="form-group">
+                    <label for="saml-sp-entity-id">SP Entity ID</label>
+                    <input
+                      id="saml-sp-entity-id"
+                      v-model="form.config.sp_entity_id"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="leyzen-vault (default)"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="saml-acs-url">ACS URL</label>
+                    <input
+                      id="saml-acs-url"
+                      v-model="form.config.acs_url"
+                      type="url"
+                      autocomplete="off"
+                      placeholder="Auto-generated if not provided"
+                    />
+                  </div>
+                </div>
+
+                <div v-if="formError" class="error-message">
+                  {{ formError }}
+                </div>
+                <div v-if="formSuccess" class="success-message">
+                  {{ formSuccess }}
+                </div>
+
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    @click="closeModal"
+                    class="btn btn-secondary"
+                    :disabled="formLoading"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="formLoading"
+                  >
+                    {{ formLoading ? "Saving..." : "Save" }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport v-if="showDeleteModal" to="body">
+        <div class="modal-overlay" @click.self="closeDeleteModal">
+          <div class="modal delete-modal">
+            <div class="modal-header">
+              <h2>Delete Provider</h2>
+              <button @click="closeDeleteModal" class="modal-close">
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <p>
+                Are you sure you want to delete the provider
+                <strong>{{ providerToDelete?.name }}</strong
+                >?
+              </p>
+              <p class="warning-text">
+                This action cannot be undone. All configuration for this
+                provider will be permanently deleted.
+              </p>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                @click="closeDeleteModal"
+                class="btn btn-secondary"
+                :disabled="deletingProvider"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                @click="confirmDelete"
+                class="btn btn-danger"
+                :disabled="deletingProvider"
+              >
+                {{ deletingProvider ? "Deleting..." : "Delete" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport v-if="showDomainRuleModal" to="body">
+        <div class="modal-overlay" @click.self="showDomainRuleModal = false">
+          <div class="modal modal-wide" @click.stop>
+            <div class="modal-header">
+              <h3>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h3>
+              <button
+                @click="closeDomainRuleModal"
+                class="modal-close-btn"
+                aria-label="Close"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <div class="modal-body">
+              <form @submit.prevent="handleSaveDomainRule" class="modal-form">
                 <div class="form-group">
-                  <label for="saml-entity-id">IdP Entity ID *</label>
+                  <label for="domain-rule-pattern">Domain Pattern:</label>
                   <input
-                    id="saml-entity-id"
-                    v-model="form.config.entity_id"
+                    id="domain-rule-pattern"
+                    v-model="domainRuleForm.domain_pattern"
                     type="text"
                     required
-                    autocomplete="off"
-                    placeholder="https://idp.example.com/metadata"
+                    :disabled="domainRuleForm.loading"
+                    placeholder="example.com or *.example.com"
+                    autofocus
                   />
+                  <small>Use * for wildcards (e.g., *.example.com)</small>
                 </div>
-                <div class="form-group">
-                  <label for="saml-sso-url">SSO URL *</label>
-                  <input
-                    id="saml-sso-url"
-                    v-model="form.config.sso_url"
-                    type="url"
-                    required
-                    autocomplete="off"
-                    placeholder="https://idp.example.com/sso"
-                  />
+                <div v-if="domainRuleForm.error" class="error-message">
+                  {{ domainRuleForm.error }}
                 </div>
-                <div class="form-group">
-                  <label for="saml-x509-cert">X.509 Certificate *</label>
-                  <textarea
-                    id="saml-x509-cert"
-                    v-model="form.config.x509_cert"
-                    required
-                    rows="5"
-                    autocomplete="off"
-                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                  ></textarea>
+                <div v-if="domainRuleForm.success" class="success-message">
+                  {{ domainRuleForm.success }}
                 </div>
-                <div class="form-group">
-                  <label for="saml-sp-entity-id">SP Entity ID</label>
-                  <input
-                    id="saml-sp-entity-id"
-                    v-model="form.config.sp_entity_id"
-                    type="text"
-                    autocomplete="off"
-                    placeholder="leyzen-vault (default)"
-                  />
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    @click="closeDomainRuleModal"
+                    class="btn btn-secondary"
+                    :disabled="domainRuleForm.loading"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    :disabled="domainRuleForm.loading"
+                    class="btn btn-primary"
+                  >
+                    {{ domainRuleForm.loading ? "Saving..." : "Save" }}
+                  </button>
                 </div>
-                <div class="form-group">
-                  <label for="saml-acs-url">ACS URL</label>
-                  <input
-                    id="saml-acs-url"
-                    v-model="form.config.acs_url"
-                    type="url"
-                    autocomplete="off"
-                    placeholder="Auto-generated if not provided"
-                  />
-                </div>
-              </div>
-
-              <div v-if="formError" class="error-message">{{ formError }}</div>
-              <div v-if="formSuccess" class="success-message">
-                {{ formSuccess }}
-              </div>
-
-              <div class="form-actions">
-                <button
-                  type="button"
-                  @click="closeModal"
-                  class="btn btn-secondary"
-                  :disabled="formLoading"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  :disabled="formLoading"
-                >
-                  {{ formLoading ? "Saving..." : "Save" }}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
-      </div>
-    </teleport>
+      </Teleport>
 
-    <!-- Delete Confirmation Modal -->
-    <teleport to="body">
-      <div
-        v-if="showDeleteModal"
-        class="modal-overlay"
-        @click.self="closeDeleteModal"
-      >
-        <div class="modal delete-modal">
-          <div class="modal-header">
-            <h2>Delete Provider</h2>
-            <button @click="closeDeleteModal" class="modal-close">
-              &times;
-            </button>
-          </div>
-          <div class="modal-body">
-            <p>
-              Are you sure you want to delete the provider
-              <strong>{{ providerToDelete?.name }}</strong
-              >?
-            </p>
-            <p class="warning-text">
-              This action cannot be undone. All configuration for this provider
-              will be permanently deleted.
-            </p>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              @click="closeDeleteModal"
-              class="btn btn-secondary"
-              :disabled="deletingProvider"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              @click="confirmDelete"
-              class="btn btn-danger"
-              :disabled="deletingProvider"
-            >
-              {{ deletingProvider ? "Deleting..." : "Delete" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+      <ConfirmationModal
+        :show="showConfirmModal"
+        :title="confirmModalConfig.title"
+        :message="confirmModalConfig.message"
+        :confirmText="confirmModalConfig.confirmText"
+        :dangerous="confirmModalConfig.dangerous"
+        @confirm="handleConfirmModalConfirm"
+        @cancel="handleConfirmModalCancel"
+        @close="handleConfirmModalCancel"
+      />
 
-    <!-- Domain Rule Modal -->
-    <teleport to="body">
-      <div
-        v-if="showDomainRuleModal"
-        class="modal-overlay"
-        @click.self="showDomainRuleModal = false"
-      >
-        <div class="modal modal-wide" @click.stop>
-          <div class="modal-header">
-            <h3>{{ editingDomainRule ? "Edit" : "Add" }} Domain Rule</h3>
-            <button
-              @click="closeDomainRuleModal"
-              class="modal-close-btn"
-              aria-label="Close"
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-          <div class="modal-body">
-            <form @submit.prevent="handleSaveDomainRule" class="modal-form">
-              <div class="form-group">
-                <label for="domain-rule-pattern">Domain Pattern:</label>
-                <input
-                  id="domain-rule-pattern"
-                  v-model="domainRuleForm.domain_pattern"
-                  type="text"
-                  required
-                  :disabled="domainRuleForm.loading"
-                  placeholder="example.com or *.example.com"
-                  autofocus
-                />
-                <small>Use * for wildcards (e.g., *.example.com)</small>
-              </div>
-              <div v-if="domainRuleForm.error" class="error-message">
-                {{ domainRuleForm.error }}
-              </div>
-              <div v-if="domainRuleForm.success" class="success-message">
-                {{ domainRuleForm.success }}
-              </div>
-              <div class="form-actions">
-                <button
-                  type="button"
-                  @click="closeDomainRuleModal"
-                  class="btn btn-secondary"
-                  :disabled="domainRuleForm.loading"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  :disabled="domainRuleForm.loading"
-                  class="btn btn-primary"
-                >
-                  {{ domainRuleForm.loading ? "Saving..." : "Save" }}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    </teleport>
-
-    <!-- Confirmation Modal -->
-    <ConfirmationModal
-      :show="showConfirmModal"
-      :title="confirmModalConfig.title"
-      :message="confirmModalConfig.message"
-      :confirmText="confirmModalConfig.confirmText"
-      :dangerous="confirmModalConfig.dangerous"
-      @confirm="handleConfirmModalConfirm"
-      @cancel="handleConfirmModalCancel"
-      @close="handleConfirmModalCancel"
-    />
-
-    <!-- Alert Modal -->
-    <AlertModal
-      :show="showAlertModal"
-      :type="alertModalConfig.type"
-      :title="alertModalConfig.title"
-      :message="alertModalConfig.message"
-      @close="handleAlertModalClose"
-      @ok="handleAlertModalClose"
-    />
+      <AlertModal
+        :show="showAlertModal"
+        :type="alertModalConfig.type"
+        :title="alertModalConfig.title"
+        :message="alertModalConfig.message"
+        @close="handleAlertModalClose"
+        @ok="handleAlertModalClose"
+      />
+    </div>
   </div>
 </template>
 
@@ -1118,12 +1110,10 @@ const openCreateModal = () => {
 
 // Reverse map: detect preset from technical type and config
 const detectProviderPreset = (technicalType, config) => {
-  // Check if provider_preset is stored in config
   if (config.provider_preset) {
     return config.provider_preset;
   }
 
-  // Try to detect from configuration
   if (technicalType === "email-magic-link") {
     return "email-magic-link";
   } else if (technicalType === "oauth2") {
@@ -1150,7 +1140,6 @@ const detectProviderPreset = (technicalType, config) => {
     return "saml";
   }
 
-  // Fallback to technical type
   return technicalType;
 };
 
@@ -1298,7 +1287,6 @@ const handleSaveProvider = async () => {
       return;
     }
 
-    // If creating a new provider (which will be active by default), check for conflicts
     // Use preset instead of technical type
     if (!editingProvider.value) {
       const presetType = form.value.provider_type; // This is the preset (google, slack, etc.)
@@ -1353,7 +1341,6 @@ const handleSaveProvider = async () => {
 const toggleProvider = async (provider) => {
   const newState = !provider.is_active;
 
-  // If activating, check if another provider of the same preset is already active
   if (newState) {
     // Get preset from provider config
     const providerConfig = provider.config || {};
@@ -1468,7 +1455,6 @@ const onProviderTypeChange = () => {
     saml: "SAML Provider",
   };
 
-  // Set default name if empty
   if (!form.value.name) {
     form.value.name = providerNames[form.value.provider_type] || "";
   }
@@ -1607,7 +1593,6 @@ onMounted(() => {
 
 <style scoped>
 .admin-sso-providers {
-  padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
 }

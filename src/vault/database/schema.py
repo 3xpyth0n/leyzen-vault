@@ -66,7 +66,7 @@ class SSOProviderTypeEnum(TypeDecorator):
             return None
         if isinstance(value, SSOProviderType):
             return value.value
-        # If it's already a string, return as-is
+
         return value
 
     def process_result_value(self, value, dialect):
@@ -80,11 +80,11 @@ class SSOProviderTypeEnum(TypeDecorator):
             try:
                 return SSOProviderType(value)
             except ValueError:
-                # If value doesn't match any enum value, try to find by value
+
                 for member in SSOProviderType:
                     if member.value == value:
                         return member
-                # If still not found, return the string (shouldn't happen in normal operation)
+
                 return value
         return value
 
@@ -1145,7 +1145,7 @@ class JWTBlacklist(db.Model):
     jti: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # JWT ID for replay protection (nullable for backward compatibility)
-    # Note: unique constraint on jti is created via partial index in migration
+
     # (CREATE UNIQUE INDEX ... WHERE jti IS NOT NULL) to handle nullable column
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -1157,7 +1157,6 @@ class JWTBlacklist(db.Model):
     __table_args__ = (
         Index("ix_jwt_blacklist_token", "token"),
         Index("ix_jwt_blacklist_expires_at", "expires_at"),
-        # Note: jti index is created separately via migration to handle cases where column doesn't exist yet
     )
 
 
@@ -1452,7 +1451,7 @@ class UserInvitation(db.Model):
     inviter: Mapped["User"] = relationship("User", foreign_keys=[invited_by])
 
     # Indexes for efficient queries
-    # Note: token has unique=True which creates an index automatically,
+
     # so we don't need to define it again here
     __table_args__ = (
         Index("ix_user_invitations_email", "email"),
@@ -1930,7 +1929,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
     # Store passwords_to_store outside try block so it's accessible in finally
     passwords_to_store = {}
 
-    # Try to acquire advisory lock (non-blocking, two-integer version)
     lock_acquired = False
     try:
         with engine.begin() as lock_conn:
@@ -1940,12 +1938,11 @@ def init_db_roles(app: Any, secret_key: str) -> None:
             )
             lock_acquired = result.scalar() is True
     except Exception:
-        # If we can't acquire lock, assume another worker is handling it
+
         lock_acquired = False
 
-    # If lock not acquired, another worker is initializing roles
     if not lock_acquired:
-        # Wait a bit for the other worker to finish
+
         import time
 
         time.sleep(1)
@@ -1987,7 +1984,7 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                 existing_secret_keys = {row[0] for row in secrets_check.fetchall()}
 
             except Exception:
-                # If system_secrets table doesn't exist yet, assume no passwords exist
+
                 existing_secret_keys = set()
 
             # Generate passwords for roles that don't exist or passwords not in SystemSecrets
@@ -2263,7 +2260,6 @@ def init_db_roles(app: Any, secret_key: str) -> None:
                     else:
                         logger.error(error_msg)
 
-            # If any password storage failed, raise an error to prevent silent failures
             if storage_errors:
                 error_details = "; ".join(
                     [f"{key}: {str(err)}" for key, err in storage_errors]
@@ -2405,11 +2401,9 @@ def init_db(app) -> bool:
             # Consider database initialized if system_secrets table exists
             db_already_initialized = "system_secrets" in existing_tables
         except Exception:
-            # If we can't check, assume not initialized
+
             db_already_initialized = False
 
-        # If database is already initialized, only one worker should log this
-        # But we still need to run migrations even if database is already initialized
         if db_already_initialized:
             # Check if another worker already logged this by checking system_settings
             already_logged = False
@@ -2426,7 +2420,7 @@ def init_db(app) -> bool:
                 pass
 
             if not already_logged:
-                # Try to acquire lock briefly - only the first worker to acquire will log
+
                 lock_acquired = False
                 try:
                     result = db.session.execute(
@@ -2475,7 +2469,7 @@ def init_db(app) -> bool:
                                         "[INIT] Database already initialized, skipping initialization"
                                     )
                         except Exception:
-                            # If we can't set flag, log anyway
+
                             if app_logger:
                                 app_logger.log(
                                     "[INIT] Database already initialized, skipping initialization"
@@ -2521,7 +2515,6 @@ def init_db(app) -> bool:
 
             return False
 
-        # Try to acquire advisory lock with retry logic
         # Use a small random delay to avoid all workers trying at exactly the same time
         import time
         import random
@@ -2558,15 +2551,13 @@ def init_db(app) -> bool:
                     )
                     app_logger.flush()
 
-            # Wait before retry (except on last attempt)
             if attempt < max_retries - 1 and not lock_acquired:
                 # Exponential backoff with jitter
                 delay = base_delay * (2**attempt) + random.uniform(0, 0.1)
                 time.sleep(delay)
 
-        # If lock not acquired after all retries, another worker is initializing
         if not lock_acquired:
-            # Wait a bit for the other worker to finish
+
             time.sleep(2)
             # Even if we don't have the lock, we should still run migrations
             # Migrations are idempotent and safe to run multiple times
@@ -2600,7 +2591,6 @@ def init_db(app) -> bool:
         except Exception:
             pass
 
-        # If database was already initialized, skip table creation but still run migrations
         if db_already_initialized:
             initialization_performed = False
             if app_logger:
@@ -2647,7 +2637,6 @@ def init_db(app) -> bool:
             else:
                 logger.info("[INIT] Starting database initialization...")
 
-        # Note: PostgreSQL roles initialization is moved after db.create_all()
         # to ensure system_secrets table exists before storing passwords
 
         # Helper function to check if error is a duplicate/already exists error
@@ -2777,7 +2766,7 @@ def init_db(app) -> bool:
                 )
 
         # Create all tables and indexes using SQLAlchemy
-        # If objects already exist, that's fine - database is already initialized
+
         try:
             # Log using app logger if available, otherwise use standard logger
 
@@ -2799,7 +2788,7 @@ def init_db(app) -> bool:
                     # Get the model class
                     model_class = None
                     try:
-                        # Try to get the model from required_tables (if it's already loaded)
+
                         # Otherwise try to import it
                         if table_name == "system_secrets":
                             from vault.database.schema import SystemSecrets
@@ -2999,7 +2988,7 @@ def init_db(app) -> bool:
 
             # Wrap db.create_all() in try/except to handle duplicate index errors
             # SQLAlchemy may try to create indexes that already exist
-            # Note: db.create_all() uses the current db.engine (cannot be replaced in SQLAlchemy 2.0)
+
             try:
                 db.create_all()
             except Exception as create_all_error:
@@ -3051,13 +3040,12 @@ def init_db(app) -> bool:
                     logger.warning(log_msg)
                 # Continue anyway - roles might already exist
 
-            # Wait a moment to ensure all tables are fully created and visible
             import time
 
             time.sleep(0.5)
 
             # Run database migrations using the uniform migration system
-            # Note: run_migrations uses db.engine (cannot be replaced in SQLAlchemy 2.0)
+
             try:
                 from vault.database.migrations.registry import run_migrations
 
@@ -3179,7 +3167,7 @@ def init_db(app) -> bool:
                     existing_tables = set(inspector.get_table_names())
 
                     # Get all model tables that should exist
-                    # Note: We're already in schema.py, so we can reference classes directly
+
                     # Use globals() to access classes defined in this module
                     User = globals()["User"]
                     VaultSpace = globals()["VaultSpace"]
@@ -3382,7 +3370,6 @@ def init_db(app) -> bool:
                                         # Ignore cleanup errors - continue with table creation
                                         pass
 
-                                    # Try creating with SQLAlchemy first
                                     model_class.__table__.create(
                                         db.engine, checkfirst=True
                                     )
@@ -3431,9 +3418,7 @@ def init_db(app) -> bool:
                                             else:
                                                 logger.debug(log_msg)
                                     # Verify table was actually created
-                                    time.sleep(
-                                        0.5
-                                    )  # Wait for table creation to propagate
+                                    time.sleep(0.5)
                                     inspector = sql_inspect(db.engine)
                                     existing_tables_after = inspector.get_table_names()
 
@@ -3471,7 +3456,7 @@ def init_db(app) -> bool:
                                                 app_logger.log(log_msg)
                                             else:
                                                 logger.warning(log_msg)
-                                            time.sleep(1.0)  # Wait before retry
+                                            time.sleep(1.0)
                                         else:
                                             log_msg = f"[ERROR] Failed to create table {table_name} after {max_create_attempts} attempts: {table_error}"
                                             if app_logger:
@@ -3507,7 +3492,7 @@ def init_db(app) -> bool:
 
                     # RADICAL SOLUTION: Use direct SQL to ensure table and column exist
                     # Don't rely on inspector which may not see tables immediately
-                    # Try to create table if it doesn't exist, then add jti column
+
                     try:
                         # First, try to create the table if it doesn't exist (idempotent)
                         db.session.execute(
@@ -3583,7 +3568,7 @@ def init_db(app) -> bool:
                                 app_logger.log(log_msg)
                             else:
                                 logger.error(log_msg)
-                            # Try one more time to add it
+
                             try:
                                 db.session.execute(
                                     sql_text(
@@ -3594,7 +3579,7 @@ def init_db(app) -> bool:
 
                             except Exception:
                                 # PostgreSQL doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
-                                # So we'll just log the error
+
                                 pass
                         else:
                             log_msg = f"[WARNING] jti verification query failed: {verify_error}"

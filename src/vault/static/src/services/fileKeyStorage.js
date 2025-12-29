@@ -58,7 +58,6 @@ async function migrateFromLocalStorage() {
     const transaction = db.transaction([STORE_NAME], "readwrite");
     const store = transaction.objectStore(STORE_NAME);
 
-    // Check if migration already done
     const existing = await new Promise((resolve) => {
       const req = store.get("__migration_done");
       req.onsuccess = () => resolve(req.result);
@@ -110,7 +109,6 @@ export async function storeFileKey(fileId, key) {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    // Fallback to localStorage if IndexedDB fails
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     keys[fileId] = key;
     localStorage.setItem("vault_keys", JSON.stringify(keys));
@@ -138,13 +136,11 @@ export async function getFileKey(fileId) {
         resolve(result ? result.key : null);
       };
       req.onerror = () => {
-        // Fallback to localStorage
         const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
         resolve(keys[fileId] || null);
       };
     });
   } catch (error) {
-    // Fallback to localStorage
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     return keys[fileId] || null;
   }
@@ -167,7 +163,6 @@ export async function removeFileKey(fileId) {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    // Fallback to localStorage
     const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
     delete keys[fileId];
     localStorage.setItem("vault_keys", JSON.stringify(keys));
@@ -190,7 +185,6 @@ export async function clearAllFileKeys() {
       req.onerror = () => reject(req.error);
     });
   } catch (error) {
-    // Fallback to localStorage
     localStorage.removeItem("vault_keys");
   }
 }

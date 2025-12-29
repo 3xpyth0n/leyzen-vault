@@ -113,7 +113,7 @@ const getFileKey = async (
   }
 
   // Third: Try to get from global function (skip - this would cause infinite recursion)
-  // Note: We skip this step as the local function would call itself
+
   // Only check window.getFileKey if it exists and is different
   if (
     !fileKey &&
@@ -238,7 +238,6 @@ export const showShareModal = async (
 
   // Always try to open modal, even if key retrieval failed
   try {
-    // Remove existing modal if any
     const existingContainer = document.getElementById("share-modal-container");
     if (existingContainer) {
       try {
@@ -252,7 +251,6 @@ export const showShareModal = async (
     const modalContainer = document.createElement("div");
     modalContainer.id = "share-modal-container";
 
-    // Ensure container is added to body
     if (!document.body) {
       if (window.Notifications) {
         window.Notifications.error("Failed to open share dialog.");
@@ -324,7 +322,6 @@ export const showShareModal = async (
   }
 };
 
-// Export for use in Vue components
 export function useShareModal() {
   return {
     showShareModal,

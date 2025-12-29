@@ -1,228 +1,220 @@
 <template>
-  <div class="admin-panel">
-    <!-- Admin Tabs -->
-    <header>
-      <div class="admin-tabs-wrapper">
-        <div class="admin-tabs" ref="tabsContainer">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :ref="(el) => setTabRef(el, tab.id)"
-            @click="activeTab = tab.id"
-            :class="['admin-tab-button', { active: activeTab === tab.id }]"
-          >
-            {{ tab.label }}
-          </button>
-          <div
-            class="tab-indicator"
-            ref="indicator"
-            :style="indicatorStyle"
-          ></div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Page Content -->
-    <main class="admin-content-wrapper">
-      <div class="admin-content">
-        <!-- Dashboard Tab -->
-        <div v-if="activeTab === 'dashboard'" class="dashboard-tab">
-          <div v-if="statsLoading" class="loading">Loading statistics...</div>
-          <div v-else-if="statsError" class="error">
-            {{ statsError }}
+  <div class="admin-panel-view-container">
+    <div class="admin-panel">
+      <header>
+        <div class="admin-tabs-wrapper">
+          <div class="admin-tabs" ref="tabsContainer">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              :ref="(el) => setTabRef(el, tab.id)"
+              @click="activeTab = tab.id"
+              :class="['admin-tab-button', { active: activeTab === tab.id }]"
+            >
+              {{ tab.label }}
+            </button>
+            <div
+              class="tab-indicator"
+              ref="indicator"
+              :style="indicatorStyle"
+            ></div>
           </div>
-          <div v-else-if="stats" class="dashboard-content">
-            <!-- Header with refresh button -->
-            <div class="dashboard-header">
-              <h2>Dashboard Overview</h2>
-              <div class="header-actions">
-                <span class="last-update" v-if="lastUpdateTime">
-                  Last updated: {{ formatTime(lastUpdateTime) }}
-                </span>
-                <button @click="loadStats" class="btn-refresh" title="Refresh">
-                  <span v-html="getIcon('clock', 18)"></span>
-                </button>
-              </div>
-            </div>
+        </div>
+      </header>
 
-            <!-- Main Statistics Cards -->
-            <div class="stats-grid">
-              <div class="stat-card">
-                <h3>Users</h3>
-                <div class="stat-value">{{ stats.users.total }}</div>
-                <div class="stat-details">
-                  <div class="stat-detail-row" v-if="stats.users.by_role">
-                    <span class="stat-detail-label">Regular:</span>
-                    <span class="stat-detail-value">{{
-                      stats.users.by_role.user || 0
-                    }}</span>
-                  </div>
-                  <div class="stat-detail-row" v-if="stats.users.by_role">
-                    <span class="stat-detail-label">Admins:</span>
-                    <span class="stat-detail-value">{{
-                      (stats.users.by_role.admin || 0) +
-                      (stats.users.by_role.superadmin || 0)
-                    }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="stat-card">
-                <h3>Files</h3>
-                <div class="stat-value">{{ stats.files.total }}</div>
-                <div class="stat-details">
-                  <div class="stat-detail-row">
-                    <span class="stat-detail-label">Deleted:</span>
-                    <span class="stat-detail-value">{{
-                      stats.files.deleted
-                    }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="stat-card">
-                <h3>VaultSpaces</h3>
-                <div class="stat-value">{{ stats.vaultspaces.total }}</div>
-                <div class="stat-details">
-                  <div
-                    class="stat-detail-row"
-                    v-if="stats.vaultspaces.avg_per_user"
+      <main class="admin-content-wrapper">
+        <div class="admin-content">
+          <div v-if="activeTab === 'dashboard'" class="dashboard-tab">
+            <div v-if="statsLoading" class="loading">Loading statistics...</div>
+            <div v-else-if="statsError" class="error">
+              {{ statsError }}
+            </div>
+            <div v-else-if="stats" class="dashboard-content">
+              <div class="dashboard-header">
+                <h2>Dashboard Overview</h2>
+                <div class="header-actions">
+                  <span class="last-update" v-if="lastUpdateTime">
+                    Last updated: {{ formatTime(lastUpdateTime) }}
+                  </span>
+                  <button
+                    @click="loadStats"
+                    class="btn-refresh"
+                    title="Refresh"
                   >
-                    <span class="stat-detail-label">Avg per user:</span>
-                    <span class="stat-detail-value">{{
-                      stats.vaultspaces.avg_per_user
-                    }}</span>
-                  </div>
+                    <span v-html="getIcon('clock', 18)"></span>
+                  </button>
                 </div>
               </div>
-              <div class="stat-card">
-                <h3>Disk Storage</h3>
-                <div class="stat-value">
-                  {{ stats.disk ? stats.disk.used_gb : 0 }} GB
-                </div>
-                <div class="stat-details">
-                  <div class="storage-progress" v-if="stats.disk">
-                    <div class="progress-bar">
-                      <div
-                        class="progress-fill"
-                        :style="{
-                          width:
-                            Math.min(stats.disk.percentage || 0, 100) + '%',
-                        }"
-                        :class="{ 'high-usage': stats.disk.percentage >= 80 }"
-                      ></div>
+
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <h3>Users</h3>
+                  <div class="stat-value">{{ stats.users.total }}</div>
+                  <div class="stat-details">
+                    <div class="stat-detail-row" v-if="stats.users.by_role">
+                      <span class="stat-detail-label">Regular:</span>
+                      <span class="stat-detail-value">{{
+                        stats.users.by_role.user || 0
+                      }}</span>
                     </div>
-                    <div class="progress-text">
-                      {{ Math.round(stats.disk.percentage || 0) }}% used
+                    <div class="stat-detail-row" v-if="stats.users.by_role">
+                      <span class="stat-detail-label">Admins:</span>
+                      <span class="stat-detail-value">{{
+                        (stats.users.by_role.admin || 0) +
+                        (stats.users.by_role.superadmin || 0)
+                      }}</span>
                     </div>
                   </div>
-                  <div class="stat-detail-row" v-if="stats.disk">
-                    <span class="stat-detail-label">Total:</span>
-                    <span class="stat-detail-value"
-                      >{{ stats.disk.total_gb }} GB</span
-                    >
+                </div>
+                <div class="stat-card">
+                  <h3>Files</h3>
+                  <div class="stat-value">{{ stats.files.total }}</div>
+                  <div class="stat-details">
+                    <div class="stat-detail-row">
+                      <span class="stat-detail-label">Deleted:</span>
+                      <span class="stat-detail-value">{{
+                        stats.files.deleted
+                      }}</span>
+                    </div>
                   </div>
-                  <div class="stat-detail-row" v-if="stats.disk">
-                    <span class="stat-detail-label">Free:</span>
-                    <span class="stat-detail-value"
-                      >{{ stats.disk.free_gb }} GB</span
+                </div>
+                <div class="stat-card">
+                  <h3>VaultSpaces</h3>
+                  <div class="stat-value">{{ stats.vaultspaces.total }}</div>
+                  <div class="stat-details">
+                    <div
+                      class="stat-detail-row"
+                      v-if="stats.vaultspaces.avg_per_user"
                     >
+                      <span class="stat-detail-label">Avg per user:</span>
+                      <span class="stat-detail-value">{{
+                        stats.vaultspaces.avg_per_user
+                      }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="stat-card">
+                  <h3>Disk Storage</h3>
+                  <div class="stat-value">
+                    {{ stats.disk ? stats.disk.used_gb : 0 }} GB
+                  </div>
+                  <div class="stat-details">
+                    <div class="storage-progress" v-if="stats.disk">
+                      <div class="progress-bar">
+                        <div
+                          class="progress-fill"
+                          :style="{
+                            width:
+                              Math.min(stats.disk.percentage || 0, 100) + '%',
+                          }"
+                          :class="{ 'high-usage': stats.disk.percentage >= 80 }"
+                        ></div>
+                      </div>
+                      <div class="progress-text">
+                        {{ Math.round(stats.disk.percentage || 0) }}% used
+                      </div>
+                    </div>
+                    <div class="stat-detail-row" v-if="stats.disk">
+                      <span class="stat-detail-label">Total:</span>
+                      <span class="stat-detail-value"
+                        >{{ stats.disk.total_gb }} GB</span
+                      >
+                    </div>
+                    <div class="stat-detail-row" v-if="stats.disk">
+                      <span class="stat-detail-label">Free:</span>
+                      <span class="stat-detail-value"
+                        >{{ stats.disk.free_gb }} GB</span
+                      >
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Activity and Overview Section -->
-            <div class="overview-section">
-              <div class="overview-left">
-                <RecentActivityList
-                  :logs="stats.recent_audit_logs || []"
+              <div class="overview-section">
+                <div class="overview-left">
+                  <RecentActivityList
+                    :logs="stats.recent_audit_logs || []"
+                    :loading="statsLoading"
+                    @view-all="activeTab = 'audit'"
+                  />
+                </div>
+                <div class="overview-right">
+                  <TopUsersCard
+                    :users="stats.top_users || []"
+                    :loading="statsLoading"
+                    @view-all="activeTab = 'users'"
+                  />
+                </div>
+              </div>
+
+              <div class="alerts-section">
+                <QuotaAlertsCard
+                  :alerts="stats.quota_alerts || []"
                   :loading="statsLoading"
-                  @view-all="activeTab = 'audit'"
+                  @view-all="activeTab = 'quotas'"
                 />
               </div>
-              <div class="overview-right">
-                <TopUsersCard
-                  :users="stats.top_users || []"
-                  :loading="statsLoading"
-                  @view-all="activeTab = 'users'"
-                />
-              </div>
-            </div>
 
-            <!-- Alerts and Quick Stats Section -->
-            <div class="alerts-section">
-              <QuotaAlertsCard
-                :alerts="stats.quota_alerts || []"
-                :loading="statsLoading"
-                @view-all="activeTab = 'quotas'"
-              />
-            </div>
-
-            <!-- Quick Stats Cards -->
-            <div class="quick-stats-grid">
-              <div class="quick-stat-card" @click="activeTab = 'api-keys'">
-                <h4>API Keys</h4>
-                <div class="quick-stat-value">
-                  {{ stats.api_keys?.total || 0 }}
+              <div class="quick-stats-grid">
+                <div class="quick-stat-card" @click="activeTab = 'api-keys'">
+                  <h4>API Keys</h4>
+                  <div class="quick-stat-value">
+                    {{ stats.api_keys?.total || 0 }}
+                  </div>
+                  <div class="quick-stat-detail">
+                    <span v-if="stats.api_keys?.with_usage">
+                      {{ stats.api_keys.with_usage }} active
+                    </span>
+                    <span v-else>No usage data</span>
+                  </div>
                 </div>
-                <div class="quick-stat-detail">
-                  <span v-if="stats.api_keys?.with_usage">
-                    {{ stats.api_keys.with_usage }} active
-                  </span>
-                  <span v-else>No usage data</span>
-                </div>
-              </div>
-              <div
-                class="quick-stat-card"
-                @click="activeTab = 'authentication'"
-              >
-                <h4>Authentication</h4>
-                <div class="quick-stat-value">
-                  {{ stats.sso_providers?.total || 0 }}
-                </div>
-                <div class="quick-stat-detail">
-                  <span v-if="stats.sso_providers?.active">
-                    {{ stats.sso_providers.active }} active
-                  </span>
-                  <span v-else>None configured</span>
+                <div
+                  class="quick-stat-card"
+                  @click="activeTab = 'authentication'"
+                >
+                  <h4>Authentication</h4>
+                  <div class="quick-stat-value">
+                    {{ stats.sso_providers?.total || 0 }}
+                  </div>
+                  <div class="quick-stat-detail">
+                    <span v-if="stats.sso_providers?.active">
+                      {{ stats.sso_providers.active }} active
+                    </span>
+                    <span v-else>None configured</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Users Tab -->
-        <div v-if="activeTab === 'users'" class="users-tab">
-          <UserManagement />
-          <InvitationManagement />
-        </div>
+          <div v-if="activeTab === 'users'" class="users-tab">
+            <UserManagement />
+            <InvitationManagement />
+          </div>
 
-        <!-- Quotas Tab -->
-        <div v-if="activeTab === 'quotas'">
-          <QuotaManagement />
-        </div>
+          <div v-if="activeTab === 'quotas'">
+            <QuotaManagement />
+          </div>
 
-        <!-- Audit Logs Tab -->
-        <div v-if="activeTab === 'audit'">
-          <AuditLogViewer />
-        </div>
+          <div v-if="activeTab === 'audit'">
+            <AuditLogViewer />
+          </div>
 
-        <!-- API Keys Tab -->
-        <div v-if="activeTab === 'api-keys'">
-          <ApiKeyManagement />
-        </div>
+          <div v-if="activeTab === 'api-keys'">
+            <ApiKeyManagement />
+          </div>
 
-        <!-- SSO Providers Tab -->
-        <div v-if="activeTab === 'authentication'">
-          <AdminSSOProviders />
-        </div>
+          <div v-if="activeTab === 'authentication'">
+            <AdminSSOProviders />
+          </div>
 
-        <!-- Integrations Tab -->
-        <div v-if="activeTab === 'integrations'">
-          <ExternalStorageConfig />
-          <DatabaseBackupConfig style="margin-top: 1.5rem" />
+          <div v-if="activeTab === 'integrations'">
+            <ExternalStorageConfig />
+            <DatabaseBackupConfig style="margin-top: 1.5rem" />
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   </div>
 </template>
 
@@ -312,7 +304,6 @@ export default {
       return tabToHashMap[tabId] || "dashboard";
     };
 
-    // Update URL hash without triggering navigation
     const updateUrlHash = (tabId) => {
       if (typeof window === "undefined") {
         return;
@@ -323,7 +314,6 @@ export default {
       }
     };
 
-    // Initialize activeTab from URL hash, default to "dashboard"
     const initialTab =
       typeof window !== "undefined" ? getTabFromHash() : "dashboard";
     const activeTab = ref(initialTab);
@@ -401,7 +391,6 @@ export default {
     };
 
     onMounted(async () => {
-      // Initialize URL hash if not present
       if (typeof window !== "undefined") {
         const currentHash = window.location.hash.replace("#", "");
         if (!currentHash || !hashToTabMap[currentHash]) {
@@ -410,7 +399,7 @@ export default {
       }
 
       await loadStats();
-      // Update indicator position after mounting with a small delay
+
       // to ensure DOM is fully rendered
       setTimeout(() => {
         updateIndicatorPosition();
@@ -506,7 +495,7 @@ export default {
 <style scoped>
 .admin-panel {
   width: 100%;
-  min-height: 100vh;
+  min-height: 100%;
   background: transparent;
 }
 

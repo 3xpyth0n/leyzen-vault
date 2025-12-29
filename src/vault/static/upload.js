@@ -65,7 +65,6 @@ async function handleFileUpload(event) {
     uploadStatus.textContent = "Upload successful!";
     uploadStatus.className = "status success";
 
-    // Show share URL
     const shareUrlInput = document.getElementById("share-url");
     const shareUrlContainer = document.getElementById("share-url-container");
     if (shareUrlInput && shareUrlContainer) {
@@ -108,7 +107,6 @@ function copyShareUrl() {
   }
 }
 
-// Initialize when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initUpload);
 } else {

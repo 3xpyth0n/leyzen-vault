@@ -163,9 +163,9 @@ class QuotaService:
                 # Use the actual used space from the filesystem
                 used = used_real
                 # Calculate free space as the difference between configured total and used
-                # But don't allow negative free space
+
                 free = max(0, total - used)
-                # If the configured total is smaller than actual used, cap free at 0
+
                 # and cap used at total
                 if used > total:
                     used = total
@@ -186,8 +186,7 @@ class QuotaService:
                 "percentage": percentage,
             }
         except Exception:
-            # If disk usage cannot be determined, return None values
-            # But if max_total_size_bytes is configured, use it as total with 0 used
+
             if self.max_total_size_bytes is not None:
                 return {
                     "total": self.max_total_size_bytes,
@@ -331,7 +330,7 @@ class QuotaService:
         total_bytes = disk_usage.get("total")
 
         if total_bytes is None or total_bytes == 0:
-            # If disk usage cannot be determined, return basic info
+
             return {
                 "has_quota": True,
                 "used": used,

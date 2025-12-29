@@ -1,6 +1,3 @@
-/* Leyzen Vault - Modern Design System */
-
-/* TT Alientz Serif Font */
 @font-face {
   font-family: "TT Alientz Serif";
   src:
@@ -11,24 +8,22 @@
   font-display: swap;
 }
 
-/* Import Google Fonts */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
-  /* Typography */
   --font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --font-family-mono: "JetBrains Mono", "Courier New", monospace;
   --font-family-branding: "TT Alientz Serif", sans-serif;
 
-  --font-size-xs: 0.75rem; /* 12px */
-  --font-size-sm: 0.875rem; /* 14px */
-  --font-size-base: 1rem; /* 16px */
-  --font-size-lg: 1.125rem; /* 18px */
-  --font-size-xl: 1.25rem; /* 20px */
-  --font-size-2xl: 1.5rem; /* 24px */
-  --font-size-3xl: 1.875rem; /* 30px */
-  --font-size-4xl: 2.25rem; /* 36px */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
 
   --font-weight-light: 300;
   --font-weight-normal: 400;
@@ -40,25 +35,22 @@
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* Spacing Scale */
-  --space-1: 0.25rem; /* 4px */
-  --space-2: 0.5rem; /* 8px */
-  --space-3: 0.75rem; /* 12px */
-  --space-4: 1rem; /* 16px */
-  --space-5: 1.25rem; /* 20px */
-  --space-6: 1.5rem; /* 24px */
-  --space-8: 2rem; /* 32px */
-  --space-10: 2.5rem; /* 40px */
-  --space-12: 3rem; /* 48px */
-  --space-16: 4rem; /* 64px */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
 
-  /* Transitions */
   --transition-fast: 150ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
   --transition-slower: 500ms ease;
 
-  /* Z-Index Scale */
   --z-base: 0;
   --z-dropdown: 1000;
   --z-sticky: 1020;
@@ -94,7 +86,6 @@
   --info: #3b82f6;
 }
 
-/* Reset and base styles */
 * {
   margin: 0;
   padding: 0;
@@ -121,9 +112,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ===== Global Scrollbar Styles ===== */
-
-/* Firefox Scrollbar Styles */
 * {
   scrollbar-width: thin;
   scrollbar-color: #004225 #0a0a0a;
@@ -133,7 +121,6 @@ body {
   scrollbar-color: #004225 #0a0a0a;
 }
 
-/* WebKit Scrollbar Styles (Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -164,7 +151,6 @@ body {
   background: var(--bg-primary);
 }
 
-/* Login page */
 .login-page {
   display: flex;
   align-items: center;
@@ -513,7 +499,6 @@ body {
   }
 }
 
-/* Component System - Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -620,9 +605,6 @@ body {
   color: var(--text-primary);
 }
 
-/* Glassmorphism utility classes */
-
-/* Component System - Cards */
 .card {
   background: var(--bg-modal);
   border: 1px solid var(--border-color);
@@ -653,7 +635,6 @@ body {
   color: var(--text-secondary);
 }
 
-/* Component System - Inputs */
 .input {
   width: 100%;
   padding: var(--space-3) var(--space-4);
@@ -680,7 +661,6 @@ body {
   cursor: not-allowed;
 }
 
-/* ===== Number Input Styles ===== */
 input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;
@@ -695,9 +675,6 @@ input[type="number"]::-webkit-outer-spin-button {
   display: none;
 }
 
-/* ===== Global Select Styles ===== */
-
-/* Custom chevron SVG arrow for select elements */
 select,
 select.input,
 select.input-sm {
@@ -760,13 +737,9 @@ select.input-sm:disabled {
   background-size: 12px 12px !important;
 }
 
-/* Note: Native select dropdown menus are rendered by the OS and cannot be styled.
-   However, the select element itself (the button) now has glassmorphism styling. */
-
-/* Responsive Breakpoints */
 @media (max-width: 640px) {
   :root {
-    --font-size-base: 0.9375rem; /* 15px */
+    --font-size-base: 0.9375rem;
   }
 
   .btn {
@@ -776,14 +749,11 @@ select.input-sm:disabled {
 }
 
 @media (min-width: 641px) and (max-width: 1024px) {
-  /* Tablet styles */
 }
 
 @media (min-width: 1025px) {
-  /* Desktop styles */
 }
 
-/* Main application styles */
 .vault-container {
   min-height: 100vh;
   padding: 2rem;
@@ -791,7 +761,7 @@ select.input-sm:disabled {
   z-index: 1;
   max-width: 1400px;
   margin: 0 auto;
-  /* Ensure container doesn't create stacking context that interferes with dropdown */
+
   isolation: auto;
 }
 
@@ -804,7 +774,7 @@ select.input-sm:disabled {
   justify-content: space-between;
   align-items: center;
   position: relative;
-  z-index: 1; /* Lower z-index so dropdown can be above */
+  z-index: 1;
 }
 
 .header-brand-wrapper {
@@ -855,7 +825,6 @@ select.input-sm:disabled {
   display: inline;
 }
 
-/* Header Actions Styles */
 .header-actions {
   display: flex;
   align-items: center;
@@ -910,7 +879,7 @@ select.input-sm:disabled {
 
 .vault-main {
   position: relative;
-  z-index: 0; /* Ensure main content is below dropdown */
+  z-index: 0;
 }
 
 .btn-secondary:hover {
@@ -944,7 +913,6 @@ select.input-sm:disabled {
   margin-bottom: 1.5rem;
 }
 
-/* Utility classes */
 .hidden {
   display: none !important;
 }
@@ -980,7 +948,6 @@ select.input-sm:disabled {
   padding: 0.75rem;
 }
 
-/* Account Page Styles */
 .account-page {
   display: flex;
   flex-direction: column;
@@ -1076,21 +1043,19 @@ select.input-sm:disabled {
   box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
 }
 
-/* Layout System - Google Drive-like */
 .file-explorer {
   display: flex;
-  height: calc(100vh - 8rem); /* Account for header and padding */
+  height: calc(100vh - 8rem);
   gap: var(--space-4);
   margin-top: var(--space-4);
 }
 
-/* Sidebar */
 .sidebar {
   width: 240px;
   flex-shrink: 0;
   background: var(--bg-primary);
   border: none;
-  padding: var(--space-4);
+  padding-top: 1rem;
   overflow-y: auto;
   transition: transform var(--transition-base);
 }
@@ -1147,17 +1112,14 @@ select.input-sm:disabled {
   flex: 1;
 }
 
-/* Main Content */
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0; /* Allow flex shrinking */
+  min-width: 0;
   overflow: hidden;
 }
 
-/* Toolbar */
 .toolbar {
   display: flex;
   align-items: center;
@@ -1245,7 +1207,6 @@ select.input-sm:disabled {
   min-width: 0;
 }
 
-/* Content Area */
 .content-area {
   flex: 1;
   overflow-y: auto;
@@ -1259,7 +1220,6 @@ select.input-sm:disabled {
   justify-content: flex-start;
 }
 
-/* Batch Actions Toolbar */
 .batch-toolbar {
   position: fixed;
   bottom: var(--space-4);
@@ -1333,14 +1293,11 @@ select.input-sm:disabled {
   border-color: var(--error);
 }
 
-/* Upload Section */
 .upload-section {
   padding: var(--space-4);
   background: var(--bg-modal);
   border: 1px solid var(--border-color);
 }
-
-/* Animations */
 
 @keyframes shake {
   0%,
@@ -1379,7 +1336,6 @@ select.input-sm:disabled {
   }
 }
 
-/* Loading spinner */
 .spinner {
   display: inline-block;
   width: 20px;
@@ -1399,7 +1355,6 @@ select.input-sm:disabled {
   animation: spin 0.8s linear infinite;
 }
 
-/* Skeleton loading */
 .skeleton-container {
   display: flex;
   flex-direction: column;
@@ -1425,7 +1380,6 @@ select.input-sm:disabled {
   height: 200px;
 }
 
-/* Ripple effect */
 .ripple {
   position: absolute;
   background: #a9b7aa;
@@ -1433,7 +1387,6 @@ select.input-sm:disabled {
   pointer-events: none;
 }
 
-/* Micro-interactions */
 .interactive {
   transition: all var(--transition-base);
   cursor: pointer;
@@ -1445,7 +1398,6 @@ select.input-sm:disabled {
 .interactive:active {
 }
 
-/* Smooth transitions for theme changes */
 * {
   transition:
     background-color var(--transition-slow),
@@ -1453,12 +1405,10 @@ select.input-sm:disabled {
     color var(--transition-slow);
 }
 
-/* Skip transitions for theme changes */
 .no-transition * {
   transition: none !important;
 }
 
-/* Drag & Drop Styles */
 .dragging {
   opacity: 0.5;
   transform: scale(0.95);
@@ -1515,7 +1465,6 @@ select.input-sm:disabled {
   cursor: grabbing;
 }
 
-/* Prevent drag on action buttons */
 .file-actions,
 .folder-actions,
 .file-row-actions,
@@ -1548,7 +1497,6 @@ select.input-sm:disabled {
   accent-color: var(--accent);
 }
 
-/* Upload Queue Styles */
 .upload-queue-container {
   position: fixed;
   bottom: var(--space-4);
@@ -1705,7 +1653,6 @@ select.input-sm:disabled {
   color: var(--text-primary);
 }
 
-/* Keyboard Shortcuts Styles */
 .shortcuts-list {
   max-height: 60vh;
   overflow-y: auto;
@@ -1746,7 +1693,6 @@ kbd {
   font-size: var(--font-size-sm);
 }
 
-/* Virtual List Styles */
 .virtual-list-viewport {
   width: 100%;
   height: 100%;
@@ -1771,7 +1717,6 @@ kbd {
   padding: var(--space-2);
 }
 
-/* Responsive: Adjust grid columns */
 @media (max-width: 640px) {
   .virtual-list-grid {
     grid-template-columns: repeat(2, 1fr) !important;
@@ -1812,7 +1757,6 @@ kbd {
   transform: scale(0.98);
 }
 
-/* Responsive: Hide sidebar on mobile */
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
@@ -1987,7 +1931,6 @@ kbd {
   opacity: 0.9;
 }
 
-/* List View Styles */
 .files-list-view {
   display: flex;
   flex-direction: column;
@@ -2081,7 +2024,6 @@ kbd {
   gap: 0.5rem;
 }
 
-/* Context Menu Styles */
 .context-menu {
   position: fixed;
   background: var(--bg-modal);
@@ -2147,7 +2089,6 @@ kbd {
   margin: 0.5rem 0;
 }
 
-/* Preview Modal Styles */
 .preview-modal-content {
   max-width: 95vw;
   max-height: 95vh;
@@ -2243,7 +2184,6 @@ kbd {
   margin-left: 0.5rem;
 }
 
-/* Grid View Styles (existing) */
 .files-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -2269,7 +2209,6 @@ kbd {
   border-color: var(--accent);
 }
 
-/* Folders Grid Styles */
 .folders-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -2344,7 +2283,6 @@ kbd {
   border-color: var(--border-color-hover);
 }
 
-/* Breadcrumbs Styles */
 .breadcrumbs {
   display: flex;
   align-items: center;
@@ -2566,7 +2504,6 @@ kbd {
   color: var(--text-muted);
 }
 
-/* Modal Styles */
 .modal {
   position: fixed;
   inset: 0;
@@ -2639,7 +2576,6 @@ kbd {
   font-size: 0.875rem;
 }
 
-/* Global Modal Styles */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -2651,7 +2587,6 @@ kbd {
   background: var(--overlay-bg, rgba(0, 0, 0, 0.6));
 }
 
-/* Standard modal container */
 .modal {
   background: var(--bg-modal);
   border: 1px solid var(--border-color);
@@ -2666,7 +2601,6 @@ kbd {
   overflow: hidden;
 }
 
-/* Modal header */
 .modal-header {
   padding: 1.5rem;
   margin-bottom: 0rem;
@@ -2682,7 +2616,6 @@ kbd {
   font-weight: 600;
 }
 
-/* Modal body/content */
 .modal-body,
 .modal-content {
   flex: 1;
@@ -2694,7 +2627,6 @@ kbd {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Modal form */
 .modal-form {
   display: flex;
   flex-direction: column;
@@ -2702,7 +2634,6 @@ kbd {
   padding: 0;
 }
 
-/* Form actions - ensure buttons have proper spacing */
 .form-actions {
   display: flex;
   gap: 0.75rem;
@@ -2713,7 +2644,6 @@ kbd {
   flex-shrink: 0;
 }
 
-/* Confirmation Modal Styles - for modals with aria-hidden attribute */
 .modal-overlay[aria-hidden="false"] {
   opacity: 1;
   visibility: visible;
@@ -2865,7 +2795,6 @@ body.modal-open {
   }
 }
 
-/* Logout Modal Styles - Used by logout-modal.js for non-Vue pages */
 .logout-modal-overlay {
   position: fixed;
   inset: 0;
@@ -3108,7 +3037,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   font-size: 0.875rem;
 }
 
-/* .btn-small inherits from .btn-primary when both classes are present */
 .btn-small.btn-primary {
   display: inline-flex;
   align-items: center;
@@ -3178,7 +3106,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   color: var(--accent);
 }
 
-/* Share page */
 .share-page {
   display: flex;
   align-items: center;
@@ -3233,7 +3160,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   color: var(--accent);
 }
 
-/* Toast Notifications */
 .toast-container {
   position: fixed;
   top: 1rem;
@@ -3336,7 +3262,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   color: var(--accent);
 }
 
-/* Upload Progress */
 .upload-progress {
   margin-top: 1rem;
   padding: 1rem;
@@ -3374,7 +3299,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   white-space: nowrap;
 }
 
-/* Security Dashboard Styles */
 .security-dashboard {
   display: flex;
   flex-direction: column;
@@ -3556,7 +3480,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   text-align: center;
 }
 
-/* Folder Picker Styles */
 .folder-picker-modal .modal-content {
   overflow: visible !important;
   display: flex;
@@ -3641,7 +3564,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   box-sizing: border-box;
 }
 
-/* Depth-specific padding classes - linear progression, step = 0.75rem */
 .folder-picker-depth-0 {
   padding-left: 0rem;
 }
@@ -3825,7 +3747,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   color: var(--text-primary);
 }
 
-/* Share Modal Styles */
 .modal-large {
   max-width: 600px;
 }
@@ -3846,7 +3767,6 @@ body.sidebar-collapsed .logout-modal-overlay {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
-/* Responsive */
 @media (max-width: 768px) {
   .login-container {
     padding: 2rem 1.5rem;

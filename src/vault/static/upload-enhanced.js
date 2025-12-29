@@ -32,7 +32,6 @@ class UploadManager {
    * Create upload queue UI
    */
   createUploadQueueUI() {
-    // Check if queue UI already exists
     if (document.getElementById("upload-queue-container")) return;
 
     const queueHTML = `
@@ -178,7 +177,6 @@ class UploadManager {
     );
 
     if (pendingUploads.length === 0) {
-      // Check if all uploads are complete
       const allCompleted = this.uploadQueue.every(
         (u) => u.status === "completed" || u.status === "error" || u.paused,
       );
@@ -214,7 +212,6 @@ class UploadManager {
     this.updateQueueUI();
 
     try {
-      // Check if we have resume data
       const resumeData = this.uploadResumeData.get(upload.id);
 
       if (upload.file.size > this.chunkSize && resumeData) {
@@ -320,7 +317,6 @@ class UploadManager {
           upload.progress = Math.round((e.loaded / e.total) * 100);
           upload.uploadedBytes = e.loaded;
 
-          // Calculate speed
           const currentTime = Date.now();
           const timeDiff = (currentTime - lastTime) / 1000;
           const loadedDiff = e.loaded - lastLoaded;
@@ -398,7 +394,6 @@ class UploadManager {
     // This should be passed in upload object or obtained from VaultCrypto
     let encryptedFileKey = upload.encryptedFileKey;
     if (!encryptedFileKey) {
-      // Try to get from VaultCrypto or generate
       // For now, assume it's passed in upload object
       throw new Error("encrypted_file_key is required for chunked upload");
     }
@@ -447,7 +442,6 @@ class UploadManager {
     // Upload chunks sequentially
     const cancelFunctions = [];
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      // Check if upload was paused
       if (upload.paused) {
         throw new Error("Upload paused");
       }
@@ -455,7 +449,6 @@ class UploadManager {
       const chunk = chunks[chunkIndex];
       const chunkBlob = new Blob([chunk], { type: "application/octet-stream" });
 
-      // Calculate progress for this chunk
       const baseProgress = (chunkIndex / chunks.length) * 100;
 
       // Upload chunk with progress tracking
@@ -464,7 +457,6 @@ class UploadManager {
         chunkIndex,
         chunkBlob,
         (loaded, total) => {
-          // Update upload progress
           const chunkProgress = (loaded / total) * (100 / chunks.length);
           upload.progress = Math.round(baseProgress + chunkProgress);
           upload.uploadedBytes = chunkIndex * this.chunkSize + loaded;
@@ -474,24 +466,20 @@ class UploadManager {
 
       cancelFunctions.push(chunkResult.cancel);
 
-      // Wait for chunk upload to complete
       const chunkResponse = await chunkResult.promise;
 
-      // Update resume data
       const resumeData = this.uploadResumeData.get(upload.id);
       if (resumeData) {
         resumeData.uploadedChunks = chunkResponse.uploaded_chunks;
         this.saveResumeData();
       }
 
-      // Update progress
       upload.uploadedBytes = chunkResponse.uploaded_size;
       upload.progress = Math.round(
         (chunkResponse.uploaded_size / chunkResponse.total_size) * 100,
       );
       this.updateQueueUI();
 
-      // Check if all chunks are uploaded
       if (chunkResponse.is_complete) {
         break;
       }
@@ -547,7 +535,6 @@ class UploadManager {
     let sessionId = resumeData.sessionId;
     let uploadedChunks = resumeData.uploadedChunks || 0;
 
-    // Check if session is still valid
     try {
       const sessionStatus = await filesAPI.getUploadStatus(sessionId);
       if (
@@ -590,7 +577,6 @@ class UploadManager {
       chunks.push(encryptedData.slice(i, i + this.chunkSize));
     }
 
-    // Update resume data
     this.uploadResumeData.set(upload.id, {
       sessionId: sessionId,
       fileId: resumeData.fileId || null,
@@ -606,7 +592,6 @@ class UploadManager {
       chunkIndex < chunks.length;
       chunkIndex++
     ) {
-      // Check if upload was paused
       if (upload.paused) {
         throw new Error("Upload paused");
       }
@@ -614,7 +599,6 @@ class UploadManager {
       const chunk = chunks[chunkIndex];
       const chunkBlob = new Blob([chunk], { type: "application/octet-stream" });
 
-      // Calculate progress for this chunk
       const baseProgress = (chunkIndex / chunks.length) * 100;
 
       // Upload chunk with progress tracking
@@ -623,7 +607,6 @@ class UploadManager {
         chunkIndex,
         chunkBlob,
         (loaded, total) => {
-          // Update upload progress
           const chunkProgress = (loaded / total) * (100 / chunks.length);
           upload.progress = Math.round(baseProgress + chunkProgress);
           upload.uploadedBytes = chunkIndex * this.chunkSize + loaded;
@@ -631,24 +614,20 @@ class UploadManager {
         },
       );
 
-      // Wait for chunk upload to complete
       const chunkResponse = await chunkResult.promise;
 
-      // Update resume data
       const resumeData = this.uploadResumeData.get(upload.id);
       if (resumeData) {
         resumeData.uploadedChunks = chunkResponse.uploaded_chunks;
         this.saveResumeData();
       }
 
-      // Update progress
       upload.uploadedBytes = chunkResponse.uploaded_size;
       upload.progress = Math.round(
         (chunkResponse.uploaded_size / chunkResponse.total_size) * 100,
       );
       this.updateQueueUI();
 
-      // Check if all chunks are uploaded
       if (chunkResponse.is_complete) {
         break;
       }
@@ -673,7 +652,6 @@ class UploadManager {
    * Get current VaultSpace ID (helper method)
    */
   getCurrentVaultspaceId() {
-    // Try to get from various sources
     if (window.VaultSpaces && window.VaultSpaces.getCurrentVaultspaceId) {
       return window.VaultSpaces.getCurrentVaultspaceId();
     }
@@ -687,7 +665,6 @@ class UploadManager {
    * Get current folder ID (helper method)
    */
   getCurrentFolderId() {
-    // Try to get from various sources
     if (window.Folders && window.Folders.getCurrentFolderId) {
       return window.Folders.getCurrentFolderId();
     }
@@ -1018,20 +995,17 @@ class UploadManager {
   }
 }
 
-// Initialize upload manager
 let uploadManager = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   uploadManager = new UploadManager();
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.UploadManager = UploadManager;
     window.uploadManager = uploadManager;
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.UploadManager = UploadManager;
 }

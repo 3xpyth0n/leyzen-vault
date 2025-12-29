@@ -16,12 +16,10 @@ class ModalManager {
    * @param {Function} closeCallback - Callback to close the modal
    */
   open(modalId, openCallback, closeCallback) {
-    // Close any existing modal first
     if (this.currentModal && this.currentModal.id !== modalId) {
       this.close();
     }
 
-    // Set current modal
     this.currentModal = {
       id: modalId,
       close: closeCallback,
@@ -106,7 +104,6 @@ class ModalManager {
   }
 }
 
-// Export singleton instance
 export const modalManager = new ModalManager();
 
 // Setup escape key handler

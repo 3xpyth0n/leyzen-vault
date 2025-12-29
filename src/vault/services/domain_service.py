@@ -205,7 +205,7 @@ class DomainService:
             - is_allowed: True if domain is allowed or no rules exist
             - error_message: Error message if domain is not allowed
         """
-        # If no rules exist, allow all domains
+
         rules = self.list_rules(is_active=True)
         if not rules:
             return True, None

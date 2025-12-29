@@ -1,8 +1,7 @@
 <template>
-  <teleport to="body">
-    <transition name="menu-fade">
+  <Teleport v-if="show" to="body">
+    <Transition name="menu-fade">
       <div
-        v-if="show"
         class="vaultspace-menu-container"
         ref="menuContainer"
         :style="menuStyle"
@@ -24,8 +23,8 @@
           </button>
         </div>
       </div>
-    </transition>
-  </teleport>
+    </Transition>
+  </Teleport>
 </template>
 
 <script>

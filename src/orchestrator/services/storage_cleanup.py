@@ -46,7 +46,9 @@ class StorageCleanupService:
             name="StorageCleanupWorker",
         )
         self._worker_thread.start()
-        self.logger.log("[STORAGE_CLEANUP] Background worker started")
+        self.logger.warning(
+            "[STORAGE_CLEANUP] Background worker started", to_stdout=False
+        )
 
     def stop_background_worker(self) -> None:
         """Stop the background worker thread."""
@@ -57,7 +59,9 @@ class StorageCleanupService:
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=5.0)
         self._worker_started = False
-        self.logger.log("[STORAGE_CLEANUP] Background worker stopped")
+        self.logger.warning(
+            "[STORAGE_CLEANUP] Background worker stopped", to_stdout=False
+        )
 
     def _call_vault_cleanup_api(self, dry_run: bool = False) -> dict | None:
         """Call the vault's internal API to trigger storage cleanup.
@@ -76,7 +80,8 @@ class StorageCleanupService:
             if not internal_api_token:
                 # Token not available - skip cleanup
                 self.logger.warning(
-                    "INTERNAL_API_TOKEN not available. Skipping storage cleanup."
+                    "INTERNAL_API_TOKEN not available. Skipping storage cleanup.",
+                    to_stdout=False,
                 )
                 return
 
@@ -100,22 +105,27 @@ class StorageCleanupService:
             if response.status_code == 200:
                 return response.json()
             else:
-                self.logger.log(
-                    f"[STORAGE_CLEANUP] API call failed with status {response.status_code}: {response.text}"
+                self.logger.error(
+                    f"[STORAGE_CLEANUP] API call failed with status {response.status_code}: {response.text}",
+                    to_stdout=False,
                 )
                 return None
 
         except requests.exceptions.Timeout:
-            self.logger.log(
-                "[STORAGE_CLEANUP] API call timed out (cleanup may still be running)"
+            self.logger.warning(
+                "[STORAGE_CLEANUP] API call timed out (cleanup may still be running)",
+                to_stdout=False,
             )
             return None
         except requests.exceptions.ConnectionError as e:
-            self.logger.log(f"[STORAGE_CLEANUP] Failed to connect to vault: {e}")
+            self.logger.error(
+                f"[STORAGE_CLEANUP] Failed to connect to vault: {e}", to_stdout=False
+            )
             return None
         except Exception as e:
-            self.logger.log(
-                f"[STORAGE_CLEANUP] Unexpected error calling vault API: {e}"
+            self.logger.error(
+                f"[STORAGE_CLEANUP] Unexpected error calling vault API: {e}",
+                to_stdout=False,
             )
             return None
 
@@ -125,10 +135,11 @@ class StorageCleanupService:
         This worker runs in a separate thread and calls the vault's internal API
         to clean up orphaned files every 30 minutes.
         """
-        # Wait 30 minutes before first run to allow system to stabilize
+
         # and avoid cleanup during initial setup
-        self.logger.log(
-            "[STORAGE_CLEANUP] Worker started, waiting 30 minutes before first cleanup"
+        self.logger.warning(
+            "[STORAGE_CLEANUP] Worker started, waiting 30 minutes before first cleanup",
+            to_stdout=False,
         )
 
         # Sleep in small chunks to allow quick shutdown
@@ -138,7 +149,9 @@ class StorageCleanupService:
 
         while not self._stop_event.is_set():
             try:
-                self.logger.log("[STORAGE_CLEANUP] Starting orphaned file cleanup")
+                self.logger.warning(
+                    "[STORAGE_CLEANUP] Starting orphaned file cleanup", to_stdout=False
+                )
 
                 # Call vault API to perform cleanup
                 result = self._call_vault_cleanup_api(dry_run=False)
@@ -148,25 +161,32 @@ class StorageCleanupService:
                     failed_count = result.get("failed_count", 0)
 
                     if total_deleted > 0:
-                        self.logger.log(
+                        self.logger.warning(
                             f"[STORAGE_CLEANUP] Cleaned up {total_deleted} orphaned files "
                             f"(primary: {result.get('deleted_primary_count', 0)}, "
-                            f"source: {result.get('deleted_source_count', 0)})"
+                            f"source: {result.get('deleted_source_count', 0)})",
+                            to_stdout=False,
                         )
                     else:
-                        self.logger.log("[STORAGE_CLEANUP] No orphaned files found")
+                        self.logger.log(
+                            "[STORAGE_CLEANUP] No orphaned files found", to_stdout=False
+                        )
 
                     if failed_count > 0:
-                        self.logger.log(
-                            f"[STORAGE_CLEANUP] Failed to delete {failed_count} files"
+                        self.logger.error(
+                            f"[STORAGE_CLEANUP] Failed to delete {failed_count} files",
+                            to_stdout=False,
                         )
                 else:
-                    self.logger.log(
-                        "[STORAGE_CLEANUP] Cleanup failed (see previous errors)"
+                    self.logger.error(
+                        "[STORAGE_CLEANUP] Cleanup failed (see previous errors)",
+                        to_stdout=False,
                     )
 
             except Exception as e:
-                self.logger.log(f"[STORAGE_CLEANUP] Worker error: {e}")
+                self.logger.error(
+                    f"[STORAGE_CLEANUP] Worker error: {e}", to_stdout=False
+                )
 
             # Sleep for 30 minutes before next cleanup
             # Sleep in small chunks (10 seconds) to allow quick shutdown

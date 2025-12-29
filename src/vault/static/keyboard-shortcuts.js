@@ -161,7 +161,6 @@ class KeyboardShortcuts {
         this.goBack();
         return;
       case "right":
-        // Open selected folder
         if (items[selectedIndex]) {
           const folderId = items[selectedIndex].dataset.folderId;
           if (folderId && window.Folders && window.Folders.navigateToFolder) {
@@ -272,12 +271,10 @@ class KeyboardShortcuts {
     const foldersList = window.foldersList || [];
 
     for (const id of selectedIds) {
-      // Try to find in filesList
       let item =
         filesList.find((f) => f.id === id || f.file_id === id) ||
         foldersList.find((f) => f.id === id || f.folder_id === id);
 
-      // If not found in lists, try to get from DOM
       if (!item) {
         const fileElement = document.querySelector(
           `[data-file-id="${id}"], [data-id="${id}"]`,
@@ -480,7 +477,6 @@ class KeyboardShortcuts {
         }
       }
 
-      // Check if clipboard has items
       if (!clipboardManager.hasItems()) {
         if (window.Notifications) {
           window.Notifications.info("Clipboard is empty");
@@ -569,7 +565,6 @@ class KeyboardShortcuts {
         }
       }
 
-      // Show folder picker to select destination
       const selectedFolderId = await folderPicker.show(
         folders,
         currentFolderId,
@@ -790,7 +785,6 @@ class KeyboardShortcuts {
       </div>
     `;
 
-    // Remove existing modal if any
     const existing = document.getElementById("shortcuts-modal");
     if (existing) existing.remove();
 
@@ -808,7 +802,6 @@ class KeyboardShortcuts {
       document.body.insertAdjacentHTML("beforeend", modalHTML);
     }
 
-    // Close on Escape
     const modal = document.getElementById("shortcuts-modal");
     if (modal) {
       modal.addEventListener("keydown", (e) => {
@@ -817,7 +810,6 @@ class KeyboardShortcuts {
         }
       });
 
-      // Close on backdrop click
       const backdrop = modal.querySelector(".modal-overlay");
       if (backdrop) {
         backdrop.addEventListener("click", (e) => {
@@ -844,20 +836,17 @@ class KeyboardShortcuts {
   }
 }
 
-// Initialize keyboard shortcuts
 let keyboardShortcuts = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   keyboardShortcuts = new KeyboardShortcuts();
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.KeyboardShortcuts = KeyboardShortcuts;
     window.keyboardShortcuts = keyboardShortcuts;
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.KeyboardShortcuts = KeyboardShortcuts;
 }

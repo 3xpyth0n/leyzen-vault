@@ -169,7 +169,6 @@ class FileEventsClient {
         withCredentials: true,
       });
 
-      // Set connection timeout
       this.connectionTimeout = setTimeout(() => {
         if (!this.isConnected) {
           this._closeSSE();
@@ -204,7 +203,6 @@ class FileEventsClient {
         this.isConnected = false;
         this._closeSSE();
 
-        // Fallback to polling if SSE fails
         if (!this.isPolling) {
           this._startPolling();
         }
@@ -331,7 +329,6 @@ class FileEventsClient {
     // Poll immediately
     this._poll();
 
-    // Then poll at intervals
     this.pollingInterval = setInterval(() => {
       this._poll();
     }, POLLING_INTERVAL);
@@ -388,5 +385,4 @@ class FileEventsClient {
   }
 }
 
-// Export singleton instance
 export const fileEventsClient = new FileEventsClient();

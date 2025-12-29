@@ -191,7 +191,7 @@ class SSRFProtection:
             ]
             if port in blocked_ports:
                 logger.warning(f"Suspicious port {port} detected in URL: {url}")
-                # Note: We log but don't block to allow legitimate use cases
+
                 # Organizations can customize this list based on their needs
 
         logger.debug(f"URL validated successfully: {url}")

@@ -1,4 +1,3 @@
-<!-- Virtual scrolling list component for performance -->
 <template>
   <div
     class="virtual-list"

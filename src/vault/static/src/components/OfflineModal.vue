@@ -1,8 +1,7 @@
 <template>
-  <Teleport to="body">
+  <Teleport v-if="isOffline" to="body">
     <Transition name="fade">
       <div
-        v-if="isOffline"
         class="offline-modal-overlay"
         @click.stop
         role="dialog"
@@ -63,7 +62,6 @@ export default {
             }, 60000);
           }
         } else {
-          // If server comes back online, clear the timer
           if (refreshTimer) {
             clearTimeout(refreshTimer);
             refreshTimer = null;

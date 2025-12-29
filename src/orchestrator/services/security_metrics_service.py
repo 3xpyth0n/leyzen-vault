@@ -38,9 +38,7 @@ class SecurityMetricsService:
         self._token_unavailable_log_interval = (
             300.0  # Log once every 5 minutes when token unavailable
         )
-        self._token_reload_interval = (
-            60.0  # Try to reload token from DB every 60 seconds if unavailable
-        )
+        self._token_reload_interval = 60.0
         self._token_last_reload_attempt: float = 0.0
         self._cached_token: str | None = None
 
@@ -73,7 +71,7 @@ class SecurityMetricsService:
                     current_time - self._token_unavailable_last_logged
                     >= self._token_unavailable_log_interval
                 ):
-                    self._logger.log(
+                    self._logger.error(
                         f"[SECURITY METRICS] INTERNAL_API_TOKEN not available for {container_name}. "
                         "Security metrics collection is disabled until token is available. "
                         "Set INTERNAL_API_TOKEN environment variable or ensure vault has generated the token in database."
@@ -95,18 +93,18 @@ class SecurityMetricsService:
                 self._cache_timestamp[container_name] = time.time()
                 return metrics
             else:
-                self._logger.log(
+                self._logger.error(
                     f"[SECURITY METRICS] Failed to get metrics from {container_name}: HTTP {response.status_code}"
                 )
                 return None
 
         except httpx.TimeoutException:
-            self._logger.log(
+            self._logger.warning(
                 f"[SECURITY METRICS] Timeout getting metrics from {container_name}"
             )
             return None
         except Exception as e:
-            self._logger.log(
+            self._logger.error(
                 f"[SECURITY METRICS] Error getting metrics from {container_name}: {e}"
             )
             return None
@@ -233,11 +231,10 @@ class SecurityMetricsService:
         Returns:
             The internal API token string, or empty string if not available
         """
-        # If we have a cached token, use it
+
         if self._cached_token:
             return self._cached_token
 
-        # Try settings token (from environment variable or initial DB read)
         internal_token = self._settings.internal_api_token
         if internal_token:
             self._cached_token = internal_token
@@ -251,13 +248,12 @@ class SecurityMetricsService:
         ):
             self._token_last_reload_attempt = current_time
 
-            # Try to reload from database
             try:
                 reloaded_token = reload_internal_api_token_from_db(self._settings)
 
                 if reloaded_token:
                     self._cached_token = reloaded_token
-                    self._logger.log(
+                    self._logger.warning(
                         "[SECURITY METRICS] Successfully loaded INTERNAL_API_TOKEN from database"
                     )
                     return reloaded_token

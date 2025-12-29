@@ -173,13 +173,13 @@ def sync_volumes():
             if json_data:
                 container_name = json_data.get("container_name")
     except Exception:
-        # If JSON parsing fails, continue without container name from body
+
         pass
 
     if not container_name:
         container_name = request.args.get("container_name")
     if not container_name:
-        # Try to extract from Host header (format: container_name:port or container_name)
+
         host_header = request.headers.get("Host", "")
         if host_header:
             container_name = host_header.split(":")[0]
@@ -362,7 +362,7 @@ def sync_volumes():
             )
         else:
             # Source directory doesn't exist, which is fine (no files to sync)
-            # But still run cleanup to remove orphaned files
+
             cleanup_result = promotion_service.cleanup_orphaned_files(
                 target_dir=target_dir,
                 base_dir=source_files if source_files.exists() else target_files,
@@ -1061,7 +1061,7 @@ def prepare_rotation():
             stats["verification"]["missing_percentage"] = round(missing_percentage, 2)
 
             # Allow up to 10% missing files (tolerance for new/deleted files)
-            # But fail if more than 10% are missing (potential data loss)
+
             if missing_count > 0:
                 if missing_percentage <= 10.0:
                     stats["verification"]["success"] = True
@@ -1101,7 +1101,7 @@ def prepare_rotation():
             stats["verification"]["error"] = str(e)
             # On exception, mark as failed but log the error
             stats["verification"]["success"] = False
-            # Try to still get basic stats even on error
+
             try:
                 from vault.database.schema import File, db
 
@@ -1114,7 +1114,7 @@ def prepare_rotation():
         # - No promotion failures (if files were promoted)
         # - Verification succeeded (all files accounted for)
         # - Cleanup succeeded
-        # Note: It's OK if no files were validated (tmpfs might be empty if all files already promoted)
+
         stats["overall_success"] = (
             stats["promotion"]["failed"] == 0
             and stats["verification"]["success"]

@@ -69,6 +69,19 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.config["ROTATION_SERVICE"] = rotation_service
     app.config["STORAGE_CLEANUP_SERVICE"] = storage_cleanup_service
 
+    # Initialize database if VAULT_DB_URI is available
+    db_uri = env_values.get("VAULT_DB_URI")
+    if db_uri:
+        app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        try:
+            from vault.database.schema import db
+
+            db.init_app(app)
+        except ImportError:
+            # Fallback if vault schema is not available
+            pass
+
     csrf.init_app(app)
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 

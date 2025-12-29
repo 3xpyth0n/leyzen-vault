@@ -939,7 +939,7 @@ def download_file(file_id: str):
                 try:
                     encrypted_data = storage.read_file(file_obj.storage_ref)
                 except FileNotFoundError:
-                    # Try S3
+
                     from vault.services.external_storage_service import (
                         ExternalStorageService,
                     )
@@ -1980,7 +1980,7 @@ def upload_chunk():
             uploaded_chunks = chunk_index + 1
 
         # Check if all chunks are uploaded
-        # We've uploaded chunk_index, so if chunk_index is the last chunk (total_chunks - 1), we're complete
+
         is_complete = chunk_index >= total_chunks - 1
 
         response_data = {
@@ -2090,8 +2090,7 @@ def complete_upload():
             final_hash = hashlib.sha256(encrypted_data).hexdigest()
 
             # Re-detect MIME type from complete file data for better accuracy
-            # Note: encrypted_data is encrypted, so we can't detect from content
-            # But we can still improve detection from filename if mime_type is generic
+
             final_mime_type = detect_mime_type(
                 filename=session.original_name,
                 file_data=None,  # Data is encrypted, can't detect from content

@@ -63,18 +63,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
-		// Resize list
 		m.list.SetWidth(msg.Width)
 		m.list.SetHeight(msg.Height)
 
-		// Resize viewport
 		headerHeight := lipgloss.Height(m.headerView())
 		footerHeight := lipgloss.Height(m.footerView())
 		verticalMarginHeight := headerHeight + footerHeight
 
 		if !m.ready {
-			// Since this program is using the full size of the terminal we need
-			// to initialize the viewport to take up the rest of the room.
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
 			m.viewport.YPosition = headerHeight
 		} else {
@@ -96,7 +92,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			}
-		} else if m.view == "detail" {
+		}
+		if m.view == "detail" {
 			switch msg.String() {
 			case "esc", "q":
 				m.view = "list"
@@ -144,12 +141,6 @@ func (m model) footerView() string {
 }
 
 func (m model) renderDetailContent(i item) string {
-	// The summary (i.desc) is usually the first line of the description (i.doc.Description).
-	// To avoid duplication, we check if the description starts with the summary.
-	// If it does, we just render the description.
-	// If it doesn't (rare case), we might want to render both, but for now let's just render the full description
-	// as it is the source of truth and likely contains the summary anyway.
-
 	return fmt.Sprintf("\n%s",
 		docBodyStyle.Render(i.doc.Description),
 	)
@@ -211,15 +202,12 @@ var explainCmd = &cobra.Command{
 		l.Title = "Leyzen Vault Configuration"
 		l.SetShowStatusBar(false)
 		l.SetFilteringEnabled(true)
-		// l.Styles.Title = docTitleStyle // Removed to let default delegate handle styling, ensuring consistency
 		l.Styles.Title = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#004225")).
 			Padding(0, 1)
 
-		// Use strict substring matching instead of fuzzy matching
-		// This fixes the issue where searching for "smtp" returns unrelated results like "CSP_REPORT..."
 		l.Filter = func(term string, targets []string) []list.Rank {
 			var ranks []list.Rank
 			term = strings.ToLower(term)
@@ -228,8 +216,6 @@ var explainCmd = &cobra.Command{
 				lowerTarget := strings.ToLower(target)
 				idx := strings.Index(lowerTarget, term)
 				if idx != -1 {
-					// Found a match!
-					// Create matched indexes for highlighting
 					matchedIndexes := make([]int, len(term))
 					for j := 0; j < len(term); j++ {
 						matchedIndexes[j] = idx + j

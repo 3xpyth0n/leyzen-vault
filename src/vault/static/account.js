@@ -39,7 +39,6 @@ const CryptoHelper = {
 
     const argon2Prefix = new TextEncoder().encode("argon2:");
 
-    // Check if salt is base64 string (from sessionStorage) or Uint8Array
     let saltBytes;
     if (typeof salt === "string") {
       // Assume base64
@@ -57,7 +56,6 @@ const CryptoHelper = {
       throw new Error("Invalid salt: too short");
     }
 
-    // Check prefix match
     for (let i = 0; i < argon2Prefix.length; i++) {
       if (saltBytes[i] !== argon2Prefix[i]) {
         throw new Error("Invalid salt: missing 'argon2:' prefix");
@@ -101,10 +99,9 @@ const CryptoHelper = {
     // encryption.js implementation exports the key first!
     // "const rawKey = await cryptoAPI.subtle.exportKey("raw", masterKey);"
     // This implies masterKey MUST be extractable in encryption.js.
-    // Let's check encryption.js: "extractable" defaults to false, but maybe it's called with true?
+
     // initializeUserMasterKey calls deriveUserKey(..., true).
 
-    // So we must make it extractable here too.
     return Promise.reject(
       new Error(
         "Signing key derivation not implemented without extractable master key",
@@ -182,7 +179,7 @@ const CryptoHelper = {
     const cryptoAPI = this.getCryptoAPI();
 
     let encryptedData = combined;
-    // Check signature (last 32 bytes) if long enough
+
     if (combined.length >= 92) {
       try {
         const signingKey = await this.deriveSigningKeyFromExtractable(userKey);
@@ -211,7 +208,6 @@ const CryptoHelper = {
       ciphertext,
     );
 
-    // Import the vaultspace key (we need to re-encrypt it, so extractable=true)
     return await cryptoAPI.subtle.importKey(
       "raw",
       decrypted,
@@ -376,7 +372,6 @@ async function handlePasswordChange(e) {
     // 1. Get Salt
     let salt = sessionStorage.getItem("user_master_key_salt");
     if (!salt) {
-      // Fetch from API
       const saltResp = await fetch("/api/auth/account/master-key-salt", {
         headers: { Authorization: `Bearer ${jwtToken}` },
       });
@@ -482,7 +477,6 @@ async function handleDeleteAccount(e) {
   const errorDiv = document.getElementById("delete-error");
   errorDiv.classList.add("hidden");
 
-  // Check if user is superadmin
   try {
     const jwtToken = localStorage.getItem("jwt_token");
     if (jwtToken) {
@@ -587,11 +581,9 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", async () => {
   await loadAccountInfo();
 
-  // Set username in hidden fields
   try {
     const jwtToken = localStorage.getItem("jwt_token");
     if (jwtToken) {

@@ -1,232 +1,350 @@
 <template>
-  <div class="trash-view">
-    <header class="view-header">
-      <h1>
-        <span class="header-icon" v-html="getIcon('trash', 28)"></span>
-        Trash
-      </h1>
-      <div class="header-actions">
-        <button
-          @click="emptyTrash"
-          :disabled="loading || trashFiles.length === 0"
-          class="btn btn-danger"
-        >
-          Empty Trash
-        </button>
-        <button
-          @click="refreshTrash"
-          :disabled="loading"
-          class="btn btn-secondary"
-        >
-          {{ loading ? "Loading..." : "Refresh" }}
-        </button>
-      </div>
-    </header>
+  <div class="trash-view-container">
+    <template v-if="!showEncryptionOverlay || !isMasterKeyRequired">
+      <div class="trash-view">
+        <header class="view-header">
+          <h1>
+            <span class="header-icon" v-html="getIcon('trash', 28)"></span>
+            Trash
+          </h1>
+          <div class="header-actions">
+            <button
+              @click="emptyTrash"
+              :disabled="loading || trashFiles.length === 0"
+              class="btn btn-danger"
+            >
+              Empty Trash
+            </button>
+            <button
+              @click="refreshTrash"
+              :disabled="loading"
+              class="btn btn-secondary"
+            >
+              {{ loading ? "Loading..." : "Refresh" }}
+            </button>
+          </div>
+        </header>
 
-    <main class="view-main">
-      <div v-if="loading" class="loading">Loading trash...</div>
-      <div v-else-if="error" class="error">{{ error }}</div>
-      <div v-else-if="trashFiles.length === 0" class="empty-state">
-        <p>Trash is empty</p>
+        <main class="view-main">
+          <div v-if="loading" class="loading">Loading trash...</div>
+          <div v-else-if="error" class="error">{{ error }}</div>
+          <div v-else-if="trashFiles.length === 0" class="empty-state">
+            <p>Trash is empty</p>
+          </div>
+          <div v-else class="trash-list">
+            <div class="trash-info">
+              <p>{{ trashFiles.length }} item(s) in trash</p>
+            </div>
+            <div class="files-grid">
+              <div
+                v-for="file in trashFiles"
+                :key="file.id"
+                class="file-card trash-item"
+                :class="{ selected: isSelected(file.id) }"
+                @click="handleItemClick(file, $event)"
+              >
+                <input
+                  type="checkbox"
+                  :checked="isSelected(file.id)"
+                  @click.stop="toggleSelection(file)"
+                  class="file-checkbox"
+                />
+                <div class="file-icon" v-html="getFileIcon(file)"></div>
+                <div class="file-info">
+                  <h3>{{ file.original_name }}</h3>
+                  <p class="file-size" v-if="file.size">
+                    Size: {{ formatSize(file.size) }}
+                  </p>
+                  <p class="file-date">
+                    Deleted: {{ formatDate(file.deleted_at) }}
+                  </p>
+                </div>
+                <div class="file-actions">
+                  <button
+                    @click.stop="restoreFile(file)"
+                    class="btn-icon"
+                    title="Restore"
+                    v-html="getIcon('restore', 20)"
+                  ></button>
+                  <button
+                    @click.stop="permanentlyDeleteFile(file)"
+                    class="btn-icon"
+                    title="Delete Permanently"
+                    v-html="getIcon('trash', 20)"
+                  ></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <Teleport v-if="showRestoreConfirm" to="body">
+          <div class="modal-overlay" @click="showRestoreConfirm = false">
+            <div class="modal" @click.stop>
+              <h2>Restore File</h2>
+              <p>
+                Are you sure you want to restore "{{
+                  itemToRestore?.original_name
+                }}"?
+              </p>
+              <div v-if="restoreError" class="error-message">
+                {{ restoreError }}
+              </div>
+              <div class="form-actions">
+                <button
+                  @click="confirmRestore"
+                  :disabled="restoring"
+                  class="btn btn-primary"
+                >
+                  {{ restoring ? "Restoring..." : "Restore" }}
+                </button>
+                <button
+                  type="button"
+                  @click="
+                    showRestoreConfirm = false;
+                    restoreError = null;
+                    itemToRestore = null;
+                  "
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+
+        <Teleport v-if="showDeleteConfirm" to="body">
+          <div class="modal-overlay" @click="showDeleteConfirm = false">
+            <div class="modal" @click.stop>
+              <h2>Permanently Delete</h2>
+              <p>
+                Are you sure you want to permanently delete "{{
+                  itemToDelete?.original_name
+                }}"? This action cannot be undone.
+              </p>
+              <div v-if="deleteError" class="error-message">
+                {{ deleteError }}
+              </div>
+              <div class="form-actions">
+                <button
+                  @click="confirmPermanentDelete"
+                  :disabled="deleting"
+                  class="btn btn-danger"
+                >
+                  {{ deleting ? "Deleting..." : "Delete Permanently" }}
+                </button>
+                <button
+                  type="button"
+                  @click="
+                    showDeleteConfirm = false;
+                    deleteError = null;
+                    itemToDelete = null;
+                  "
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+
+        <Teleport v-if="showEmptyTrashConfirm" to="body">
+          <div class="modal-overlay" @click="showEmptyTrashConfirm = false">
+            <div class="modal" @click.stop>
+              <h2>Empty Trash</h2>
+              <p>
+                Are you sure you want to empty the trash? All files will be
+                permanently deleted. This action cannot be undone.
+              </p>
+              <div v-if="emptyTrashError" class="error-message">
+                {{ emptyTrashError }}
+              </div>
+              <div class="form-actions">
+                <button
+                  @click="confirmEmptyTrash"
+                  :disabled="emptying"
+                  class="btn btn-danger"
+                >
+                  {{ emptying ? "Emptying..." : "Empty Trash" }}
+                </button>
+                <button
+                  type="button"
+                  @click="
+                    showEmptyTrashConfirm = false;
+                    emptyTrashError = null;
+                  "
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+        <BatchActionsTrash
+          :selectedItems="selectedItems"
+          :processing="restoring || deleting"
+          :actionType="restoring ? 'restore' : deleting ? 'delete' : null"
+          @restore="batchRestore"
+          @delete="batchPermanentDelete"
+          @clear="clearSelection"
+        />
       </div>
-      <div v-else class="trash-list">
-        <div class="trash-info">
-          <p>{{ trashFiles.length }} item(s) in trash</p>
-        </div>
-        <div class="files-grid">
-          <div
-            v-for="file in trashFiles"
-            :key="file.id"
-            class="file-card trash-item"
-            :class="{ selected: isSelected(file.id) }"
-            @click="handleItemClick(file, $event)"
+    </template>
+
+    <!-- Encryption Overlay -->
+    <Teleport
+      v-if="showEncryptionOverlay && isMasterKeyRequired"
+      to="#encryption-overlay-portal"
+    >
+      <div
+        class="encryption-overlay"
+        :style="{
+          'pointer-events': showPasswordModal ? 'none' : 'auto',
+        }"
+        data-encryption-overlay="true"
+      >
+        <div class="encryption-overlay-content">
+          <div class="encryption-icon-wrapper">
+            <svg
+              class="encryption-icon"
+              width="64"
+              height="64"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 12V16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 class="encryption-title">Files are encrypted</h2>
+          <p class="encryption-description">
+            Enter your encryption password to decrypt and access your files.
+            This password is used to decrypt your files and is not stored on the
+            server.
+          </p>
+          <button
+            @click="openPasswordModal"
+            class="encryption-unlock-btn"
+            type="button"
           >
-            <input
-              type="checkbox"
-              :checked="isSelected(file.id)"
-              @click.stop="toggleSelection(file)"
-              class="file-checkbox"
-            />
-            <div class="file-icon" v-html="getFileIcon(file)"></div>
-            <div class="file-info">
-              <h3>{{ file.original_name }}</h3>
-              <p class="file-size" v-if="file.size">
-                Size: {{ formatSize(file.size) }}
-              </p>
-              <p class="file-date">
-                Deleted: {{ formatDate(file.deleted_at) }}
-              </p>
-            </div>
-            <div class="file-actions">
+            Unlock Files
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Password Modal for SSO Users -->
+    <Teleport v-if="showPasswordModal" to="body">
+      <div
+        class="password-modal-overlay"
+        @click="closePasswordModal"
+        role="dialog"
+        aria-labelledby="password-modal-title"
+        aria-modal="true"
+      >
+        <div class="password-modal-container" @click.stop>
+          <div class="password-modal-content">
+            <div class="password-modal-header">
+              <h2 id="password-modal-title">Enter Encryption Password</h2>
               <button
-                @click.stop="restoreFile(file)"
-                class="btn-icon"
-                title="Restore"
-                v-html="getIcon('restore', 20)"
-              ></button>
+                @click="closePasswordModal"
+                class="password-modal-close"
+                :disabled="passwordModalLoading"
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="password-modal-body">
+              <p class="password-modal-description">
+                Enter your encryption password to access your files. This
+                password is used to decrypt your files and is not stored on the
+                server.
+              </p>
+              <div class="form-group">
+                <label for="password-modal-password">Password</label>
+                <PasswordInput
+                  id="password-modal-password"
+                  v-model="passwordModalPassword"
+                  placeholder="Enter your encryption password"
+                  @keyup.enter="handlePasswordSubmit"
+                  :disabled="passwordModalLoading"
+                  autofocus
+                />
+              </div>
+              <div v-if="passwordModalError" class="password-modal-error">
+                {{ passwordModalError }}
+              </div>
+            </div>
+            <div class="password-modal-footer">
               <button
-                @click.stop="permanentlyDeleteFile(file)"
-                class="btn-icon"
-                title="Delete Permanently"
-                v-html="getIcon('trash', 20)"
-              ></button>
+                @click="closePasswordModal"
+                class="password-modal-btn password-modal-btn-cancel"
+                :disabled="passwordModalLoading"
+              >
+                Cancel
+              </button>
+              <button
+                @click="handlePasswordSubmit"
+                class="password-modal-btn password-modal-btn-unlock"
+                :disabled="passwordModalLoading || !passwordModalPassword"
+              >
+                {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+              </button>
             </div>
           </div>
         </div>
       </div>
-    </main>
-
-    <!-- Restore Confirmation Modal -->
-    <teleport to="body">
-      <div
-        v-if="showRestoreConfirm"
-        class="modal-overlay"
-        @click="showRestoreConfirm = false"
-      >
-        <div class="modal" @click.stop>
-          <h2>Restore File</h2>
-          <p>
-            Are you sure you want to restore "{{
-              itemToRestore?.original_name
-            }}"?
-          </p>
-          <div v-if="restoreError" class="error-message">
-            {{ restoreError }}
-          </div>
-          <div class="form-actions">
-            <button
-              @click="confirmRestore"
-              :disabled="restoring"
-              class="btn btn-primary"
-            >
-              {{ restoring ? "Restoring..." : "Restore" }}
-            </button>
-            <button
-              type="button"
-              @click="
-                showRestoreConfirm = false;
-                restoreError = null;
-                itemToRestore = null;
-              "
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </teleport>
-
-    <!-- Permanent Delete Confirmation Modal -->
-    <teleport to="body">
-      <div
-        v-if="showDeleteConfirm"
-        class="modal-overlay"
-        @click="showDeleteConfirm = false"
-      >
-        <div class="modal" @click.stop>
-          <h2>Permanently Delete File</h2>
-          <p>
-            Are you sure you want to permanently delete "{{
-              itemToDelete?.original_name
-            }}"? This action cannot be undone.
-          </p>
-          <div v-if="deleteError" class="error-message">
-            {{ deleteError }}
-          </div>
-          <div class="form-actions">
-            <button
-              @click="confirmPermanentDelete"
-              :disabled="deleting"
-              class="btn btn-danger"
-            >
-              {{ deleting ? "Deleting..." : "Delete Permanently" }}
-            </button>
-            <button
-              type="button"
-              @click="
-                showDeleteConfirm = false;
-                deleteError = null;
-                itemToDelete = null;
-              "
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </teleport>
-
-    <!-- Empty Trash Confirmation Modal -->
-    <teleport to="body">
-      <div
-        v-if="showEmptyTrashConfirm"
-        class="modal-overlay"
-        @click="showEmptyTrashConfirm = false"
-      >
-        <div class="trash-modal" @click.stop>
-          <h2>Empty Trash</h2>
-          <p>
-            Are you sure you want to permanently delete all
-            {{ trashFiles.length }} item(s) in trash? This action cannot be
-            undone.
-          </p>
-          <div v-if="emptyTrashError" class="error-message">
-            {{ emptyTrashError }}
-          </div>
-          <div class="form-actions">
-            <button
-              type="button"
-              @click="
-                showEmptyTrashConfirm = false;
-                emptyTrashError = null;
-              "
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              @click="confirmEmptyTrash"
-              :disabled="emptying"
-              class="btn btn-danger"
-            >
-              {{ emptying ? "Deleting..." : "Empty Trash" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+    </Teleport>
   </div>
-
-  <!-- Batch Actions Bar -->
-  <BatchActionsTrash
-    :selectedItems="selectedItems"
-    :processing="restoring || deleting"
-    :actionType="restoring ? 'restore' : deleting ? 'delete' : null"
-    @restore="batchRestore"
-    @delete="batchPermanentDelete"
-    @clear="clearSelection"
-  />
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { trash } from "../services/api";
+import { trash } from "../services/trash";
+import { vaultspaces } from "../services/api";
+import { useAuthStore } from "../store/auth";
+import { useFileViewComposable } from "../composables/useFileViewComposable.js";
+import PasswordInput from "../components/PasswordInput.vue";
+import {
+  getUserMasterKey,
+  decryptVaultSpaceKeyForUser,
+  cacheVaultSpaceKey,
+  createVaultSpaceKey,
+} from "../services/keyManager.js";
 import BatchActionsTrash from "../components/BatchActionsTrash.vue";
 
 export default {
   name: "TrashView",
   components: {
     BatchActionsTrash,
+    PasswordInput,
   },
   setup() {
     const router = useRouter();
     const route = useRoute();
+    const authStore = useAuthStore();
     const loading = ref(false);
     const error = ref(null);
     const trashFiles = ref([]);
+    const vaultspaceKeys = ref({});
     const selectedItems = ref([]);
     const showRestoreConfirm = ref(false);
     const showDeleteConfirm = ref(false);
@@ -240,18 +358,91 @@ export default {
     const deleteError = ref(null);
     const emptyTrashError = ref(null);
 
-    const loadTrash = async () => {
+    onMounted(() => {
+      checkEncryptionAccess();
+      loadTrash();
+    });
+
+    const loadTrash = async (cacheBust = false) => {
       loading.value = true;
       error.value = null;
       try {
         const data = await trash.list();
         trashFiles.value = data.files || [];
+
+        // Load VaultSpace keys for decryption
+        await loadVaultSpaceKeysForFiles();
       } catch (err) {
         error.value = err.message || "Failed to load trash";
       } finally {
         loading.value = false;
       }
     };
+
+    const loadVaultSpaceKeysForFiles = async () => {
+      const userMasterKey = await getUserMasterKey();
+      if (!userMasterKey) {
+        return;
+      }
+
+      const vaultspaceIds = new Set();
+      trashFiles.value.forEach((file) => {
+        if (file.vaultspace_id) {
+          vaultspaceIds.add(file.vaultspace_id);
+        }
+      });
+
+      const loadKeyPromises = Array.from(vaultspaceIds).map(
+        async (vaultspaceId) => {
+          try {
+            if (vaultspaceKeys.value[vaultspaceId]) {
+              return;
+            }
+
+            const vaultspaceKeyData = await vaultspaces.getKey(vaultspaceId);
+
+            if (vaultspaceKeyData) {
+              try {
+                const vaultspaceKey = await decryptVaultSpaceKeyForUser(
+                  userMasterKey,
+                  vaultspaceKeyData.encrypted_key,
+                  true,
+                );
+                cacheVaultSpaceKey(vaultspaceId, vaultspaceKey);
+                vaultspaceKeys.value[vaultspaceId] = vaultspaceKey;
+              } catch (decryptErr) {
+                // Decryption failed
+              }
+            }
+          } catch (err) {
+            // Silently fail for individual vaultspaces
+          }
+        },
+      );
+
+      await Promise.allSettled(loadKeyPromises);
+    };
+
+    // Use file view composable for shared functionality
+    const {
+      viewMode,
+      showEncryptionOverlay,
+      isMasterKeyRequired,
+      showPasswordModal,
+      passwordModalPassword,
+      passwordModalError,
+      passwordModalLoading,
+      checkEncryptionAccess,
+      handlePasswordSubmit,
+      closePasswordModal,
+      openPasswordModal,
+    } = useFileViewComposable({
+      viewType: "trash",
+      enableEncryptionCheck: true,
+      onEncryptionUnlocked: async () => {
+        await loadTrash(true);
+      },
+    });
 
     const refreshTrash = () => {
       loadTrash();
@@ -273,12 +464,10 @@ export default {
     };
 
     const handleItemClick = (file, event) => {
-      // If clicking checkbox, don't process card click
       if (event.target.type === "checkbox") {
         return;
       }
 
-      // If clicking action buttons, don't process card click
       if (
         event.target.closest(".file-actions") ||
         event.target.closest(".btn-icon")
@@ -286,13 +475,11 @@ export default {
         return;
       }
 
-      // If Ctrl/Cmd key is pressed, toggle selection
       if (event.ctrlKey || event.metaKey) {
         toggleSelection(file);
         return;
       }
 
-      // If Shift key is pressed, select range
       if (event.shiftKey && selectedItems.value.length > 0) {
         // Select range from last selected to current
         const lastSelectedIndex = trashFiles.value.findIndex(
@@ -324,7 +511,6 @@ export default {
         clearSelection();
         toggleSelection(file);
       }
-      // If already selected, do nothing (keep selection) - matches VaultSpaceView behavior
     };
 
     const clearSelection = () => {
@@ -576,8 +762,9 @@ export default {
 
 <style scoped>
 .trash-view {
-  min-height: 100vh;
-  padding: 2rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-header {
@@ -585,7 +772,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
-  padding: 1.5rem 2rem;
+  padding: 1.5rem 0;
 }
 
 .view-header h1 {
@@ -607,10 +794,13 @@ export default {
 .header-actions {
   display: flex;
   gap: 0.75rem;
+  align-items: center;
 }
 
 .view-main {
-  padding: 1rem 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .loading,

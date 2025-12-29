@@ -171,11 +171,11 @@ class ShareLink:
             # Compare using UTC to ensure consistency
             # expires_at is timezone-aware, so we compare with UTC now
             now_utc = datetime.now(timezone.utc)
-            # If expires_at is timezone-aware, convert to UTC for comparison
+
             if self.expires_at.tzinfo is not None:
                 expires_utc = self.expires_at.astimezone(timezone.utc)
             else:
-                # If expires_at is naive, assume it's UTC
+
                 expires_utc = self.expires_at.replace(tzinfo=timezone.utc)
 
             # Apply tolerance to account for clock drift and network delays

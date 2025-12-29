@@ -1,7 +1,7 @@
 """Python path setup utilities for Leyzen Vault modules.
 
 This module centralizes the sys.path manipulation logic used across
-different entry points (orchestrator, docker-proxy, compose scripts) to
+different entry points (orchestrator, docker-proxy) to
 ensure consistent import resolution for common modules.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 # - parent = common/
 # - parent.parent = src/
 # - parent.parent.parent = repo root
-# Note: We cannot import REPO_ROOT from common.constants here because this module
+
 # is used during bootstrap before common.constants can be imported. After bootstrap
 # completes, code should prefer using REPO_ROOT from common.constants for consistency.
 _REPO_ROOT_CACHE: Path | None = None
@@ -89,7 +89,7 @@ def setup_python_paths() -> None:
 
     This enables imports like:
     - `from common.env import ...`
-    - `from compose.base_stack import ...`
+    - `from orchestrator.config import ...`
 
     The function is idempotent: calling it multiple times has no additional effect.
 
@@ -114,7 +114,7 @@ def bootstrap_entry_point() -> None:
     """Complete bootstrap sequence for entry points outside the src/ directory.
 
     This function performs the complete bootstrap sequence needed for entry points
-    (like orchestrator/app.py, docker-proxy/proxy.py, compose/build.py) that are
+    (like orchestrator/app.py or docker-proxy/proxy.py) that are
     executed from outside the src/ directory. It should be called AFTER src/ has
     been manually added to sys.path to enable importing this module.
 
@@ -126,7 +126,7 @@ def bootstrap_entry_point() -> None:
     the need to call bootstrap_src_path() and setup_python_paths() separately.
 
     Example usage:
-        # In orchestrator/app.py, docker-proxy/proxy.py, or compose/build.py:
+        # In orchestrator/app.py or docker-proxy/proxy.py:
         from pathlib import Path
         import sys
 

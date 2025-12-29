@@ -1,162 +1,159 @@
 <template>
-  <div class="dashboard">
-    <div class="dashboard-main">
-      <QuotaDisplay />
+  <div class="dashboard-view-container">
+    <div class="dashboard">
+      <div class="dashboard-main">
+        <QuotaDisplay />
 
-      <div class="vaultspaces-section">
-        <div class="vaultspaces-section-header">
-          <h2>My VaultSpaces</h2>
-          <button
-            @click="createVaultSpaceDirect"
-            class="create-vaultspace-btn"
-            :disabled="isServerOffline"
-          >
-            <span v-html="getIcon('plus', 18)"></span>
-            <span>Create VaultSpace</span>
-          </button>
-        </div>
-
-        <div v-if="loading" class="loading">Loading...</div>
-        <div v-else-if="error" class="error">{{ error }}</div>
-        <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
-          <div class="empty-vaultspaces-content">
-            <span v-html="getIcon('folder', 64)"></span>
-            <h3>No VaultSpaces yet</h3>
-            <p>Create your first VaultSpace to start organizing your files</p>
+        <div class="vaultspaces-section">
+          <div class="vaultspaces-section-header">
+            <h2>My VaultSpaces</h2>
             <button
               @click="createVaultSpaceDirect"
-              class="create-vaultspace-btn-empty"
+              class="create-vaultspace-btn"
               :disabled="isServerOffline"
             >
               <span v-html="getIcon('plus', 18)"></span>
               <span>Create VaultSpace</span>
             </button>
           </div>
-        </div>
-        <div v-else class="vaultspaces-grid-wrapper">
-          <transition-group
-            name="vaultspace"
-            tag="div"
-            class="vaultspaces-grid"
-          >
-            <div
-              v-for="vaultspace in vaultspaces"
-              :key="vaultspace.id"
-              class="vaultspace-card"
-              :class="{
-                'vaultspace-card-new':
-                  vaultspace.id === newlyCreatedVaultspaceId,
-                'vaultspace-disintegrating': disintegratingVaultSpaces.has(
-                  vaultspace.id,
-                ),
-                'vaultspace-icon-changing': animatingIconChanges.has(
-                  vaultspace.id,
-                ),
-                'vaultspace-renaming': renamingVaultSpaces.has(vaultspace.id),
-              }"
-              :data-vaultspace-id="vaultspace.id"
+
+          <div v-if="loading" class="loading">Loading...</div>
+          <div v-else-if="error" class="error">{{ error }}</div>
+          <div v-else-if="vaultspaces.length === 0" class="empty-vaultspaces">
+            <div class="empty-vaultspaces-content">
+              <span v-html="getIcon('folder', 64)"></span>
+              <h3>No VaultSpaces yet</h3>
+              <p>Create your first VaultSpace to start organizing your files</p>
+              <button
+                @click="createVaultSpaceDirect"
+                class="create-vaultspace-btn-empty"
+                :disabled="isServerOffline"
+              >
+                <span v-html="getIcon('plus', 18)"></span>
+                <span>Create VaultSpace</span>
+              </button>
+            </div>
+          </div>
+          <div v-else class="vaultspaces-grid-wrapper">
+            <TransitionGroup
+              name="vaultspace"
+              tag="div"
+              class="vaultspaces-grid"
             >
               <div
-                @click="!isServerOffline && openVaultSpace(vaultspace.id)"
-                class="vaultspace-card-content"
-                :class="{ 'cursor-not-allowed': isServerOffline }"
-                :style="{
-                  opacity: isServerOffline ? 0.5 : 1,
-                  pointerEvents: isServerOffline ? 'none' : 'auto',
+                v-for="vaultspace in vaultspaces"
+                :key="vaultspace.id"
+                class="vaultspace-card"
+                :class="{
+                  'vaultspace-card-new':
+                    vaultspace.id === newlyCreatedVaultspaceId,
+                  'vaultspace-disintegrating': disintegratingVaultSpaces.has(
+                    vaultspace.id,
+                  ),
+                  'vaultspace-icon-changing': animatingIconChanges.has(
+                    vaultspace.id,
+                  ),
+                  'vaultspace-renaming': renamingVaultSpaces.has(vaultspace.id),
                 }"
+                :data-vaultspace-id="vaultspace.id"
               >
                 <div
-                  class="vaultspace-icon"
-                  v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
-                ></div>
-                <div class="vaultspace-info">
-                  <h3 v-if="editingVaultspaceId !== vaultspace.id">
-                    {{ vaultspace.name }}
-                  </h3>
-                  <input
-                    v-else
-                    v-model="editingVaultspaceName"
-                    @keyup.enter="saveVaultspaceRename(vaultspace.id)"
-                    @keyup.esc="cancelVaultspaceRename"
-                    @blur="saveVaultspaceRename(vaultspace.id)"
-                    class="vaultspace-rename-input"
-                    ref="renameInput"
-                    autofocus
-                  />
-                  <p class="vaultspace-type">
-                    Personal
-                    <span
-                      v-if="isPinned(vaultspace.id)"
-                      class="vaultspace-pinned-indicator"
-                    >
-                      • Pinned
-                    </span>
-                  </p>
-                  <p class="vaultspace-date">
-                    Created: {{ formatDate(vaultspace.created_at) }}
-                  </p>
+                  @click="!isServerOffline && openVaultSpace(vaultspace.id)"
+                  class="vaultspace-card-content"
+                  :class="{ 'cursor-not-allowed': isServerOffline }"
+                  :style="{
+                    opacity: isServerOffline ? 0.5 : 1,
+                    pointerEvents: isServerOffline ? 'none' : 'auto',
+                  }"
+                >
+                  <div
+                    class="vaultspace-icon"
+                    v-html="getIcon(vaultspace.icon_name || 'folder', 40)"
+                  ></div>
+                  <div class="vaultspace-info">
+                    <h3 v-if="editingVaultspaceId !== vaultspace.id">
+                      {{ vaultspace.name }}
+                    </h3>
+                    <input
+                      v-else
+                      v-model="editingVaultspaceName"
+                      @keyup.enter="saveVaultspaceRename(vaultspace.id)"
+                      @keyup.esc="cancelVaultspaceRename"
+                      @blur="saveVaultspaceRename(vaultspace.id)"
+                      class="vaultspace-rename-input"
+                      ref="renameInput"
+                      autofocus
+                    />
+                    <p class="vaultspace-meta">
+                      <span class="vaultspace-date">{{
+                        formatDate(vaultspace.created_at)
+                      }}</span>
+                      <span
+                        v-if="isPinned(vaultspace.id)"
+                        class="vaultspace-pinned-indicator"
+                      >
+                        • Pinned
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <div class="vaultspace-actions">
+                  <button
+                    @click.stop="openVaultSpaceMenu(vaultspace, $event)"
+                    class="vaultspace-action-btn vaultspace-menu-btn"
+                    title="More options"
+                    :disabled="isServerOffline"
+                  >
+                    <span v-html="getIcon('moreVertical', 18)"></span>
+                  </button>
                 </div>
               </div>
-              <div class="vaultspace-actions">
-                <button
-                  @click.stop="openVaultSpaceMenu(vaultspace, $event)"
-                  class="vaultspace-action-btn vaultspace-menu-btn"
-                  title="More options"
-                  :disabled="isServerOffline"
-                >
-                  <span v-html="getIcon('moreVertical', 18)"></span>
-                </button>
-              </div>
-            </div>
-          </transition-group>
+            </TransitionGroup>
+          </div>
         </div>
       </div>
     </div>
+
+    <ConfirmationModal
+      :show="showDeleteConfirm"
+      title="Delete VaultSpace"
+      :message="`Are you sure you want to delete '${pendingDeleteVaultspaceName}'? This will permanently delete all files and folders in this VaultSpace. This action cannot be undone.`"
+      confirm-text="Delete"
+      :dangerous="true"
+      @confirm="handleDeleteVaultspace"
+      @close="showDeleteConfirm = false"
+    />
+
+    <AlertModal
+      :show="showAlertModal"
+      :type="alertModalConfig.type"
+      :title="alertModalConfig.title"
+      :message="alertModalConfig.message"
+      @close="handleAlertModalClose"
+      @ok="handleAlertModalClose"
+    />
+
+    <IconPicker
+      :show="showIconPicker"
+      :current-icon="selectedVaultspaceIcon"
+      @close="showIconPicker = false"
+      @select="handleIconSelect"
+    />
+
+    <VaultSpaceMenuDropdown
+      :show="showVaultSpaceMenu"
+      :vaultspace="selectedVaultSpaceForMenu"
+      :is-pinned="
+        selectedVaultSpaceForMenu
+          ? isPinned(selectedVaultSpaceForMenu.id)
+          : false
+      "
+      :position="menuPosition"
+      menu-id="dashboard-menu"
+      @close="showVaultSpaceMenu = false"
+      @action="handleMenuAction"
+    />
   </div>
-
-  <!-- Delete Confirmation Modal -->
-
-  <!-- Delete Confirmation Modal -->
-  <ConfirmationModal
-    :show="showDeleteConfirm"
-    title="Delete VaultSpace"
-    :message="`Are you sure you want to delete '${pendingDeleteVaultspaceName}'? This will permanently delete all files and folders in this VaultSpace. This action cannot be undone.`"
-    confirm-text="Delete"
-    :dangerous="true"
-    @confirm="handleDeleteVaultspace"
-    @close="showDeleteConfirm = false"
-  />
-
-  <!-- Alert Modal -->
-  <AlertModal
-    :show="showAlertModal"
-    :type="alertModalConfig.type"
-    :title="alertModalConfig.title"
-    :message="alertModalConfig.message"
-    @close="handleAlertModalClose"
-    @ok="handleAlertModalClose"
-  />
-
-  <!-- Icon Picker Modal -->
-  <IconPicker
-    :show="showIconPicker"
-    :current-icon="selectedVaultspaceIcon"
-    @close="showIconPicker = false"
-    @select="handleIconSelect"
-  />
-
-  <!-- VaultSpace Menu Dropdown -->
-  <VaultSpaceMenuDropdown
-    :show="showVaultSpaceMenu"
-    :vaultspace="selectedVaultSpaceForMenu"
-    :is-pinned="
-      selectedVaultSpaceForMenu ? isPinned(selectedVaultSpaceForMenu.id) : false
-    "
-    :position="menuPosition"
-    menu-id="dashboard-menu"
-    @close="showVaultSpaceMenu = false"
-    @action="handleMenuAction"
-  />
 </template>
 
 <script>
@@ -207,7 +204,6 @@ export default {
   },
   computed: {
     isServerOffline() {
-      // Check server status via global function
       if (typeof window !== "undefined" && window.getServerStatus) {
         return !window.getServerStatus();
       }
@@ -251,7 +247,6 @@ export default {
       // Get all existing vaultspace names
       const existingNames = this.vaultspaces.map((vs) => vs.name);
 
-      // Check if base name is available
       if (!existingNames.includes(baseName)) {
         return baseName;
       }
@@ -385,7 +380,6 @@ export default {
         // Start disintegration animation
         this.disintegratingVaultSpaces.add(vaultspaceId);
 
-        // Wait for animation to complete (600ms)
         await new Promise((resolve) => setTimeout(resolve, 600));
 
         // Delete from backend
@@ -492,7 +486,7 @@ export default {
           await vaultspaces.pin(vaultspace.id);
           this.pinnedVaultSpaceIds.add(vaultspace.id);
         }
-        // Update local state immediately
+
         await this.loadPinnedStatus();
 
         // Emit event on document immediately for instant sidebar refresh
@@ -512,7 +506,6 @@ export default {
       event.stopPropagation();
       event.preventDefault();
 
-      // Close menu if already open for the same vaultspace
       if (
         this.showVaultSpaceMenu &&
         this.selectedVaultSpaceForMenu?.id === vaultspace.id
@@ -576,13 +569,11 @@ export default {
   grid-template-columns: 1fr;
   gap: 2rem;
   width: 100%;
-  padding: 0 1rem;
   box-sizing: border-box;
 }
 
 .mobile-mode .dashboard-main {
   gap: 1rem;
-  padding: 0 0.5rem;
 }
 
 .vaultspaces-section {
@@ -851,12 +842,7 @@ export default {
   right: 0.75rem;
   display: flex;
   gap: 0.5rem;
-  opacity: 0;
   transition: opacity 0.2s ease;
-}
-
-.vaultspace-card:hover .vaultspace-actions {
-  opacity: 1;
 }
 
 .vaultspace-action-btn,
@@ -929,11 +915,13 @@ export default {
   font-weight: 600;
 }
 
-.vaultspace-type {
+.vaultspace-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   color: #a9b7aa;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   margin: 0.25rem 0;
-  text-transform: capitalize;
 }
 
 .vaultspace-pinned-indicator {

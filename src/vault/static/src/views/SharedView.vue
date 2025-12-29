@@ -1,252 +1,260 @@
 <template>
-  <ConfirmationModal
-    :show="showRevokeConfirm"
-    title="Revoke Share Link"
-    message="Are you sure you want to revoke this share link? This action cannot be undone."
-    confirm-text="Revoke"
-    :dangerous="true"
-    @confirm="handleRevokeConfirm"
-    @close="showRevokeConfirm = false"
-  />
-  <AlertModal
-    :show="showAlertModal"
-    :type="alertType"
-    :title="alertTitle"
-    :message="alertMessage"
-    @close="showAlertModal = false"
-    @ok="showAlertModal = false"
-  />
-  <teleport to="body">
-    <div
-      v-if="showEmailModal"
-      class="modal-overlay"
-      @click.self="closeEmailModal"
-      role="dialog"
-      aria-labelledby="email-modal-title"
-      aria-modal="true"
-    >
-      <div class="modal-container email-modal" @click.stop>
-        <div class="modal-content-email">
-          <div class="modal-header">
-            <h2 id="email-modal-title" class="modal-title">
-              Send Share Link via Email
-            </h2>
-            <button class="modal-close" @click="closeEmailModal">
-              &times;
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label for="recipient-email">Recipient Email</label>
-              <input
-                id="recipient-email"
-                v-model="emailForm.recipientEmail"
-                type="email"
-                placeholder="recipient@example.com"
-                class="form-input"
-                :disabled="emailForm.loading"
-                @keyup.enter="handleSendEmail"
-              />
-            </div>
-            <div v-if="emailForm.error" class="form-error">
-              {{ emailForm.error }}
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              class="btn btn-secondary"
-              @click="closeEmailModal"
-              :disabled="emailForm.loading"
-            >
-              Cancel
-            </button>
-            <button
-              class="btn btn-primary"
-              @click="handleSendEmail"
-              :disabled="emailForm.loading || !emailForm.recipientEmail"
-            >
-              <span v-if="emailForm.loading">Sending...</span>
-              <span v-else>Send Email</span>
-            </button>
-          </div>
+  <div class="shared-view-container">
+    <div class="shared-view">
+      <header class="view-header">
+        <div class="header-title-row">
+          <h1>Shared Files</h1>
         </div>
-      </div>
-    </div>
-  </teleport>
-  <div class="shared-view">
-    <header class="view-header">
-      <h1>Shared Files</h1>
-      <p class="view-description">
-        Files you have shared with others via download links
-      </p>
-    </header>
-
-    <main class="view-main">
-      <div v-if="loading" class="loading">Loading shared files...</div>
-      <div v-else-if="error" class="error">{{ error }}</div>
-      <div v-else-if="files.length === 0" class="empty-state">
-        <p>No shared files yet</p>
-        <p class="empty-hint">
-          Share a file to generate a download link that others can use
+        <p class="view-description">
+          Files you have shared with others via download links
         </p>
-      </div>
-      <div v-else class="shared-files-list">
-        <div v-for="file in files" :key="file.id" class="shared-file-item">
-          <div class="file-info">
-            <div class="file-icon">
-              <img
-                v-if="
-                  hasThumbnail(file) &&
-                  (isImageFile(file) || isAudioFile(file)) &&
-                  getThumbnailUrl(file.id)
-                "
-                :key="`thumb-${file.id}-${thumbnailUpdateTrigger}`"
-                :src="getThumbnailUrl(file.id)"
-                :alt="file.original_name"
-                class="file-thumbnail"
-                @error="
-                  (event) => {
-                    event.target.style.display = 'none';
-                  }
-                "
-              />
-              <span v-else v-html="getFileIcon(file)"></span>
-            </div>
-            <div class="file-details">
-              <h3 class="file-name">{{ file.original_name }}</h3>
-              <p class="file-meta">
-                Size: {{ formatSize(file.size) }} • Created:
-                {{ formatDate(file.created_at) }}
-              </p>
-            </div>
-            <div class="file-actions"></div>
-          </div>
-          <div class="share-links-info">
-            <div
-              v-for="link in file.share_links || []"
-              :key="link.link_id"
-              class="share-link-card"
-            >
-              <div class="link-info">
-                <div
-                  v-if="hasDecryptionKey(link, file.id)"
-                  :data-link-id="link.link_id"
-                  class="link-url"
-                >
-                  {{ getShareUrlDisplay(link, file.id) }}
-                </div>
-                <div v-else class="link-warning">
-                  <span class="warning-icon">⚠️</span>
-                  <span class="warning-text">
-                    Decryption key missing. Open the file from the VaultSpace to
-                    retrieve the key.
-                  </span>
-                </div>
-                <div class="link-meta">
-                  <span v-if="link.created_at">
-                    Created: {{ formatDate(link.created_at) }}
-                  </span>
-                  <span v-if="link.expires_at">
-                    • Expires: {{ formatDate(link.expires_at) }}
-                  </span>
-                  <span v-else> • No expiration</span>
-                  <span v-if="link.max_downloads">
-                    • {{ link.download_count || 0 }}/{{ link.max_downloads }}
-                    downloads
-                  </span>
-                  <span v-else>
-                    • {{ link.download_count || 0 }} downloads
-                  </span>
-                  <span v-if="link.max_access_count">
-                    • {{ link.access_count || 0 }}/{{ link.max_access_count }}
-                    accesses
-                  </span>
-                  <span v-else> • {{ link.access_count || 0 }} accesses </span>
-                  <span v-if="link.has_password"> • Password protected </span>
-                </div>
-                <div class="link-status">
-                  <span
-                    :class="{
-                      'status-active': isLinkAvailable(link),
-                      'status-expired': isLinkExpired(link),
-                    }"
-                  >
-                    {{ getLinkStatus(link) }}
-                  </span>
-                </div>
+      </header>
+
+      <main class="view-main">
+        <div v-if="loading" class="loading">Loading shared files...</div>
+        <div v-else-if="error" class="error">{{ error }}</div>
+        <div v-else-if="files.length === 0" class="empty-state">
+          <p>No shared files yet</p>
+          <p class="empty-hint">
+            Share a file to generate a download link that others can use
+          </p>
+        </div>
+        <div v-else class="shared-files-list">
+          <div v-for="file in files" :key="file.id" class="shared-file-item">
+            <div class="file-info">
+              <div class="file-icon">
+                <img
+                  v-if="
+                    hasThumbnail(file) &&
+                    (isImageFile(file) || isAudioFile(file)) &&
+                    getThumbnailUrl(file.id)
+                  "
+                  :key="`thumb-${file.id}-${thumbnailUpdateTrigger}`"
+                  :src="getThumbnailUrl(file.id)"
+                  :alt="file.original_name"
+                  class="file-thumbnail"
+                  @error="
+                    (event) => {
+                      event.target.style.display = 'none';
+                    }
+                  "
+                />
+                <span v-else v-html="getFileIcon(file)"></span>
               </div>
-              <div class="link-actions">
-                <button
-                  v-if="
-                    isLinkAvailable(link) && hasDecryptionKey(link, file.id)
-                  "
-                  @click="copyLink(link, file.id)"
-                  class="btn btn-small btn-primary"
-                >
-                  Copy Link
-                </button>
-                <button
-                  v-if="
-                    isLinkAvailable(link) && hasDecryptionKey(link, file.id)
-                  "
-                  @click="openSendEmailModal(link, file.id, file.original_name)"
-                  class="btn btn-small btn-primary"
-                  :title="'Send share link via email'"
-                >
-                  Send Email
-                </button>
-                <button
-                  @click="revokeLink(link.link_id, file.id)"
-                  class="btn btn-small btn-danger"
-                >
-                  Revoke
-                </button>
-                <div class="link-note">
-                  <span
-                    v-if="editingNoteLinkId !== link.link_id"
-                    @click="startNoteEdit(link)"
-                    class="note-display"
+              <div class="file-details">
+                <h3 class="file-name">{{ file.original_name }}</h3>
+                <p class="file-meta">
+                  Size: {{ formatSize(file.size) }} • Created:
+                  {{ formatDate(file.created_at) }}
+                </p>
+              </div>
+              <div class="file-actions"></div>
+            </div>
+            <div class="share-links-info">
+              <div
+                v-for="link in file.share_links || []"
+                :key="link.link_id"
+                class="share-link-card"
+              >
+                <div class="link-info">
+                  <div
+                    v-if="hasDecryptionKey(link, file.id)"
+                    :data-link-id="link.link_id"
+                    class="link-url"
                   >
-                    <span v-if="link.note" class="note-content"
-                      >Note: {{ link.note }}</span
+                    {{ getShareUrlDisplay(link, file.id) }}
+                  </div>
+                  <div v-else class="link-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <span class="warning-text">
+                      Decryption key missing. Open the file from the VaultSpace
+                      to retrieve the key.
+                    </span>
+                  </div>
+                  <div class="link-meta">
+                    <span v-if="link.created_at">
+                      Created: {{ formatDate(link.created_at) }}
+                    </span>
+                    <span v-if="link.expires_at">
+                      • Expires: {{ formatDate(link.expires_at) }}
+                    </span>
+                    <span v-else> • No expiration</span>
+                    <span v-if="link.max_downloads">
+                      • {{ link.download_count || 0 }}/{{ link.max_downloads }}
+                      downloads
+                    </span>
+                    <span v-else>
+                      • {{ link.download_count || 0 }} downloads
+                    </span>
+                    <span v-if="link.max_access_count">
+                      • {{ link.access_count || 0 }}/{{ link.max_access_count }}
+                      accesses
+                    </span>
+                    <span v-else>
+                      • {{ link.access_count || 0 }} accesses
+                    </span>
+                    <span v-if="link.has_password"> • Password protected </span>
+                  </div>
+                  <div class="link-status">
+                    <span
+                      :class="{
+                        'status-active': isLinkAvailable(link),
+                        'status-expired': isLinkExpired(link),
+                      }"
                     >
-                    <span v-else class="note-placeholder">Add a note...</span>
-                    <button
-                      v-if="link.note"
-                      @click.stop="deleteNote(link.link_id, file.id)"
-                      class="note-delete-btn"
-                      title="Delete note"
+                      {{ getLinkStatus(link) }}
+                    </span>
+                  </div>
+                </div>
+                <div class="link-actions">
+                  <button
+                    v-if="
+                      isLinkAvailable(link) && hasDecryptionKey(link, file.id)
+                    "
+                    @click="copyLink(link, file.id)"
+                    class="btn btn-small btn-primary"
+                  >
+                    Copy Link
+                  </button>
+                  <button
+                    v-if="
+                      isLinkAvailable(link) && hasDecryptionKey(link, file.id)
+                    "
+                    @click="
+                      openSendEmailModal(link, file.id, file.original_name)
+                    "
+                    class="btn btn-small btn-primary"
+                    :title="'Send share link via email'"
+                  >
+                    Send Email
+                  </button>
+                  <button
+                    @click="revokeLink(link.link_id, file.id)"
+                    class="btn btn-small btn-danger"
+                  >
+                    Revoke
+                  </button>
+                  <div class="link-note">
+                    <span
+                      v-if="editingNoteLinkId !== link.link_id"
+                      @click="startNoteEdit(link)"
+                      class="note-display"
                     >
-                      <span v-html="getIcon('x', 14)"></span>
-                    </button>
-                  </span>
-                  <div v-else class="note-input-wrapper">
-                    <input
-                      v-model="editingNoteText"
-                      @keyup.enter="saveNote(link.link_id, file.id)"
-                      @keyup.esc="cancelNoteEdit"
-                      @blur="saveNote(link.link_id, file.id)"
-                      class="note-input"
-                      ref="noteInput"
-                      autofocus
-                      placeholder="Add a note..."
-                    />
-                    <button
-                      v-if="editingNoteText"
-                      @click.stop="deleteNote(link.link_id, file.id)"
-                      class="note-delete-btn note-delete-btn-editing"
-                      title="Delete note"
-                    >
-                      <span v-html="getIcon('x', 14)"></span>
-                    </button>
+                      <span v-if="link.note" class="note-content"
+                        >Note: {{ link.note }}</span
+                      >
+                      <span v-else class="note-placeholder">Add a note...</span>
+                      <button
+                        v-if="link.note"
+                        @click.stop="deleteNote(link.link_id, file.id)"
+                        class="note-delete-btn"
+                        title="Delete note"
+                      >
+                        <span v-html="getIcon('x', 14)"></span>
+                      </button>
+                    </span>
+                    <div v-else class="note-input-wrapper">
+                      <input
+                        v-model="editingNoteText"
+                        @keyup.enter="saveNote(link.link_id, file.id)"
+                        @keyup.esc="cancelNoteEdit"
+                        @blur="saveNote(link.link_id, file.id)"
+                        class="note-input"
+                        ref="noteInput"
+                        autofocus
+                        placeholder="Add a note..."
+                      />
+                      <button
+                        v-if="editingNoteText"
+                        @click.stop="deleteNote(link.link_id, file.id)"
+                        class="note-delete-btn note-delete-btn-editing"
+                        title="Delete note"
+                      >
+                        <span v-html="getIcon('x', 14)"></span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+
+      <ConfirmationModal
+        :show="showRevokeConfirm"
+        title="Revoke Share Link"
+        message="Are you sure you want to revoke this share link? This action cannot be undone."
+        confirm-text="Revoke"
+        :dangerous="true"
+        @confirm="handleRevokeConfirm"
+        @close="showRevokeConfirm = false"
+      />
+      <AlertModal
+        :show="showAlertModal"
+        :type="alertType"
+        :title="alertTitle"
+        :message="alertMessage"
+        @close="showAlertModal = false"
+        @ok="showAlertModal = false"
+      />
+      <Teleport v-if="showEmailModal" to="body">
+        <div
+          class="modal-overlay"
+          @click.self="closeEmailModal"
+          role="dialog"
+          aria-labelledby="email-modal-title"
+          aria-modal="true"
+        >
+          <div class="modal-container email-modal" @click.stop>
+            <div class="modal-content-email">
+              <div class="modal-header">
+                <h2 id="email-modal-title" class="modal-title">
+                  Send Share Link via Email
+                </h2>
+                <button class="modal-close" @click="closeEmailModal">
+                  &times;
+                </button>
+              </div>
+              <div class="modal-body">
+                <div class="form-group">
+                  <label for="recipient-email">Recipient Email</label>
+                  <input
+                    id="recipient-email"
+                    v-model="emailForm.recipientEmail"
+                    type="email"
+                    placeholder="recipient@example.com"
+                    class="form-input"
+                    :disabled="emailForm.loading"
+                    @keyup.enter="handleSendEmail"
+                  />
+                </div>
+                <div v-if="emailForm.error" class="form-error">
+                  {{ emailForm.error }}
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button
+                  class="btn btn-secondary"
+                  @click="closeEmailModal"
+                  :disabled="emailForm.loading"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="btn btn-primary"
+                  @click="handleSendEmail"
+                  :disabled="emailForm.loading || !emailForm.recipientEmail"
+                >
+                  <span v-if="emailForm.loading">Sending...</span>
+                  <span v-else>Send Email</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+    </div>
   </div>
 </template>
 
@@ -353,8 +361,7 @@ export default {
         }
 
         // Migrate to API v2 - use public-links endpoint to get shared files
-        // Note: API v2 doesn't have a direct "shared files" endpoint
-        // We'll need to get all public links and extract the files
+
         const response = await fetch("/api/v2/sharing/public-links", {
           headers: {
             Authorization: `Bearer ${jwtToken}`,
@@ -393,7 +400,6 @@ export default {
             });
           }
 
-          // Note: share_url will be constructed in getShareUrl() using VAULT_URL
           const shareLinkData = {
             ...link,
             link_id: link.token || link.id,
@@ -412,7 +418,7 @@ export default {
             if (file.share_links) {
               for (const link of file.share_links) {
                 await this.loadShareUrl(link, file.id);
-                // Try to recover missing keys
+
                 await this.ensureFileKeyAvailable(file.id, file.vaultspace_id);
               }
             }
@@ -444,7 +450,6 @@ export default {
         existing.remove();
       }
 
-      // Ensure the linkUrlElement has position: relative for absolute positioning
       const computedStyle = window.getComputedStyle(linkUrlElement);
       if (computedStyle.position === "static") {
         linkUrlElement.style.position = "relative";
@@ -501,7 +506,6 @@ export default {
 
         await navigator.clipboard.writeText(result.url);
 
-        // Show animation on link URL element
         // Find the element by data-link-id attribute
         this.$nextTick(() => {
           // Use document.querySelector directly since Vue 3 $el can be a Fragment
@@ -585,7 +589,7 @@ export default {
       }
       // Trigger async loading
       this.loadShareUrl(link, fileId);
-      // Return placeholder while loading
+
       return "Loading...";
     },
     async loadShareUrl(link, fileId) {
@@ -603,12 +607,11 @@ export default {
       }
     },
     hasDecryptionKey(link, fileId) {
-      // Check if decryption key is available for this link
       const cacheKey = `${link.link_id}-${fileId}`;
       if (this.shareUrlKeyStatus.has(cacheKey)) {
         return this.shareUrlKeyStatus.get(cacheKey);
       }
-      // If not yet loaded, assume true to avoid showing warning prematurely
+
       return true;
     },
     async getShareUrl(link, fileId) {
@@ -627,7 +630,6 @@ export default {
         }
       } catch (e) {}
 
-      // Fallback to localStorage if not found in IndexedDB
       if (!fileKey) {
         try {
           const keys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
@@ -651,7 +653,6 @@ export default {
         } catch (e) {}
       }
 
-      // Try global functions as fallback
       if (!fileKey) {
         if (typeof getFileKey === "function") {
           fileKey = getFileKey(fileId);
@@ -681,7 +682,6 @@ export default {
       return { url, hasKey };
     },
     async ensureFileKeyAvailable(fileId, vaultspaceId) {
-      // Check if key is available, if not try to recover it from the file
       try {
         const keyStr = await getFileKeyFromStorage(fileId);
         if (keyStr) {
@@ -717,7 +717,6 @@ export default {
           true, // extractable to store it
         );
 
-        // Export key as raw bytes
         const exportedKey = await crypto.subtle.exportKey("raw", fileKey);
         const keyArray = new Uint8Array(exportedKey);
 
@@ -841,7 +840,6 @@ export default {
         return;
       }
 
-      // Check if link is available
       if (!this.isLinkAvailable(link)) {
         this.showAlert(
           "error",
@@ -890,7 +888,6 @@ export default {
           this.pendingEmailFileId,
         );
 
-        // Double-check that the key is present
         if (!result.hasKey || !result.url.includes("#key=")) {
           throw new Error(
             "The share link does not have a decryption key. Unable to send email.",
@@ -932,7 +929,6 @@ export default {
         this.emailForm.loading = false;
         this.closeEmailModal();
 
-        // Show success notification
         if (window.Notifications) {
           window.Notifications.success(
             "Share link sent via email successfully",
@@ -1029,7 +1025,6 @@ export default {
         return;
       }
 
-      // If new note is empty, don't update (preserve existing note)
       // Only update if there's actual content
       if (!newNoteValue || !newNoteValue.trim()) {
         this.savingNote = false;
@@ -1062,18 +1057,16 @@ export default {
         const data = await response.json();
         const updatedLink = data.share_link;
 
-        // Update the link in the local state
         if (file && file.share_links) {
           const linkIndex = file.share_links.findIndex(
             (l) => l.link_id === linkId,
           );
           if (linkIndex >= 0) {
-            // Ensure null/empty string is properly handled
             const newNote =
               updatedLink.note && updatedLink.note.trim()
                 ? updatedLink.note.trim()
                 : null;
-            // Update the note and force reactivity by reassigning
+
             file.share_links[linkIndex] = {
               ...file.share_links[linkIndex],
               note: newNote,
@@ -1122,14 +1115,12 @@ export default {
         const data = await response.json();
         const updatedLink = data.share_link;
 
-        // Update the link in the local state
         const file = this.files.find((f) => f.id === fileId);
         if (file && file.share_links) {
           const linkIndex = file.share_links.findIndex(
             (l) => l.link_id === linkId,
           );
           if (linkIndex >= 0) {
-            // Update the note to null
             file.share_links[linkIndex] = {
               ...file.share_links[linkIndex],
               note: null,
@@ -1146,9 +1137,8 @@ export default {
         }
       }
     },
-    // Check if file is an image based on mime_type or file extension
+
     isImageFile(file) {
-      // Check mime_type first
       if (file.mime_type?.startsWith("image/")) {
         return true;
       }
@@ -1173,9 +1163,8 @@ export default {
 
       return false;
     },
-    // Check if file is an audio file based on mime_type or file extension
+
     isAudioFile(file) {
-      // Check mime_type first
       if (file.mime_type?.startsWith("audio/")) {
         return true;
       }
@@ -1193,10 +1182,10 @@ export default {
     getThumbnailUrl(fileId) {
       // Access thumbnailUpdateTrigger to create dependency
       void this.thumbnailUpdateTrigger;
-      // Return cached URL if available
+
       return this.thumbnailUrls[fileId] || "";
     },
-    // Check if file has a thumbnail available
+
     hasThumbnail(file) {
       // For images, always try to show thumbnail (either from storage or load image directly)
       // For audio files, check if thumbnail URL is already cached (meaning cover was found)
@@ -1207,13 +1196,11 @@ export default {
     },
     // Load VaultSpace key if not cached
     async loadVaultSpaceKeyIfNeeded(vaultspaceId) {
-      // Check if already cached
       let vaultspaceKey = getCachedVaultSpaceKey(vaultspaceId);
       if (vaultspaceKey) {
         return vaultspaceKey;
       }
 
-      // Try to load from server
       try {
         const userMasterKey = await getUserMasterKey();
         if (!userMasterKey) {
@@ -1247,7 +1234,6 @@ export default {
       }
 
       try {
-        // Check cache first
         const cachedBlob = await getThumbnail(file.id);
         if (cachedBlob) {
           const blobUrl = URL.createObjectURL(cachedBlob);
@@ -1267,7 +1253,6 @@ export default {
           return;
         }
 
-        // Try to get file key from storage first
         let fileKey = null;
         try {
           const keyStr = await getFileKeyFromStorage(file.id);
@@ -1285,7 +1270,6 @@ export default {
           // Continue to get from file
         }
 
-        // If key not in storage, get from file
         if (!fileKey) {
           // Get file key
           const fileData = await files.get(file.id, vaultspaceId);
@@ -1346,7 +1330,6 @@ export default {
       }
 
       try {
-        // Check cache first
         const cachedBlob = await getThumbnail(file.id);
         if (cachedBlob) {
           const blobUrl = URL.createObjectURL(cachedBlob);
@@ -1366,7 +1349,6 @@ export default {
           return;
         }
 
-        // Try to get file key from storage first
         let fileKey = null;
         try {
           const keyStr = await getFileKeyFromStorage(file.id);
@@ -1384,7 +1366,6 @@ export default {
           // Continue to get from file
         }
 
-        // If key not in storage, get from file
         if (!fileKey) {
           // Get file key
           const fileData = await files.get(file.id, vaultspaceId);
@@ -1437,7 +1418,6 @@ export default {
           blob.type,
         );
 
-        // Check if there's a picture/cover art in the metadata
         if (metadata.common?.picture && metadata.common.picture.length > 0) {
           // Get the first picture (usually the album cover)
           const picture = metadata.common.picture[0];
@@ -1547,22 +1527,25 @@ export default {
 
 <style scoped>
 .shared-view {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-.mobile-mode .shared-view {
-  padding: 1rem;
-  padding-bottom: calc(1rem + 64px);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-header {
   margin-bottom: 2rem;
+  padding: 1.5rem 0;
+}
+
+.header-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
 }
 
 .view-header h1 {
-  margin: 0 0 0.5rem 0;
+  margin: 0;
   color: #a9b7aa;
   font-size: 2rem;
   font-weight: 600;

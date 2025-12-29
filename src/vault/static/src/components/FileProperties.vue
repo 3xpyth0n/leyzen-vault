@@ -1,6 +1,6 @@
 <template>
-  <teleport to="body">
-    <div v-if="show" class="file-properties-overlay" @click="close">
+  <Teleport v-if="show" to="body">
+    <div class="file-properties-overlay" @click="close">
       <div class="file-properties-modal" @click.stop>
         <div class="file-properties-header">
           <h2>File Properties</h2>
@@ -107,13 +107,14 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>
 import { ref, watch, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { files, vaultspaces } from "../services/api";
+import { normalizeMimeType } from "../utils/mimeType";
 
 export default {
   name: "FileProperties",
@@ -234,7 +235,6 @@ export default {
         const fileData = await files.get(props.fileId, props.vaultspaceId);
         file.value = fileData.file;
 
-        // Fetch full breadcrumb path
         await fetchBreadcrumbs(file.value);
         scrollToRight();
 
@@ -275,6 +275,11 @@ export default {
       if (fileObj.mime_type === "application/x-directory") {
         return "Folder";
       }
+
+      const mimeType = normalizeMimeType(
+        fileObj.original_name,
+        fileObj.mime_type,
+      );
 
       // Map of extensions to readable file types
       const extensionMap = {
@@ -337,27 +342,26 @@ export default {
         iso: "ISO Image",
       };
 
-      // If the mime_type is generic, use the file name extension
       const isGenericMimeType =
-        !fileObj.mime_type ||
-        fileObj.mime_type === "application/octet-stream" ||
-        fileObj.mime_type === "application/x-unknown" ||
-        fileObj.mime_type === "binary/octet-stream";
+        !mimeType ||
+        mimeType === "application/octet-stream" ||
+        mimeType === "application/x-unknown" ||
+        mimeType === "binary/octet-stream";
 
       if (isGenericMimeType && fileObj.original_name) {
         const extension = fileObj.original_name.split(".").pop()?.toLowerCase();
         if (extension && extensionMap[extension]) {
           return extensionMap[extension];
         }
-        // If the extension is not in the map, return the extension in uppercase
+
         if (extension) {
           return extension.toUpperCase() + " File";
         }
       }
 
-      // Use mime_type if available and not generic
-      if (fileObj.mime_type && !isGenericMimeType) {
-        const parts = fileObj.mime_type.split("/");
+      // Use mimeType if available and not generic
+      if (mimeType && !isGenericMimeType) {
+        const parts = mimeType.split("/");
         const subtype = parts[parts.length - 1];
 
         // Improve display for certain common types
@@ -385,7 +389,6 @@ export default {
           return mimeTypeMap[subtype];
         }
 
-        // Return the subtype in readable format
         const readableType = subtype.includes(".")
           ? subtype.split(".").pop()
           : subtype;

@@ -12,7 +12,6 @@ async function downloadFile(fileId, key, linkToken = null) {
     statusEl.classList.remove("hidden");
   }
 
-  // Build download URL with token if provided
   let downloadUrl = `/api/files/${fileId}`;
   if (linkToken) {
     downloadUrl += `?token=${encodeURIComponent(linkToken)}`;
@@ -70,7 +69,6 @@ async function downloadFile(fileId, key, linkToken = null) {
 }
 
 async function handleShareDownload() {
-  // Try to get link_token from URL path or query params
   const pathMatch = window.location.pathname.match(/\/share\/([^\/]+)/);
   const linkToken = pathMatch
     ? pathMatch[1]
@@ -154,7 +152,6 @@ function showError(message) {
   }
 }
 
-// Initialize when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initDownload);
 } else {
@@ -164,7 +161,6 @@ if (document.readyState === "loading") {
 function initDownload() {
   const downloadButton = document.getElementById("download-button");
 
-  // Check if we have a link_token from template context
   const linkToken = window.SHARE_LINK_TOKEN || null;
   const fileId = window.SHARE_FILE_ID || null;
 

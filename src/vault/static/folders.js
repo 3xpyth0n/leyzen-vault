@@ -5,7 +5,6 @@ let foldersList = [];
 let foldersCache = {}; // Cache for decrypted folder names
 let keyManager = null;
 
-// Initialize key manager
 async function initKeyManager() {
   if (window.KeyManager) {
     keyManager = new window.KeyManager();
@@ -58,12 +57,12 @@ async function loadFolders(parentId = null) {
 // Helper function to get vaultspace_id from URL
 function getVaultspaceIdFromURL() {
   const path = window.location.pathname;
-  // Try to extract from URL patterns like /vaultspace/{id} or /dashboard
+
   const match = path.match(/\/vaultspace\/([^/]+)/);
   if (match) {
     return match[1];
   }
-  // Try to get from global state or localStorage
+
   return localStorage.getItem("current_vaultspace_id");
 }
 
@@ -98,7 +97,6 @@ async function decryptFolderName(encryptedName, parentId) {
     // Get master key or generate temporary one for legacy mode
     let masterKeyData = await keyManager.getMasterKey();
 
-    // If no master key found (legacy mode), generate a temporary one
     if (!masterKeyData) {
       // In legacy mode, use the same fixed salt and derive from the same fixed value
       // This matches the key used in createFolder for consistency
@@ -144,7 +142,6 @@ async function decryptFolderName(encryptedName, parentId) {
   }
 }
 
-// Render breadcrumbs
 async function renderBreadcrumbs(folderId) {
   const breadcrumbsContainer = document.getElementById("breadcrumbs");
   if (!breadcrumbsContainer) return;
@@ -190,7 +187,6 @@ async function renderBreadcrumbs(folderId) {
   }
 }
 
-// Render folders list
 async function renderFolders(folders, parentId) {
   const container = document.getElementById("folders-list");
   if (!container) return;
@@ -200,7 +196,6 @@ async function renderFolders(folders, parentId) {
     return;
   }
 
-  // Check current view mode from files.js
   const currentView = window.currentView || "grid";
 
   if (currentView === "list") {
@@ -210,7 +205,6 @@ async function renderFolders(folders, parentId) {
   }
 }
 
-// Render folders in grid view
 async function renderFoldersGridView(folders, parentId) {
   const container = document.getElementById("folders-list");
   if (!container) return;
@@ -263,7 +257,6 @@ async function renderFoldersGridView(folders, parentId) {
     });
 }
 
-// Render folders in list view
 async function renderFoldersListView(folders, parentId) {
   const container = document.getElementById("folders-list");
   if (!container) return;
@@ -379,7 +372,6 @@ async function generateUniqueFolderName(
     // Filter out null values (decryption failures)
     const validNames = existingNames.filter((name) => name !== null);
 
-    // Check if base name is available
     if (!validNames.includes(baseName)) {
       return baseName;
     }
@@ -395,7 +387,6 @@ async function generateUniqueFolderName(
 
     return newName;
   } catch (error) {
-    // Fallback to base name if there's an error
     return baseName;
   }
 }
@@ -414,11 +405,9 @@ async function createFolder(name, parentId = null) {
   }
 
   try {
-    // If name is not provided or is the default, generate a unique name
     if (!name || name.trim() === "") {
       name = await generateUniqueFolderName("New Folder", parentId);
     } else {
-      // Check if the provided name is already taken and generate unique if needed
       const uniqueName = await generateUniqueFolderName(name, parentId);
       if (uniqueName !== name) {
         // Name conflict detected, use the unique name
@@ -428,11 +417,10 @@ async function createFolder(name, parentId = null) {
     // Get master key or generate temporary one for legacy mode
     let masterKeyData = await keyManager.getMasterKey();
 
-    // If no master key found (legacy mode), generate a temporary one
     if (!masterKeyData) {
       // In legacy mode, use a fixed salt and derive from a fixed value
       // This allows folder creation in legacy mode with consistent encryption
-      // Note: This is less secure than user-specific keys but necessary for legacy compatibility
+
       const legacyPassword = "leyzen-legacy-default-master-key";
       const salt = new Uint8Array(32); // Zero salt for legacy (not secure but consistent)
 
@@ -484,7 +472,7 @@ async function createFolder(name, parentId = null) {
 
     // API v2 uses plain name, not encrypted_name - encryption is handled by the service
     // However, for legacy compatibility, we may need to send the name as-is
-    // Check API v2 documentation for the expected format
+
     const response = await fetch("/api/v2/files/folders", {
       method: "POST",
       headers: {
@@ -604,7 +592,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Initialize
 document.addEventListener("DOMContentLoaded", async () => {
   await initKeyManager();
   await navigateToFolder(null); // Start at root
@@ -623,7 +610,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.Folders = {
     navigateToFolder,

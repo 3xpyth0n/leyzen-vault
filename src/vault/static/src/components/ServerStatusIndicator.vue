@@ -36,7 +36,6 @@ export default {
       { immediate: true },
     );
 
-    // Initialize previous status on mount
     onMounted(() => {
       previousStatus = isOnline.value;
     });

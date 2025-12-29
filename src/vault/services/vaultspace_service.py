@@ -507,7 +507,7 @@ class VaultSpaceService:
                     .all()
                 )
         except Exception as e:
-            # If query fails (e.g., column doesn't exist), fallback to pinned_at
+
             # Use raw SQL to avoid loading display_order
             logger.debug(
                 f"Error querying with display_order, using raw SQL fallback: {e}"

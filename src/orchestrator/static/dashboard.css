@@ -218,7 +218,6 @@
   }
 }
 
-/* Confirmation Modal Styles */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -387,7 +386,6 @@
   }
 }
 
-/* Footer buttons */
 .footer-btn-logout {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3) !important;

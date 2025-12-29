@@ -20,15 +20,16 @@ RUN apk add --no-cache su-exec curl \
     && mkdir -p /app/logs \
     && chown -R orchestrator:orchestrator /app/logs
 
-COPY . .
-
+COPY --chown=orchestrator:orchestrator . .
 
 # Copy compiled CSS only
-COPY --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
+COPY --chown=orchestrator:orchestrator --from=tailwind-builder /build/tailwind.output.css ./static/tailwind.css
 
 # Copy entrypoint script explicitly and ensure it's executable
-COPY entrypoint.sh /app/entrypoint.sh
+COPY --chown=orchestrator:orchestrator entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+ENV PYTHONUNBUFFERED=1
+
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "80", "--no-access-log", "--log-level", "error", "--timeout-graceful-shutdown", "2"]
+CMD ["uvicorn", "asgi:app", "--host", "0.0.0.0", "--port", "80", "--no-access-log", "--log-level", "warning", "--timeout-graceful-shutdown", "2"]

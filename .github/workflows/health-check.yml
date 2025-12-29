@@ -28,18 +28,22 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build CLI
+        run: |
+          cd tools/cli
+          go build -o ../../leyzenctl .
+
       - name: Clean up action-specific Docker resources
         run: |
           PROJECT_PREFIX="leyzen-vault-github-action-"
           docker ps -a --format "{{.Names}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker rm -f 2>/dev/null || true
           docker volume ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker volume rm 2>/dev/null || true
           docker network ls --format "{{.Name}}" | grep "^${PROJECT_PREFIX}" | xargs -r docker network rm 2>/dev/null || true
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r src/orchestrator/requirements.txt
-          pip install -r infra/docker-proxy/requirements.txt
 
       - name: Create .env file with minimal configuration
         run: |
@@ -74,30 +78,30 @@ jobs:
           rm -f docker-generated.yml
 
           # Use LEYZEN_ENV_FILE to explicitly point to the health-check environment file
-          # This ensures build.py uses the correct .env file and prevents production
+          # This ensures leyzenctl uses the correct .env file and prevents production
           # environment variables from leaking into the test environment
           export LEYZEN_ENV_FILE=.env.health-check
 
-          python src/compose/build.py
+          ./leyzenctl config generate
 
           if [ ! -f docker-generated.yml ]; then
-            echo "❌ ERROR: docker-generated.yml was not created!"
+            echo "[ERROR] docker-generated.yml was not created!"
             exit 1
           fi
 
           # Verify orchestrator is enabled (vault_app should NOT exist, vault_web1 should exist)
           if docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^vault_app$"; then
-            echo "❌ ERROR: vault_app found (orchestrator appears to be disabled)"
+            echo "[ERROR] vault_app found (orchestrator appears to be disabled)"
             exit 1
           fi
 
           if ! docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^vault_web1$"; then
-            echo "❌ ERROR: vault_web containers not found"
+            echo "[ERROR] vault_web containers not found"
             exit 1
           fi
 
           if ! docker compose -f docker-generated.yml config --services 2>/dev/null | grep -q "^orchestrator$"; then
-            echo "❌ ERROR: orchestrator service not found"
+            echo "[ERROR] orchestrator service not found"
             exit 1
           fi
 
@@ -116,50 +120,39 @@ jobs:
 
           original_content = content
 
-          # Prefix volume names (must match "leyzen-" pattern and not already be prefixed)
-          # Only prefix volumes that start with "leyzen-" but don't already have the project prefix
+          # Prefix volume names
           content = re.sub(
-              r'(\s+name:\s+)"(leyzen-[^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
-              if not m.group(2).startswith(project_prefix) else m.group(0),
+              r'(\s+name:\s+)(["\']?)([^"\'\s]+)\2',
+              lambda m: f'{m.group(1)}{m.group(2)}{project_prefix}{m.group(3)}{m.group(2)}'
+              if not m.group(3).startswith(project_prefix) else m.group(0),
               content
           )
 
-          # Prefix container names (only if not already prefixed)
+          # Prefix container names
           content = re.sub(
-              r'(\s+container_name:\s+)"([^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
-              if not m.group(2).startswith(project_prefix) else m.group(0),
+              r'(\s+container_name:\s+)(["\']?)([^"\'\s]+)\2',
+              lambda m: f'{m.group(1)}{m.group(2)}{project_prefix}{m.group(3)}{m.group(2)}'
+              if not m.group(3).startswith(project_prefix) else m.group(0),
               content
           )
 
-          # Prefix network names (must match "leyzen-" pattern and not already be prefixed)
-          content = re.sub(
-              r'(\s+name:\s+)"(leyzen-[^"]+)"',
-              lambda m: f'{m.group(1)}"{project_prefix}{m.group(2)}"'
-              if not m.group(2).startswith(project_prefix) else m.group(0),
-              content
-          )
-
-          # Verify that all volumes starting with "leyzen-" were prefixed
-          # This is a safety check to ensure we don't accidentally use production volumes
-          # Only check for volumes that start with "leyzen-" but don't have the project prefix
-          unprefixed_volumes = re.findall(r'(\s+name:\s+)"(leyzen-[^"]+)"', content)
-          unprefixed_volumes = [
-              match for match in unprefixed_volumes
-              if not match[1].startswith(project_prefix)
+          # Prefix network names
+          unprefixed = re.findall(r'(\s+(?:container_name|name):\s+)(["\']?)([^"\'\s]+)\2', content)
+          unprefixed = [
+              match for match in unprefixed
+              if not match[2].startswith(project_prefix)
           ]
-          if unprefixed_volumes:
-              print(f"❌ ERROR: Found {len(unprefixed_volumes)} unprefixed volumes:", file=sys.stderr)
-              for match in unprefixed_volumes:
-                  print(f"  - {match[1]}", file=sys.stderr)
-              print("All volumes must be prefixed to prevent accidental deletion of production data!", file=sys.stderr)
+          if unprefixed:
+              print(f"[ERROR] Found {len(unprefixed)} unprefixed resources:", file=sys.stderr)
+              for match in unprefixed:
+                  print(f"  - {match[2]}", file=sys.stderr)
+              print("All resources must be prefixed to prevent accidental interference with production!", file=sys.stderr)
               sys.exit(1)
 
           with open(yaml_file, 'w') as f:
               f.write(content)
 
-          print(f"✅ Successfully prefixed all volumes, networks, and containers with '{project_prefix}'")
+          print(f"[OK] Successfully prefixed all volumes, networks, and containers with '{project_prefix}'")
           PYEOF
 
       - name: Build and start containers
@@ -218,7 +211,7 @@ jobs:
             done
 
             if [ "$all_critical_healthy" = "true" ]; then
-              echo "✅ All critical services are healthy"
+              echo "[OK] All critical services are healthy"
               break
             fi
 
@@ -228,15 +221,15 @@ jobs:
           done
 
           if [ "$all_critical_healthy" != "true" ]; then
-            echo "❌ Some critical services failed to become healthy within the timeout period"
+            echo "[ERROR] Some critical services failed to become healthy within the timeout period"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Container Status:"
+            echo "[NOTE] Container Status:"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 All Services Logs (last 100 lines):"
+            echo "[NOTE] All Services Logs (last 100 lines):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=100 || true
             exit 1
@@ -254,10 +247,15 @@ jobs:
               health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $orchestrator_container 2>/dev/null || echo "none")
 
               if [ "$status" = "running" ] && ([ "$health" = "none" ] || [ "$health" = "healthy" ]); then
-                orchestrator_healthy=true
-                echo "✅ Orchestrator is healthy"
-                echo "$(date +%s)" > /tmp/orchestrator_start_time.txt
-                break
+                # Verify login page returns 200 and contains expected HTML
+                if docker exec "$orchestrator_container" curl -f -s http://localhost/orchestrator/login | grep -q "Leyzen Orchestrator"; then
+                  orchestrator_healthy=true
+                  echo "[OK] Orchestrator is healthy and login page is accessible internally"
+                  echo "$(date +%s)" > /tmp/orchestrator_start_time.txt
+                  break
+                else
+                  echo "[WAIT] Orchestrator container is running but login page is not yet accessible internally or content is incorrect"
+                fi
               fi
             fi
 
@@ -267,15 +265,15 @@ jobs:
           done
 
           if [ "$orchestrator_healthy" != "true" ]; then
-            echo "❌ Orchestrator failed to become healthy within the timeout period"
+            echo "[ERROR] Orchestrator failed to become healthy within the timeout period"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Container Status:"
+            echo "[NOTE] Container Status:"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Orchestrator Logs (last 100 lines):"
+            echo "[NOTE] Orchestrator Logs (last 100 lines):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs orchestrator --tail=100 || true
             exit 1
@@ -294,12 +292,12 @@ jobs:
             sleep 1
             status=$(docker inspect --format='{{.State.Status}}' $orchestrator_container 2>/dev/null || echo "unknown")
             if [ "$status" != "exited" ] && [ "$status" != "stopped" ]; then
-              echo "❌ Orchestrator failed to stop (status: $status)"
+              echo "[ERROR] Orchestrator failed to stop (status: $status)"
               exit 1
             fi
           fi
 
-          echo "✅ Orchestrator stopped successfully"
+          echo "[OK] Orchestrator stopped successfully"
           echo "$(date +%s)" > /tmp/orchestrator_end_time.txt
 
       - name: Verify vault_web services stability
@@ -310,7 +308,7 @@ jobs:
           vault_web2_container=$(docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps -q vault_web2 2>/dev/null | head -n1)
 
           if [ -z "$vault_web1_container" ] || [ -z "$vault_web2_container" ]; then
-            echo "❌ vault_web1 or vault_web2 container not found"
+            echo "[ERROR] vault_web1 or vault_web2 container not found"
             echo "vault_web1: ${vault_web1_container:-not found}"
             echo "vault_web2: ${vault_web2_container:-not found}"
             exit 1
@@ -330,16 +328,22 @@ jobs:
 
             if [ "$vault_web1_status" = "running" ] && ([ "$vault_web1_health" = "none" ] || [ "$vault_web1_health" = "healthy" ]) && \
                [ "$vault_web2_status" = "running" ] && ([ "$vault_web2_health" = "none" ] || [ "$vault_web2_health" = "healthy" ]); then
-              vault_web_healthy=true
-              echo "✅ vault_web1 and vault_web2 are healthy"
-              current_time=$(date +%s)
-              if [ ! -f "/tmp/vault_web1_start_time.txt" ]; then
-                echo "$current_time" > /tmp/vault_web1_start_time.txt
+              # Verify setup page returns 200 and contains expected HTML for both containers internally
+              if docker exec "$vault_web1_container" curl -f -s http://localhost/setup | grep -q "Leyzen Vault" && \
+                 docker exec "$vault_web2_container" curl -f -s http://localhost/setup | grep -q "Leyzen Vault"; then
+                vault_web_healthy=true
+                echo "[OK] vault_web1 and vault_web2 are healthy and setup page is accessible internally"
+                current_time=$(date +%s)
+                if [ ! -f "/tmp/vault_web1_start_time.txt" ]; then
+                  echo "$current_time" > /tmp/vault_web1_start_time.txt
+                fi
+                if [ ! -f "/tmp/vault_web2_start_time.txt" ]; then
+                  echo "$current_time" > /tmp/vault_web2_start_time.txt
+                fi
+                break
+              else
+                echo "[WAIT] vault_web containers are running but setup page is not yet accessible internally or content is incorrect"
               fi
-              if [ ! -f "/tmp/vault_web2_start_time.txt" ]; then
-                echo "$current_time" > /tmp/vault_web2_start_time.txt
-              fi
-              break
             fi
 
             if [ $attempt -lt $max_attempts ]; then
@@ -348,17 +352,17 @@ jobs:
           done
 
           if [ "$vault_web_healthy" != "true" ]; then
-            echo "❌ vault_web1 or vault_web2 failed to become healthy within the timeout period"
+            echo "[ERROR] vault_web1 or vault_web2 failed to become healthy within the timeout period"
             echo "vault_web1: status=$vault_web1_status, health=$vault_web1_health"
             echo "vault_web2: status=$vault_web2_status, health=$vault_web2_health"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Container Status:"
+            echo "[NOTE] Container Status:"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "[NOTE] vault_web1 Logs (last 100 lines):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
             exit 1
@@ -373,36 +377,42 @@ jobs:
           vault_web2_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $vault_web2_container 2>/dev/null || echo "none")
 
           if [ "$vault_web1_status" != "running" ] || ([ "$vault_web1_health" != "none" ] && [ "$vault_web1_health" != "healthy" ]); then
-            echo "❌ vault_web1 is no longer healthy after 3 seconds (status: $vault_web1_status, health: $vault_web1_health)"
+            echo "[ERROR] vault_web1 is no longer healthy after 3 seconds (status: $vault_web1_status, health: $vault_web1_health)"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Container Status:"
+            echo "[NOTE] Container Status:"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "[NOTE] vault_web1 Logs (last 100 lines):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
             exit 1
           fi
 
           if [ "$vault_web2_status" != "running" ] || ([ "$vault_web2_health" != "none" ] && [ "$vault_web2_health" != "healthy" ]); then
-            echo "❌ vault_web2 is no longer healthy after 3 seconds (status: $vault_web2_status, health: $vault_web2_health)"
+            echo "[ERROR] vault_web2 is no longer healthy after 3 seconds (status: $vault_web2_status, health: $vault_web2_health)"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 Container Status:"
+            echo "[NOTE] Container Status:"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" ps
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📋 vault_web1 Logs (last 100 lines):"
+            echo "[NOTE] vault_web2 Logs (last 100 lines):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web1 --tail=100 || true
+            docker compose -f docker-generated.yml -p "${COMPOSE_PROJECT_NAME}" logs vault_web2 --tail=100 || true
             exit 1
           fi
 
-          echo "✅ vault_web1 and vault_web2 remained healthy for 3 seconds after orchestrator was stopped"
+          # Final verification of setup page accessibility internally
+          if ! docker exec "$vault_web1_container" curl -f -s http://localhost/setup | grep -q "Leyzen Vault"; then
+            echo "[ERROR] vault setup page is no longer accessible internally after 3 seconds"
+            exit 1
+          fi
+
+          echo "[OK] vault_web1 and vault_web2 remained healthy for 3 seconds after orchestrator was stopped"
           end_time=$(date +%s)
           echo "$end_time" > /tmp/vault_web1_end_time.txt
           echo "$end_time" > /tmp/vault_web2_end_time.txt
@@ -419,7 +429,7 @@ jobs:
         run: |
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 HEALTH CHECK DURATION SUMMARY"
+          echo "[STATS] HEALTH CHECK DURATION SUMMARY"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           printf "%-20s %-15s\n" "Container" "Duration"
@@ -463,7 +473,7 @@ jobs:
           done
 
           for vault_service in vault_web1 vault_web2; do
-            if echo "$displayed_services" | grep -q " ${vault_service} "; then
+            if echo "$displayed_services" | grep -qE "(^|[[:space:]])${vault_service}([[:space:]]|$)"; then
               continue
             fi
 
@@ -523,4 +533,4 @@ jobs:
           # Additional safety: verify no production volumes were affected
           # Check if any volumes starting with "leyzen-" (without prefix) were deleted
           # This should never happen if prefixing worked correctly
-          echo "✅ Cleanup complete. Only resources with prefix '${PROJECT_PREFIX}' were removed."
+          echo "[OK] Cleanup complete. Only resources with prefix '${PROJECT_PREFIX}' were removed."

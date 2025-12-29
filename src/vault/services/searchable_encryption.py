@@ -49,7 +49,7 @@ class SearchableEncryptionService:
                         context="file encrypted_metadata",
                     )
                 except Exception:
-                    # If metadata is invalid JSON, start with empty metadata
+
                     # This can happen if metadata was corrupted or stored in an invalid format
                     pass
 
@@ -75,7 +75,7 @@ class SearchableEncryptionService:
         Returns:
             List of matching file dictionaries
         """
-        # Note: This is a simplified implementation
+
         # Real searchable encryption would use cryptographic schemes like
         # Searchable Symmetric Encryption (SSE) or Functional Encryption
 

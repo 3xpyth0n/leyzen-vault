@@ -103,7 +103,7 @@ class EmailService:
                 try:
                     server.quit()
                 except Exception:
-                    # If quit() fails, try close() as fallback
+
                     try:
                         server.close()
                     except Exception:

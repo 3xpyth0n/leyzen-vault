@@ -174,7 +174,6 @@ def _validate_origin() -> tuple[bool, str | None]:
         except Exception:
             pass
 
-    # If headers are present but don't match, validate
     if origin or referer:
         if is_production:
             # In production: strict validation
@@ -247,7 +246,6 @@ def _validate_content_type() -> tuple[bool, str | None]:
     if request.headers.get("Transfer-Encoding") == "chunked":
         has_body = True
 
-    # If no body detected, allow the request (e.g., empty POST like logout)
     if not has_body:
         return True, None
 
@@ -310,7 +308,7 @@ def jwt_required(f: F) -> F:
             return jsonify({"error": content_type_error}), 400
 
         # Validate JWT token
-        # Try to get token from Authorization header first (priority for API keys)
+
         token = None
         auth_header = request.headers.get("Authorization")
         if auth_header:
@@ -332,7 +330,6 @@ def jwt_required(f: F) -> F:
         if not secret_key:
             return jsonify({"error": "Server configuration error"}), 500
 
-        # Try JWT authentication first
         settings = current_app.config.get("VAULT_SETTINGS")
         jwt_expiration_hours = settings.jwt_expiration_hours if settings else 120
         auth_service = AuthService(
@@ -340,7 +337,6 @@ def jwt_required(f: F) -> F:
         )
         user = auth_service.verify_token(token)
 
-        # If JWT authentication failed, try API key authentication
         if not user:
             secret_key = current_app.config.get("SECRET_KEY", "")
             api_key_service = ApiKeyService(secret_key=secret_key)
@@ -351,7 +347,7 @@ def jwt_required(f: F) -> F:
             return jsonify({"error": "Invalid or expired token"}), 401
 
         # Check if database was unavailable during authentication
-        # If so, return 503 but still allow authentication to proceed
+
         # This prevents disconnection during database restarts
         database_unavailable = getattr(user, "_database_unavailable", False)
 
@@ -359,7 +355,6 @@ def jwt_required(f: F) -> F:
         g.current_user = user
         g.current_token = token  # Store token for logout/blacklist operations
 
-        # If database was unavailable, return 503 but still process the request
         # This allows the frontend to know the database is temporarily unavailable
         # without disconnecting the user
         if database_unavailable:

@@ -209,7 +209,7 @@ class DockerProxyService:
         self, name: str, *, suppress_errors: bool = True
     ) -> ProxyContainer | None:
         if name not in self.managed_container_names:
-            self._logger.log(f"[ERROR] Attempt to access unmanaged container {name}")
+            self._logger.error(f"[ERROR] Attempt to access unmanaged container {name}")
             return None
 
         cached = self._get_cached_payload(name)
@@ -241,7 +241,7 @@ class DockerProxyService:
 
     def get_container_stats(self, name: str) -> dict[str, Any] | None:
         if name not in self.managed_container_names:
-            self._logger.log(
+            self._logger.error(
                 f"[ERROR] Attempt to read stats for unmanaged container {name}"
             )
             return None
@@ -257,7 +257,6 @@ class DockerProxyService:
             if entry is None:
                 return None
 
-            # If the cached inspect payload is too old return ``None`` so the
             # caller refreshes it from the proxy.  This prevents the
             # orchestrator UI from getting stuck with stale state (e.g. a
             # container forever reported as ``starting``) when no other
@@ -475,18 +474,18 @@ class DockerProxyService:
                 continue
             cont = self.get_container_safe(name)
             if cont and cont.status == "running":
-                # Try to stop with normal timeout first
+
                 stopped = self.stop_container(
                     name, reason="enforcing single active container", timeout=30
                 )
                 if not stopped:
-                    # If normal stop failed, verify state and try with shorter timeout
+
                     cont = self.get_container_safe(name)
                     if cont and cont.status == "running":
                         self._logger.log(
                             f"[ENFORCE] Normal stop failed for {name}, trying force stop"
                         )
-                        # Try with shorter timeout as force stop
+
                         self.stop_container(
                             name,
                             reason="force enforcing single active container",

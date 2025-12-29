@@ -22,7 +22,6 @@
       </button>
     </div>
 
-    <!-- Search Results -->
     <div v-if="showResults && results.length > 0" class="search-results">
       <div class="results-header">
         <h3>{{ results.length }} result(s)</h3>
@@ -237,7 +236,6 @@ export default {
     const handleResultClick = (item) => {
       emit("result-click", item);
 
-      // Close search results after clicking
       showResults.value = false;
     };
 

@@ -30,7 +30,6 @@ function relativeUrlsPlugin() {
         // Replace any absolute URLs (http:// or https://) with relative URLs
         // This ensures browsers don't force HTTPS for IP addresses
         html = html.replace(/https?:\/\/[^"'\s]+/g, (match) => {
-          // If it's an asset URL, make it relative
           if (match.includes("/static/") || match.includes("/assets/")) {
             const url = new URL(match);
             return url.pathname;

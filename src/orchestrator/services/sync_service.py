@@ -45,18 +45,20 @@ class SyncService:
         # Validate container name with strict regex
         # Maximum length to prevent DoS
         if len(container_name) > 64:
-            self._logger.log(f"[SYNC ERROR] Container name too long: {container_name}")
+            self._logger.error(
+                f"[SYNC ERROR] Container name too long: {container_name}"
+            )
             return False
 
         # Strict pattern: vault_web followed by number (1-9, then digits) or vault_app
         container_name_pattern = re.compile(r"^(vault_web[1-9][0-9]*|vault_app)$")
         if not container_name_pattern.match(container_name):
-            self._logger.log(
+            self._logger.error(
                 f"[SYNC ERROR] Invalid container name format: {container_name}"
             )
             return False
 
-        self._logger.log(
+        self._logger.warning(
             f"[SYNC] Starting synchronization for container: {container_name}"
         )
 
@@ -68,7 +70,7 @@ class SyncService:
             # Get authentication token from settings (INTERNAL_API_TOKEN, auto-generated from SECRET_KEY)
             token = self._settings.internal_api_token
             if not token:
-                self._logger.log(
+                self._logger.error(
                     "[SYNC ERROR] INTERNAL_API_TOKEN not available for sync authentication"
                 )
                 return False
@@ -79,7 +81,7 @@ class SyncService:
                 "Content-Type": "application/json",
             }
 
-            self._logger.log(
+            self._logger.warning(
                 f"[SYNC] Calling sync endpoint at {sync_url} for container {container_name}"
             )
 
@@ -89,34 +91,34 @@ class SyncService:
             )
 
             if response.status_code == 200:
-                self._logger.log(
+                self._logger.warning(
                     f"[SYNC] Successfully synchronized {container_name} to source"
                 )
                 return True
             elif response.status_code == 401:
-                self._logger.log(
+                self._logger.error(
                     f"[SYNC ERROR] Authentication failed for {container_name} sync endpoint"
                 )
                 return False
             else:
                 error_msg = response.text.strip()
-                self._logger.log(
+                self._logger.error(
                     f"[SYNC ERROR] Failed to synchronize {container_name}: HTTP {response.status_code} - {error_msg}"
                 )
                 return False
 
         except httpx.TimeoutException:
-            self._logger.log(
+            self._logger.error(
                 f"[SYNC ERROR] Synchronization timeout for {container_name}"
             )
             return False
         except httpx.NetworkError as exc:
-            self._logger.log(
+            self._logger.error(
                 f"[SYNC ERROR] Network error during synchronization of {container_name}: {exc}"
             )
             return False
         except Exception as exc:
-            self._logger.log(
+            self._logger.error(
                 f"[SYNC ERROR] Exception during synchronization of {container_name}: {exc}"
             )
             return False

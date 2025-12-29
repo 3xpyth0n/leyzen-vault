@@ -102,7 +102,7 @@ class SSOService:
             # SAML providers have sso_url
             if config.get("sso_url"):
                 urls_to_validate.append(("sso_url", config["sso_url"]))
-            # Note: acs_url is our own callback URL, no need to validate
+
         elif provider_type == SSOProviderType.OAUTH2:
             # OAuth2 providers have authorization_url, token_url, userinfo_url
             if config.get("authorization_url"):
@@ -144,7 +144,7 @@ class SSOService:
         Raises:
             ValueError: If VAULT_URL is not configured (required for security)
         """
-        # Try to get from VAULT_SETTINGS
+
         try:
             settings = current_app.config.get("VAULT_SETTINGS")
             if settings and hasattr(settings, "vault_url") and settings.vault_url:
@@ -1340,7 +1340,7 @@ The Leyzen Vault Team
         # Get the preset from config (google, slack, discord, etc.)
         preset = config.get("provider_preset")
         if not preset:
-            # If no preset, use the technical type as fallback
+
             preset = provider_type.value
 
         # Check if another provider with the same preset is active
@@ -1486,7 +1486,7 @@ The Leyzen Vault Team
                 )
             )
             if "provider_preset" not in config_dict:
-                # If preset not provided, detect it or preserve existing
+
                 existing_config = (
                     safe_json_loads(
                         provider.config,

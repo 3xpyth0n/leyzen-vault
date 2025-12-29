@@ -278,7 +278,7 @@ class EncryptionService:
 
             # Check that we have at least some ciphertext between IV and tag
             # Minimum: IV (12) + 1 byte ciphertext + tag (16) = 29 bytes
-            # But for a 32-byte key, we expect: IV (12) + 32 bytes + tag (16) = 60 bytes
+
             ciphertext_length = len(decoded) - 12 - 16
             if ciphertext_length < 1:
                 return False
@@ -350,7 +350,7 @@ class EncryptionService:
                 # Check that ciphertext is not all zeros or all same byte
                 ciphertext_unique_bytes = len(set(ciphertext))
                 # For a 32-byte key, we expect at least 16 unique bytes
-                # But be lenient for smaller keys
+
                 min_unique_bytes = max(8, min(len(ciphertext) // 4, 16))
                 if ciphertext_unique_bytes < min_unique_bytes:
                     return False
@@ -363,7 +363,7 @@ class EncryptionService:
             # Structure with signature: IV (12) + ciphertext (variable) + tag (16) + signature (32)
             # Without signature: IV (12) + ciphertext (variable) + tag (16)
             # Accept both formats for backward compatibility
-            # If signature is present, verify it has correct format (32 bytes, high entropy)
+
             if (
                 len(decoded) >= 92
             ):  # Minimum: IV (12) + key (32) + tag (16) + signature (32) = 92 bytes

@@ -43,7 +43,7 @@ fi
 # Check storage mode early to determine if synchronization is needed
 STORAGE_MODE=""
 if [ -f "/app/infra/vault/check_storage_mode.py" ] && command -v python3 >/dev/null 2>&1; then
-  # Try to get storage mode from database using dedicated script
+
   # Capture stdout (mode) and stderr (errors) separately
   SCRIPT_OUTPUT=$(python3 /app/infra/vault/check_storage_mode.py 2>&1)
   STORAGE_MODE=$(echo "$SCRIPT_OUTPUT" | grep -v "^\[check_storage_mode\]" | head -n 1 || echo "")
@@ -58,7 +58,7 @@ if [ -f "/app/infra/vault/check_storage_mode.py" ] && command -v python3 >/dev/n
 fi
 
 # Synchronize from source to local storage if source exists and not in S3-only mode
-# Note: This will run as root if we're root, but files will be owned by vault user
+
 # after the chown above. The sync happens before dropping privileges so we have
 # the necessary permissions.
 # In S3-only mode, skip synchronization as files are stored exclusively in S3.

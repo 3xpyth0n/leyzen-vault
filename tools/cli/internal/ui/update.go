@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fatih/color"
 
 	"leyzenctl/internal"
 )
@@ -51,33 +52,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingRefresh = true
 			return m, scheduleStatusRefresh()
 		}
-		return m, tea.Batch(fetchStatusesCmd(), scheduleStatusRefresh())
+		return m, tea.Batch(fetchStatusesCmd(m.envFile), scheduleStatusRefresh())
 	case tea.KeyMsg:
-		// Handle CTRL+C with confirmation
+		// CTRL+C confirmed: quit
 		if msg.String() == "ctrl+c" {
 			if m.quitConfirm {
-				// Confirmed, quit
 				return m, tea.Quit
 			}
-			// First press: ask for confirmation
 			m.quitConfirm = true
 			return m, nil
 		}
-		// 'q' is now used in the wizard for editing, don't quit with it
-		// If we're in the wizard, don't go through handleKey which intercepts keys
 		if m.viewState == ViewWizard && len(m.wizardFields) > 0 {
-			// Cancel confirmation if user presses any key
 			if m.quitConfirm {
 				m.quitConfirm = false
 			}
 			return m.handleWizardKey(msg)
 		}
-		// Cancel confirmation if user presses any key (except CTRL+C)
 		if m.quitConfirm && msg.String() != "ctrl+c" {
 			m.quitConfirm = false
 		}
 
-		// If we're in the config view, let the viewport handle scroll keys
 		if m.viewState == ViewConfig {
 			keyStr := msg.String()
 			if keyStr == "up" || keyStr == "down" || keyStr == "pgup" || keyStr == "pgdn" {
@@ -86,7 +80,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		// If we're in container selection view, handle keys there
 		if m.viewState == ViewContainerSelection {
 			return m.handleContainerSelectionKey(msg)
 		}
@@ -105,13 +98,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case configListMsg:
 		if msg.err != nil {
-			errMsg := fmt.Sprintf("❌ failed to load config: %v", msg.err)
+			errMsg := fmt.Sprintf("[ERROR] failed to load config: %v", msg.err)
 			m.appendLog(errMsg, errMsg)
 			return m, nil
 		}
 		m.configPairs = msg.pairs
-		// If we're coming from the dashboard and don't have a wizard yet, we might be launching it
-		// Initialize the wizard if we don't have one yet
 		if m.viewState == ViewDashboard && len(m.wizardFields) == 0 {
 			m.initWizard(msg.pairs)
 		}
@@ -122,12 +113,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleComposeServices(msg)
 	}
 
-	// Handle viewport only if we're in a view that uses it
 	if m.viewState == ViewLogs || m.viewState == ViewAction || m.viewState == ViewConfig {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
-		// Save scroll position after viewport update in logs/action views (e.g., mouse wheel)
-		// Skip saving for KeyMsg as it's handled separately in handleKey
 		if m.viewState == ViewLogs || m.viewState == ViewAction {
 			_, isKeyMsg := msg.(tea.KeyMsg)
 			if !isKeyMsg {
@@ -141,7 +129,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Handle non-keyboard messages from the wizard (already handled for KeyMsg above)
 	if m.viewState == ViewWizard && len(m.wizardFields) > 0 {
 		if m.wizardIndex < len(m.wizardFields) {
 			var cmd tea.Cmd
@@ -158,7 +145,6 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.height = msg.Height
 	m.ready = true
 
-	// Calculate viewport height according to the active view
 	var viewportHeight int
 	if m.viewState == ViewDashboard {
 		// No visible viewport on the dashboard
@@ -171,7 +157,6 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 			viewportHeight = 6
 		}
 	} else if (m.viewState == ViewLogs || m.viewState == ViewAction) && m.logModeRaw {
-		// In raw mode, viewport takes full screen
 		viewportHeight = m.height
 	} else {
 		// For logs and action views in normal mode, calculate available space
@@ -184,7 +169,6 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 	if viewportHeight > 0 {
 		if (m.viewState == ViewLogs || m.viewState == ViewAction) && m.logModeRaw {
-			// In raw mode, viewport takes full width and height
 			m.viewport.Width = m.width
 			m.viewport.Height = viewportHeight
 		} else {
@@ -196,7 +180,6 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update container list size if in container selection view
 	if m.viewState == ViewContainerSelection {
 		m.containerList.SetWidth(m.width - 6)
 		if m.containerList.Width() < 20 {
@@ -213,7 +196,7 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleStatus(msg statusMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		errMsg := fmt.Sprintf("❌ status refresh failed: %v", msg.err)
+		errMsg := fmt.Sprintf("[ERROR] status refresh failed: %v", msg.err)
 		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}
@@ -225,15 +208,11 @@ func (m *Model) handleStatus(msg statusMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Cancel confirmation if user presses any key (except CTRL+C which is handled in Update)
 	if m.quitConfirm {
 		m.quitConfirm = false
 	}
 
-	// Convert key to lowercase for case-insensitive handling of simple actions
-	// but preserve special keys like "ctrl+c", "esc", "up", "down", etc.
 	keyStr := msg.String()
-	// Only convert single character keys (a-z, A-Z) to lowercase, keep special keys as-is
 	if len(keyStr) == 1 && ((keyStr >= "A" && keyStr <= "Z") || (keyStr >= "a" && keyStr <= "z")) {
 		keyStr = strings.ToLower(keyStr)
 	}
@@ -248,24 +227,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitConfirm = true
 		return m, nil
 	case "esc":
-		// Return to dashboard from any view
 		if m.viewState == ViewLogs || m.viewState == ViewConfig || m.viewState == ViewWizard {
 			m.switchToDashboard()
 			return m, nil
 		}
-		// If an action is in progress, we still allow returning to the dashboard
-		// but we continue to display logs in the background
 		if m.viewState == ViewAction && !m.actionRunning {
 			m.switchToDashboard()
 			return m, nil
 		}
 		return m, nil
 	case "r":
-		// Refresh config if we're in the config view
 		if m.viewState == ViewConfig {
 			return m, fetchConfigListCmd(m.envFile)
 		}
-		// Otherwise, show container selection for restart from the dashboard
 		if m.viewState == ViewDashboard {
 			return m, fetchComposeServicesCmd(m.envFile, ActionRestart)
 		}
@@ -276,24 +250,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "l":
-		// Switch to logs view from the dashboard
 		if m.viewState == ViewDashboard {
 			m.switchToLogs()
 			return m, nil
 		}
 		return m, nil
 	case "c":
-		// Display configuration from the dashboard
 		if m.viewState == ViewDashboard {
 			m.switchToConfig()
 			return m, fetchConfigListCmd(m.envFile)
 		}
 		return m, nil
 	case " ":
-		// Space to toggle password display in the config view
 		if m.viewState == ViewConfig {
-			// Toggle ALL passwords, secrets, tokens
-			// Use the same detection logic as in buildConfigContent
 			for key := range m.configPairs {
 				keyLower := strings.ToLower(key)
 				if strings.Contains(keyLower, "password") ||
@@ -307,16 +276,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "w":
-		// Launch wizard from the dashboard
 		if m.viewState == ViewDashboard {
-			// Load existing config to pre-fill fields
-			// Use already loaded values or load if necessary
 			if len(m.configPairs) == 0 {
-				// Load config then initialize wizard
 				return m, fetchConfigListCmd(m.envFile)
 			}
-			// If we already have values, initialize directly
-			// But if there's really nothing in .env, we should still allow adding variables
 			m.initWizard(m.configPairs)
 			return m, nil
 		}
@@ -337,28 +300,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "v":
-		// Toggle raw log view mode in logs/action views
 		if m.viewState == ViewLogs || m.viewState == ViewAction {
-			// Save current scroll position before switching
 			if m.logModeRaw {
 				m.viewportYOffsetRaw = m.viewport.YOffset
 			} else {
 				m.viewportYOffsetNormal = m.viewport.YOffset
 			}
 
-			// Toggle mode
 			m.logModeRaw = !m.logModeRaw
 
-			// Update content and viewport size based on new mode
 			var logsToDisplay []string
 			if m.logModeRaw {
 				logsToDisplay = m.logsRaw
-				// In raw mode, viewport takes full screen
 				m.viewport.Width = m.width
 				m.viewport.Height = m.height
 			} else {
 				logsToDisplay = m.logs
-				// In normal mode, calculate viewport size with header/footer
 				viewportHeight := m.height - 8
 				if viewportHeight < 6 {
 					viewportHeight = 6
@@ -372,7 +329,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
 
-			// Restore saved scroll position for the new mode
 			if m.logModeRaw {
 				if m.viewportYOffsetRaw > 0 {
 					m.viewport.SetYOffset(m.viewportYOffsetRaw)
@@ -431,7 +387,6 @@ func (m *Model) handleContainerSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		item := &m.containerItems[idx]
 		item.Selected = !item.Selected
 
-		// If "All" is selected, deselect all others
 		if item.IsAllOption && item.Selected {
 			for i := range m.containerItems {
 				if i != idx {
@@ -439,7 +394,6 @@ func (m *Model) handleContainerSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 				}
 			}
 		} else if item.Selected {
-			// If a specific service is selected, deselect "All"
 			if len(m.containerItems) > 0 && m.containerItems[0].IsAllOption {
 				m.containerItems[0].Selected = false
 			}
@@ -463,9 +417,7 @@ func (m *Model) handleContainerSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			}
 		}
 
-		// If nothing selected, treat as "All" (default behavior)
 		if len(selectedServices) == 0 && !allSelected {
-			// Nothing explicitly selected, default to "All"
 			selectedServices = []string{}
 		}
 
@@ -510,20 +462,19 @@ func (m *Model) startActionWithServices(action ActionType, services []string) (t
 		return m, nil
 	}
 	if m.actionRunning {
-		warnMsg := "⚠️ another action is currently running; please wait..."
+		warnMsg := color.HiYellowString("[WARN] another action is currently running; please wait...")
 		m.appendLog(warnMsg, warnMsg)
 		return m, nil
 	}
 
-	// Switch to dashboard first if we're in container selection view
 	if m.viewState == ViewContainerSelection {
 		m.viewState = ViewDashboard
-		m.pendingAction = ActionNone // Clean up after we've saved it
+		m.pendingAction = ActionNone
 	}
 
 	stream, err := m.runner.RunWithServices(action, services)
 	if err != nil {
-		errMsg := fmt.Sprintf("❌ failed to start %s: %v", action, err)
+		errMsg := color.HiRedString(fmt.Sprintf("[ERROR] failed to start %s: %v", action, err))
 		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}
@@ -532,15 +483,12 @@ func (m *Model) startActionWithServices(action ActionType, services []string) (t
 	m.action = action
 	m.actionRunning = true
 	m.switchToAction()
-	startMsg := fmt.Sprintf("🚀 starting %s...", action)
-	m.appendLog(startMsg, startMsg)
 
 	return m, tea.Batch(waitForActionProgress(stream), m.spinner.Tick)
 }
 
 func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd) {
 	if msg.Action != m.action {
-		// Ignore outdated messages from previous action.
 		return m, nil
 	}
 
@@ -555,35 +503,30 @@ func (m *Model) handleActionProgress(msg actionProgressMsg) (tea.Model, tea.Cmd)
 
 	if msg.Err != nil {
 		actionName := string(msg.Action)
-		errMsg := fmt.Sprintf("❌ %s failed: %v", actionName, msg.Err)
+		errMsg := color.HiRedString(fmt.Sprintf("[ERROR] %s failed: %v", actionName, msg.Err))
 		m.appendLog(errMsg, errMsg)
 		m.actionRunning = false
 		m.action = ActionNone
 		m.actionStream = nil
 
-		// Stay in action view to allow user to see error logs
-
-		return m, fetchStatusesCmd()
+		return m, fetchStatusesCmd(m.envFile)
 	}
 
 	if msg.Done {
 		actionName := string(msg.Action)
-		doneMsg := fmt.Sprintf("✅ %s completed", actionName)
+		doneMsg := color.HiGreenString(fmt.Sprintf("%s completed", actionName))
 		m.appendLog(doneMsg, doneMsg)
 		m.actionRunning = false
 		m.action = ActionNone
 		m.actionStream = nil
 
-		// Display success message and return to dashboard after a delay
 		m.successMessage = fmt.Sprintf("%s completed successfully", actionName)
 
-		// Schedule return to dashboard and success message removal
 		cmd := tea.Sequence(
-			fetchStatusesCmd(),
+			fetchStatusesCmd(m.envFile),
 			tea.Tick(successMessageDuration, func(time.Time) tea.Msg { return successTimeoutMsg{} }),
 		)
 
-		// Automatic return to dashboard after success
 		m.switchToDashboard()
 
 		if m.pendingRefresh {
@@ -600,15 +543,11 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "ctrl+s", "ctrl+S":
-		// Save all modifications
 		return m.saveWizard()
-	// Ctrl+Space removed - passwords are always visible in wizard
 	case "esc":
-		// Cancel and return to dashboard
 		m.switchToDashboard()
 		return m, nil
 	case "right", "→":
-		// Move to next field (Next) - circular navigation
 		m.wizardFields[m.wizardIndex].Input.Blur()
 		m.wizardIndex++
 		if m.wizardIndex >= len(m.wizardFields) {
@@ -622,7 +561,6 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.wizardError = ""
 		return m, nil
 	case "left", "←":
-		// Move to previous field (Previous) - circular navigation
 		m.wizardFields[m.wizardIndex].Input.Blur()
 		m.wizardIndex--
 		if m.wizardIndex < 0 {
@@ -636,7 +574,6 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.wizardError = ""
 		return m, nil
 	case "enter":
-		// Enter: move to next field (like "Next") - circular navigation
 		m.wizardFields[m.wizardIndex].Input.Blur()
 		m.wizardIndex++
 		if m.wizardIndex >= len(m.wizardFields) {
@@ -650,7 +587,6 @@ func (m *Model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.wizardError = ""
 		return m, nil
 	default:
-		// All other keys (letters, numbers, etc.): pass to active input
 		if m.wizardIndex < len(m.wizardFields) {
 			var cmd tea.Cmd
 			m.wizardFields[m.wizardIndex].Input, cmd = m.wizardFields[m.wizardIndex].Input.Update(msg)
@@ -666,17 +602,12 @@ func (m *Model) validateWizardField(index int, value string) error {
 	}
 	field := m.wizardFields[index]
 
-	// All fields are optional - optional validation only
-	// If the value is empty, that's OK
 	if value == "" {
 		return nil
 	}
 
-	// If we have a value, validate (but not required)
 	_, err := internal.ValidateEnvValue(field.Key, value)
 	if err != nil {
-		// If validation fails, return the error
-		// But only if we have a value (not if empty)
 		return err
 	}
 
@@ -684,7 +615,6 @@ func (m *Model) validateWizardField(index int, value string) error {
 }
 
 func (m *Model) saveWizard() (tea.Model, tea.Cmd) {
-	// Validate all values before saving (optional - just warn)
 	hasErrors := false
 	for i := range m.wizardFields {
 		value := m.wizardFields[i].Input.Value()
@@ -693,16 +623,13 @@ func (m *Model) saveWizard() (tea.Model, tea.Cmd) {
 			hasErrors = true
 			break
 		}
-		// Save the value in the field
 		m.wizardFields[i].Value = value
 	}
 
 	if hasErrors {
-		// Don't save if error
 		return m, nil
 	}
 
-	// No error - save
 	m.wizardError = ""
 	m.switchToAction()
 	m.action = ActionWizard
@@ -725,21 +652,15 @@ func saveWizardCmd(envFile string, fields []WizardField) tea.Cmd {
 }
 
 func saveWizard(envFile string, fields []WizardField) tea.Msg {
-	// Load the env file
 	envFileObj, err := internal.LoadEnvFile(envFile)
 	if err != nil {
 		return wizardSaveMsg{err: fmt.Errorf("failed to load env file: %w", err)}
 	}
 
-	// Save each field (empty values allowed)
 	for _, field := range fields {
-		value := field.Value // Use the value saved in the field
-
-		// All values are optional
-		// If the value is empty, we still save it (can be removed)
+		value := field.Value
 		sanitized := strings.TrimSpace(value)
 
-		// If validation fails but value is not empty, return error
 		if sanitized != "" {
 			validated, err := internal.ValidateEnvValue(field.Key, sanitized)
 			if err != nil {
@@ -748,20 +669,15 @@ func saveWizard(envFile string, fields []WizardField) tea.Msg {
 			sanitized = validated
 		}
 
-		// Save (even if empty)
 		envFileObj.Set(field.Key, sanitized)
 	}
 
-	// Save
 	if err := envFileObj.Write(); err != nil {
 		return wizardSaveMsg{err: fmt.Errorf("failed to write env file: %w", err)}
 	}
 
-	// Rebuild - write to a silent buffer to avoid polluting the TUI
-	// Rebuild logs should not be displayed on the dashboard
 	var silentBuffer strings.Builder
 	if err := internal.RunBuildScriptWithWriter(&silentBuffer, &silentBuffer, envFile); err != nil {
-		// Return the error but don't display logs
 		return wizardSaveMsg{err: fmt.Errorf("failed to rebuild: %w", err)}
 	}
 
@@ -772,25 +688,19 @@ func (m *Model) handleWizardSave(msg wizardSaveMsg) (tea.Model, tea.Cmd) {
 	m.actionRunning = false
 	m.action = ActionNone
 
-	// First, return to dashboard to clean up state
 	m.switchToDashboard()
 
 	if msg.err != nil {
-		// For errors, we can add a message but only if we're not on the dashboard
-		// Here, we're already on the dashboard, so we don't do anything with logs
-		m.successMessage = fmt.Sprintf("❌ Configuration save failed: %v", msg.err)
-		// Schedule error message removal
+		m.successMessage = fmt.Sprintf("[ERROR] Configuration save failed: %v", msg.err)
 		cmd := tea.Tick(successMessageDuration, func(time.Time) tea.Msg { return successTimeoutMsg{} })
 		return m, cmd
 	}
 
-	// Success
 	m.successMessage = "Configuration saved successfully"
 
-	// Refresh config
 	cmd := tea.Sequence(
 		fetchConfigListCmd(m.envFile),
-		fetchStatusesCmd(),
+		fetchStatusesCmd(m.envFile),
 		tea.Tick(successMessageDuration, func(time.Time) tea.Msg { return successTimeoutMsg{} }),
 	)
 
@@ -799,7 +709,7 @@ func (m *Model) handleWizardSave(msg wizardSaveMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleComposeServices(msg composeServicesMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		errMsg := fmt.Sprintf("❌ failed to load services: %v", msg.err)
+		errMsg := fmt.Sprintf("[ERROR] failed to load services: %v", msg.err)
 		m.appendLog(errMsg, errMsg)
 		return m, nil
 	}

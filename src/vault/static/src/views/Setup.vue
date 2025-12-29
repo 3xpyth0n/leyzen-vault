@@ -1,228 +1,232 @@
 <template>
-  <div class="setup-wrapper">
-    <div class="setup-container">
-      <div class="slides-container">
-        <!-- Slide 1: Setup Form -->
-        <transition name="slide" mode="out-in">
-          <div v-if="currentSlide === 0" key="form" class="slide slide-form">
-            <div class="setup-header">
-              <h1>Leyzen Vault Setup</h1>
-              <p class="setup-subtitle">
-                Welcome! Let's create your administrator account to get started.
-              </p>
-            </div>
-
-            <form @submit.prevent="handleSetup" class="setup-form">
-              <div v-if="error" class="error-message">
-                {{ error }}
-              </div>
-
-              <div class="form-group">
-                <label for="email">Email Address</label>
-                <input
-                  id="email"
-                  v-model="email"
-                  type="email"
-                  placeholder="admin@example.com"
-                  required
-                  autocomplete="email"
-                  :disabled="loading"
-                />
-              </div>
-
-              <div class="form-group">
-                <label for="password">Password</label>
-                <PasswordInput
-                  id="password"
-                  v-model="password"
-                  placeholder="Enter your password"
-                  required
-                  autocomplete="new-password"
-                  :disabled="loading"
-                  :minlength="12"
-                />
-                <p class="password-hint">
-                  Must be at least 12 characters with uppercase, lowercase, and
-                  digits
+  <div class="setup-view-container">
+    <div class="setup-wrapper">
+      <div class="setup-container">
+        <div class="slides-container">
+          <Transition name="slide">
+            <div v-if="currentSlide === 0" key="form" class="slide slide-form">
+              <div class="setup-header">
+                <h1>Leyzen Vault Setup</h1>
+                <p class="setup-subtitle">
+                  Welcome! Let's create your administrator account to get
+                  started.
                 </p>
               </div>
 
-              <div class="form-group">
-                <label for="confirmPassword">Confirm Password</label>
-                <PasswordInput
-                  id="confirmPassword"
-                  v-model="confirmPassword"
-                  placeholder="Confirm your password"
-                  required
-                  autocomplete="new-password"
-                  :disabled="loading"
-                  :minlength="12"
-                />
-              </div>
+              <form @submit.prevent="handleSetup" class="setup-form">
+                <div v-if="error" class="error-message">
+                  {{ error }}
+                </div>
 
-              <button
-                type="submit"
-                class="btn btn-primary btn-setup"
-                :disabled="loading || !email || !password || !confirmPassword"
-              >
-                {{
-                  loading
-                    ? "Creating Account..."
-                    : "Create Administrator Account"
-                }}
-              </button>
+                <div class="form-group">
+                  <label for="email">Email Address</label>
+                  <input
+                    id="email"
+                    v-model="email"
+                    type="email"
+                    placeholder="admin@example.com"
+                    required
+                    autocomplete="email"
+                    :disabled="loading"
+                  />
+                </div>
 
-              <p>
-                or
-                <a href="#" @click.prevent="goToRestore">Restore from backup</a>
-              </p>
-            </form>
-          </div>
+                <div class="form-group">
+                  <label for="password">Password</label>
+                  <PasswordInput
+                    id="password"
+                    v-model="password"
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="new-password"
+                    :disabled="loading"
+                    :minlength="12"
+                  />
+                  <p class="password-hint">
+                    Must be at least 12 characters with uppercase, lowercase,
+                    and digits
+                  </p>
+                </div>
 
-          <!-- Slide 2: Backup Selection -->
-          <div
-            v-else-if="currentSlide === 2"
-            key="restore"
-            class="slide slide-restore"
-          >
-            <div class="setup-header">
-              <h1>Restore from Backup</h1>
-              <p class="setup-subtitle">
-                Select a backup to restore your database
-              </p>
-            </div>
+                <div class="form-group">
+                  <label for="confirmPassword">Confirm Password</label>
+                  <PasswordInput
+                    id="confirmPassword"
+                    v-model="confirmPassword"
+                    placeholder="Confirm your password"
+                    required
+                    autocomplete="new-password"
+                    :disabled="loading"
+                    :minlength="12"
+                  />
+                </div>
 
-            <div class="restore-content">
-              <div v-if="loadingBackups" class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading backups...</p>
-              </div>
-
-              <div v-else-if="backupsError" class="error-message">
-                {{ backupsError }}
-              </div>
-
-              <div v-else-if="backups.length === 0" class="empty-state">
-                <p>No backups available</p>
-                <p class="empty-hint">
-                  No local backups found. Please create a backup first or use
-                  the setup form to create a new account.
-                </p>
-              </div>
-
-              <div v-else class="backups-list">
-                <div
-                  v-for="backup in backups"
-                  :key="backup.id"
-                  class="backup-item"
-                  :class="{
-                    selected: String(selectedBackupId) === String(backup.id),
-                  }"
-                  @click.stop="selectBackup(backup.id)"
+                <button
+                  type="submit"
+                  class="btn btn-primary btn-setup"
+                  :disabled="loading || !email || !password || !confirmPassword"
                 >
-                  <div class="backup-info">
-                    <div class="backup-header">
-                      <span class="backup-type">{{ backup.backup_type }}</span>
-                      <span class="backup-status status-completed">
-                        {{ backup.status }}
-                      </span>
+                  {{
+                    loading
+                      ? "Creating Account..."
+                      : "Create Administrator Account"
+                  }}
+                </button>
+
+                <p>
+                  or
+                  <a href="#" @click.prevent="goToRestore"
+                    >Restore from backup</a
+                  >
+                </p>
+              </form>
+            </div>
+
+            <div
+              v-else-if="currentSlide === 2"
+              key="restore"
+              class="slide slide-restore"
+            >
+              <div class="setup-header">
+                <h1>Restore from Backup</h1>
+                <p class="setup-subtitle">
+                  Select a backup to restore your database
+                </p>
+              </div>
+
+              <div class="restore-content">
+                <div v-if="loadingBackups" class="loading-state">
+                  <div class="spinner"></div>
+                  <p>Loading backups...</p>
+                </div>
+
+                <div v-else-if="backupsError" class="error-message">
+                  {{ backupsError }}
+                </div>
+
+                <div v-else-if="backups.length === 0" class="empty-state">
+                  <p>No backups available</p>
+                  <p class="empty-hint">
+                    No local backups found. Please create a backup first or use
+                    the setup form to create a new account.
+                  </p>
+                </div>
+
+                <div v-else class="backups-list">
+                  <div
+                    v-for="backup in backups"
+                    :key="backup.id"
+                    class="backup-item"
+                    :class="{
+                      selected: String(selectedBackupId) === String(backup.id),
+                    }"
+                    @click.stop="selectBackup(backup.id)"
+                  >
+                    <div class="backup-info">
+                      <div class="backup-header">
+                        <span class="backup-type">{{
+                          backup.backup_type
+                        }}</span>
+                        <span class="backup-status status-completed">
+                          {{ backup.status }}
+                        </span>
+                      </div>
+                      <div class="backup-details">
+                        <div>Date: {{ formatDate(backup.created_at) }}</div>
+                        <div>Size: {{ formatSize(backup.size_bytes) }}</div>
+                      </div>
                     </div>
-                    <div class="backup-details">
-                      <div>Date: {{ formatDate(backup.created_at) }}</div>
-                      <div>Size: {{ formatSize(backup.size_bytes) }}</div>
+                    <div class="backup-check">
+                      <span
+                        v-if="String(selectedBackupId) === String(backup.id)"
+                        >✓</span
+                      >
                     </div>
-                  </div>
-                  <div class="backup-check">
-                    <span v-if="String(selectedBackupId) === String(backup.id)"
-                      >✓</span
-                    >
                   </div>
                 </div>
+
+                <div class="restore-actions">
+                  <button
+                    class="btn btn-secondary btn-back"
+                    @click="goBackToSetup"
+                    :disabled="restoring"
+                  >
+                    Back
+                  </button>
+                  <button
+                    class="btn btn-primary btn-restore-confirm"
+                    @click="handleRestore"
+                    :disabled="!selectedBackupId || restoring"
+                  >
+                    {{ restoring ? "Restoring..." : "Restore" }}
+                  </button>
+                </div>
               </div>
-
-              <div class="restore-actions">
-                <button
-                  class="btn btn-secondary btn-back"
-                  @click="goBackToSetup"
-                  :disabled="restoring"
-                >
-                  Back
-                </button>
-                <button
-                  class="btn btn-primary btn-restore-confirm"
-                  @click="handleRestore"
-                  :disabled="!selectedBackupId || restoring"
-                >
-                  {{ restoring ? "Restoring..." : "Restore" }}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Slide 3: Restore Loading -->
-          <div
-            v-else-if="currentSlide === 3"
-            key="restore-loading"
-            class="slide slide-restore-loading"
-          >
-            <div class="setup-header">
-              <h1>Restoring Database</h1>
-              <p class="setup-subtitle">
-                Please wait while we restore your database...
-              </p>
             </div>
 
-            <div class="restore-loading-content">
-              <div class="spinner-large"></div>
-              <p class="loading-message">{{ restoreMessage }}</p>
-            </div>
-          </div>
-
-          <!-- Slide 1: Verification Message -->
-          <div
-            v-else-if="currentSlide === 1"
-            key="verification"
-            class="slide slide-verification"
-          >
-            <div class="setup-header">
-              <h1>Account Created Successfully</h1>
-              <p class="setup-subtitle">
-                Your superadmin account has been created.
-              </p>
-            </div>
-
-            <div class="verification-content">
-              <div class="verification-icon">✓</div>
-              <div class="verification-info">
-                <p>
-                  A verification email has been sent to
-                  <strong>{{ email }}</strong
-                  >. Please check your inbox and click on the verification link
-                  in the email.
-                </p>
-                <p class="verification-warning">
-                  <strong>Important:</strong> While you can continue without
-                  verifying your email, all other users must verify their email
-                  address before they can access Leyzen Vault.
+            <div
+              v-else-if="currentSlide === 3"
+              key="restore-loading"
+              class="slide slide-restore-loading"
+            >
+              <div class="setup-header">
+                <h1>Restoring Database</h1>
+                <p class="setup-subtitle">
+                  Please wait while we restore your database...
                 </p>
               </div>
-              <div class="verification-actions">
-                <button
-                  class="btn btn-primary btn-continue"
-                  @click="continueToLogin"
-                >
-                  Continue Anyway
-                </button>
-                <button
-                  class="btn btn-secondary btn-verify"
-                  @click="goToVerificationPage"
-                >
-                  Go to Verification Page
-                </button>
+
+              <div class="restore-loading-content">
+                <div class="spinner-large"></div>
+                <p class="loading-message">{{ restoreMessage }}</p>
               </div>
             </div>
-          </div>
-        </transition>
+
+            <div
+              v-else-if="currentSlide === 1"
+              key="verification"
+              class="slide slide-verification"
+            >
+              <div class="setup-header">
+                <h1>Account Created Successfully</h1>
+                <p class="setup-subtitle">
+                  Your superadmin account has been created.
+                </p>
+              </div>
+
+              <div class="verification-content">
+                <div class="verification-icon">✓</div>
+                <div class="verification-info">
+                  <p>
+                    A verification email has been sent to
+                    <strong>{{ email }}</strong
+                    >. Please check your inbox and click on the verification
+                    link in the email.
+                  </p>
+                  <p class="verification-warning">
+                    <strong>Important:</strong> While you can continue without
+                    verifying your email, all other users must verify their
+                    email address before they can access Leyzen Vault.
+                  </p>
+                </div>
+                <div class="verification-actions">
+                  <button
+                    class="btn btn-primary btn-continue"
+                    @click="continueToLogin"
+                  >
+                    Continue Anyway
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-verify"
+                    @click="goToVerificationPage"
+                  >
+                    Go to Verification Page
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
       </div>
     </div>
   </div>
@@ -281,7 +285,7 @@ export default {
           const name =
             eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
           // Delete cookie by setting it to expire in the past
-          // Try with different path and domain combinations
+
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
@@ -300,7 +304,6 @@ export default {
             timezone.value = configData.timezone;
           }
         } else {
-          // Fallback to direct fetch if configApi is not available
           const response = await fetch("/api/v2/config", {
             method: "GET",
             credentials: "same-origin",
@@ -321,8 +324,6 @@ export default {
       // Important: This simulates a "fresh install" from browser perspective
       clearAllStorage();
 
-      // Check if setup is already complete
-      // If check fails (network error, database not available), allow user to proceed with setup
       try {
         const setupComplete = await authStore.checkSetupStatus();
         if (setupComplete) {
@@ -354,7 +355,6 @@ export default {
           confirmPassword.value,
         );
 
-        // Check if email verification is required
         if (response.email_verification_required) {
           // Store user ID for verification page
           createdUserId.value = response.user?.id;
@@ -374,7 +374,7 @@ export default {
         let tokenCheck = localStorage.getItem("jwt_token");
         if (tokenCheck) {
           logger.warn("Token detected after setup! Removing immediately...");
-          // Try multiple removal methods
+
           localStorage.removeItem("jwt_token");
           delete localStorage.jwt_token;
           // Verify removal
@@ -419,11 +419,11 @@ export default {
                 i + 1
               })! Forcing removal...`,
             );
-            // Try every possible removal method
+
             try {
               localStorage.removeItem("jwt_token");
               delete localStorage.jwt_token;
-              // If still exists, clear everything again
+
               if (localStorage.getItem("jwt_token")) {
                 localStorage.clear();
                 sessionStorage.clear();
@@ -473,7 +473,7 @@ export default {
           logger.error(
             "CRITICAL: Token exists right before redirect! Attempting final removal...",
           );
-          // Try one last aggressive removal: save all keys except jwt_token, clear, restore
+
           try {
             const keysToKeep = {};
             for (let i = 0; i < localStorage.length; i++) {
@@ -501,7 +501,6 @@ export default {
           }
         }
 
-        // Set a flag in sessionStorage to indicate we're coming from setup
         // This must be set AFTER clearing, so it survives the redirect
         // This is more reliable than query params which can be lost
         try {
@@ -520,7 +519,7 @@ export default {
             logger.error(
               "Token exists at redirect time - guards must handle this",
             );
-            // Try one more time
+
             localStorage.removeItem("jwt_token");
             delete localStorage.jwt_token;
             if (localStorage.getItem("jwt_token")) {
@@ -567,7 +566,6 @@ export default {
       loadingBackups.value = true;
       backupsError.value = null;
       try {
-        // Ensure timezone is loaded before formatting dates
         if (timezone.value === "UTC") {
           try {
             if (configApi && typeof configApi.getConfig === "function") {
@@ -576,7 +574,6 @@ export default {
                 timezone.value = configData.timezone;
               }
             } else {
-              // Fallback to direct fetch if configApi is not available
               const response = await fetch("/api/v2/config", {
                 method: "GET",
                 credentials: "same-origin",
@@ -618,7 +615,6 @@ export default {
     };
 
     const selectBackup = (backupId) => {
-      // Ensure we're comparing the same type and only select one backup
       // Convert both to string for consistent comparison
       const id = String(backupId);
       selectedBackupId.value = id;
@@ -633,7 +629,7 @@ export default {
         let dateStr = String(dateString).trim();
         // Replace +00:00 with Z for better compatibility
         dateStr = dateStr.replace(/\+00:00$/, "Z");
-        // If no timezone info, assume UTC
+
         if (!dateStr.endsWith("Z") && !dateStr.match(/[+-]\d{2}:\d{2}$/)) {
           dateStr = dateStr + "Z";
         }
@@ -705,14 +701,12 @@ export default {
                 }
               }
             } catch (statusErr) {
-              // If status check fails, it might be because restore is still running
               // Continue to check setup status as fallback
               if (statusErr.message && statusErr.message === "Restore failed") {
                 throw statusErr;
               }
             }
 
-            // Check if setup is complete (restore finished)
             const setupComplete = await authStore.checkSetupStatus();
             if (setupComplete) {
               restoreMessage.value = "Restore completed successfully!";
@@ -727,10 +721,8 @@ export default {
               throw new Error("Restore timeout");
             }
 
-            // Check again in 2 seconds
             setTimeout(checkRestore, 2000);
           } catch (err) {
-            // Display generic error message (security: don't expose backend details)
             restoreMessage.value =
               "Restore failed. Please try again or select another backup.";
             setTimeout(() => {
@@ -744,7 +736,6 @@ export default {
         // Start checking after a short delay
         setTimeout(checkRestore, 3000);
       } catch (err) {
-        // Display generic error message (security: don't expose backend details)
         restoreMessage.value = "Failed to start restore. Please try again.";
         setTimeout(() => {
           currentSlide.value = 2;

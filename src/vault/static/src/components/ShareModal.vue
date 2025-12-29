@@ -1,6 +1,6 @@
 <template>
-  <teleport to="body">
-    <div v-if="show" class="modal-overlay" @click.self="close">
+  <Teleport v-if="show" to="body">
+    <div class="modal-overlay" @click.self="close">
       <div class="modal" @click.stop>
         <div class="modal-header">
           <h2 class="modal-title">Share File</h2>
@@ -14,7 +14,6 @@
           </button>
         </div>
         <div class="share-modal-body">
-          <!-- Create New Link Section -->
           <form @submit.prevent="createLink" class="share-link-form">
             <div class="share-section share-section-create">
               <h3>Create Share Link</h3>
@@ -133,7 +132,6 @@
             </div>
           </form>
 
-          <!-- Active Links Section -->
           <div class="share-section">
             <h3>Active Share Links</h3>
             <div v-if="loadingLinks" class="loading-links">
@@ -177,7 +175,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script setup>
@@ -390,7 +388,6 @@ const createLink = async () => {
       throw new Error("Invalid response from server: no share_link");
     }
 
-    // Build share URL with key
     let shareUrl = computeLinkUrl(shareLink);
 
     if (window.Notifications) {
@@ -443,7 +440,6 @@ const copyLink = async (link) => {
       window.Notifications.success("Link copied to clipboard");
     }
 
-    // Show copy animation
     const linkUrlElement = linkUrlRefs.value[link.id];
     if (linkUrlElement) {
       showCopyAnimation(linkUrlElement);
@@ -472,7 +468,6 @@ const revokeLink = async (linkId) => {
 
   if (!confirmed) {
     if (!window.showConfirmationModal) {
-      // Fallback to native confirm
       if (!confirm("Are you sure you want to revoke this share link?")) {
         return;
       }
@@ -497,13 +492,11 @@ const revokeLink = async (linkId) => {
 const showCopyAnimation = (element) => {
   if (!element) return;
 
-  // Remove existing animation
   const existing = element.querySelector(".copy-animation-overlay");
   if (existing) {
     existing.remove();
   }
 
-  // Ensure position relative
   const computedStyle = window.getComputedStyle(element);
   if (computedStyle.position === "static") {
     element.style.position = "relative";

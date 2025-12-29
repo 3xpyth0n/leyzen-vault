@@ -76,7 +76,6 @@ class FileMenuManager {
     this.menuContainer.className = "file-menu-container hidden";
     document.body.appendChild(this.menuContainer);
 
-    // Close menu on outside click
     document.addEventListener("click", (e) => {
       if (
         this.activeMenu &&
@@ -88,7 +87,6 @@ class FileMenuManager {
       }
     });
 
-    // Close menu on Escape key
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.activeMenu) {
         this.hide();
@@ -97,7 +95,6 @@ class FileMenuManager {
   }
 
   show(fileId, fileType, event) {
-    // Hide any existing menu
     this.hide();
 
     // Get file or folder data
@@ -286,7 +283,6 @@ class FileMenuManager {
       ];
     }
 
-    // Build menu HTML
     const menuHTML = menuItems
       .map((item) => {
         const iconHTML = window.Icons?.[item.icon]
@@ -320,7 +316,6 @@ class FileMenuManager {
       }
     });
 
-    // Show menu
     this.menuContainer.classList.remove("hidden");
     this.activeMenu = { fileId, fileType };
 
@@ -372,7 +367,6 @@ class FileMenuManager {
       let folderPicker = window.folderPicker;
       if (!folderPicker) {
         try {
-          // Try loading from the utils directory
           const folderPickerModule = await import(
             window.location.origin + "/static/src/utils/FolderPicker.js"
           );
@@ -397,7 +391,6 @@ class FileMenuManager {
         }
       }
 
-      // Show folder picker
       const selectedFolderId = await folderPicker.show(
         folders,
         currentFolderId,
@@ -519,7 +512,6 @@ class FileMenuManager {
         }
       }
 
-      // Show folder picker
       const selectedFolderId = await folderPicker.show(
         folders,
         currentFolderId,
@@ -588,20 +580,17 @@ class FileMenuManager {
   }
 }
 
-// Initialize file menu manager
 let fileMenuManager = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   fileMenuManager = new FileMenuManager();
 
-  // Export for use in other scripts
   if (typeof window !== "undefined") {
     window.FileMenuManager = FileMenuManager;
     window.fileMenuManager = fileMenuManager;
   }
 });
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.FileMenuManager = FileMenuManager;
 }

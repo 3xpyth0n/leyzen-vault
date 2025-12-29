@@ -109,7 +109,6 @@ export default {
           // Data is already the quota object
           quotaInfo.value = data;
         } else {
-          // If structure is unexpected, try to extract what we can
           quotaInfo.value = {
             used: data.used || 0,
             limit: data.limit || null,
@@ -118,7 +117,7 @@ export default {
             disk_percentage: data.disk_percentage || data.percentage || 0,
           };
         }
-        // Ensure used is always a number
+
         if (
           quotaInfo.value.used === undefined ||
           quotaInfo.value.used === null ||
@@ -176,18 +175,15 @@ export default {
       // This way 0.1 GB = 100 MB, 0.12 GB = 120 MB, etc.
       const mb = Math.round(gb * 1000);
 
-      // If less than 1 MB, show in KB
       if (mb < 1) {
         const kb = Math.round(((bytes / 1024) * 1000) / 1024);
         return kb + " KB";
       }
 
-      // If less than 1000 MB, show in MB
       if (mb < 1000) {
         return mb + " MB";
       }
 
-      // If 1000 MB or more, show in GB with decimals
       const gbDisplay = mb / 1000;
       // Round to 2 decimal places max, removing trailing zeros
       const gbRounded = Math.round(gbDisplay * 100) / 100;

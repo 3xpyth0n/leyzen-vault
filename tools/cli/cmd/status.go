@@ -34,59 +34,49 @@ func padRightColored(s string, width int) string {
 
 func init() {
 	statusCmd := &cobra.Command{
-		Use:   "status",
-		Short: "Show the status of Leyzen Vault containers",
+		Use:          "status",
+		Short:        "Show the status of Leyzen Vault containers",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			output, err := internal.DockerPS("--format", "{{.Names}}\t{{.Status}}\t{{.RunningFor}}")
+			// Ensure docker-generated.yml exists before checking status
+			if err := internal.EnsureDockerGeneratedFileWithWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), EnvFilePath()); err != nil {
+				return fmt.Errorf("failed to initialize configuration: %w", err)
+			}
+
+			projectStatuses, err := internal.GetProjectStatuses(EnvFilePath())
 			if err != nil {
 				return err
 			}
-			if output == "" {
-				color.HiYellow("No containers are currently running.")
+
+			if len(projectStatuses) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), color.HiYellowString("No services defined in configuration."))
 				return nil
 			}
 
-			// Calculate the maximum width for the AGE column
-			ageWidth := len(ageHeader)
-			lines := strings.Split(strings.TrimSpace(output), "\n")
-			for _, line := range lines {
-				parts := strings.Split(line, "\t")
-				if len(parts) == 3 {
-					if len(parts[2]) > ageWidth {
-						ageWidth = len(parts[2])
-					}
-				}
-			}
-
-			// headers
-			fmt.Printf("%s  %s  %s\n",
-				padRightColored(color.HiBlueString("NAME"), nameWidth),
-				padRightColored(color.HiBlueString("STATUS"), statusWidth),
-				color.HiBlueString(ageHeader),
+			// Define table column widths
+			const (
+				nameWidth   = 28
+				statusWidth = 36
 			)
 
-			fmt.Printf("%s  %s  %s\n",
+			// Print header
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
+				internal.PadRightVisible(color.HiCyanString("NAME"), nameWidth),
+				internal.PadRightVisible(color.HiCyanString("STATUS"), statusWidth),
+				color.HiCyanString("AGE"),
+			)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
 				strings.Repeat("─", nameWidth),
 				strings.Repeat("─", statusWidth),
-				strings.Repeat("─", ageWidth),
+				strings.Repeat("─", 10),
 			)
 
-			// rows
-			for _, line := range lines {
-				parts := strings.Split(line, "\t")
-				if len(parts) != 3 {
-					continue
-				}
-
-				name := parts[0]
-				status := internal.FormatStatusColor(parts[1])
-				age := parts[2]
-
-				fmt.Printf("%s  %s  %s\n",
-					padRightColored(name, nameWidth),
-					padRightColored(status, statusWidth),
-					age,
+			for _, st := range projectStatuses {
+				status := internal.FormatStatusColor(st.Status)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
+					internal.PadRightVisible(st.Name, nameWidth),
+					internal.PadRightVisible(status, statusWidth),
+					st.Age,
 				)
 			}
 

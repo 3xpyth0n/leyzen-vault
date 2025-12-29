@@ -143,39 +143,21 @@ export function useFileViewComposable(options = {}) {
       return;
     }
 
-    // Check if user master key is available
     const userMasterKey = await getUserMasterKey();
     if (!userMasterKey) {
-      // Check if salt exists - this means master key was lost
-      const storedSalt = getStoredSalt();
-      if (storedSalt) {
-        // User is authenticated but master key is lost (likely after page refresh)
-        // This is normal - user needs to re-enter password to access encrypted content
-        logger.warn(
-          "Master key lost from memory but salt exists. This is normal after page refresh.",
-        );
-        logger.warn(
-          "User needs to re-enter password to access encrypted content.",
-        );
-        // Don't show overlay for lost session - let component handle it
-        return;
-      } else {
-        // No salt and no master key
-        // Check if user is still authenticated (could be SSO user without password)
-        try {
-          const currentUser = await authStore.fetchCurrentUser();
-          if (currentUser) {
-            // User is authenticated but has no master key or salt
-            // This is normal for SSO users - show encryption overlay
-            showEncryptionOverlay.value = true;
-            isMasterKeyRequired.value = true;
-          }
-        } catch (err) {
-          // User is not authenticated - don't show overlay
-          logger.warn(
-            "User master key not available and user is not authenticated.",
-          );
+      // User is authenticated but master key is missing
+      // This can happen after page refresh or for SSO users
+      try {
+        const currentUser = await authStore.fetchCurrentUser();
+        if (currentUser) {
+          showEncryptionOverlay.value = true;
+          isMasterKeyRequired.value = true;
         }
+      } catch (err) {
+        // User is not authenticated - don't show overlay
+        logger.warn(
+          "User master key not available and user is not authenticated.",
+        );
       }
     }
   };
@@ -214,12 +196,10 @@ export function useFileViewComposable(options = {}) {
         throw new Error("Failed to derive master key");
       }
 
-      // Close modal and clear password
       showPasswordModal.value = false;
       passwordModalPassword.value = "";
       passwordModalError.value = "";
 
-      // Hide overlay and mark master key as no longer required
       showEncryptionOverlay.value = false;
       isMasterKeyRequired.value = false;
 

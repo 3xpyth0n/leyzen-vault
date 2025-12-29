@@ -136,7 +136,7 @@ class ExternalStorageWorker:
         while not self._stop_event.is_set():
             try:
                 if not self._is_enabled():
-                    # Wait and check again
+
                     self._stop_event.wait(60)  # Check every minute
                     continue
 
@@ -145,12 +145,12 @@ class ExternalStorageWorker:
                 if storage_mode == "hybrid":
                     # Run hybrid sync
                     self._run_hybrid_sync()
-                    # Wait 1 hour before next sync
+
                     self._stop_event.wait(3600)
                 elif storage_mode == "s3":
                     # Run S3 cleanup
                     self._run_s3_cleanup()
-                    # Wait 1 hour before next cleanup
+
                     self._stop_event.wait(3600)
                 else:
                     # Local mode - no work to do
@@ -168,7 +168,7 @@ class ExternalStorageWorker:
                     self._last_error_time = time.time()
                 else:
                     logger.error(error_msg)
-                # Wait before retrying
+
                 self._stop_event.wait(60)
 
         logger.info("[WORKER] External storage worker stopped")

@@ -76,7 +76,6 @@ def get_preview(file_id: str):
 
     mime_type = file_obj.mime_type or ""
 
-    # If mime type is generic, try to detect from extension
     generic_mime_types = [
         "application/octet-stream",
         "application/x-unknown",

@@ -14,10 +14,9 @@
       ></span>
     </button>
 
-    <teleport to="body">
-      <transition name="menu-fade">
+    <Teleport v-if="showMenu" to="body">
+      <Transition name="menu-fade">
         <div
-          v-if="showMenu"
           class="user-menu-dropdown"
           ref="menuDropdown"
           :style="menuStyle"
@@ -61,7 +60,6 @@
 
           <div class="user-menu-divider"></div>
 
-          <!-- Mobile Mode Toggle -->
           <div class="user-menu-item user-menu-item-toggle" @click.stop>
             <span class="user-menu-item-label">Mobile Mode</span>
             <label class="toggle-switch">
@@ -88,8 +86,8 @@
             <span class="user-menu-item-label">Logout</span>
           </button>
         </div>
-      </transition>
-    </teleport>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -106,14 +104,14 @@ export default {
     const isAdminRole = computed(() => {
       const user = authStore.user;
       if (!user) return false;
-      const role = user.global_role;
+      const role = user.global_role || user.role;
       return role === "admin" || role === "superadmin";
     });
 
     const isSuperAdminRole = computed(() => {
       const user = authStore.user;
       if (!user) return false;
-      const role = user.global_role;
+      const role = user.global_role || user.role;
       return role === "superadmin";
     });
 
@@ -136,7 +134,6 @@ export default {
     };
   },
   mounted() {
-    // Initialize mobile mode state
     this.mobileMode = isMobileMode();
 
     // Listen for mobile mode changes
@@ -186,7 +183,6 @@ export default {
     toggleMenu() {
       this.showMenu = !this.showMenu;
       if (this.showMenu) {
-        // Close all other open menus before opening this one
         window.dispatchEvent(
           new CustomEvent("close-all-menus", {
             detail: { origin: this.menuId },

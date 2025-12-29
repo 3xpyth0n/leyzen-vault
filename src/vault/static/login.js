@@ -44,10 +44,9 @@
       })
         .then((response) => {
           if (!response.ok) {
-            // If 400 and we haven't retried too many times, try again
             if (response.status === 400 && retryCount < maxRetries) {
               retryCount++;
-              // Wait a bit before retrying
+
               setTimeout(attemptRefresh, 500);
               return;
             }

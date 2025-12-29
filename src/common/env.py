@@ -192,7 +192,7 @@ def load_env_with_priority(root_dir: Path | None = None) -> dict[str, str]:
         Dictionary of environment variables with .env file values taking precedence.
 
     Example:
-        # If .env contains POSTGRES_PASSWORD=secret123
+
         # and os.environ contains POSTGRES_PASSWORD=production_password
         # The returned dict will have POSTGRES_PASSWORD=secret123
     """

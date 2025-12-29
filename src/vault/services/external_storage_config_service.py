@@ -104,7 +104,6 @@ class ExternalStorageConfigService:
 
                     logging.getLogger(__name__).error("Failed to decrypt DB S3 config")
 
-        # If we have no env config and nothing in DB, return None
         if not s3_env and not secret:
             return None
 
@@ -196,7 +195,6 @@ class ExternalStorageConfigService:
         if not s3_env:
             return
 
-        # If we have S3 env vars, we might want to ensure the DB record is clean
         # (only contains enabled and storage_mode)
         current_config = ExternalStorageConfigService.get_config(secret_key, app)
         if current_config:

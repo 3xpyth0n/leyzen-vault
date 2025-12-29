@@ -581,7 +581,7 @@ def download_shared_file(token: str):
         # Verify file exists in storage BEFORE incrementing counters
         # This prevents race conditions where counters are incremented for non-existent files
         if not storage.file_exists(storage_ref):
-            # If storage_ref is different from file_id, try file_id as fallback
+
             if storage_ref != file_obj.id and storage.file_exists(file_obj.id):
                 storage_ref = file_obj.id
             else:

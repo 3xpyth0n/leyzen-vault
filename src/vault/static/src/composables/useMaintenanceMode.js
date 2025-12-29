@@ -19,7 +19,6 @@ export function useMaintenanceMode() {
     }
   };
 
-  // Update interval to sync with global status (lightweight, only reads from memory)
   let syncInterval = null;
 
   onMounted(() => {

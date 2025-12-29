@@ -113,7 +113,7 @@ def _determine_log_file(base_dir: Path, env: dict[str, str]) -> Path:
         if not log_path.exists():
             log_path.touch()
     except OSError:
-        # If the file cannot be created now, the logger will surface the error later.
+
         pass
 
     return log_path
@@ -172,11 +172,9 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
     if not internal_api_token:
         internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
 
-    # If explicitly set in environment, use it
     if internal_api_token:
         return internal_api_token
 
-    # Try to read from database using SQLAlchemy directly (no dependency on vault module)
     try:
         from sqlalchemy import create_engine, text
         from cryptography.fernet import Fernet
@@ -186,7 +184,7 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
         import base64
 
         # Build PostgreSQL connection URL using leyzen_orchestrator role
-        # Try to get password from SystemSecrets first, fallback to POSTGRES_PASSWORD
+
         postgres_host = env_values.get("POSTGRES_HOST", "postgres")
         postgres_port = env_values.get("POSTGRES_PORT", "5432")
         postgres_db = env_values.get("POSTGRES_DB", "leyzen_vault")
@@ -194,7 +192,6 @@ def _get_internal_api_token_from_db(env_values: dict[str, str], secret_key: str)
         # Use leyzen_orchestrator role (hardcoded)
         postgres_user = "leyzen_orchestrator"
 
-        # Try to get password from SystemSecrets
         postgres_password = None
         try:
             # We need to connect to get the password, so use a temporary connection
@@ -358,7 +355,7 @@ def load_settings() -> Settings:
         raise ConfigurationError(
             "Orchestrator is disabled (ORCHESTRATOR_ENABLED=false). "
             "The orchestrator service should not be started when disabled. "
-            "Remove the orchestrator service from docker-compose configuration."
+            "Remove the orchestrator service from the configuration."
         )
 
     # Synchronize with Go validation in tools/cli/cmd/validate.go::parseTemplate()
@@ -468,7 +465,6 @@ def load_settings() -> Settings:
     if not internal_api_token:
         internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
 
-    # If not explicitly set, derive from SECRET_KEY
     if not internal_api_token:
         internal_api_token = derive_internal_api_token(secret_key)
 
@@ -484,7 +480,7 @@ def load_settings() -> Settings:
     )
 
     # SECURITY: Validate session cookie security for HTTPS deployments
-    # If HTTPS is enabled (via ENABLE_HTTPS), SESSION_COOKIE_SECURE should be True
+
     enable_https = parse_bool(env_values.get("ENABLE_HTTPS"), default=False)
     if enable_https and not session_cookie_secure:
         import warnings

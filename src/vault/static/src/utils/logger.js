@@ -24,12 +24,10 @@ let configLoadPromise = null;
  * This ensures frontend logging respects backend LEYZEN_ENVIRONMENT setting.
  */
 async function loadProductionMode() {
-  // Return cached value if available
   if (isProductionBackend !== null) {
     return isProductionBackend;
   }
 
-  // If a request is already in progress, return the same promise
   if (configLoadPromise) {
     await configLoadPromise;
     return isProductionBackend;
@@ -61,7 +59,6 @@ async function loadProductionMode() {
   return await configLoadPromise;
 }
 
-// Initialize on module load (non-blocking)
 loadProductionMode().catch(() => {
   // Silently handle errors, will use fallback
 });
@@ -71,12 +68,10 @@ loadProductionMode().catch(() => {
  * Uses backend is_production state if available, otherwise falls back to Vite's MODE.
  */
 function isDevelopmentMode() {
-  // If backend config is loaded, use it
   if (isProductionBackend !== null) {
     return !isProductionBackend; // is_production=true means NOT development
   }
 
-  // Fallback to Vite's build-time mode (for immediate logging before config loads)
   return import.meta.env.MODE === "development";
 }
 
@@ -137,5 +132,4 @@ export const logger = {
   },
 };
 
-// Export for testing or advanced usage
 export { loadProductionMode, isDevelopmentMode };

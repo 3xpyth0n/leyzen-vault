@@ -57,12 +57,8 @@
     </div>
 
     <!-- Generate API Key Modal -->
-    <teleport to="body">
-      <div
-        v-if="showCreateModal"
-        class="modal-overlay"
-        @click.self="closeModal"
-      >
+    <Teleport v-if="showCreateModal" to="body">
+      <div class="modal-overlay" @click.self="closeModal">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>Generate API Key</h3>
@@ -131,15 +127,11 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
     <!-- Show Generated Key Modal -->
-    <teleport to="body">
-      <div
-        v-if="showKeyModal && generatedKey"
-        class="modal-overlay"
-        @click.self="closeKeyModal"
-      >
+    <Teleport v-if="showKeyModal && generatedKey" to="body">
+      <div class="modal-overlay" @click.self="closeKeyModal">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <h3>
@@ -183,7 +175,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
     <!-- Confirmation Modal -->
     <ConfirmationModal

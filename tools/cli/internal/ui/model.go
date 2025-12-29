@@ -66,12 +66,12 @@ type Theme struct {
 }
 
 type WizardField struct {
-	Key         string
-	Message     string
-	Value       string
-	IsPassword  bool
+	Key          string
+	Message      string
+	Value        string
+	IsPassword   bool
 	ShowPassword bool
-	Input       textinput.Model
+	Input        textinput.Model
 }
 
 type ContainerItem struct {
@@ -83,35 +83,35 @@ type ContainerItem struct {
 func (i ContainerItem) FilterValue() string { return i.Name }
 
 type Model struct {
-	envFile             string
-	statuses            []ContainerStatus
-	logs                []string
-	logsRaw              []string          // Raw logs without cleaning/filtering
-	logsBuffer          []string          // Buffer to preserve logs when returning to dashboard
-	configPairs         map[string]string // To store configuration pairs
-	configShowPasswords map[string]bool   // To display/hide passwords in the config view
-	viewport            viewport.Model
-	spinner             spinner.Model
-	width               int
-	height              int
-	helpVisible         bool
-	action              ActionType
-	actionRunning       bool
-	actionStream        <-chan actionProgressMsg
-	runner              *Runner
-	theme               Theme
-	ready               bool
-	pendingRefresh      bool
-	viewState           ViewState
-	successMessage      string
-	successTimer        *time.Timer
-	wizardFields        []WizardField
-	wizardIndex         int
-	wizardError         string
-	quitConfirm         bool // Quit confirmation
-	logModeRaw          bool // Whether we're in raw log view mode
-	viewportYOffsetNormal int // Saved scroll position for normal mode
-	viewportYOffsetRaw     int // Saved scroll position for raw mode
+	envFile               string
+	statuses              []ContainerStatus
+	logs                  []string
+	logsRaw               []string // Raw logs without cleaning/filtering
+	logsBuffer            []string // Buffer to preserve logs when returning to dashboard
+	configPairs           map[string]string
+	configShowPasswords   map[string]bool
+	viewport              viewport.Model
+	spinner               spinner.Model
+	width                 int
+	height                int
+	helpVisible           bool
+	action                ActionType
+	actionRunning         bool
+	actionStream          <-chan actionProgressMsg
+	runner                *Runner
+	theme                 Theme
+	ready                 bool
+	pendingRefresh        bool
+	viewState             ViewState
+	successMessage        string
+	successTimer          *time.Timer
+	wizardFields          []WizardField
+	wizardIndex           int
+	wizardError           string
+	quitConfirm           bool // Quit confirmation
+	logModeRaw            bool // Whether we're in raw log view mode
+	viewportYOffsetNormal int  // Saved scroll position for normal mode
+	viewportYOffsetRaw    int  // Saved scroll position for raw mode
 	// Container selection fields
 	containerList     list.Model
 	containerItems    []ContainerItem
@@ -156,7 +156,7 @@ func NewModel(envFile string, runner *Runner) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, fetchStatusesCmd(), scheduleStatusRefresh())
+	return tea.Batch(m.spinner.Tick, fetchStatusesCmd(m.envFile), scheduleStatusRefresh())
 }
 
 func scheduleStatusRefresh() tea.Cmd {
@@ -277,11 +277,9 @@ func (m *Model) isViewportAtBottom() bool {
 }
 
 func (m *Model) switchToDashboard() {
-	// Save current logs in buffer if coming from a view with logs
 	if m.viewState == ViewLogs || m.viewState == ViewAction {
 		m.logsBuffer = make([]string, len(m.logs))
 		copy(m.logsBuffer, m.logs)
-		// Save scroll positions
 		if m.logModeRaw {
 			m.viewportYOffsetRaw = m.viewport.YOffset
 		} else {
@@ -289,15 +287,12 @@ func (m *Model) switchToDashboard() {
 		}
 	}
 
-	// If coming from wizard, completely clean up state
 	if m.viewState == ViewWizard {
-		// Reset wizard fields to avoid display remnants
 		m.wizardFields = nil
 		m.wizardIndex = 0
 		m.wizardError = ""
 	}
 
-	// If coming from container selection, clean up state
 	if m.viewState == ViewContainerSelection {
 		m.containerList = list.Model{}
 		m.containerItems = nil
@@ -306,8 +301,6 @@ func (m *Model) switchToDashboard() {
 		m.availableServices = nil
 	}
 
-	// COMPLETELY CLEAN: logs, viewport, action, quit confirmation
-	// Logs should not be displayed on the dashboard
 	m.logs = nil
 	m.viewport.SetContent("")
 	m.viewport.GotoTop()
@@ -316,18 +309,15 @@ func (m *Model) switchToDashboard() {
 	m.actionStream = nil
 	m.quitConfirm = false
 
-	// Change state AFTER cleanup
 	m.viewState = ViewDashboard
 }
 
 func (m *Model) switchToLogs() {
-	// Restore logs from buffer if necessary
 	if len(m.logsBuffer) > 0 {
 		m.logs = make([]string, len(m.logsBuffer))
 		copy(m.logs, m.logsBuffer)
 	}
 
-	// Determine which logs to display based on mode
 	var logsToDisplay []string
 	if m.logModeRaw {
 		logsToDisplay = m.logsRaw
@@ -337,7 +327,6 @@ func (m *Model) switchToLogs() {
 
 	if len(logsToDisplay) > 0 {
 		m.viewport.SetContent(strings.Join(logsToDisplay, "\n"))
-		// Restore saved scroll position or go to bottom
 		if m.logModeRaw {
 			if m.viewportYOffsetRaw > 0 {
 				m.viewport.SetYOffset(m.viewportYOffsetRaw)
@@ -354,7 +343,6 @@ func (m *Model) switchToLogs() {
 	}
 
 	m.viewState = ViewLogs
-	// Recalculate viewport size for this view
 	if m.ready && m.height > 0 {
 		viewportHeight := m.height - 8
 		if viewportHeight < 6 {
@@ -430,9 +418,6 @@ func (m *Model) switchToConfig() {
 }
 
 func (m *Model) initWizard(existing map[string]string) {
-	// Load ALL variables from .env
-	// If existing is empty, wizard will display a message
-	// Automatically detect passwords (containing "password" or "secret")
 	keys := make([]string, 0, len(existing))
 	for k := range existing {
 		keys = append(keys, k)
@@ -451,10 +436,8 @@ func (m *Model) initWizard(existing map[string]string) {
 
 		ti := textinput.New()
 		ti.Placeholder = fmt.Sprintf("Value for %s", key)
-		ti.CharLimit = 512 // Increase the limit
+		ti.CharLimit = 512
 		ti.Width = 60
-		// Don't mask passwords in wizard - they're stored in plain text in .env anyway
-		// Pre-fill with existing value
 		if existingValue != "" {
 			ti.SetValue(existingValue)
 		}
@@ -517,8 +500,6 @@ func (m *Model) initContainerSelection(services []string, action ActionType) {
 
 	m.containerItems = items
 	m.containerIndex = 0
-
-	// Initialize list model (not really used for navigation, but kept for compatibility)
 	m.containerList = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	m.containerList.SetShowStatusBar(false)
 	m.containerList.SetFilteringEnabled(false)

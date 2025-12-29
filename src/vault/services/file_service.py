@@ -116,7 +116,7 @@ class AdvancedFileService:
                 else:
                     logger.error(f"Operation failed after {max_retries} attempts: {e}")
                     raise
-        # Should never reach here, but type checker needs it
+
         if last_exception:
             raise last_exception
         raise RuntimeError("Operation failed without exception")
@@ -281,7 +281,7 @@ class AdvancedFileService:
             raise ValueError("Invalid encrypted file key format")
 
         # Create file key entry (encrypted with VaultSpace key)
-        # Note: create_file_key_entry commits internally, so it's atomic
+
         file_key = self.encryption_service.create_file_key_entry(
             file_id=file_obj.id,
             vaultspace_id=vaultspace_id,
@@ -352,7 +352,6 @@ class AdvancedFileService:
             # Soft delete the file/folder itself
             file_obj.deleted_at = now
 
-            # If it's a folder, recursively soft delete all children
             if file_obj.mime_type == "application/x-directory":
 
                 def _soft_delete_recursive(parent_id):
@@ -510,7 +509,6 @@ class AdvancedFileService:
         # Restore file by clearing deleted_at
         file_obj.deleted_at = None
 
-        # If it's a folder, recursively restore children that were deleted at the same time
         if file_obj.mime_type == "application/x-directory":
 
             def _restore_recursive(parent_id):
@@ -734,7 +732,6 @@ class AdvancedFileService:
         if not accessible_vaultspace_ids:
             return []
 
-        # If vaultspace_id is provided, check if user has access to it
         if vaultspace_id:
             if vaultspace_id not in accessible_vaultspace_ids:
                 return []
@@ -1597,7 +1594,7 @@ class AdvancedFileService:
                 .first()
             )
             if original_file_key:
-                # Note: In a full implementation, we'd need to re-encrypt the file key
+
                 # with the new VaultSpace key. For now, we'll create a placeholder.
                 # The client will need to handle re-encryption.
                 pass
@@ -1815,8 +1812,6 @@ class AdvancedFileService:
                 )
                 db.session.rollback()
 
-        # Try to get from cache (but folder sizes are recalculated below, so cache may be stale)
-        # We'll invalidate cache after recalculating folder sizes
         cache.get(cache_key_str)
 
         query = db.session.query(File).filter_by(vaultspace_id=vaultspace_id)

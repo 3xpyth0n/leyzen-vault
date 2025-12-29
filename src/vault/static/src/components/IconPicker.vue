@@ -1,7 +1,6 @@
 <template>
-  <teleport to="body">
+  <Teleport v-if="show" to="body">
     <div
-      v-if="show"
       class="modal-overlay"
       @click="handleBackdropClick"
       role="dialog"
@@ -57,7 +56,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>

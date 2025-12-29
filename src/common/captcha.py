@@ -23,7 +23,7 @@ from common.constants import (
     CAPTCHA_SVG_FONT_SIZE,
 )
 
-# Try to import PIL (optional dependency)
+
 try:
     from PIL import Image, ImageDraw, ImageFilter, ImageFont  # type: ignore[import-not-found]
 except ModuleNotFoundError as exc:
@@ -399,14 +399,13 @@ class DatabaseCaptchaStore:
 
             return CaptchaEntry
         except ImportError:
-            # Try to get from app context if available
+
             from flask import current_app
 
             if (
                 hasattr(current_app, "extensions")
                 and "sqlalchemy" in current_app.extensions
             ):
-                # Try to get model from app registry
 
                 db = self._get_db()
                 # Get model from metadata

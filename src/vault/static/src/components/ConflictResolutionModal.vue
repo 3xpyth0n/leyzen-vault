@@ -1,7 +1,6 @@
 <template>
-  <teleport to="body">
+  <Teleport v-if="show" to="body">
     <div
-      v-if="show"
       ref="modalOverlay"
       class="modal-overlay"
       :aria-hidden="!show"
@@ -61,7 +60,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>
@@ -112,7 +111,7 @@ export default {
       if (newVal) {
         document.body.style.overflow = "hidden";
         this.applyToAll = false;
-        // Focus on Replace button for accessibility
+
         this.$nextTick(() => {
           const replaceBtn = document.getElementById("modal-replace");
           if (replaceBtn) {

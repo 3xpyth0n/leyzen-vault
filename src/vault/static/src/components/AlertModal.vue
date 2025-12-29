@@ -1,7 +1,6 @@
 <template>
-  <teleport to="body">
+  <Teleport v-if="show" to="body">
     <div
-      v-if="show"
       class="modal-overlay"
       @click="handleBackdropClick"
       role="dialog"
@@ -30,7 +29,7 @@
         </div>
       </div>
     </div>
-  </teleport>
+  </Teleport>
 </template>
 
 <script>
@@ -73,7 +72,7 @@ export default {
     show(newVal) {
       if (newVal) {
         document.body.style.overflow = "hidden";
-        // Focus on OK button for accessibility
+
         this.$nextTick(() => {
           const okBtn = document.getElementById("alert-modal-ok");
           if (okBtn) {

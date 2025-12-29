@@ -23,7 +23,6 @@
       </div>
       <div v-if="ssoProviders && ssoProviders.length > 0" class="sso-section">
         <div v-for="provider in ssoProviders" :key="provider.id">
-          <!-- Email Magic Link: Show email input form -->
           <div
             v-if="provider.provider_type === 'email-magic-link'"
             class="magic-link-form"
@@ -51,7 +50,7 @@
               Magic link sent! Please check your email.
             </div>
           </div>
-          <!-- Other SSO providers: Show button -->
+
           <button
             v-else
             type="button"
@@ -118,7 +117,6 @@
       </p>
     </div>
 
-    <!-- Two-Factor Authentication Modal -->
     <TwoFactorVerify
       v-if="show2FAModal"
       :isLoading="loading"
@@ -127,7 +125,6 @@
       @cancel="cancel2FA"
     ></TwoFactorVerify>
 
-    <!-- Maintenance Modal -->
     <MaintenanceModal></MaintenanceModal>
   </div>
 </template>
@@ -213,7 +210,6 @@ const refreshCaptcha = async () => {
     const data = await response.json();
 
     if (data.nonce) {
-      // Update nonce and image URL - simple and direct
       // Always update on refresh to ensure image loads (especially after logout)
       captchaNonce.value = data.nonce;
       captchaImageUrl.value = `/api/auth/captcha-image?nonce=${data.nonce}`;
@@ -261,7 +257,6 @@ onMounted(async () => {
     router.replace({ query: nextQuery });
   }
 
-  // Check if setup is complete and get auth configuration
   try {
     await authStore.fetchAuthConfig();
 
@@ -354,7 +349,7 @@ const handleLogin = async () => {
   if (!captchaNonce.value) {
     logger.warn("No CAPTCHA nonce available, refreshing before login");
     await refreshCaptcha();
-    // If still no nonce after refresh, show error
+
     if (!captchaNonce.value) {
       error.value = "Failed to load CAPTCHA. Please refresh the page.";
       loading.value = false;
@@ -372,7 +367,6 @@ const handleLogin = async () => {
       captchaResponse.value,
     );
 
-    // Check if 2FA is required
     if (response.requires_2fa) {
       show2FAModal.value = true;
       twoFactorError.value = "";
@@ -387,7 +381,6 @@ const handleLogin = async () => {
   } catch (err) {
     error.value = err.message || "Login failed. Please try again.";
 
-    // Check if error is about CAPTCHA expiration or too many attempts
     const isCaptchaExpired =
       err.message &&
       (err.message.includes("CAPTCHA expired") ||
@@ -398,7 +391,6 @@ const handleLogin = async () => {
     const isTooManyAttempts =
       err.message && err.message.includes("Too many failed attempts");
 
-    // Check if error is about unverified email
     if (err.message && err.message.includes("not verified")) {
       showVerificationLink.value = true;
       emailForVerification.value = username.value;
@@ -451,7 +443,6 @@ const handle2FAVerify = async (totpToken) => {
       // Do NOT refresh CAPTCHA - credentials already validated
     }
   } catch (err) {
-    // Check if error is about CAPTCHA expiration or too many attempts
     const isCaptchaExpired =
       err.message &&
       (err.message.includes("CAPTCHA expired") ||
@@ -512,7 +503,6 @@ const completeLogin = async (response) => {
     }
   }
 
-  // Initialize user master key from password using the salt from server
   // Pass JWT token so the key can be stored encrypted in IndexedDB
   // This ensures the same master key is derived each session and persists across page refreshes
   await initializeUserMasterKey(password.value, salt, response.token);

@@ -24,8 +24,6 @@ checks we expect before shipping changes.
   Vue.js SPA frontend with Flask REST API backend. Uses PostgreSQL for metadata storage.
 - `src/common/` - Shared Python modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
-- `src/compose/` - Python build scripts that generate `docker-generated.yml` and HAProxy
-  configuration from environment variables.
 - `tools/cli/` - Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
@@ -86,10 +84,10 @@ checks we expect before shipping changes.
   as the standard bootstrap pattern. This function encapsulates the complete bootstrap
   sequence needed for entry points outside the `src/` directory.
 
-  This pattern is used in `src/orchestrator/app.py`, `infra/docker-proxy/proxy.py`, and
-  `src/compose/build.py`. See these files for reference implementations. The bootstrap is
-  necessary because these entry points are not executed from the `src/` directory, so
-  Python's default import resolution cannot find the `common` modules.
+  This pattern is used in `src/orchestrator/app.py` and `infra/docker-proxy/proxy.py`. See these
+  files for reference implementations. The bootstrap is necessary because these entry points
+  are not executed from the `src/` directory, so Python's default import resolution cannot
+  find the `common` modules.
 
   For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_python_paths()`
   directly if you need to configure paths before importing other modules.

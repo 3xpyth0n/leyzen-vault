@@ -22,7 +22,6 @@
       </div>
     </div>
 
-    <!-- Two-Factor Authentication Modal -->
     <TwoFactorVerify
       v-if="show2FAModal"
       :isLoading="twoFactorLoading"
@@ -53,19 +52,16 @@ const twoFactorError = ref("");
 
 onMounted(async () => {
   try {
-    // Check for error in query parameters (e.g., from SSO callback failure)
     if (route.query.error) {
       error.value = decodeURIComponent(route.query.error);
       loading.value = false;
       return;
     }
 
-    // Check if 2FA is required
     const requires2FA = route.query.requires_2fa === "true";
     const userId = route.query.user_id;
 
     if (requires2FA) {
-      // Show 2FA modal
       if (!userId) {
         error.value = "Missing user information. Please try logging in again.";
         loading.value = false;

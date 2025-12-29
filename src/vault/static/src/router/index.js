@@ -30,12 +30,12 @@ function clearAllStorage() {
       const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
       if (name) {
         // Delete cookie by setting it to expire in the past
-        // Try with different path and domain combinations
+
         document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
         const hostname = window.location.hostname;
         if (hostname) {
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${hostname}`;
-          // Try with leading dot for subdomain cookies
+
           if (hostname.indexOf(".") > 0) {
             document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${hostname}`;
           }
@@ -102,7 +102,6 @@ async function requireAuth(to, from, next) {
   ) {
     const masterKeyAvailable = await hasMasterKey();
     if (!masterKeyAvailable) {
-      // Check if salt exists - indicates master key is not available
       const storedSalt = getStoredSalt();
       if (storedSalt) {
         // User is authenticated (JWT valid) but master key is lost from memory
@@ -150,7 +149,6 @@ async function requireAdmin(to, from, next) {
     return;
   }
 
-  // Check user role
   try {
     const authStore = useAuthStore();
     const user = await authStore.fetchCurrentUser();
@@ -161,7 +159,6 @@ async function requireAdmin(to, from, next) {
       return;
     }
 
-    // Check if user is admin or superadmin
     if (user.global_role === "admin" || user.global_role === "superadmin") {
       // User has admin privileges - allow access
       next();
@@ -173,7 +170,7 @@ async function requireAdmin(to, from, next) {
     }
   } catch (err) {
     // Error fetching user info
-    // Check if it's a network error (server temporarily unavailable)
+
     if (isNetworkError(err)) {
       // Network error during container restart - allow navigation
       // User will see appropriate error message in the component
@@ -206,8 +203,6 @@ const routes = [
       // We don't want to redirect authenticated users away from setup page
       // because they might be completing the setup process
 
-      // Check if setup is already complete
-      // If check fails (network error, database not available), allow access to setup page
       try {
         const authStore = useAuthStore();
         const setupComplete = await authStore.checkSetupStatus();
@@ -230,9 +225,8 @@ const routes = [
     name: "Login",
     component: () => import("../views/Login.vue"),
     beforeEnter: async (to, from, next) => {
-      // If coming from setup, completely clear all localStorage
       // This is critical: setup should never leave any state, so clear everything
-      // Check both query param and sessionStorage flag
+
       const comingFromSetup =
         to.query.setup === "done" ||
         sessionStorage.getItem("_setup_complete") === "1";
@@ -275,14 +269,12 @@ const routes = [
         return;
       }
 
-      // Check if user is authenticated
       const authenticated = await isAuthenticated();
       if (authenticated) {
         next("/dashboard");
         return;
       }
 
-      // Check if setup is complete
       try {
         const authStore = useAuthStore();
         const setupComplete = await authStore.checkSetupStatus();
@@ -303,14 +295,12 @@ const routes = [
     name: "Register",
     component: () => import("../views/Register.vue"),
     beforeEnter: async (to, from, next) => {
-      // Check if user is authenticated first
       const authenticated = await isAuthenticated();
       if (authenticated) {
         next("/dashboard");
         return;
       }
 
-      // Check if signup is enabled
       try {
         const authStore = useAuthStore();
         const config = await authStore.fetchAuthConfig();
@@ -405,7 +395,7 @@ const routes = [
     name: "Root",
     beforeEnter: async (to, from, next) => {
       // Setup check is handled by global beforeEach guard
-      // If we reach here, setup is complete, redirect based on auth status
+
       const authenticated = await isAuthenticated();
       if (authenticated) {
         next("/dashboard");
@@ -433,7 +423,7 @@ router.beforeEach(async (to, from, next) => {
   // Handle root path explicitly - check setup before any route-level guards
   if (to.path === "/" || to.path === "" || to.name === "Root") {
     // On fresh install, the API might not be ready yet
-    // Try to check setup status, but redirect to setup if it fails
+
     try {
       const authStore = useAuthStore();
       const setupComplete = await authStore.checkSetupStatus();
@@ -491,7 +481,6 @@ router.beforeEach(async (to, from, next) => {
     return;
   }
 
-  // Check setup status for all other routes
   try {
     const authStore = useAuthStore();
     const setupComplete = await authStore.checkSetupStatus();

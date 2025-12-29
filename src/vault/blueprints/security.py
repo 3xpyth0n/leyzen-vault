@@ -58,14 +58,14 @@ def get_stats():
         # Ensure log.timestamp is timezone-aware
         log_timestamp = log.timestamp
         if log_timestamp.tzinfo is None:
-            # If timestamp is naive, assume it's UTC and convert to settings timezone
+
             from datetime import timezone
 
             log_timestamp = log_timestamp.replace(tzinfo=timezone.utc).astimezone(
                 settings.timezone
             )
         else:
-            # If timestamp is timezone-aware, convert to settings timezone
+
             log_timestamp = log_timestamp.astimezone(settings.timezone)
 
         if log_timestamp >= seven_days_ago:

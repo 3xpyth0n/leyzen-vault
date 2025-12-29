@@ -128,10 +128,11 @@ def _normalize_origin(origin: str | None) -> str | None:
 from .blueprints.admin import admin_api_bp  # noqa: E402
 from .blueprints.auth_api import auth_api_bp  # noqa: E402
 from .blueprints.config_api import config_api_bp  # noqa: E402
+from .blueprints.cron_api import cron_api_bp  # noqa: E402
 from .blueprints.files_api_v2 import files_api_bp  # noqa: E402
 
 # Import file_events_api_bp with error handling
-# Note: SSE endpoint is disabled but /recent endpoint is needed for polling
+
 file_events_api_bp = None
 try:
     from .blueprints.file_events_api import file_events_api_bp  # noqa: E402
@@ -191,7 +192,6 @@ def _create_fallback_settings() -> VaultSettings:
     from common.env import parse_timezone
     from common.exceptions import ConfigurationError
 
-    # Try to get timezone from environment even in fallback
     # Use allow_fallback=True to gracefully fall back to UTC on error
     fallback_timezone = parse_timezone(allow_fallback=True)
 
@@ -260,11 +260,9 @@ def _get_or_generate_internal_api_token(
     if not internal_api_token:
         internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
 
-    # If explicitly set in environment, use it
     if internal_api_token:
         return internal_api_token
 
-    # If not set, try to get from database or generate new one
     if not secret_key:
         if logger:
             logger.warning(
@@ -273,9 +271,8 @@ def _get_or_generate_internal_api_token(
             )
         return ""
 
-    # Need app context for database access
     if not app:
-        # Try to get current app
+
         try:
             from flask import current_app
 
@@ -304,7 +301,6 @@ def _get_or_generate_internal_api_token(
     # Use app.app_context() to ensure database is accessible
     from vault.database.schema import SystemSecrets, db
 
-    # Try to get existing token from database
     secret_key_name = "internal_api_token"
     secret_record = None
     try:
@@ -464,7 +460,7 @@ def _get_or_generate_internal_api_token(
         # Fallback: use regular connection (for first startup)
         with app.app_context():
             # Ensure SystemSecrets table exists before storing
-            # Try multiple times to create the table if it doesn't exist
+
             table_created = False
             max_table_attempts = 3
 
@@ -498,7 +494,7 @@ def _get_or_generate_internal_api_token(
                                 )
                             import time
 
-                            time.sleep(1.0)  # Wait 1 second before retry
+                            time.sleep(1.0)
                     else:
                         table_created = True
                         break
@@ -521,7 +517,7 @@ def _get_or_generate_internal_api_token(
                     if table_attempt < max_table_attempts:
                         import time
 
-                        time.sleep(1.0)  # Wait 1 second before retry
+                        time.sleep(1.0)
                     else:
                         # All attempts failed - raise error
                         raise
@@ -601,7 +597,7 @@ def _get_or_generate_internal_api_token(
                         f"Token decryption verification failed: {decrypt_error}"
                     ) from decrypt_error
             else:
-                # Try once more after a short delay - sometimes there's a replication lag
+
                 import time
 
                 time.sleep(0.5)
@@ -731,12 +727,10 @@ def _log_once_with_lock(
     """
     import fcntl
 
-    # Try PostgreSQL lock first (preferred method)
     try:
         with app.app_context():
             from sqlalchemy import text as sql_text
 
-            # Try to acquire lock (non-blocking)
             lock_acquired = False
             try:
                 result = db.session.execute(
@@ -812,7 +806,7 @@ def _log_once_with_lock(
                 db.session.remove()
                 return False
     except Exception:
-        # If database is not available, use file-based lock as fallback
+
         lock_file_path = f"/tmp/leyzen_lock_{lock_high}_{lock_low}.lock"
         try:
             lock_file = open(lock_file_path, "w")
@@ -851,7 +845,7 @@ def _log_once_with_lock(
                 lock_file.close()
                 return False
         except Exception:
-            # If file lock fails, log anyway to ensure message is shown
+
             # Determine log level based on message prefix
             if message.startswith("[ERROR]") or message.startswith("[CRITICAL]"):
                 logger.error(message)
@@ -1065,7 +1059,6 @@ def create_app(
             try:
                 db_initialized_by_this_worker = init_db(app)
 
-                # Note: We keep using POSTGRES_USER for the default database connection
                 # The application can use the leyzen_app role by reading the password from system_secrets
                 # when needed, but we don't change the default connection after initialization
                 # to avoid SQLAlchemy reinitialization issues (SQLAlchemy doesn't allow db.init_app() twice)
@@ -1117,7 +1110,7 @@ def create_app(
                     )
                     # Continue without PostgreSQL for development/testing only
         except Exception as db_config_exc:
-            # If database configuration fails completely, log and continue
+
             # (this should not happen in normal operation)
             logger.error(
                 f"[ERROR] Database configuration failed: {db_config_exc}. "
@@ -1137,7 +1130,6 @@ def create_app(
 
                 internal_api_token = os.environ.get("INTERNAL_API_TOKEN", "")
 
-            # If not explicitly set, derive from SECRET_KEY
             if not internal_api_token:
                 if not settings or not settings.secret_key:
                     logger.error(
@@ -1190,7 +1182,7 @@ def create_app(
             try:
                 _log_dev_mode_warning_once(app, logger)
             except Exception:
-                # If lock mechanism fails, log anyway to ensure warning is shown
+
                 warning_msg = (
                     "[WARNING] Application is running in DEVELOPMENT mode. "
                     "This should never be used in production. "
@@ -1236,7 +1228,7 @@ def create_app(
         # Secrets are loaded from environment variables
 
         # SECURITY: Prevent fallback mode in production
-        # If we're in production mode, fail fast rather than using fallback settings
+
         if is_production:
             raise RuntimeError(
                 "Cannot start in production mode without valid configuration. "
@@ -1272,7 +1264,7 @@ def create_app(
         app.config["INTERNAL_API_TOKEN"] = internal_api_token
 
     # SECURITY: Configure allowed origins (CORS + Origin validation)
-    # If ALLOWED_ORIGINS is not set, VAULT_URL will be used as fallback
+
     vault_settings = app.config.get("VAULT_SETTINGS")
     trust_count = getattr(vault_settings, "proxy_trust_count", 1)
     if trust_count < 0:
@@ -1372,7 +1364,7 @@ def create_app(
         storage_dir = Path(str(storage_dir))
 
     # Source directory for persistent storage (mounted from vault-data-source volume)
-    # Note: source_dir should point to the parent directory, FileStorage will handle /files subdirectory
+
     source_dir = Path("/data-source") if Path("/data-source").exists() else None
 
     # Check storage mode to determine if local storage is needed
@@ -1385,7 +1377,7 @@ def create_app(
             )
 
             # We need app context to check storage mode, but we can't use current_app here
-            # So we'll check it later after app is created, but we can prepare the check
+
             storage_mode = "local"  # Will be updated after app context is available
         except Exception:
             pass
@@ -1396,11 +1388,11 @@ def create_app(
 
     # Check if S3-only mode is enabled and log appropriate message
     # This check needs to happen after app is created but before logger is fully initialized
-    # We'll do a preliminary check here and log later after app context is available
+
     _check_s3_only_mode = False
     if secret_key:
         try:
-            # Try to check storage mode (may fail if DB not ready, that's OK)
+
             from vault.services.external_storage_config_service import (
                 ExternalStorageConfigService,
             )
@@ -1479,7 +1471,7 @@ def create_app(
     app.config["VAULT_SHARE"] = share_service
     app.config["VAULT_RATE_LIMITER"] = rate_limiter
     # Internal API token is already set earlier after database initialization
-    # If not set (e.g., in fallback mode), try to get from environment
+
     if "INTERNAL_API_TOKEN" not in app.config or not app.config.get(
         "INTERNAL_API_TOKEN"
     ):
@@ -1687,7 +1679,6 @@ def create_app(
                             # Remove session after each batch to prevent connection leaks
                             db.session.remove()
 
-                            # If we got fewer files than batch_size, we're done
                             if len(files) < batch_size:
                                 break
 
@@ -1855,7 +1846,7 @@ def create_app(
                 ):
                     return True
             except Exception:
-                # If parsing fails, fall through to normal check
+
                 pass
 
         return normalized_origin in allowed_set
@@ -1864,6 +1855,7 @@ def create_app(
     app.register_blueprint(admin_api_bp)  # Admin API
     app.register_blueprint(auth_api_bp)  # JWT-based auth API
     app.register_blueprint(config_api_bp)  # Configuration API
+    app.register_blueprint(cron_api_bp)  # Cron utility API
     app.register_blueprint(files_api_bp)  # Advanced files API v2
     app.register_blueprint(external_storage_api_bp)  # External storage API
     app.register_blueprint(database_backup_api_bp)  # Database backup API
@@ -1900,14 +1892,13 @@ def create_app(
 
         logger = logging.getLogger(__name__)
 
-        # If filename starts with "assets/", it's from Vue.js build
         # Request: /static/assets/index-BNuRR0jV.js
-        # Should serve: dist/assets/index-BNuRR0jV.js
+
         if filename.startswith("assets/"):
             dist_dir = vault_dir / "static" / "dist"
             if dist_dir.exists():
                 try:
-                    # Try to serve directly - faster than checking existence first
+
                     response = send_from_directory(str(dist_dir), filename)
                     # Add cache headers for static assets
                     response.cache_control.public = True
@@ -1922,7 +1913,6 @@ def create_app(
                     logger.error(f"Error serving asset {filename}: {e}")
                     abort(500)
 
-        # Try dist/ first (for Vue.js build assets and index.html)
         try:
             response = send_from_directory(str(static_dir), filename)
             # Add cache headers for static assets
@@ -2025,7 +2015,7 @@ def create_app(
         csp_nonce = getattr(g, "csp_nonce", "")
 
         # Content Security Policy - enhanced with trusted types and reporting
-        # Note: 'wasm-unsafe-eval' is required for Argon2-browser WebAssembly module
+
         csp_directives = [
             "default-src 'self'",
             (
@@ -2241,7 +2231,6 @@ def create_app(
         # License requirement: must refuse all indexing to prevent resale
         required_content = "User-agent: *\nDisallow: /\n"
 
-        # Try to serve the physical file first, but validate its content
         robots_file = vault_dir / "static" / "public" / "robots.txt"
         if robots_file.exists():
             try:
@@ -2286,7 +2275,7 @@ def create_app(
         from flask import Response
 
         # Always return 200 immediately - no blocking operations
-        # If workers are blocked, this endpoint will still respond quickly
+
         # HAProxy will detect worker issues through request timeouts, not status codes
         return Response('{"status":"ok"}', mimetype="application/json", status=200)
 
@@ -2658,7 +2647,6 @@ def create_app(
             error_details = f"Unhandled exception: {e}\n{traceback.format_exc()}"
             current_app.logger.error(error_details)
 
-        # If this is an API route, return JSON error
         if request.path.startswith("/api/"):
             # In production, return generic error message to avoid information disclosure
             if is_production:
@@ -2672,7 +2660,7 @@ def create_app(
             return jsonify({"error": error_message}), status_code
 
         # For non-API routes, let Flask handle it (will show HTML error page)
-        # But we still want to log it
+
         return e
 
     # CRITICAL LICENSE VALIDATION: Verify robots.txt is present and correct

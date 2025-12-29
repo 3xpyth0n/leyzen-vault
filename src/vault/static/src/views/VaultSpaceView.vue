@@ -1,416 +1,404 @@
 <template>
-  <div>
-    <header
-      v-if="!showEncryptionOverlay || !isMasterKeyRequired"
-      class="view-header"
-    >
-      <div class="breadcrumb-text">
-        <button
-          @click="navigateToBreadcrumb(null)"
-          @dragover.prevent="handleBreadcrumbDragOver(null, $event)"
-          @dragleave="handleBreadcrumbDragLeave(null, $event)"
-          @drop.prevent="handleBreadcrumbDrop(null, $event)"
-          class="breadcrumb-item"
-          :class="{
-            'breadcrumb-current': currentParentId === null,
-            'breadcrumb-drop-target':
-              breadcrumbDropTargetId === null && isDragging,
-          }"
-        >
-          <span
-            class="breadcrumb-icon"
-            v-html="getIcon(vaultspace?.icon_name || 'folder', 16)"
-          ></span>
-          {{ vaultspace?.name || "Loading..." }}
-        </button>
-        <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
-          <span class="breadcrumb-separator"> > </span>
-          <button
-            @click="navigateToBreadcrumb(crumb.id)"
-            @dragover.prevent="handleBreadcrumbDragOver(crumb, $event)"
-            @dragleave="handleBreadcrumbDragLeave(crumb, $event)"
-            @drop.prevent="handleBreadcrumbDrop(crumb, $event)"
-            class="breadcrumb-item"
-            :class="{
-              'breadcrumb-current': currentParentId === crumb.id,
-              'breadcrumb-drop-target': breadcrumbDropTargetId === crumb.id,
-            }"
-          >
-            {{ crumb.name }}
-          </button>
-        </template>
-      </div>
-      <div class="header-actions-row">
-        <SearchBar
-          :vaultspaceId="$route.params.id"
-          :parentId="currentParentId"
-          placeholder="Search files and folders..."
-          @result-click="handleSearchResultClick"
-          class="header-search"
-        />
-        <CustomSelect
-          :model-value="selectedAction"
-          :options="[
-            { value: 'new-folder', label: 'New Folder' },
-            { value: 'upload-file', label: 'Upload File' },
-          ]"
-          placeholder="New"
-          @change="handleActionSelect"
-          size="small"
-          :disabled="isServerOffline"
-          class="header-actions-select"
-        />
-      </div>
-    </header>
-
-    <main
-      v-if="!showEncryptionOverlay || !isMasterKeyRequired"
-      class="view-main"
-    >
-      <div v-if="loading" class="loading">Loading files...</div>
-      <div v-else-if="error" class="error">{{ error }}</div>
-
-      <div v-else class="files-list">
-        <div
-          v-if="folders.length === 0 && filesList.length === 0"
-          class="empty-state"
-        >
-          <p>No files or folders in this location</p>
-          <div class="empty-actions">
-            <button
-              @click="createFolderDirect"
-              class="btn btn-primary"
-              :disabled="isServerOffline"
-            >
-              Create Folder
-            </button>
-            <button
-              @click="handleUploadClick"
-              class="btn btn-primary"
-              :disabled="isServerOffline"
-            >
-              Upload File
-            </button>
-          </div>
-        </div>
-
-        <!-- File List View Component -->
-        <FileListView
-          v-else
-          :key="fileListKey"
-          :folders="folders"
-          :files="filesList"
-          :selectedItems="selectedItems"
-          :viewMode="viewMode"
-          :editingItemId="editingItemId"
-          :newlyCreatedItemId="newlyCreatedItemIdForAnimation"
-          :vaultspaceId="$route.params.id"
-          @view-change="handleViewChange"
-          @item-click="handleItemClick"
-          @action="handleFileAction"
-          @selection-change="handleSelectionChange"
-          @item-context-menu="handleContextMenu"
-          @rename="handleInlineRename"
-          @drag-start="handleDragStart"
-          @drag-over="handleDragOver"
-          @drag-leave="handleDragLeave"
-          @drag-end="handleDragEnd"
-          @drop="handleDrop"
-          @background-context-menu="handleBackgroundContextMenu"
-        />
-      </div>
-    </main>
-
-    <!-- Upload Progress Bar (Sticky at bottom) -->
-    <Teleport to="body">
-      <ProgressBar
-        v-if="uploading && uploadProgress !== null"
-        :progress="uploadProgress"
-        :speed="uploadSpeed"
-        :time-remaining="uploadTimeRemaining"
-        :file-name="uploadFileName"
-        :status="uploadCancelled ? 'Cancelled' : 'Uploading...'"
-        :sticky="true"
-        :on-cancel="uploadCancelled ? null : handleUploadCancel"
-      />
-    </Teleport>
-
-    <!-- Download Progress Bar (Sticky at bottom) -->
-    <Teleport to="body">
-      <ProgressBar
-        v-if="downloading && downloadProgress !== null"
-        :progress="downloadProgress"
-        :speed="downloadSpeed"
-        :time-remaining="downloadTimeRemaining"
-        :file-name="downloadFileName"
-        status="Downloading..."
-        :sticky="true"
-      />
-    </Teleport>
-
-    <!-- ZIP Progress Bar (Sticky at bottom) -->
-    <Teleport to="body">
-      <ProgressBar
-        v-if="zipping && zipProgress !== null"
-        :progress="zipProgress"
-        :file-name="zipMessage"
-        status="Zipping folder..."
-        :sticky="true"
-      />
-    </Teleport>
-
-    <!-- Extract Progress Bar (Sticky at bottom) -->
-    <Teleport to="body">
-      <ProgressBar
-        v-if="extracting && extractProgress !== null"
-        :progress="extractProgress"
-        :file-name="extractMessage"
-        status="Extracting ZIP..."
-        :sticky="true"
-      />
-    </Teleport>
-
-    <!-- Batch Actions Bar -->
-    <BatchActions
-      v-if="selectedItems.length > 0"
-      :selectedItems="selectedItems"
-      :availableFolders="allFolders"
-      @delete="handleBatchDelete"
-      @download="handleBatchDownload"
-      @clear="clearSelection"
-    />
-  </div>
-
-  <!-- Hidden file input for direct upload (programmatically triggered) -->
-  <input
-    type="file"
-    @change="handleFileSelect"
-    ref="fileInput"
-    class="file-input-hidden"
-    multiple
-  />
-
-  <!-- Delete Confirmation Modal -->
-  <ConfirmationModal
-    :show="showDeleteConfirmModal"
-    title="Move to Trash"
-    :message="getDeleteMessage()"
-    confirm-text="Move to Trash"
-    :dangerous="true"
-    :disabled="deleting"
-    @confirm="confirmDelete"
-    @close="
-      if (!deleting) {
-        showDeleteConfirmModal = false;
-        deleteError = null;
-      }
-    "
-  />
-
-  <!-- Password Modal for SSO Users -->
-  <Teleport to="body">
-    <div
-      v-if="showPasswordModal"
-      class="password-modal-overlay"
-      @click="closePasswordModal"
-      role="dialog"
-      aria-labelledby="password-modal-title"
-      aria-modal="true"
-    >
-      <div class="password-modal-container" @click.stop>
-        <div class="password-modal-content">
-          <div class="password-modal-header">
-            <h2 id="password-modal-title">Enter Encryption Password</h2>
-            <button
-              @click="closePasswordModal"
-              class="password-modal-close"
-              :disabled="passwordModalLoading"
-              aria-label="Close modal"
-            >
-              &times;
-            </button>
-          </div>
-          <div class="password-modal-body">
-            <p class="password-modal-description">
-              You need to enter your encryption password to access this
-              VaultSpace. This password is used to decrypt your files and is not
-              stored on the server.
-            </p>
-            <div class="form-group">
-              <label for="password-modal-password">Password</label>
-              <PasswordInput
-                id="password-modal-password"
-                v-model="passwordModalPassword"
-                placeholder="Enter your encryption password"
-                :disabled="passwordModalLoading"
-                @keyup.enter="handlePasswordModalSubmit"
-                autofocus
+  <div class="vaultspace-view-container">
+    <template v-if="!showEncryptionOverlay || !isMasterKeyRequired">
+      <div class="vaultspace-view">
+        <header class="view-header">
+          <div class="header-top-row">
+            <div class="breadcrumb-text">
+              <button
+                @click="navigateToBreadcrumb(null)"
+                @dragover.prevent="handleBreadcrumbDragOver(null, $event)"
+                @dragleave="handleBreadcrumbDragLeave(null, $event)"
+                @drop.prevent="handleBreadcrumbDrop(null, $event)"
+                class="breadcrumb-item"
+                :class="{
+                  'breadcrumb-current': currentParentId === null,
+                  'breadcrumb-drop-target':
+                    breadcrumbDropTargetId === null && isDragging,
+                }"
+              >
+                <span
+                  class="breadcrumb-icon"
+                  v-html="getIcon(vaultspace?.icon_name || 'folder', 16)"
+                ></span>
+                {{ vaultspace?.name || "Loading..." }}
+              </button>
+              <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
+                <span class="breadcrumb-separator"> > </span>
+                <button
+                  @click="navigateToBreadcrumb(crumb.id)"
+                  @dragover.prevent="handleBreadcrumbDragOver(crumb, $event)"
+                  @dragleave="handleBreadcrumbDragLeave(crumb, $event)"
+                  @drop.prevent="handleBreadcrumbDrop(crumb, $event)"
+                  class="breadcrumb-item"
+                  :class="{
+                    'breadcrumb-current': currentParentId === crumb.id,
+                    'breadcrumb-drop-target':
+                      breadcrumbDropTargetId === crumb.id,
+                  }"
+                >
+                  {{ crumb.name }}
+                </button>
+              </template>
+            </div>
+            <div class="header-actions">
+              <CustomSelect
+                :model-value="selectedAction"
+                :options="[
+                  { value: 'new-folder', label: 'New Folder' },
+                  { value: 'upload-file', label: 'Upload File' },
+                ]"
+                placeholder="New"
+                @change="handleActionSelect"
+                size="small"
+                :disabled="isServerOffline"
+                class="header-actions-select"
               />
             </div>
-            <div v-if="passwordModalError" class="password-modal-error">
-              {{ passwordModalError }}
+          </div>
+          <div class="header-search-row">
+            <SearchBar
+              :vaultspaceId="$route.params.id"
+              :parentId="currentParentId"
+              placeholder="Search files and folders..."
+              @result-click="handleSearchResultClick"
+              class="header-search"
+            />
+          </div>
+        </header>
+
+        <main class="view-main">
+          <div v-if="loading" class="loading">Loading files...</div>
+          <div v-else-if="error" class="error">{{ error }}</div>
+
+          <div v-else class="files-list">
+            <div
+              v-if="folders.length === 0 && filesList.length === 0"
+              class="empty-state"
+            >
+              <p>No files or folders in this location</p>
+              <div class="empty-actions">
+                <button
+                  @click="createFolderDirect"
+                  class="btn btn-primary"
+                  :disabled="isServerOffline"
+                >
+                  Create Folder
+                </button>
+                <button
+                  @click="handleUploadClick"
+                  class="btn btn-primary"
+                  :disabled="isServerOffline"
+                >
+                  Upload File
+                </button>
+              </div>
+            </div>
+
+            <FileListView
+              v-else
+              :key="fileListKey"
+              :folders="folders"
+              :files="filesList"
+              :selectedItems="selectedItems"
+              :viewMode="viewMode"
+              :editingItemId="editingItemId"
+              :newlyCreatedItemId="newlyCreatedItemIdForAnimation"
+              :vaultspaceId="$route.params.id"
+              @view-change="handleViewChange"
+              @item-click="handleItemClick"
+              @action="handleFileAction"
+              @selection-change="handleSelectionChange"
+              @item-context-menu="handleContextMenu"
+              @rename="handleInlineRename"
+              @drag-start="handleDragStart"
+              @drag-over="handleDragOver"
+              @drag-leave="handleDragLeave"
+              @drag-end="handleDragEnd"
+              @drop="handleDrop"
+              @background-context-menu="handleBackgroundContextMenu"
+            />
+          </div>
+        </main>
+
+        <Teleport v-if="uploading && uploadProgress !== null" to="body">
+          <ProgressBar
+            :progress="uploadProgress"
+            :speed="uploadSpeed"
+            :time-remaining="uploadTimeRemaining"
+            :file-name="uploadFileName"
+            :status="uploadCancelled ? 'Cancelled' : 'Uploading...'"
+            :sticky="true"
+            :on-cancel="uploadCancelled ? null : handleUploadCancel"
+          />
+        </Teleport>
+
+        <Teleport v-if="downloading && downloadProgress !== null" to="body">
+          <ProgressBar
+            :progress="downloadProgress"
+            :speed="downloadSpeed"
+            :time-remaining="downloadTimeRemaining"
+            :file-name="downloadFileName"
+            status="Downloading..."
+            :sticky="true"
+          />
+        </Teleport>
+
+        <Teleport v-if="zipping && zipProgress !== null" to="body">
+          <ProgressBar
+            :progress="zipProgress"
+            :file-name="zipMessage"
+            status="Zipping folder..."
+            :sticky="true"
+          />
+        </Teleport>
+
+        <Teleport v-if="extracting && extractProgress !== null" to="body">
+          <ProgressBar
+            :progress="extractProgress"
+            :file-name="extractMessage"
+            status="Extracting ZIP..."
+            :sticky="true"
+          />
+        </Teleport>
+
+        <BatchActions
+          v-if="selectedItems.length > 0"
+          :selectedItems="selectedItems"
+          :availableFolders="allFolders"
+          @delete="handleBatchDelete"
+          @download="handleBatchDownload"
+          @clear="clearSelection"
+        />
+
+        <input
+          type="file"
+          @change="handleFileSelect"
+          ref="fileInput"
+          class="file-input-hidden"
+          multiple
+        />
+
+        <ConfirmationModal
+          :show="showDeleteConfirmModal"
+          title="Move to Trash"
+          :message="getDeleteMessage()"
+          confirm-text="Move to Trash"
+          :dangerous="true"
+          :disabled="deleting"
+          @confirm="confirmDelete"
+          @close="
+            if (!deleting) {
+              showDeleteConfirmModal = false;
+              deleteError = null;
+            }
+          "
+        />
+
+        <ConfirmationModal
+          :show="showRevokeConfirm"
+          title="Revoke Share Link"
+          :message="revokeConfirmMessage"
+          confirm-text="Revoke"
+          :dangerous="true"
+          @confirm="handleRevokeConfirm"
+          @close="showRevokeConfirm = false"
+        />
+
+        <AlertModal
+          :show="showAlertModal"
+          :type="alertModalConfig.type"
+          :title="alertModalConfig.title"
+          :message="alertModalConfig.message"
+          @close="handleAlertModalClose"
+          @ok="handleAlertModalClose"
+        />
+
+        <ConflictResolutionModal
+          :show="showConflictModal"
+          :title="conflictData?.title || 'File Already Exists'"
+          :message="
+            conflictData?.message || 'A file with this name already exists.'
+          "
+          :show-apply-to-all="conflictData?.showApplyToAll || false"
+          :remaining-count="conflictData?.remainingCount"
+          @replace="handleConflictReplace"
+          @keep-both="handleConflictKeepBoth"
+          @skip="handleConflictSkip"
+          @close="handleConflictClose"
+        />
+
+        <FileProperties
+          :show="showProperties"
+          :fileId="propertiesFileId"
+          :vaultspaceId="$route.params.id"
+          @navigate="navigateToAndSelectItem"
+          @close="
+            showProperties = false;
+            propertiesFileId = null;
+          "
+        />
+
+        <FilePreview
+          :show="showPreview"
+          :fileId="previewFileId"
+          :fileName="previewFileName"
+          :mimeType="previewMimeType"
+          :vaultspaceId="$route.params.id"
+          @close="
+            showPreview = false;
+            previewFileId = null;
+            previewFileName = '';
+            previewMimeType = '';
+          "
+          @download="handlePreviewDownload"
+          @unzip="handlePreviewUnzip"
+        />
+
+        <BackgroundContextMenu
+          :show="showBackgroundMenu"
+          :position="backgroundMenuPosition"
+          :canShowProperties="currentParentId !== null"
+          menu-id="vault-background-menu"
+          @close="
+            showBackgroundMenu = false;
+            backgroundMenuPosition = { x: 0, y: 0 };
+          "
+          @action="handleBackgroundMenuAction"
+        />
+      </div>
+    </template>
+
+    <Teleport v-if="showPasswordModal" to="body">
+      <div
+        class="password-modal-overlay"
+        @click="closePasswordModal"
+        role="dialog"
+        aria-labelledby="password-modal-title"
+        aria-modal="true"
+      >
+        <div class="password-modal-container" @click.stop>
+          <div class="password-modal-content">
+            <div class="password-modal-header">
+              <h2 id="password-modal-title">Enter Encryption Password</h2>
+              <button
+                @click="closePasswordModal"
+                class="password-modal-close"
+                :disabled="passwordModalLoading"
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="password-modal-body">
+              <p class="password-modal-description">
+                You need to enter your encryption password to access this
+                VaultSpace. This password is used to decrypt your files and is
+                not stored on the server.
+              </p>
+              <div class="form-group">
+                <label for="password-modal-password">Password</label>
+                <PasswordInput
+                  id="password-modal-password"
+                  v-model="passwordModalPassword"
+                  placeholder="Enter your encryption password"
+                  :disabled="passwordModalLoading"
+                  @keyup.enter="handlePasswordModalSubmit"
+                  autofocus
+                />
+              </div>
+              <div v-if="passwordModalError" class="password-modal-error">
+                {{ passwordModalError }}
+              </div>
+            </div>
+            <div class="password-modal-footer">
+              <button
+                @click="closePasswordModal"
+                class="password-modal-btn password-modal-btn-cancel"
+                :disabled="passwordModalLoading"
+              >
+                Cancel
+              </button>
+              <button
+                @click="handlePasswordModalSubmit"
+                class="password-modal-btn password-modal-btn-unlock"
+                :disabled="passwordModalLoading || !passwordModalPassword"
+              >
+                {{ passwordModalLoading ? "Processing..." : "Unlock" }}
+              </button>
             </div>
           </div>
-          <div class="password-modal-footer">
-            <button
-              @click="closePasswordModal"
-              class="password-modal-btn password-modal-btn-cancel"
-              :disabled="passwordModalLoading"
-            >
-              Cancel
-            </button>
-            <button
-              @click="handlePasswordModalSubmit"
-              class="password-modal-btn password-modal-btn-unlock"
-              :disabled="passwordModalLoading || !passwordModalPassword"
-            >
-              {{ passwordModalLoading ? "Processing..." : "Unlock" }}
-            </button>
-          </div>
         </div>
       </div>
-    </div>
-  </Teleport>
+    </Teleport>
 
-  <!-- Alert Modal (for better UX) -->
-  <AlertModal
-    :show="showAlertModal"
-    :type="alertModalConfig.type"
-    :title="alertModalConfig.title"
-    :message="alertModalConfig.message"
-    @close="handleAlertModalClose"
-    @ok="handleAlertModalClose"
-  />
-
-  <!-- Conflict Resolution Modal -->
-  <ConflictResolutionModal
-    :show="showConflictModal"
-    :title="conflictData?.title || 'File Already Exists'"
-    :message="conflictData?.message || 'A file with this name already exists.'"
-    :show-apply-to-all="conflictData?.showApplyToAll || false"
-    :remaining-count="conflictData?.remainingCount"
-    @replace="handleConflictReplace"
-    @keep-both="handleConflictKeepBoth"
-    @skip="handleConflictSkip"
-    @close="handleConflictClose"
-  />
-
-  <!-- File Properties Modal -->
-  <FileProperties
-    :show="showProperties"
-    :fileId="propertiesFileId"
-    :vaultspaceId="$route.params.id"
-    @navigate="navigateToAndSelectItem"
-    @close="
-      showProperties = false;
-      propertiesFileId = null;
-    "
-  />
-
-  <!-- File Preview Modal -->
-  <FilePreview
-    :show="showPreview"
-    :fileId="previewFileId"
-    :fileName="previewFileName"
-    :mimeType="previewMimeType"
-    :vaultspaceId="$route.params.id"
-    @close="
-      showPreview = false;
-      previewFileId = null;
-      previewFileName = '';
-      previewMimeType = '';
-    "
-    @download="handlePreviewDownload"
-    @unzip="handlePreviewUnzip"
-  />
-
-  <!-- Encryption Overlay -->
-  <Teleport to="#encryption-overlay-portal">
-    <div
+    <Teleport
       v-if="showEncryptionOverlay && isMasterKeyRequired"
-      class="encryption-overlay"
-      :style="{
-        'pointer-events': showPasswordModal ? 'none' : 'auto',
-      }"
-      data-encryption-overlay="true"
+      to="#encryption-overlay-portal"
     >
-      <div class="encryption-overlay-content">
-        <div class="encryption-icon-wrapper">
-          <svg
-            class="encryption-icon"
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+      <div
+        class="encryption-overlay"
+        :style="{
+          'pointer-events': showPasswordModal ? 'none' : 'auto',
+        }"
+        data-encryption-overlay="true"
+      >
+        <div class="encryption-overlay-content">
+          <div class="encryption-icon-wrapper">
+            <svg
+              class="encryption-icon"
+              width="64"
+              height="64"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 12V16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 class="encryption-title">Files are encrypted</h2>
+          <p class="encryption-description">
+            Enter your encryption password to decrypt and access your files.
+            This password is used to decrypt your files and is not stored on the
+            server.
+          </p>
+          <button
+            @click.stop.prevent="openPasswordModal"
+            @mousedown.stop
+            @mouseup.stop
+            class="encryption-unlock-btn"
+            type="button"
+            style="
+              pointer-events: auto !important;
+              z-index: 10001 !important;
+              position: relative !important;
+            "
           >
-            <path
-              d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M12 12V16"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
+            Unlock Files
+          </button>
         </div>
-        <h2 class="encryption-title">Files are encrypted</h2>
-        <p class="encryption-description">
-          Enter your encryption password to decrypt and access your files. This
-          password is used to decrypt your files and is not stored on the
-          server.
-        </p>
-        <button
-          @click.stop.prevent="openPasswordModal"
-          @mousedown.stop
-          @mouseup.stop
-          class="encryption-unlock-btn"
-          type="button"
-          style="
-            pointer-events: auto !important;
-            z-index: 10001 !important;
-            position: relative !important;
-          "
-        >
-          Unlock Files
-        </button>
       </div>
-    </div>
-  </Teleport>
-
-  <!-- Confirmation Modal for share link revocation -->
-  <ConfirmationModal
-    :show="showRevokeConfirm"
-    title="Revoke Share Link"
-    :message="revokeConfirmMessage"
-    confirm-text="Revoke"
-    :dangerous="true"
-    @confirm="handleRevokeConfirm"
-    @close="showRevokeConfirm = false"
-  />
-
-  <BackgroundContextMenu
-    :show="showBackgroundMenu"
-    :position="backgroundMenuPosition"
-    :canShowProperties="currentParentId !== null"
-    menu-id="vault-background-menu"
-    @close="
-      showBackgroundMenu = false;
-      backgroundMenuPosition = { x: 0, y: 0 };
-    "
-    @action="handleBackgroundMenuAction"
-  />
+    </Teleport>
+  </div>
 </template>
 
 <script>
 import { ref, onMounted, nextTick, watch } from "vue";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
+import { normalizeMimeType } from "../utils/mimeType";
 import { files, vaultspaces, config } from "../services/api";
 import { useAuthStore } from "../store/auth";
 import BatchActions from "../components/BatchActions.vue";
@@ -500,7 +488,7 @@ export default {
     } = useFileViewComposable({
       viewType: "vaultspace",
       enableEncryptionCheck: true,
-      onEncryptionUnlocked: null, // We'll use a watcher in the component instead
+      onEncryptionUnlocked: null,
     });
 
     return {
@@ -604,23 +592,19 @@ export default {
       this.loadFilesInternal(parentId);
     }, 300);
 
-    // Initialize file sync composable
     this.fileSync = null;
   },
   async mounted() {
     await this.checkEncryptionAccess();
 
-    // Check if encryption access check resulted in showing overlay
     if (this.showEncryptionOverlay) {
       // Still load VaultSpace metadata (non-encrypted info)
       await this.loadVaultSpace();
       return;
     }
 
-    // Check if user master key is available
     const userMasterKey = await getUserMasterKey();
     if (!userMasterKey) {
-      // Check if salt exists - indicates master key is not available
       const storedSalt = getStoredSalt();
       if (storedSalt) {
         this.showAlert({
@@ -663,10 +647,8 @@ export default {
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
 
-    // Initialize file sync after vaultspace is loaded
     this.initializeFileSync();
 
-    // Check if folder parameter is in URL query string
     const folderIdFromQuery = this.$route.query.folder;
     if (folderIdFromQuery) {
       this.currentParentId = folderIdFromQuery;
@@ -695,7 +677,6 @@ export default {
       this.showRevokeConfirm = true;
     };
 
-    // Check for pending selection
     this.checkPendingSelection();
   },
   beforeUnmount() {
@@ -728,14 +709,12 @@ export default {
   },
   computed: {
     isServerOffline() {
-      // Check server status via global function
       if (typeof window !== "undefined" && window.getServerStatus) {
         return !window.getServerStatus();
       }
       return false; // Default to online if status not available
     },
     allFolders() {
-      // Return all folders for move destination selection
       return this.folders;
     },
     fileListKey() {
@@ -749,14 +728,12 @@ export default {
       }`;
     },
     newlyCreatedItemIdForAnimation() {
-      // Return the newly created folder ID if available, otherwise the array of uploaded file IDs
       // This is used to trigger the animation for newly created items
       // FileListView now supports both single ID and array of IDs
       if (this.newlyCreatedFolderId) {
         return this.newlyCreatedFolderId;
       }
       if (this.newlyCreatedFileIds && this.newlyCreatedFileIds.length > 0) {
-        // Return array if multiple files, single ID if only one
         return this.newlyCreatedFileIds.length === 1
           ? this.newlyCreatedFileIds[0]
           : this.newlyCreatedFileIds;
@@ -801,7 +778,6 @@ export default {
             // Use loadFilesInternal directly to bypass debounce for route changes
             this.loadFilesInternal(folderId, false);
 
-            // Check for pending selection after route change
             this.$nextTick(() => {
               this.checkPendingSelection();
             });
@@ -857,7 +833,6 @@ export default {
 
     async loadVaultSpaceKey() {
       try {
-        // Check if VaultSpace key is already cached
         const cachedKey = getCachedVaultSpaceKey(this.$route.params.id);
         if (cachedKey) {
           this.vaultspaceKey = cachedKey;
@@ -867,14 +842,12 @@ export default {
         // Get user master key from key manager
         const userMasterKey = await getUserMasterKey();
         if (!userMasterKey) {
-          // Check if salt exists in sessionStorage - this indicates a lost session
           const storedSalt = getStoredSalt();
           if (storedSalt) {
           }
           return;
         }
 
-        // Try to get encrypted VaultSpace key from server
         const vaultspaceKeyData = await vaultspaces.getKey(
           this.$route.params.id,
         );
@@ -943,7 +916,6 @@ export default {
                 );
                 cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
               } catch (recreateErr) {
-                // Check if we have a valid key from a concurrent request or cache before failing
                 const cachedKey = getCachedVaultSpaceKey(this.$route.params.id);
                 if (cachedKey || this.vaultspaceKey) {
                   logger.warn(
@@ -990,7 +962,6 @@ export default {
         this.fileSync.disconnect();
       }
 
-      // Import fileEventsClient dynamically
       import("../services/fileEvents.js").then(({ fileEventsClient }) => {
         // Event handlers
         const handleFileEvent = (event) => {
@@ -1131,7 +1102,6 @@ export default {
       }
       this.error = null;
 
-      // Ensure parentId is set correctly before loading
       // This prevents state inconsistencies
       const targetParentId = parentId || null;
 
@@ -1180,7 +1150,6 @@ export default {
           // This ensures state consistency
           this.currentParentId = targetParentId;
 
-          // Update breadcrumbs if in a folder
           // Use nextTick to ensure folders are loaded before updating breadcrumbs
           if (targetParentId) {
             this.$nextTick(() => {
@@ -1190,7 +1159,6 @@ export default {
             this.breadcrumbs = [];
           }
 
-          // Ensure selection UI is updated after files are loaded
           // This ensures that any lingering selection state is cleared from the DOM
           this.$nextTick(() => {
             // Clear selection again after DOM update to ensure it's really cleared
@@ -1250,7 +1218,6 @@ export default {
       let allFilesFound = false;
 
       while (retryCount <= maxRetries && !allFilesFound) {
-        // Wait before reloading (longer delay on first attempt)
         const delay = retryCount === 0 ? initialDelay : 100;
         await new Promise((resolve) => setTimeout(resolve, delay));
 
@@ -1260,7 +1227,6 @@ export default {
           const result = await this.loadFilesInternal(parentId, true, false);
           const allItems = result.files || [];
 
-          // Check if all uploaded files are present in the response
           const foundFileIds = allItems.map((item) => item.id);
           const missingFileIds = uploadedFileIds.filter(
             (id) => !foundFileIds.includes(id),
@@ -1292,7 +1258,6 @@ export default {
             this.$forceUpdate();
           }
         } catch (err) {
-          // If reload fails, retry if we haven't exceeded max retries
           if (retryCount < maxRetries) {
             retryCount++;
             logger.warn(
@@ -1321,11 +1286,9 @@ export default {
         }
       }
 
-      // Update URL with folder parameter
       const currentFolderId = this.$route.query.folder || null;
       const newFolderId = folderId || null;
 
-      // Build new query object
       const newQuery = { ...this.$route.query };
       if (newFolderId) {
         newQuery.folder = newFolderId;
@@ -1334,7 +1297,6 @@ export default {
         delete newQuery.folder;
       }
 
-      // Build URL string for direct manipulation
       const queryString =
         Object.keys(newQuery).length > 0
           ? "?" + new URLSearchParams(newQuery).toString()
@@ -1349,7 +1311,6 @@ export default {
         newUrl,
       );
 
-      // Then update Vue Router's internal state
       // This ensures Vue Router knows about the change
       this.$router
         .replace({
@@ -1373,7 +1334,6 @@ export default {
       }
 
       try {
-        // Build breadcrumbs by traversing up the parent chain
         // Key insight: the current folder is not in this.folders (which contains its children)
         // We need to load it from its parent, but we don't know the parent_id
         // Solution: use a recursive approach - load each folder from its parent
@@ -1406,7 +1366,6 @@ export default {
           }
         };
 
-        // Build path from current folder up to root
         while (currentFolderId && depth < maxDepth) {
           if (visited.has(currentFolderId)) {
             break;
@@ -1415,13 +1374,11 @@ export default {
 
           let currentFolder = null;
 
-          // Try to find in loaded data first
           currentFolder =
             this.folders.find((f) => f.id === currentFolderId) ||
             this.files.find((f) => f.id === currentFolderId) ||
             this.filesList.find((f) => f.id === currentFolderId);
 
-          // If not found, we need to load it
           if (!currentFolder) {
             if (pathFolders.length === 0) {
               // Looking for current folder
@@ -1441,7 +1398,6 @@ export default {
                   };
                 }
               } catch (err) {
-                // If files.get() fails, try loading from root
                 currentFolder = await loadFolderFromParent(
                   currentFolderId,
                   null,
@@ -1467,13 +1423,11 @@ export default {
                   };
                 }
               } catch (err) {
-                // If files.get() fails, try loading from root
                 currentFolder = await loadFolderFromParent(
                   currentFolderId,
                   null,
                 );
 
-                // If not in root, try searching in each known parent folder
                 if (!currentFolder) {
                   for (const knownFolder of pathFolders) {
                     currentFolder = await loadFolderFromParent(
@@ -1517,17 +1471,14 @@ export default {
         // Reverse to get root -> current order
         this.breadcrumbs = pathFolders.reverse();
 
-        // If still no breadcrumbs, at least try to show current folder
         // by getting its name from a child folder's parent reference
         if (this.breadcrumbs.length === 0) {
-          // Try to find a child folder that references this as parent
           const childFolder = this.folders.find(
             (f) => f.parent_id === folderId,
           );
           if (childFolder) {
             // We know we're in folderId, but we don't have its name
             // We can't infer it from children...
-            // So we'll just show an empty breadcrumb or try one more API call
           }
         }
       } catch (error) {
@@ -1548,12 +1499,10 @@ export default {
         try {
           await this.loadVaultSpaceKey();
 
-          // Check again if key is loaded
           if (!this.vaultspaceKey) {
             // Key still not loaded - check if user master key is available
             const userMasterKey = await getUserMasterKey();
             if (!userMasterKey) {
-              // Check if salt exists - this indicates session was lost
               const storedSalt = getStoredSalt();
               let errorMessage =
                 "Your session has expired. Please log in again.";
@@ -1597,7 +1546,6 @@ export default {
         return;
       }
 
-      // Open file picker directly without modal
       this.$nextTick(() => {
         const fileInput = this.$refs.fileInput;
         if (fileInput) {
@@ -1615,7 +1563,7 @@ export default {
               (f) =>
                 f &&
                 f.mime_type === "application/x-directory" &&
-                f.name && // Ensure name exists
+                f.name &&
                 (f.parent_id === this.currentParentId ||
                   (!f.parent_id && !this.currentParentId)),
             )
@@ -1626,7 +1574,6 @@ export default {
         // Also fetch from API to get the absolute latest (with cache-busting on retry)
         let apiFolderNames = new Set();
         try {
-          // Fetch all folders from API with pagination (max 100 per page)
           const allFolders = [];
           let page = 1;
           const perPage = 100; // API limit
@@ -1645,13 +1592,11 @@ export default {
             const items = result.files || [];
             allFolders.push(...items);
 
-            // Check if there are more pages
             const pagination = result.pagination || {};
             const totalPages = pagination.pages || 1;
             hasMore = page < totalPages && items.length > 0;
             page++;
 
-            // If no items returned, we've reached the end
             if (items.length === 0) {
               hasMore = false;
             }
@@ -1662,7 +1607,7 @@ export default {
             (item) =>
               item &&
               item.mime_type === "application/x-directory" &&
-              item.name && // Ensure name exists
+              item.name &&
               (item.parent_id === this.currentParentId ||
                 (!item.parent_id && !this.currentParentId)),
           );
@@ -1679,7 +1624,6 @@ export default {
         // Merge both sets to get the most complete list
         const existingNames = new Set([...localFolderNames, ...apiFolderNames]);
 
-        // Check if base name is available
         if (!existingNames.has(baseName)) {
           return baseName;
         }
@@ -1710,7 +1654,7 @@ export default {
               (f) =>
                 f &&
                 f.mime_type === "application/x-directory" &&
-                f.name && // Ensure name exists
+                f.name &&
                 (f.parent_id === this.currentParentId ||
                   (!f.parent_id && !this.currentParentId)),
             )
@@ -1718,12 +1662,10 @@ export default {
             .filter((name) => name.length > 0), // Filter out empty names
         );
 
-        // Try base name first
         if (!existingNames.has(baseName)) {
           return baseName;
         }
 
-        // Try numbered versions
         let counter = 1;
         let newName = `${baseName}(${counter})`;
 
@@ -1732,7 +1674,6 @@ export default {
           newName = `${baseName}(${counter})`;
         }
 
-        // If we still have conflicts, use UUID to guarantee uniqueness
         if (existingNames.has(newName)) {
           const uuid = crypto.randomUUID().slice(0, 8);
           newName = `${baseName}(${uuid})`;
@@ -1759,7 +1700,7 @@ export default {
       if (this.isServerOffline) {
         return;
       }
-      // Check if master key is required
+
       if (this.isMasterKeyRequired) {
         this.showAlert({
           type: "error",
@@ -1828,7 +1769,6 @@ export default {
         });
       };
 
-      // Try to create folder
       try {
         const folder = await files.createFolder(
           this.$route.params.id,
@@ -1845,7 +1785,6 @@ export default {
         // Success - exit
         return;
       } catch (err) {
-        // Check if it's a 409 conflict error
         const isConflict =
           err.message &&
           (err.message.toLowerCase().includes("already exists") ||
@@ -1858,7 +1797,6 @@ export default {
           this.conflictApplyToAll = false;
           this.conflictResolution = null;
 
-          // Show conflict modal
           this.conflictData = {
             title: "Folder Already Exists",
             message: `A folder named "New Folder" already exists in this location.`,
@@ -1867,7 +1805,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -2000,7 +1937,6 @@ export default {
       }
       this.uploadError = null;
 
-      // Check if master key is required
       if (this.isMasterKeyRequired) {
         this.showAlert({
           type: "error",
@@ -2062,12 +1998,10 @@ export default {
           let encryptedFileKey = null;
           let encryptedDataBlob = null;
 
-          // Calculate progress values (needed for conflict resolution)
           const baseProgress = (uploadedCount / totalFiles) * 100;
           const fileProgressWeight = (1 / totalFiles) * 100;
 
           try {
-            // Set current file name for progress display
             this.uploadFileName = file.name;
 
             // Generate file key
@@ -2093,13 +2027,11 @@ export default {
             combined.set(new Uint8Array(encrypted), iv.length);
             encryptedDataBlob = new Blob([combined]);
 
-            // Check if file is large enough for chunked upload (5MB threshold)
             const CHUNK_SIZE_THRESHOLD = 5 * 1024 * 1024; // 5MB
             const encryptedSize = encryptedDataBlob.size;
 
             let result;
 
-            // Check for conflict first if we have a resolution from previous conflict
             let fileNameToUse = file.name;
             let shouldOverwrite = false;
 
@@ -2146,7 +2078,6 @@ export default {
                 chunkIndex < chunks.length;
                 chunkIndex++
               ) {
-                // Check if upload was cancelled
                 if (this.uploadCancelled) {
                   // Cancel upload session
                   try {
@@ -2179,7 +2110,6 @@ export default {
                         const currentFileLoaded =
                           chunkIndex * chunkSize + loaded;
 
-                        // Calculate global bytes loaded based on original file size ratio
                         // This normalizes encrypted size to original size for accurate global progress
                         const fileProgressRatio =
                           currentFileLoaded / encryptedSize;
@@ -2189,7 +2119,6 @@ export default {
                           bytesUploadedFromPreviousFiles +
                           currentFileContribution;
 
-                        // Update Sliding Window
                         const now = Date.now();
                         batchSamples.push({
                           time: now,
@@ -2204,7 +2133,6 @@ export default {
                           batchSamples.shift();
                         }
 
-                        // Calculate speed and time
                         if (batchSamples.length >= 2) {
                           const first = batchSamples[0];
                           const last = batchSamples[batchSamples.length - 1];
@@ -2229,15 +2157,12 @@ export default {
                   // Store cancel function
                   this.uploadCancelFunctions.push(chunkResult.cancel);
 
-                  // Wait for chunk upload to complete
                   const chunkResponse = await chunkResult.promise;
 
-                  // Check if response is valid
                   if (!chunkResponse || typeof chunkResponse !== "object") {
                     throw new Error("Invalid response from server");
                   }
 
-                  // Update progress
                   if (!this.uploadCancelled) {
                     const uploadedSize =
                       chunkResponse.uploaded_size !== undefined
@@ -2254,7 +2179,6 @@ export default {
                     );
                   }
 
-                  // Check if all chunks are uploaded
                   if (chunkResponse.is_complete === true) {
                     break;
                   }
@@ -2282,7 +2206,6 @@ export default {
                 (loaded, total, speed, timeRemaining) => {
                   // Only update progress if not cancelled
                   if (!this.uploadCancelled) {
-                    // Calculate overall progress across all files
                     const fileProgress = (loaded / total) * fileProgressWeight;
                     this.uploadProgress = Math.round(
                       baseProgress + fileProgress,
@@ -2295,7 +2218,6 @@ export default {
                     const globalBytesLoaded =
                       bytesUploadedFromPreviousFiles + currentFileContribution;
 
-                    // Update Sliding Window
                     const now = Date.now();
                     batchSamples.push({ time: now, loaded: globalBytesLoaded });
 
@@ -2307,7 +2229,6 @@ export default {
                       batchSamples.shift();
                     }
 
-                    // Calculate speed and time
                     if (batchSamples.length >= 2) {
                       const first = batchSamples[0];
                       const last = batchSamples[batchSamples.length - 1];
@@ -2333,11 +2254,9 @@ export default {
               // Store cancel function
               this.uploadCancelFunctions.push(uploadResult.cancel);
 
-              // Wait for upload to complete
               result = await uploadResult.promise;
             }
 
-            // Check if upload was cancelled
             if (this.uploadCancelled) {
               break;
             }
@@ -2350,17 +2269,14 @@ export default {
               this.uploadedFileIds.push(result.file.id);
               uploadedCount++;
 
-              // Update bytes uploaded from previous files for global progress tracking
               bytesUploadedFromPreviousFiles += file.size;
             }
           } catch (err) {
-            // Check if error is due to cancellation
             if (err.message === "Upload cancelled" || this.uploadCancelled) {
               this.uploadCancelled = true;
               break;
             }
 
-            // Check if it's a 409 conflict error (don't log it, we'll handle it)
             const isConflict =
               err.isConflict ||
               err.status === 409 ||
@@ -2371,7 +2287,6 @@ export default {
 
             // Only log non-conflict errors
 
-            // Check if error is quota-related and show modal
             if (
               err.message &&
               (err.message.includes("quota exceeded") ||
@@ -2420,11 +2335,10 @@ export default {
               break;
             } else if (isConflict) {
               // Handle conflict
-              // Check if we have a resolution from "apply to all"
+
               let resolution = this.conflictResolution;
               let applyToAll = this.conflictApplyToAll;
 
-              // If no resolution yet, show modal
               if (!resolution) {
                 // Store pending upload info
                 this.pendingUploadFile = file;
@@ -2433,10 +2347,8 @@ export default {
                 this.conflictApplyToAll = false;
                 this.conflictResolution = null;
 
-                // Calculate remaining files count
                 const remainingCount = this.selectedFiles.length - fileIndex;
 
-                // Show conflict modal
                 this.conflictData = {
                   title: "File Already Exists",
                   message: `A file named "${file.name}" already exists in this folder.`,
@@ -2445,7 +2357,6 @@ export default {
                 };
                 this.showConflictModal = true;
 
-                // Wait for user decision
                 await new Promise((resolve) => {
                   const checkResolution = () => {
                     if (this.conflictResolution) {
@@ -2608,7 +2519,6 @@ export default {
                 this.conflictApplyToAll = false;
               }
 
-              // If upload succeeded, continue to next file
               if (uploadSucceeded) {
                 continue;
               }
@@ -2619,7 +2529,6 @@ export default {
         }
 
         if (this.uploadCancelled) {
-          // Show cancellation message if not already shown
           if (!this.uploadCancellationMessageShown) {
             // Always show alert modal for visibility
             this.showAlert({
@@ -2639,7 +2548,6 @@ export default {
             this.uploadCancellationMessageShown = true;
           }
 
-          // Wait a moment to show the cancelled status in the progress bar, then clean up
           setTimeout(() => {
             this.uploadProgress = null;
             this.uploadSpeed = 0;
@@ -2657,7 +2565,6 @@ export default {
           this.uploadFileName = "";
           this.uploadCancelFunctions = [];
 
-          // Hide progress after a short delay
           setTimeout(() => {
             this.uploadProgress = null;
           }, 1000);
@@ -2693,9 +2600,7 @@ export default {
           }, 700);
         }
       } catch (err) {
-        // Check if error is due to cancellation
         if (err.message === "Upload cancelled" || this.uploadCancelled) {
-          // Show cancellation message if not already shown
           if (!this.uploadCancellationMessageShown) {
             // Always show alert modal for visibility
             this.showAlert({
@@ -2715,7 +2620,6 @@ export default {
             this.uploadCancellationMessageShown = true;
           }
 
-          // Wait a moment to show the cancelled status, then clean up
           setTimeout(() => {
             this.uploadProgress = null;
             this.uploadSpeed = 0;
@@ -2726,7 +2630,6 @@ export default {
             this.uploadCancellationMessageShown = false;
           }, 1500);
         } else {
-          // Check if error is quota-related and show modal
           if (
             err.message &&
             (err.message.includes("quota exceeded") ||
@@ -2796,7 +2699,6 @@ export default {
     },
 
     handleUploadCancel() {
-      // Set cancellation flag
       this.uploadCancelled = true;
       // Cancel all active uploads
       this.uploadCancelFunctions.forEach((cancelFn) => {
@@ -2806,7 +2708,6 @@ export default {
       });
       this.uploadCancelFunctions = [];
 
-      // Show cancellation message immediately (only once)
       if (!this.uploadCancellationMessageShown) {
         // Always show alert modal for visibility, and also try toast notification
         this.showAlert({
@@ -2838,7 +2739,6 @@ export default {
           return;
         }
 
-        // Initialize download progress
         this.downloading = true;
         this.downloadProgress = 0;
         this.downloadSpeed = 0;
@@ -2874,7 +2774,6 @@ export default {
         const iv = encryptedData.slice(0, 12);
         const encrypted = encryptedData.slice(12);
 
-        // Update status for decryption phase
         this.downloadProgress = 95;
         this.downloadSpeed = 0;
         this.downloadTimeRemaining = null;
@@ -2882,7 +2781,6 @@ export default {
         // Decrypt file
         const decrypted = await decryptFile(fileKey, encrypted.buffer, iv);
 
-        // Update progress to complete
         this.downloadProgress = 100;
 
         // Create blob and download
@@ -2894,7 +2792,6 @@ export default {
         a.click();
         URL.revokeObjectURL(url);
 
-        // Hide progress after a short delay
         setTimeout(() => {
           this.downloadProgress = null;
           this.downloadSpeed = 0;
@@ -2976,7 +2873,6 @@ export default {
         this.showDeleteConfirmModal = false;
         this.itemToDelete = null;
 
-        // Show success message
         if (window.Notifications) {
           window.Notifications.success(
             `${itemType} moved to trash successfully`,
@@ -3017,7 +2913,6 @@ export default {
         }
       }
 
-      // Check if base name is available
       if (!existingNames.has(baseName)) {
         return baseName;
       }
@@ -3063,7 +2958,6 @@ export default {
       this.showConflictModal = false;
     },
     handleConflictClose() {
-      // If closed without action, treat as skip
       if (!this.conflictResolution) {
         this.conflictResolution = "skip";
       }
@@ -3207,18 +3101,15 @@ export default {
     },
 
     handleItemClick(item, event) {
-      // If clicking checkbox, don't navigate
       if (event.target.type === "checkbox") {
         return;
       }
 
-      // If Ctrl/Cmd key is pressed, toggle selection
       if (event.ctrlKey || event.metaKey) {
         this.toggleSelection(item);
         return;
       }
 
-      // If Shift key is pressed, select range
       if (event.shiftKey && this.selectedItems.length > 0) {
         // Select range from last selected to current
         const allItems = [...this.folders, ...this.filesList];
@@ -3288,7 +3179,6 @@ export default {
           }
         }
       } else if (action === "share") {
-        // Open share modal using composable
         try {
           await showShareModal(
             item.id,
@@ -3334,7 +3224,10 @@ export default {
 
       this.previewFileId = item.id;
       this.previewFileName = item.original_name || item.name || "File";
-      this.previewMimeType = item.mime_type || "";
+      this.previewMimeType = normalizeMimeType(
+        this.previewFileName,
+        item.mime_type || "",
+      );
       this.showPreview = true;
     },
 
@@ -3348,7 +3241,6 @@ export default {
     handlePreviewUnzip(fileId) {
       const file = this.filesList.find((f) => f.id === fileId);
       if (file) {
-        // Close preview modal before extraction
         this.showPreview = false;
         this.previewFileId = null;
         this.previewFileName = "";
@@ -3400,7 +3292,6 @@ export default {
 
         this.editingItemId = null;
       } catch (err) {
-        // Check if it's a 409 conflict error
         const isConflict =
           err.message &&
           (err.message.toLowerCase().includes("already exists") ||
@@ -3414,7 +3305,6 @@ export default {
           this.conflictApplyToAll = false;
           this.conflictResolution = null;
 
-          // Show conflict modal
           this.conflictData = {
             title: "Name Already Exists",
             message: `A file or folder named "${newName}" already exists in this folder.`,
@@ -3423,7 +3313,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -3639,7 +3528,6 @@ export default {
 
           allFolders.push(...folders);
 
-          // Check if there are more pages
           const totalPages = result.pagination?.pages || 1;
           hasMorePages = page < totalPages;
           page++;
@@ -3674,7 +3562,6 @@ export default {
         const zipFileName = `${folder.original_name}.zip`;
         const parentId = folder.parent_id || this.currentParentId || null;
 
-        // Check if a ZIP file with the same name already exists
         const existingZipFile = this.filesList.find(
           (f) =>
             f.mime_type === "application/zip" &&
@@ -3683,7 +3570,6 @@ export default {
         );
 
         if (existingZipFile) {
-          // Show conflict modal
           this.conflictResolution = null;
           this.conflictData = {
             title: "ZIP File Already Exists",
@@ -3693,7 +3579,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -3765,7 +3650,6 @@ export default {
     },
 
     async performZipFolder(folder, zipFileName, parentId) {
-      // Initialize ZIP progress
       this.zipping = true;
       this.zipProgress = 0;
       this.zipMessage = `Preparing ${folder.original_name}...`;
@@ -3777,7 +3661,6 @@ export default {
           this.$route.params.id,
           this.vaultspaceKey,
           (current, total, message) => {
-            // Update progress
             if (total > 0) {
               this.zipProgress = Math.round((current / total) * 100);
             } else {
@@ -3792,14 +3675,12 @@ export default {
         // Reload files to show the new ZIP file
         await this.loadFiles();
 
-        // Show success message
         if (window.Notifications) {
           window.Notifications.success(
             `Folder "${folder.original_name}" zipped successfully`,
           );
         }
       } catch (err) {
-        // Check if it's a conflict error (409)
         if (
           err.isConflict ||
           (err.message && err.message.includes("already exists"))
@@ -3807,7 +3688,6 @@ export default {
           // Reload files to get latest state
           await this.loadFiles();
 
-          // Show conflict modal again
           const fullZipFileName = `${zipFileName}.zip`;
           this.conflictResolution = null;
           this.conflictData = {
@@ -3818,7 +3698,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -3933,7 +3812,6 @@ export default {
         // Reload files to get the latest state before checking conflicts
         await this.loadFiles();
 
-        // Check if a folder with the same name already exists
         // Search in all items (files and folders)
         let existingFolder = (this.files || []).find(
           (f) =>
@@ -3964,7 +3842,6 @@ export default {
         }
 
         if (existingFolder) {
-          // Show conflict modal
           this.conflictResolution = null;
           this.conflictData = {
             title: "Folder Already Exists",
@@ -3974,7 +3851,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -3997,7 +3873,7 @@ export default {
             try {
               // Soft delete first (required before permanent delete)
               await files.delete(existingFolder.id);
-              // Then permanently delete
+
               await trash.permanentlyDelete(existingFolder.id);
               await this.loadFiles();
             } catch (deleteErr) {
@@ -4049,7 +3925,6 @@ export default {
     },
 
     async performExtractZip(zipFile, folderName) {
-      // Initialize extract progress
       this.extracting = true;
       this.extractProgress = 0;
       this.extractMessage = `Preparing extraction of ${zipFile.original_name}...`;
@@ -4062,7 +3937,6 @@ export default {
           this.vaultspaceKey,
           this.currentParentId,
           (current, total, message) => {
-            // Update progress
             if (total > 0) {
               this.extractProgress = Math.round((current / total) * 100);
             } else {
@@ -4077,14 +3951,12 @@ export default {
         // Reload files to show extracted files
         await this.loadFiles();
 
-        // Show success message
         if (window.Notifications) {
           window.Notifications.success(
             `ZIP file "${zipFile.original_name}" extracted successfully`,
           );
         }
       } catch (err) {
-        // Check if it's a conflict error (409)
         if (
           err.isConflict ||
           (err.message && err.message.includes("already exists"))
@@ -4092,7 +3964,6 @@ export default {
           // Reload files to get latest state
           await this.loadFiles();
 
-          // Show conflict modal again
           const parentId = this.currentParentId || null;
           this.conflictResolution = null;
           this.conflictData = {
@@ -4103,7 +3974,6 @@ export default {
           };
           this.showConflictModal = true;
 
-          // Wait for user decision
           await new Promise((resolve) => {
             const checkResolution = () => {
               if (this.conflictResolution) {
@@ -4137,7 +4007,7 @@ export default {
               try {
                 // Soft delete first (required before permanent delete)
                 await files.delete(existingFolder.id);
-                // Then permanently delete
+
                 await trash.permanentlyDelete(existingFolder.id);
                 await this.loadFiles();
               } catch (deleteErr) {
@@ -4201,14 +4071,12 @@ export default {
           const oldId = item.id;
           const newId = copiedFile?.id || null;
           if (oldId && newId && oldId !== newId) {
-            // Try to read existing key from local storage
             const existingKeyBase64 = await getFileKeyFromStorage(oldId);
             if (existingKeyBase64) {
               await storeFileKey(newId, existingKeyBase64);
             } else {
               // Fallback: fetch and decrypt original file key, then store for the new copy
               try {
-                // Ensure VaultSpace key is available
                 if (!this.vaultspaceKey) {
                   await this.loadVaultSpaceKey();
                 }
@@ -4353,7 +4221,6 @@ export default {
         try {
           await this.handleMove(sourceItem, targetFolderId);
 
-          // Show success notification
           if (window.Notifications) {
             window.Notifications.success(
               `${
@@ -4413,7 +4280,6 @@ export default {
         try {
           await this.handleMove(sourceItem, targetFolderId);
 
-          // Show success notification
           if (window.Notifications) {
             window.Notifications.success(
               `${
@@ -4563,7 +4429,7 @@ export default {
     async toggleStar(file) {
       try {
         const updatedFile = await files.toggleStar(file.id);
-        // Update in lists
+
         const index = this.filesList.findIndex((f) => f.id === file.id);
         if (index >= 0) {
           this.filesList[index].is_starred = updatedFile.is_starred;
@@ -4572,7 +4438,7 @@ export default {
         if (folderIndex >= 0) {
           this.folders[folderIndex].is_starred = updatedFile.is_starred;
         }
-        // Update in main files array
+
         const fileIndex = this.files.findIndex((f) => f.id === file.id);
         if (fileIndex >= 0) {
           this.files[fileIndex].is_starred = updatedFile.is_starred;
@@ -4628,7 +4494,6 @@ export default {
         return;
       }
 
-      // If only one file, download individually
       if (filesToDownload.length === 1) {
         try {
           await this.downloadFile(filesToDownload[0]);
@@ -4660,7 +4525,6 @@ export default {
         // Generate ZIP filename
         const zipFileName = generateZipFileName(timezone);
 
-        // Initialize download progress
         this.downloading = true;
         this.downloadProgress = 0;
         this.downloadSpeed = 0;
@@ -4689,10 +4553,8 @@ export default {
         a.click();
         URL.revokeObjectURL(url);
 
-        // Update progress to complete
         this.downloadProgress = 100;
 
-        // Hide progress after a short delay
         setTimeout(() => {
           this.downloadProgress = null;
           this.downloadSpeed = 0;
@@ -4725,38 +4587,43 @@ export default {
 
 <style scoped>
 .vaultspace-view {
-  min-height: 100vh;
-  padding: 2rem;
-  position: relative;
-  z-index: 1;
-}
-
-.mobile-mode .vaultspace-view {
-  padding: 1rem;
-  padding-bottom: calc(1rem + 64px);
+  flex: 1;
+  flex-direction: column;
 }
 
 .view-header {
   border-bottom: 2px solid var(--slate-gray);
   background: var(--bg-primary);
-  padding: 1rem 1.5rem;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: 1rem;
   position: sticky;
   top: 0rem;
   z-index: 10;
-  overflow: visible;
 }
 
-.mobile-mode .view-header {
-  flex-direction: column;
-  align-items: flex-start;
+.header-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
-  top: 1rem;
-  margin: 0 1rem;
+}
+
+.header-search-row {
+  width: 100%;
+}
+
+.header-search {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
 }
 
 .breadcrumb-text {
@@ -4765,14 +4632,10 @@ export default {
   white-space: nowrap;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.25rem;
-  width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(169, 183, 170, 0.3) transparent;
-  -webkit-overflow-scrolling: touch;
 }
 
 .breadcrumb-text::-webkit-scrollbar {

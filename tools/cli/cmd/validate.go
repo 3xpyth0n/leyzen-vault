@@ -20,7 +20,7 @@ var validateCmd = &cobra.Command{
 - Checking that required variables are present and non-empty
 - Verifying cryptographic secrets meet minimum length requirements (≥32 characters)`,
 	SilenceUsage: true,
-	RunE: runValidate,
+	RunE:         runValidate,
 }
 
 func init() {
@@ -36,13 +36,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	envPath := filepath.Join(repoRoot, ".env")
 	templatePath := filepath.Join(repoRoot, "env.template")
 
-	// Read env.template to get expected variables
 	templateVars, requiredVars, secretVars, err := parseTemplate(templatePath)
 	if err != nil {
 		return fmt.Errorf("failed to parse env.template: %w", err)
 	}
 
-	// Read .env file
 	envVars, err := parseEnv(envPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse .env: %w", err)
@@ -51,19 +49,16 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	errors := []string{}
 	warnings := []string{}
 
-	// Check if orchestrator is enabled
 	orchestratorEnabled := true
 	if val, exists := envVars["ORCHESTRATOR_ENABLED"]; exists {
 		val = strings.ToLower(strings.TrimSpace(val))
 		orchestratorEnabled = val == "true" || val == "1" || val == "yes" || val == "on"
 	}
 
-	// Add ORCH_USER and ORCH_PASS to required list only if orchestrator is enabled
 	if orchestratorEnabled {
 		requiredVars = append(requiredVars, "ORCH_USER", "ORCH_PASS")
 	}
 
-	// Check required variables
 	for _, reqVar := range requiredVars {
 		value, exists := envVars[reqVar]
 		if !exists || strings.TrimSpace(value) == "" {
@@ -71,7 +66,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check cryptographic secrets length (≥32 characters)
 	for _, secretVar := range secretVars {
 		value, exists := envVars[secretVar]
 		if exists && strings.TrimSpace(value) != "" {
@@ -84,40 +78,36 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for missing variables from template (warnings, not errors)
 	for templateVar := range templateVars {
 		if _, exists := envVars[templateVar]; !exists {
-			// Only warn if it's not marked as optional/advanced
 			if !templateVars[templateVar].optional {
 				warnings = append(warnings, fmt.Sprintf("Missing variable from template: %s", templateVar))
 			}
 		}
 	}
 
-	// Check for extra variables not in template (warnings)
 	for envVar := range envVars {
 		if _, exists := templateVars[envVar]; !exists {
 			warnings = append(warnings, fmt.Sprintf("Variable not in template: %s", envVar))
 		}
 	}
 
-	// Print results
 	if len(errors) > 0 {
-		fmt.Println("❌ Validation failed with errors:")
+		fmt.Println("[ERROR] Validation failed with errors:")
 		for _, err := range errors {
 			fmt.Printf("  - %s\n", err)
 		}
 	}
 
 	if len(warnings) > 0 {
-		fmt.Println("\n⚠️  Warnings:")
+		fmt.Println("\n[WARN] Warnings:")
 		for _, warn := range warnings {
 			fmt.Printf("  - %s\n", warn)
 		}
 	}
 
 	if len(errors) == 0 && len(warnings) == 0 {
-		fmt.Println("✅ Configuration validation passed!")
+		fmt.Println("Configuration validation passed!")
 		return nil
 	}
 
@@ -143,47 +133,30 @@ func parseTemplate(path string) (map[string]varInfo, []string, []string, error) 
 
 	lines := strings.Split(string(content), "\n")
 
-	// Regular expressions to extract variable names (including commented lines)
-	// This pattern matches both commented (# VAR=value) and uncommented (VAR=value) lines
 	varPattern := regexp.MustCompile(`^#?\s*([A-Z_][A-Z0-9_]*)\s*=`)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// Skip empty lines only
 		if line == "" {
 			continue
 		}
 
-		// Extract variable name (works for both commented and uncommented lines)
 		match := varPattern.FindStringSubmatch(line)
 		if len(match) > 1 {
 			varName := match[1]
 			isCommented := strings.HasPrefix(line, "#")
-			// A variable is optional if:
-			// - It's explicitly marked as optional/advanced in comments
-			// - It's commented out (has a default value)
-			isOptional := strings.Contains(line, "# Optional") || strings.Contains(line, "⚠️ Advanced") ||
+			isOptional := strings.Contains(line, "# Optional") || strings.Contains(line, "[WARN] Advanced") ||
 				isCommented
 
 			vars[varName] = varInfo{optional: isOptional}
 
-			// Only SECRET_KEY is a secret, check explicitly
-			// DOCKER_PROXY_TOKEN is auto-generated from SECRET_KEY and no longer required
 			if varName == "SECRET_KEY" {
 				secrets = append(secrets, varName)
 			}
 		}
 	}
 
-	// Synchronize with Python validation in:
-	// - src/vault/config.py::load_settings() (requires SECRET_KEY only)
-	// - src/orchestrator/config.py::_ensure_required_variables() (requires ORCH_USER, ORCH_PASS, SECRET_KEY)
-	// These variables are required at runtime and must be present and non-empty.
-	// When modifying this list, update the Python implementations to match.
-	// We only use this explicit list to avoid false positives from conditional "REQUIRED if ..." comments.
-	// Note: DOCKER_PROXY_TOKEN is no longer required - it's auto-generated from SECRET_KEY
-	// Note: ORCH_USER and ORCH_PASS are only required when ORCHESTRATOR_ENABLED=true
 	required := []string{
 		"SECRET_KEY",
 	}
@@ -203,17 +176,14 @@ func parseEnv(path string) (map[string]string, error) {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// Skip comments and empty lines
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
 
-		// Parse KEY=VALUE
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			// Remove quotes if present
 			value = strings.Trim(value, `"'`)
 			vars[key] = value
 		}

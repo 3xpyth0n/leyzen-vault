@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import mimetypes
 
-# Try to import optional libraries for content-based detection
+
 try:
     import magic
 
@@ -24,6 +24,17 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
+# Custom extension mapping for common types that might be missing from system mime database
+EXTENSION_MAPPING = {
+    ".7z": "application/x-7z-compressed",
+    ".rar": "application/x-rar-compressed",
+    ".tar": "application/x-tar",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".csv": "text/csv",
+}
+
+
 def detect_mime_type_from_extension(filename: str) -> str | None:
     """Detect MIME type from file extension using Python's mimetypes module.
 
@@ -35,6 +46,13 @@ def detect_mime_type_from_extension(filename: str) -> str | None:
     """
     if not filename:
         return None
+
+    # Try custom mapping first
+    import os
+
+    _, ext = os.path.splitext(filename.lower())
+    if ext in EXTENSION_MAPPING:
+        return EXTENSION_MAPPING[ext]
 
     mime_type, _ = mimetypes.guess_type(filename)
     return mime_type
@@ -69,7 +87,6 @@ def detect_mime_type_from_content(file_data: bytes) -> str | None:
     if not file_data:
         return None
 
-    # Try python-magic if available
     if MAGIC_AVAILABLE:
         try:
             mime = magic.Magic(mime=True)
@@ -79,7 +96,6 @@ def detect_mime_type_from_content(file_data: bytes) -> str | None:
         except Exception:
             pass
 
-    # Try PIL for images
     if PIL_AVAILABLE:
         try:
             import io

@@ -150,7 +150,6 @@ class TOTPService:
         totp = pyotp.TOTP(secret)
         is_valid = totp.verify(token, valid_window=window)
 
-        # If valid, mark token as used
         if is_valid:
             self._used_tokens[cache_key] = current_time
 

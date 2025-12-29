@@ -126,18 +126,15 @@ function getExtension(filename) {
  * @returns {string} Normalized mime type
  */
 export function normalizeMimeType(filename, mimeType) {
-  // If mime type is not generic, return it as-is
   if (mimeType && !GENERIC_MIME_TYPES.includes(mimeType)) {
     return mimeType;
   }
 
-  // Try to detect from extension
   const extension = getExtension(filename);
   if (extension && EXTENSION_TO_MIME_TYPE[extension]) {
     return EXTENSION_TO_MIME_TYPE[extension];
   }
 
-  // Fallback to provided mime type or generic
   return mimeType || "application/octet-stream";
 }
 

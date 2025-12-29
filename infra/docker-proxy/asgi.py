@@ -13,7 +13,7 @@ from uvicorn.middleware.wsgi import WSGIMiddleware  # type: ignore[import-not-fo
 # Bootstrap minimal to enable importing common.path_setup
 # This must be done before importing common modules
 # Standard pattern: Manually add src/ to sys.path, then use bootstrap_entry_point()
-# Note: This local calculation is ONLY needed for the initial bootstrap before
+
 # common.constants can be imported. After bootstrap, use SRC_DIR from common.constants.
 # In Docker, /common is mounted as a volume, so we check that first.
 _COMMON_DIR = Path("/common")

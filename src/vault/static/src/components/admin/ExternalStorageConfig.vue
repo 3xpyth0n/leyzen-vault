@@ -61,9 +61,8 @@
       </div>
     </div>
 
-    <!-- Configuration Modal -->
-    <teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+    <Teleport v-if="showModal" to="body">
+      <div class="modal-overlay" @click.self="closeModal">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
@@ -167,9 +166,8 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
-    <!-- Success Alert Modal -->
     <AlertModal
       :show="showAlertModal"
       :type="alertModalConfig.type"
@@ -179,13 +177,8 @@
       @ok="handleAlertModalClose"
     />
 
-    <!-- Sync Modes Info Modal -->
-    <teleport to="body">
-      <div
-        v-if="showInfoModal"
-        class="modal-overlay"
-        @click.self="closeInfoModal"
-      >
+    <Teleport v-if="showInfoModal" to="body">
+      <div class="modal-overlay" @click.self="closeInfoModal">
         <div class="modal" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
@@ -240,7 +233,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
   </div>
 </template>
 
@@ -263,16 +256,6 @@ export default {
     const testing = ref(false);
     const testResult = ref(null);
     const testSuccessful = ref(false);
-
-    // Watch for storage mode changes
-    watch(
-      () => config.value.storage_mode,
-      (newMode) => {
-        testSuccessful.value = newMode === "local";
-        testResult.value = null;
-        onStorageModeChange();
-      },
-    );
     const saveResult = ref(null);
     const showModal = ref(false);
     const originalConfig = ref(null); // Store original config when opening modal
@@ -283,10 +266,14 @@ export default {
       message: "",
     });
     const syncing = ref(false);
-    let syncStatusInterval = null; // Interval for polling sync status
     const selectedSyncMode = ref("bidirectional"); // Default sync mode
     const showInfoModal = ref(false); // Control info modal visibility
     const showSecretKey = ref(false); // Control secret key visibility
+    const config = ref({
+      storage_mode: "local",
+    });
+
+    let syncStatusInterval = null; // Interval for polling sync status
 
     // Store the logo path in a variable to avoid Vite treating it as a module import
     // The binding :src in the template should prevent Vite from resolving it at build time
@@ -306,9 +293,20 @@ export default {
       { label: "Download from S3", value: "from_s3" },
     ];
 
-    const config = ref({
-      storage_mode: "local",
-    });
+    const onStorageModeChange = () => {
+      testResult.value = null;
+      saveResult.value = null;
+    };
+
+    // Watch for storage mode changes
+    watch(
+      () => config.value.storage_mode,
+      (newMode) => {
+        testSuccessful.value = newMode === "local";
+        testResult.value = null;
+        onStorageModeChange();
+      },
+    );
 
     const loadConfig = async () => {
       loading.value = true;
@@ -319,18 +317,13 @@ export default {
         config.value = {
           storage_mode: response.storage_mode || "local",
         };
-        // If mode is local, it's considered "successful" by default for the save button
+
         testSuccessful.value = config.value.storage_mode === "local";
       } catch (err) {
         error.value = err.message || "Failed to load configuration";
       } finally {
         loading.value = false;
       }
-    };
-
-    const onStorageModeChange = () => {
-      testResult.value = null;
-      saveResult.value = null;
     };
 
     const testConnection = async () => {
@@ -381,13 +374,11 @@ export default {
 
         // Reload config to get updated values
         await loadConfig(false);
-        // Update originalConfig to reflect the saved state
+
         originalConfig.value = JSON.parse(JSON.stringify(config.value));
 
-        // Close modal immediately on success
         await closeModal();
 
-        // Show success alert modal
         showAlert({
           type: "success",
           title: "Success",
@@ -427,7 +418,6 @@ export default {
       // Both Access Key ID and Secret Access Key will be loaded from server (decrypted)
       await loadConfig(false);
 
-      // Update originalConfig after loading to reflect the current state
       originalConfig.value = JSON.parse(JSON.stringify(config.value));
     };
 
@@ -461,14 +451,11 @@ export default {
         const status = await admin.getExternalStorageStatus();
         syncing.value = status.sync_running || false;
 
-        // If sync is no longer running, stop polling
         if (!status.sync_running && syncStatusInterval) {
           clearInterval(syncStatusInterval);
           syncStatusInterval = null;
         }
-      } catch (err) {
-        // If status check fails, don't change syncing state
-      }
+      } catch (err) {}
     };
 
     const showAlert = (config) => {
@@ -509,7 +496,7 @@ export default {
     onMounted(() => {
       // Load config on mount to show status in card
       loadConfig();
-      // Check sync status on mount to see if sync is already running
+
       checkSyncStatus();
       // Start polling sync status every 2 seconds
       syncStatusInterval = setInterval(checkSyncStatus, 2000);

@@ -55,7 +55,6 @@ def get_postgres_url(
 
         postgres_user = "leyzen_app"
 
-        # Try to get password from SystemSecrets
         postgres_password = None
         if app and secret_key:
             try:
@@ -175,7 +174,7 @@ def load_settings() -> VaultSettings:
     )
 
     # SECURITY: Validate session cookie security for HTTPS deployments
-    # If HTTPS is enabled (via ENABLE_HTTPS), SESSION_COOKIE_SECURE should be True
+
     enable_https = parse_bool(env_values.get("ENABLE_HTTPS"), default=False)
     if enable_https and not session_cookie_secure:
         import warnings
@@ -271,13 +270,13 @@ def load_settings() -> VaultSettings:
     )
 
     # Max total storage size in MB (optional - controls tmpfs size)
-    # If not set, uses actual disk size detected at runtime
+
     max_total_size_mb = None
     if "VAULT_MAX_TOTAL_SIZE_MB" in env_values:
         max_total_size_mb_raw = env_values.get("VAULT_MAX_TOTAL_SIZE_MB", "").strip()
         if max_total_size_mb_raw:
             # Use a sentinel value to detect if parsing failed
-            # If the value is invalid, parse_int_env_var will return 0, which we'll ignore
+
             parsed_value = parse_int_env_var(
                 "VAULT_MAX_TOTAL_SIZE_MB", 0, env_values, min_value=1
             )
@@ -335,7 +334,7 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
             pass
 
         # Check if we're already in an app context (e.g., from a Flask route)
-        # If so, use the existing context instead of creating a new one
+
         if has_app_context():
             # Already in app context - use it directly
             try:
@@ -364,7 +363,7 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                     app_logger.error(error_msg)
                 else:
                     logger.error(error_msg, exc_info=True)
-                # Try to rollback any failed transaction
+
                 try:
                     db.session.rollback()
                 except Exception:
@@ -397,7 +396,7 @@ def is_setup_complete(app, quiet: bool = False) -> bool:
                         app_logger.error(error_msg)
                     else:
                         logger.error(error_msg, exc_info=True)
-                    # Try to rollback any failed transaction
+
                     try:
                         db.session.rollback()
                     except Exception:

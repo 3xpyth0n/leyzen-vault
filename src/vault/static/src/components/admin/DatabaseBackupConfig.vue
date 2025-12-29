@@ -56,8 +56,8 @@
     </div>
 
     <!-- Configuration Modal -->
-    <teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+    <Teleport v-if="showModal" to="body">
+      <div class="modal-overlay" @click.self="closeModal">
         <div class="modal modal-wide" @click.stop>
           <div class="modal-header">
             <div class="modal-title">
@@ -135,11 +135,22 @@
                     <div class="form-group">
                       <label>Cron Expression:</label>
                       <input
-                        v-model="config.cron_expression"
+                        :value="config.cron_expression"
+                        @input="handleCronInput"
                         type="text"
                         placeholder="0 2 * * * (daily at 2 AM)"
                         class="form-input"
                       />
+                      <div v-if="isCronLoading" class="cron-status loading">
+                        <span class="spinner-small"></span>
+                        Calculating next run...
+                      </div>
+                      <div v-else-if="cronError" class="cron-status error">
+                        {{ cronError }}
+                      </div>
+                      <div v-else-if="cronInfo" class="cron-status info">
+                        {{ cronInfo }}
+                      </div>
                       <div class="form-help">
                         Cron expression for backup schedule. Examples:
                         <ul>
@@ -531,7 +542,7 @@
           </div>
         </div>
       </div>
-    </teleport>
+    </Teleport>
 
     <!-- Alert Modal -->
     <AlertModal
@@ -550,11 +561,12 @@
 
 <script>
 import { ref, onMounted, computed, watch, nextTick, onUnmounted } from "vue";
-import { admin, config as configApi } from "../../services/api";
+import { admin, config as configApi, cron } from "../../services/api";
 import CustomSelect from "../CustomSelect.vue";
 import AlertModal from "../AlertModal.vue";
 import MaintenanceModal from "../MaintenanceModal.vue";
 import { useHealthCheck } from "../../composables/useHealthCheck";
+import { debounce } from "../../utils/debounce";
 
 export default {
   name: "DatabaseBackupConfig",
@@ -573,10 +585,188 @@ export default {
     const backupsError = ref(null);
     const backups = ref([]);
 
+    // Cron description state
+    const cronInfo = ref(null);
+    const cronError = ref(null);
+    const isCronLoading = ref(false);
+
     // Cache for backups list
     const BACKUPS_CACHE_TTL = 120000; // 120 seconds
     const backupsCache = ref(null);
     const backupsCacheTimestamp = ref(null);
+
+    // Timezone state
+    const timezone = ref("UTC");
+
+    // Indicator and Tab state
+    const tabsContainer = ref(null);
+    const indicator = ref(null);
+    const tabRefs = ref({});
+    const indicatorStyle = ref({
+      left: "0px",
+      width: "0px",
+    });
+    let resizeObserver = null;
+
+    // Config state
+    const config = ref({
+      enabled: false,
+      cron_expression: "",
+      storage_type: "local",
+      retention_policy: { type: "count", value: 10 },
+    });
+
+    const retentionType = ref("count");
+    const retentionValue = ref(10);
+
+    // Manual backup state
+    const manualBackupStorage = ref("local");
+    const manualBackupStorageOptions = [
+      { label: "Local", value: "local" },
+      { label: "S3", value: "s3" },
+      { label: "Both", value: "both" },
+    ];
+
+    // Restore state
+    const restoreSearchQuery = ref("");
+    const restoreFilters = ref({
+      type: "all",
+      status: "completed",
+      storage: "all",
+    });
+    const restoreSortBy = ref("created_at");
+    const restoreSortOrder = ref("desc");
+    const restorePage = ref(1);
+    const restorePageSize = ref(5);
+    const selectedBackupId = ref(null);
+    const restoreRunning = ref(false);
+    const previousRestoreRunning = ref(false);
+    const hasStartedRestore = ref(false);
+
+    // UI State
+    const showAlertModal = ref(false);
+    const alertModalConfig = ref({
+      type: "success",
+      title: "Success",
+      message: "",
+    });
+    const saveResult = ref(null);
+    const deletingBackup = ref(null);
+    const backupRunning = ref(false);
+
+    // Constants
+    const dbLogoPath = "/static/public/database-backup.png";
+    const storageTypeOptions = [
+      { label: "Local", value: "local" },
+      { label: "S3", value: "s3" },
+      { label: "Both", value: "both" },
+    ];
+    const retentionTypeOptions = [
+      { label: "Count", value: "count" },
+      { label: "Days", value: "days" },
+    ];
+    const backupTypeFilterOptions = [
+      { label: "All types", value: "all" },
+      { label: "Manual", value: "manual" },
+      { label: "Scheduled", value: "scheduled" },
+    ];
+    const backupStatusFilterOptions = [
+      { label: "All statuses", value: "all" },
+      { label: "Completed", value: "completed" },
+      { label: "Running", value: "running" },
+      { label: "Pending", value: "pending" },
+      { label: "Failed", value: "failed" },
+    ];
+    const backupStorageFilterOptions = [
+      { label: "All storage", value: "all" },
+      { label: "Local", value: "local" },
+      { label: "S3", value: "s3" },
+      { label: "Both", value: "both" },
+    ];
+    const pageSizeOptions = [
+      { label: "5", value: 5 },
+      { label: "10", value: 10 },
+      { label: "25", value: 25 },
+      { label: "50", value: 50 },
+      { label: "100", value: 100 },
+    ];
+
+    // Helper functions (defined early)
+    const formatDate = (dateString) => {
+      if (!dateString) return "Unknown";
+      try {
+        // Get current timezone value (ensure we have the latest value)
+        const tz = timezone.value || "UTC";
+
+        // Normalize the date string to ensure UTC interpretation
+        let dateStr = String(dateString).trim();
+        // Replace +00:00 with Z for better compatibility
+        dateStr = dateStr.replace(/\+00:00$/, "Z");
+        // If no timezone info, assume UTC
+        if (!dateStr.endsWith("Z") && !dateStr.match(/[+-]\d{2}:\d{2}$/)) {
+          dateStr = dateStr + "Z";
+        }
+        const date = new Date(dateStr);
+        // Verify the date is valid
+        if (isNaN(date.getTime())) {
+          return "Invalid date";
+        }
+        // Format with the specified timezone
+        return new Intl.DateTimeFormat("en-GB", {
+          timeZone: tz,
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(date);
+      } catch (err) {
+        return "Invalid date";
+      }
+    };
+
+    const formatSize = (bytes) => {
+      if (!bytes) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+    };
+
+    const formatStatus = (status) => {
+      if (status === "completed") {
+        return "available";
+      }
+      return status;
+    };
+
+    const getStatusText = () => {
+      if (!config.value) {
+        return "Disabled";
+      }
+      // Check if backup is actually configured (enabled AND has cron_expression)
+      const isConfigured =
+        config.value.enabled &&
+        config.value.cron_expression &&
+        config.value.cron_expression.trim() !== "";
+      return isConfigured ? "Enabled" : "Disabled";
+    };
+
+    const getIcon = (name, size = 24) => {
+      if (!window.Icons) {
+        return "";
+      }
+      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
+        return window.Icons.getIcon(name, size, "currentColor");
+      }
+      const iconFn = window.Icons[name];
+      if (typeof iconFn === "function") {
+        return iconFn.call(window.Icons, size, "currentColor");
+      }
+      return "";
+    };
 
     const inferStorageTargets = (backup) => {
       const metadata = backup.metadata || {};
@@ -600,6 +790,37 @@ export default {
         local: hasLocal,
         s3: hasS3,
       };
+    };
+
+    const inferStorageType = (backup) => {
+      const storageTargets = inferStorageTargets(backup);
+      if (storageTargets.local && storageTargets.s3) {
+        return "Both";
+      }
+      if (storageTargets.s3) {
+        return "S3";
+      }
+      return "Local";
+    };
+
+    const getStorageLabelShort = (targets) => {
+      if (targets?.local && targets?.s3) {
+        return "Both";
+      }
+      if (targets?.s3) {
+        return "S3";
+      }
+      return "Local";
+    };
+
+    const getStorageLabel = (targets) => {
+      if (targets?.local && targets?.s3) {
+        return "Stored in: local & S3";
+      }
+      if (targets?.s3) {
+        return "Stored in: S3";
+      }
+      return "Stored in: local";
     };
 
     const dedupedBackups = computed(() => {
@@ -650,130 +871,12 @@ export default {
 
       return Array.from(groups.values()).map(({ _ts, ...rest }) => rest);
     });
+
     // Use health check stream for restore status
     const {
       restoreRunning: streamRestoreRunning,
       restoreError: streamRestoreError,
     } = useHealthCheck();
-
-    const deletingBackup = ref(null);
-    const backupRunning = ref(false);
-    const restoreRunning = ref(false);
-    const selectedBackupId = ref(null);
-    const showAlertModal = ref(false);
-    const alertModalConfig = ref({
-      type: "success",
-      title: "Success",
-      message: "",
-    });
-    const saveResult = ref(null);
-
-    // Tab indicator refs and state
-    const tabsContainer = ref(null);
-    const indicator = ref(null);
-    const tabRefs = ref({});
-    const indicatorStyle = ref({
-      left: "0px",
-      width: "0px",
-    });
-    let resizeObserver = null;
-
-    // Store the logo path in a variable to avoid Vite treating it as a module import
-    const dbLogoPath = "/static/public/database-backup.png";
-
-    const config = ref({
-      enabled: false,
-      cron_expression: "",
-      storage_type: "local",
-      retention_policy: { type: "count", value: 10 },
-    });
-
-    const retentionType = ref("count");
-    const retentionValue = ref(10);
-
-    // Manual backup storage selection
-    const manualBackupStorage = ref("local");
-    const manualBackupStorageOptions = [
-      { label: "Local", value: "local" },
-      { label: "S3", value: "s3" },
-      { label: "Both", value: "both" },
-    ];
-
-    const storageTypeOptions = [
-      { label: "Local", value: "local" },
-      { label: "S3", value: "s3" },
-      { label: "Both", value: "both" },
-    ];
-
-    const retentionTypeOptions = [
-      { label: "Count", value: "count" },
-      { label: "Days", value: "days" },
-    ];
-
-    // Declare timezone before using it in computed
-    const timezone = ref("UTC");
-
-    // Restore tab state
-    const restoreSearchQuery = ref("");
-    const restoreFilters = ref({
-      type: "all",
-      status: "completed",
-      storage: "all",
-    });
-    const restoreSortBy = ref("created_at");
-    const restoreSortOrder = ref("desc");
-    const restorePage = ref(1);
-    const restorePageSize = ref(5);
-
-    const backupTypeFilterOptions = [
-      { label: "All types", value: "all" },
-      { label: "Manual", value: "manual" },
-      { label: "Scheduled", value: "scheduled" },
-    ];
-
-    const backupStatusFilterOptions = [
-      { label: "All statuses", value: "all" },
-      { label: "Completed", value: "completed" },
-      { label: "Running", value: "running" },
-      { label: "Pending", value: "pending" },
-      { label: "Failed", value: "failed" },
-    ];
-
-    const backupStorageFilterOptions = [
-      { label: "All storage", value: "all" },
-      { label: "Local", value: "local" },
-      { label: "S3", value: "s3" },
-      { label: "Both", value: "both" },
-    ];
-
-    const pageSizeOptions = [
-      { label: "5", value: 5 },
-      { label: "10", value: 10 },
-      { label: "25", value: 25 },
-      { label: "50", value: 50 },
-      { label: "100", value: 100 },
-    ];
-
-    const inferStorageType = (backup) => {
-      const storageTargets = inferStorageTargets(backup);
-      if (storageTargets.local && storageTargets.s3) {
-        return "Both";
-      }
-      if (storageTargets.s3) {
-        return "S3";
-      }
-      return "Local";
-    };
-
-    const getStorageLabelShort = (targets) => {
-      if (targets?.local && targets?.s3) {
-        return "Both";
-      }
-      if (targets?.s3) {
-        return "S3";
-      }
-      return "Local";
-    };
 
     const filteredAndSortedBackups = computed(() => {
       let filtered = [...backups.value];
@@ -903,6 +1006,11 @@ export default {
           retentionType.value = response.retention_policy.type || "count";
           retentionValue.value = response.retention_policy.value || 10;
         }
+
+        // Fetch cron description on load
+        if (config.value.cron_expression) {
+          fetchCronDescription(config.value.cron_expression);
+        }
       } catch (err) {
         error.value = err.message || "Failed to load configuration";
       } finally {
@@ -950,6 +1058,53 @@ export default {
       backups.value = backups.value.filter((b) => b.id !== backupId);
     };
 
+    const handleCronInput = (event) => {
+      let value = event.target.value;
+
+      // Only allow: digits, *, /, -, , and space
+      // Remove everything else
+      value = value.replace(/[^0-9*\/\,\- ]/g, "");
+
+      // Replace multiple spaces with a single space
+      value = value.replace(/\s\s+/g, " ");
+
+      // Update the reactive state
+      if (config.value) {
+        config.value.cron_expression = value;
+      }
+
+      // Ensure the input field matches the sanitized value
+      event.target.value = value;
+    };
+
+    const fetchCronDescription = async (expression) => {
+      if (!expression || expression.trim() === "") {
+        cronInfo.value = null;
+        cronError.value = null;
+        return;
+      }
+
+      isCronLoading.value = true;
+      cronError.value = null;
+      try {
+        const data = await cron.describe(expression);
+        if (data && data.description) {
+          cronInfo.value = data.description;
+        } else {
+          cronInfo.value = null;
+        }
+      } catch (err) {
+        cronError.value = err.message;
+        cronInfo.value = null;
+      } finally {
+        isCronLoading.value = false;
+      }
+    };
+
+    const debouncedFetchCronDescription = debounce((expression) => {
+      fetchCronDescription(expression);
+    }, 500);
+
     const loadBackups = async () => {
       // Check if cache is valid
       const now = Date.now();
@@ -985,6 +1140,19 @@ export default {
     };
 
     const saveConfig = async () => {
+      // Validate cron expression before saving if enabled
+      if (config.value.enabled) {
+        const cronRegex =
+          /^(\s*(\*|\d+)([\/,-](\*|\d+))*\s*)(\s+(\*|\d+)([\/,-](\*|\d+))*){0,4}$/;
+        if (!cronRegex.test(config.value.cron_expression.trim())) {
+          saveResult.value = {
+            success: false,
+            message: "Invalid cron syntax. Please correct it before saving.",
+          };
+          return;
+        }
+      }
+
       saving.value = true;
       saveResult.value = null;
 
@@ -1083,9 +1251,6 @@ export default {
     };
 
     // Track previous restore running state to detect completion
-    const previousRestoreRunning = ref(false);
-    const hasStartedRestore = ref(false);
-
     // Sync local restoreRunning with stream data and detect completion
     watch(
       streamRestoreRunning,
@@ -1268,6 +1433,13 @@ export default {
       }
     });
 
+    watch(
+      () => config.value?.cron_expression,
+      (newVal) => {
+        debouncedFetchCronDescription(newVal);
+      },
+    );
+
     const showAlert = (config) => {
       alertModalConfig.value = {
         type: config.type || "success",
@@ -1279,92 +1451,6 @@ export default {
 
     const handleAlertModalClose = () => {
       showAlertModal.value = false;
-    };
-
-    const formatDate = (dateString) => {
-      if (!dateString) return "Unknown";
-      try {
-        // Get current timezone value (ensure we have the latest value)
-        const tz = timezone.value || "UTC";
-
-        // Normalize the date string to ensure UTC interpretation
-        let dateStr = String(dateString).trim();
-        // Replace +00:00 with Z for better compatibility
-        dateStr = dateStr.replace(/\+00:00$/, "Z");
-        // If no timezone info, assume UTC
-        if (!dateStr.endsWith("Z") && !dateStr.match(/[+-]\d{2}:\d{2}$/)) {
-          dateStr = dateStr + "Z";
-        }
-        const date = new Date(dateStr);
-        // Verify the date is valid
-        if (isNaN(date.getTime())) {
-          return "Invalid date";
-        }
-        // Format with the specified timezone
-        return new Intl.DateTimeFormat("en-GB", {
-          timeZone: tz,
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }).format(date);
-      } catch (err) {
-        return "Invalid date";
-      }
-    };
-
-    const formatSize = (bytes) => {
-      if (!bytes) return "0 B";
-      const k = 1024;
-      const sizes = ["B", "KB", "MB", "GB"];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-    };
-
-    const getStorageLabel = (targets) => {
-      if (targets?.local && targets?.s3) {
-        return "Stored in: local & S3";
-      }
-      if (targets?.s3) {
-        return "Stored in: S3";
-      }
-      return "Stored in: local";
-    };
-
-    const formatStatus = (status) => {
-      if (status === "completed") {
-        return "available";
-      }
-      return status;
-    };
-
-    const getStatusText = () => {
-      if (!config.value) {
-        return "Disabled";
-      }
-      // Check if backup is actually configured (enabled AND has cron_expression)
-      const isConfigured =
-        config.value.enabled &&
-        config.value.cron_expression &&
-        config.value.cron_expression.trim() !== "";
-      return isConfigured ? "Enabled" : "Disabled";
-    };
-
-    const getIcon = (name, size = 24) => {
-      if (!window.Icons) {
-        return "";
-      }
-      if (window.Icons.getIcon && typeof window.Icons.getIcon === "function") {
-        return window.Icons.getIcon(name, size, "currentColor");
-      }
-      const iconFn = window.Icons[name];
-      if (typeof iconFn === "function") {
-        return iconFn.call(window.Icons, size, "currentColor");
-      }
-      return "";
     };
 
     const setTabRef = (el, tabId) => {
@@ -1522,9 +1608,13 @@ export default {
       backupRunning,
       restoreRunning,
       selectedBackupId,
+      cronInfo,
+      cronError,
+      isCronLoading,
       showAlertModal,
       alertModalConfig,
       saveResult,
+      handleCronInput,
       loadConfig,
       loadTimezone,
       saveConfig,
@@ -1865,12 +1955,6 @@ export default {
   color: var(--text-primary);
   font-size: 1.1rem;
   font-weight: 600;
-}
-
-/* Form styles use global .form-group and .input from vault.css */
-.form-input,
-.form-select {
-  /* Use global .input styles from vault.css */
 }
 
 .form-help {
@@ -2832,6 +2916,49 @@ export default {
 
   .backup-item {
     padding: 0.75rem;
+  }
+}
+
+/* Cron status styles */
+.cron-status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+}
+
+.cron-status.loading {
+  color: var(--text-primary);
+  background: rgba(var(--slate-grey-rgb, 100, 116, 139), 0.1);
+}
+
+.cron-status.error {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.cron-status.info {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(var(--text-primary-rgb, 255, 255, 255), 0.3);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

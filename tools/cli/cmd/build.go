@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -11,10 +12,25 @@ import (
 
 func init() {
 	buildCmd := &cobra.Command{
-		Use:   "build",
-		Short: "Rebuild and start the Leyzen Vault Docker stack",
+		Use:          "build [services...]",
+		Short:        "Rebuild and start the Leyzen Vault Docker stack or specific services",
+		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				color.HiCyan("Rebuilding services: %s...", strings.Join(args, ", "))
+				// Always regenerate configuration to ensure latest changes are applied
+				if err := internal.RunBuildScript(EnvFilePath()); err != nil {
+					return fmt.Errorf("failed to generate configuration: %w", err)
+				}
+				composeArgs := append([]string{"up", "-d", "--build", "--remove-orphans"}, args...)
+				if err := internal.RunCompose(EnvFilePath(), composeArgs...); err != nil {
+					return fmt.Errorf("failed to rebuild services: %w", err)
+				}
+				color.HiGreen("✓ Successfully rebuilt services")
+				return nil
+			}
+
 			// Stop containers before building
 			color.HiYellow("Stopping Docker stack...")
 			if err := internal.RunCompose(EnvFilePath(), "down", "--remove-orphans"); err != nil {

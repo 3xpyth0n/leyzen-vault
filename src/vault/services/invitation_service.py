@@ -56,11 +56,10 @@ class InvitationService:
         Raises:
             ValueError: If VAULT_URL is not configured (required for security)
         """
-        # If base_url is provided, use it
+
         if base_url:
             return base_url.rstrip("/")
 
-        # Try to get from VAULT_SETTINGS
         try:
             settings = current_app.config.get("VAULT_SETTINGS")
             if settings and hasattr(settings, "vault_url") and settings.vault_url:
@@ -205,7 +204,7 @@ class InvitationService:
         # Check if user already exists
         existing_user = db.session.query(User).filter_by(email=invitation.email).first()
         if existing_user:
-            # If user exists, cannot accept invitation (user already exists)
+
             # Mark invitation as accepted anyway
             invitation.accepted_at = datetime.now(timezone.utc)
             db.session.commit()

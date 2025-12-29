@@ -36,7 +36,7 @@ if [ -S "$SOCKET_PATH" ]; then
     # Get the socket's group ID
     if SOCK_GID=$(stat -c '%g' "$SOCKET_PATH" 2>/dev/null); then
         if [ -n "$SOCK_GID" ]; then
-            # Try to find an existing group with this GID
+
             EXISTING_GROUP=$(find_group_by_gid "$SOCK_GID")
 
             # If no group exists with this GID, try to create one

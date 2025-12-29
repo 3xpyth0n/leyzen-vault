@@ -1,7 +1,4 @@
-/* Import vault.css for CSS variables and global styles */
 @import url("../../vault.css");
-
-/* Vue.js specific global styles */
 
 #app {
   position: relative;
@@ -13,7 +10,6 @@
   color: inherit;
 }
 
-/* Mobile mode modal adjustments */
 .mobile-mode .modal {
   min-width: auto !important;
   max-width: 90vw !important;
@@ -29,29 +25,24 @@
   width: 100%;
 }
 
-/* Folder picker modal specific styles */
 .folder-picker-modal {
   max-width: 500px !important;
 }
 
-/* Vue Router page transition animations */
 .page-enter-active,
 .page-leave-active {
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
 }
 
 .page-enter-from {
   opacity: 0;
-  transform: translateY(10px);
 }
 
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
 }
 
-/* Optimize for GPU acceleration */
 .page-enter-active,
 .page-leave-active,
 .page-enter-from,

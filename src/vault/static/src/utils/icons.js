@@ -132,21 +132,17 @@ const FILE_ICON_MAP = {
 function getLucideIcon(iconName) {
   if (!iconName) return null;
 
-  // Try mapped name first
   const mappedName = ICON_NAME_MAP[iconName] || iconName;
 
-  // Try direct name in lucideIcons
   if (lucideIcons[mappedName]) {
     return lucideIcons[mappedName];
   }
 
-  // Try with PascalCase
   const pascalName = mappedName.charAt(0).toUpperCase() + mappedName.slice(1);
   if (lucideIcons[pascalName]) {
     return lucideIcons[pascalName];
   }
 
-  // Try with different casing
   for (const key in lucideIcons) {
     if (key.toLowerCase() === mappedName.toLowerCase()) {
       return lucideIcons[key];
@@ -168,10 +164,8 @@ export function getIcon(iconName, size = 24, color = "currentColor") {
     return "";
   }
 
-  // Try to generate SVG directly using the icon name
   const svg = generateSVG(iconName, size, color);
 
-  // If we got an empty or invalid SVG, return empty string
   if (
     !svg ||
     !svg.trim() ||
@@ -199,7 +193,6 @@ export function getIcon(iconName, size = 24, color = "currentColor") {
 function generateSVG(iconNameOrComponent, size, color) {
   // Use Vue render to generate SVG HTML string
   try {
-    // Check if Vue is available
     if (typeof h === "undefined" || typeof render === "undefined") {
       throw new Error("Vue is not available");
     }
@@ -215,7 +208,6 @@ function generateSVG(iconNameOrComponent, size, color) {
       iconName =
         iconNameOrComponent.name || iconNameOrComponent.displayName || "";
     } else {
-      // If it's the mapped name, try to find the actual icon name
       // For now, just return empty
       throw new Error("Invalid icon name or component");
     }
@@ -226,7 +218,6 @@ function generateSVG(iconNameOrComponent, size, color) {
     // Find the Vue component from lucide-vue-next
     let VueIconComponent = null;
 
-    // Try multiple search strategies
     // 1. Try direct name first (exact match)
     if (mappedName && lucideVue[mappedName]) {
       VueIconComponent = lucideVue[mappedName];
@@ -305,7 +296,6 @@ function generateSVG(iconNameOrComponent, size, color) {
       }
     }
 
-    // If we found a Vue component, use render to get SVG HTML
     if (VueIconComponent) {
       const tempDiv = document.createElement("div");
 
@@ -316,7 +306,6 @@ function generateSVG(iconNameOrComponent, size, color) {
         strokeWidth: 2,
       });
 
-      // Render the vnode to the temporary div
       render(vnode, tempDiv);
 
       // Get the SVG HTML
@@ -350,7 +339,6 @@ export function getFileIconName(mimeType, fileName) {
 
   const ext = fileName ? fileName.split(".").pop()?.toLowerCase() || "" : "";
 
-  // Check mime type first
   if (mimeType && typeof mimeType === "string") {
     // Images
     if (mimeType.startsWith("image/")) {
@@ -402,7 +390,9 @@ export function getFileIconName(mimeType, fileName) {
     // ZIP archives
     if (
       mimeType === "application/zip" ||
-      mimeType === "application/x-zip-compressed"
+      mimeType === "application/x-zip-compressed" ||
+      mimeType === "application/x-7z-compressed" ||
+      mimeType === "application/x-tar"
     ) {
       return "zip";
     }
@@ -411,8 +401,6 @@ export function getFileIconName(mimeType, fileName) {
     if (
       mimeType === "application/x-rar-compressed" ||
       mimeType === "application/x-rar" ||
-      mimeType === "application/x-7z-compressed" ||
-      mimeType === "application/x-tar" ||
       mimeType === "application/gzip" ||
       mimeType === "application/x-gzip"
     ) {
@@ -480,7 +468,6 @@ export function getFileIconName(mimeType, fileName) {
     }
   }
 
-  // Fallback to extension if mime type not recognized
   if (ext) {
     // Images
     if (
@@ -539,11 +526,11 @@ export function getFileIconName(mimeType, fileName) {
     }
 
     // Archives
-    if (ext === "zip") {
+    if (["zip", "7z", "tar"].includes(ext)) {
       return "zip";
     }
 
-    if (["rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext)) {
+    if (["rar", "gz", "bz2", "xz"].includes(ext)) {
       return "archive";
     }
 
@@ -653,7 +640,6 @@ export function getAllIconNames() {
       const skipList = ["createLucideIcon", "Icon", "lucide", "createElement"];
       if (skipList.includes(name)) continue;
 
-      // Check if it's a valid icon component
       const component = lucideVue[name];
       if (!component) continue;
       if (typeof component !== "function" && typeof component !== "object")
@@ -733,7 +719,6 @@ export function searchIcons(query) {
   );
 }
 
-// Export for use in window object (backward compatibility)
 if (typeof window !== "undefined") {
   window.Icons = {
     getIcon,

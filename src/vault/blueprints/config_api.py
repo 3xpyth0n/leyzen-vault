@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from flask import Blueprint, current_app, jsonify
 from vault.config import is_setup_complete
 from vault.extensions import csrf
@@ -21,11 +20,14 @@ def get_config():
         password_authentication_enabled (public), and orchestrator_enabled (admin only)
     """
     try:
+        from common.env import load_env_with_priority
         from vault.database.schema import SystemSettings, db
+
+        # Load environment values with proper priority (.env file overrides os.environ)
+        env_values = load_env_with_priority()
 
         # Get setup status
         setup_complete = is_setup_complete(current_app)
-        current_app.logger.info(f"Setup check: {setup_complete}")
 
         # Get all auth-related settings
         settings_query = (
@@ -51,8 +53,8 @@ def get_config():
                 settings_dict["password_authentication_enabled"].lower() == "true"
             )
 
-        # Get timezone directly from os.environ (Docker container env vars)
-        timezone_env = os.environ.get("TIMEZONE")
+        # Get timezone from env_values (handles .env overrides)
+        timezone_env = env_values.get("TIMEZONE")
         timezone = str(timezone_env).strip() if timezone_env else "UTC"
         if not timezone:
             timezone = "UTC"
@@ -62,8 +64,8 @@ def get_config():
         if settings and hasattr(settings, "vault_url") and settings.vault_url:
             vault_url = settings.vault_url.rstrip("/")
         else:
-            # Fallback to environment variable if not in settings
-            vault_url_env = os.environ.get("VAULT_URL")
+            # Fallback to env_values if not in settings
+            vault_url_env = env_values.get("VAULT_URL")
             if vault_url_env:
                 vault_url = str(vault_url_env).strip().rstrip("/")
                 if not vault_url:
@@ -72,10 +74,10 @@ def get_config():
         # Get IS_PRODUCTION from app config (set during app initialization)
         is_production = current_app.config.get("IS_PRODUCTION", True)
 
-        # Get orchestrator_enabled from env var (default: False)
+        # Get orchestrator_enabled from env_values (handles .env overrides)
         # This is the ONLY source of truth for this feature flag
         orchestrator_enabled = (
-            os.environ.get("ORCHESTRATOR_ENABLED", "false").lower() == "true"
+            env_values.get("ORCHESTRATOR_ENABLED", "false").lower() == "true"
         )
 
         # Build the response object carefully to avoid any serialization issues
@@ -92,7 +94,7 @@ def get_config():
 
         return jsonify(result)
     except Exception as e:
-        # If there's an error, return basic config and default to production
+
         current_app.logger.warning(f"Error getting config: {e}")
         return jsonify(
             {

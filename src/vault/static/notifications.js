@@ -134,7 +134,6 @@ class NotificationManager {
 // Global instance
 const Notifications = new NotificationManager();
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.Notifications = Notifications;
 }

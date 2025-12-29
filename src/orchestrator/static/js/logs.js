@@ -26,11 +26,8 @@ function initElements() {
   btnSpinner = refreshBtn?.querySelector(".btn-spinner");
 }
 
-// Initialize elements immediately
 initElements();
 
-// State
-let allLogs = pre && pre.textContent ? pre.textContent : "";
 let selectedPeriod = "day"; // default
 let isFetching = false;
 let firstLoad = true;
@@ -47,12 +44,10 @@ function parseLogDate(line) {
   return d;
 }
 
-// Update metadata (lines count)
 function updateMeta(count) {
   linesMeta.textContent = `Lines: ${count}`;
 }
 
-// Update log area padding based on whether there are logs
 function updateLogAreaPadding(hasLogs) {
   const area = logArea || document.querySelector(".log-area");
   if (!area) {
@@ -68,7 +63,6 @@ function updateLogAreaPadding(hasLogs) {
   }
 }
 
-// Display filtered logs (client-side)
 function displayLogs(scrollBottom = false) {
   const lines = allLogs
     ? allLogs.split(/\r?\n/).filter((line) => line.length > 0)
@@ -117,7 +111,6 @@ function displayLogs(scrollBottom = false) {
     filtered = filtered.filter((line) => line.toLowerCase().includes(needle));
   }
 
-  // Update search results counter
   if (searchResults) {
     if (searchTerm) {
       const totalMatches = filtered.length;
@@ -168,12 +161,10 @@ function displayLogs(scrollBottom = false) {
   }
 }
 
-// Fetch logs from backend (raw endpoint)
 async function fetchLogs(scrollBottom = false) {
   if (isFetching) return;
   isFetching = true;
 
-  // Show loading state
   if (refreshBtn) {
     refreshBtn.disabled = true;
     if (btnText) btnText.classList.add("hidden");
@@ -198,7 +189,7 @@ async function fetchLogs(scrollBottom = false) {
     console.error("Failed to fetch logs:", err);
   } finally {
     isFetching = false;
-    // Hide loading state
+
     if (refreshBtn) {
       refreshBtn.disabled = false;
       if (btnText) btnText.classList.remove("hidden");
@@ -207,16 +198,10 @@ async function fetchLogs(scrollBottom = false) {
   }
 }
 
-// UI wiring
-refreshBtn.addEventListener("click", () => {
-  fetchLogs(true);
-});
-
 periodButtons.forEach((btn) => {
   btn.addEventListener("click", (e) => {
     const isCustom = btn.dataset.period === "custom";
 
-    // If clicking on custom, toggle dropdown instead of immediately selecting
     if (isCustom) {
       e.stopPropagation();
       const isActive = btn.classList.contains("active");
@@ -243,10 +228,8 @@ periodButtons.forEach((btn) => {
           endDateEl.value = iso(now);
         }
       } else if (isDropdownVisible) {
-        // If already active and dropdown visible, close it
         customRange.classList.add("is-hidden");
       } else {
-        // If active but dropdown hidden, show it
         customRange.classList.remove("is-hidden");
       }
     } else {
@@ -266,7 +249,6 @@ periodButtons.forEach((btn) => {
   });
 });
 
-// Close dropdown when clicking outside
 document.addEventListener("click", (e) => {
   const customWrapper = document.querySelector(".custom-period-wrapper");
   if (customWrapper && !customWrapper.contains(e.target)) {
@@ -276,7 +258,7 @@ document.addEventListener("click", (e) => {
 
 applyCustomBtn.addEventListener("click", () => {
   displayLogs(true);
-  // Close dropdown after applying
+
   customRange.classList.add("is-hidden");
 });
 
@@ -287,7 +269,6 @@ searchInput.addEventListener("input", (event) => {
 
 // initial boot: ensure Day is active and fetch logs
 function init() {
-  // Ensure elements are initialized
   initElements();
 
   // mark default active
@@ -300,7 +281,6 @@ function init() {
     }
   });
 
-  // Set initial state based on existing content
   setTimeout(() => {
     const area = document.querySelector(".log-area");
     if (area) {
@@ -316,6 +296,13 @@ function init() {
 
   // initial fetch (will scroll to bottom)
   fetchLogs(true);
+
+  // Add event listener for refresh button
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      fetchLogs(true);
+    });
+  }
 }
 
 // Run init when DOM is ready

@@ -132,7 +132,6 @@ class PreviewManager {
       backdrop.addEventListener("click", () => this.hide());
     }
 
-    // Close on Escape key
     document.addEventListener("keydown", (e) => {
       if (
         e.key === "Escape" &&
@@ -173,7 +172,6 @@ class PreviewManager {
       title.textContent = fileName || "Preview";
     }
 
-    // Update navigation buttons
     if (this.previewFiles.length > 0) {
       this.currentIndex = this.previewFiles.findIndex(
         (f) => f.file_id === fileId,
@@ -400,7 +398,6 @@ function initPreviewManager() {
 function showFilePreview(fileId, fileName, mimeType) {
   const manager = initPreviewManager();
 
-  // Set preview files from current files list for navigation
   if (window.filesList && Array.isArray(window.filesList)) {
     manager.setPreviewFiles(window.filesList);
   }
@@ -408,7 +405,6 @@ function showFilePreview(fileId, fileName, mimeType) {
   manager.showPreview(fileId, fileName, mimeType);
 }
 
-// Initialize on DOM ready
 document.addEventListener("DOMContentLoaded", () => {
   initPreviewManager();
 });
@@ -427,10 +423,9 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Export for use in other scripts
 if (typeof window !== "undefined") {
   window.PreviewManager = PreviewManager;
   window.showFilePreview = showFilePreview;
   window.initPreviewManager = initPreviewManager;
-  window.clearElement = clearElement; // Export clearElement utility
+  window.clearElement = clearElement;
 }
