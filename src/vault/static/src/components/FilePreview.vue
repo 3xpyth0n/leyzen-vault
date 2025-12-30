@@ -1,12 +1,7 @@
 <template>
   <Teleport v-if="show" to="body">
     <div class="file-preview-overlay" @click="close">
-      <div
-        ref="modalRef"
-        class="file-preview-modal"
-        :style="{ height: modalHeight }"
-        @click.stop
-      >
+      <div ref="modalRef" class="file-preview-modal" @click.stop>
         <div class="preview-header">
           <h2>{{ fileName }}</h2>
           <div class="preview-actions">
@@ -293,6 +288,15 @@
               ></audio>
             </div>
 
+            <div v-else-if="isHtml" class="html-preview">
+              <iframe
+                :src="previewUrl"
+                sandbox
+                class="html-iframe"
+                title="Secure HTML Preview"
+              ></iframe>
+            </div>
+
             <div v-else-if="isMarkdown" class="markdown-preview">
               <div class="markdown-content" ref="markdownContentRef"></div>
             </div>
@@ -444,6 +448,7 @@ export default {
     const loading = ref(false);
     const error = ref(null);
     const previewUrl = ref(null);
+    const previewHtml = ref("");
     const textContent = ref("");
     const markdownContent = ref("");
     const imageLoading = ref(false);
@@ -552,13 +557,19 @@ export default {
 
     const isText = computed(() => {
       if (!normalizedMimeType.value) return false;
+      if (normalizedMimeType.value.includes("html")) return false;
       return (
         normalizedMimeType.value.startsWith("text/") ||
         normalizedMimeType.value === "application/json" ||
         normalizedMimeType.value === "application/xml" ||
         normalizedMimeType.value.includes("javascript") ||
-        normalizedMimeType.value.includes("css") ||
-        normalizedMimeType.value.includes("html")
+        normalizedMimeType.value.includes("css")
+      );
+    });
+
+    const isHtml = computed(() => {
+      return (
+        normalizedMimeType.value && normalizedMimeType.value.includes("html")
       );
     });
 
@@ -794,12 +805,90 @@ export default {
       return html;
     };
 
+    const processHtmlContent = (htmlContent) => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, "text/html");
+
+      // 1. Inject Styles for disabled links (avoids inline style CSP violation in main app)
+      const style = doc.createElement("style");
+      style.textContent = `
+        .leyzen-disabled-link {
+          text-decoration: underline !important;
+          color: blue !important;
+          cursor: text !important;
+          pointer-events: none !important;
+        }
+      `;
+      // Prepend to head or create head
+      if (doc.head) {
+        doc.head.prepend(style);
+      } else {
+        const head = doc.createElement("head");
+        head.appendChild(style);
+        doc.documentElement.insertBefore(head, doc.body);
+      }
+
+      // 2. Handle Links: Make them unclickable text
+      const links = doc.querySelectorAll("a");
+      links.forEach((link) => {
+        link.removeAttribute("href");
+        link.removeAttribute("onclick");
+        link.removeAttribute("target");
+        // Add class instead of inline styles
+        link.classList.add("leyzen-disabled-link");
+      });
+
+      // 3. Remove external resources and scripts
+      // Remove external stylesheets
+      const externalStyles = doc.querySelectorAll("link[rel='stylesheet']");
+      externalStyles.forEach((el) => el.remove());
+
+      // Strip external image sources to prevent CSP errors
+      const images = doc.querySelectorAll("img");
+      images.forEach((img) => {
+        const src = img.getAttribute("src");
+        if (src && (src.startsWith("http://") || src.startsWith("https://"))) {
+          img.removeAttribute("src");
+          // Optional: Add a placeholder or style to indicate blocked image
+          img.style.border = "1px dashed #ccc";
+          img.style.padding = "5px";
+          img.setAttribute("title", "External image blocked");
+        }
+      });
+
+      // Remove scripts, objects, embeds, iframes for security
+      const unsafeTags = doc.querySelectorAll("script, object, embed, iframe");
+      unsafeTags.forEach((el) => el.remove());
+
+      // 4. Inject CSP Enforcer
+      // default-src 'none' blocks images, media, scripts, fonts, connections
+      // style-src 'unsafe-inline' allows only inline styles
+      // img-src 'data: blob:' allows internal images only
+      // font-src 'data: blob: https://fonts.gstatic.com' allows internal fonts and Google Fonts
+      const meta = doc.createElement("meta");
+      meta.httpEquiv = "Content-Security-Policy";
+      meta.content =
+        "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data: blob:; font-src data: blob: https://fonts.gstatic.com;";
+
+      // Prepend to head, or create head if missing
+      if (doc.head) {
+        doc.head.prepend(meta);
+      } else {
+        const head = doc.createElement("head");
+        head.appendChild(meta);
+        doc.documentElement.insertBefore(head, doc.body);
+      }
+
+      return doc.documentElement.outerHTML;
+    };
+
     const loadPreview = async () => {
       if (!props.fileId || !props.vaultspaceId) return;
 
       loading.value = true;
       error.value = null;
       previewUrl.value = null;
+      previewHtml.value = "";
       textContent.value = "";
       markdownContent.value = "";
       zipFiles.value = [];
@@ -1003,6 +1092,42 @@ export default {
               }
             }
           }
+        } else if (isHtml.value) {
+          // Get VaultSpace key
+          const vaultspaceKey = getCachedVaultSpaceKey(props.vaultspaceId);
+          if (!vaultspaceKey) {
+            throw new Error("VaultSpace key not loaded");
+          }
+
+          // Download encrypted file
+          const encryptedData = await files.download(
+            props.fileId,
+            props.vaultspaceId,
+          );
+
+          const fileKey = await getDecryptionKey(
+            props.fileId,
+            props.vaultspaceId,
+          );
+
+          // Decrypt file data
+          const encryptedDataArray = new Uint8Array(encryptedData);
+          const iv = encryptedDataArray.slice(0, 12);
+          const encrypted = encryptedDataArray.slice(12);
+
+          const decryptedData = await decryptFile(
+            fileKey,
+            encrypted.buffer,
+            iv,
+          );
+
+          // Process HTML content
+          const decoder = new TextDecoder("utf-8");
+          const rawHtml = decoder.decode(decryptedData);
+          const processedHtml = processHtmlContent(rawHtml);
+
+          const blob = new Blob([processedHtml], { type: "text/html" });
+          previewUrl.value = URL.createObjectURL(blob);
         } else if (isMarkdown.value) {
           // For Markdown files, we need to download and decrypt
           // Get VaultSpace key
@@ -2043,6 +2168,9 @@ export default {
 
         if (heightDiff > 1) {
           modalHeight.value = newHeight;
+          if (modalRef.value) {
+            modalRef.value.style.height = newHeight;
+          }
         }
       });
     };
@@ -2085,6 +2213,9 @@ export default {
           }
           if (!show) {
             modalHeight.value = "auto";
+            if (modalRef.value) {
+              modalRef.value.style.height = "auto";
+            }
           }
         }
       },
@@ -2110,6 +2241,7 @@ export default {
       isVideo,
       isAudio,
       isMarkdown,
+      isHtml,
       isText,
       defaultFileIcon,
       markdownContentRef,
@@ -3108,5 +3240,32 @@ export default {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+/* HTML Preview Styles */
+.html-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: white;
+}
+
+.preview-banner {
+  width: 100%;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  border-bottom: 1px solid #fee2e2;
+}
+
+.html-iframe {
+  width: 100%;
+  height: 65vh; /* Match other previews */
+  border: none;
+  background: white;
 }
 </style>

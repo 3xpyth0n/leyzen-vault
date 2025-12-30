@@ -350,9 +350,23 @@ export default {
         const data = await files.listStarred(null, cacheBust);
         // Filter out any deleted files that might have slipped through (defensive)
         starredFiles.value = (data.files || []).filter((f) => !f.deleted_at);
-
-        // Load VaultSpace keys for all unique vaultspace_ids
-        await loadVaultSpaceKeysForFiles();
+        const ids = new Set();
+        starredFiles.value.forEach((f) => {
+          if (f.vaultspace_id) ids.add(f.vaultspace_id);
+        });
+        let needsUnlock = false;
+        for (const id of ids) {
+          const cached = getCachedVaultSpaceKey(id);
+          if (!cached) {
+            needsUnlock = true;
+            break;
+          }
+        }
+        if (needsUnlock) {
+          showEncryptionOverlay.value = true;
+          isMasterKeyRequired.value = true;
+          openPasswordModal();
+        }
       } catch (err) {
         error.value = err.message || "Failed to load starred files";
       } finally {
@@ -451,8 +465,12 @@ export default {
       viewType: "starred",
       enableEncryptionCheck: true,
       onEncryptionUnlocked: async () => {
-        // Reload starred files after encryption is unlocked
-        await loadStarred(true);
+        try {
+          await loadKeysForVisibleItems();
+          return true;
+        } catch (e) {
+          return false;
+        }
       },
     });
 
@@ -638,11 +656,18 @@ export default {
           a.click();
           URL.revokeObjectURL(url);
         } catch (err) {
-          showAlert({
-            type: "error",
-            title: "Error",
-            message: "Download failed: " + err.message,
-          });
+          const msg = String(err?.message || "");
+          if (msg.toLowerCase().includes("vaultspace key not found")) {
+            showEncryptionOverlay.value = true;
+            isMasterKeyRequired.value = true;
+            openPasswordModal();
+          } else {
+            showAlert({
+              type: "error",
+              title: "Error",
+              message: "Download failed: " + msg,
+            });
+          }
         }
       } else if (action === "delete") {
         // Show confirmation modal
@@ -938,11 +963,18 @@ export default {
           a.click();
           URL.revokeObjectURL(url);
         } catch (err) {
-          showAlert({
-            type: "error",
-            title: "Download Error",
-            message: `Failed to download ${item.original_name}: ${err.message}`,
-          });
+          const msg = String(err?.message || "");
+          if (msg.toLowerCase().includes("vaultspace key not found")) {
+            showEncryptionOverlay.value = true;
+            isMasterKeyRequired.value = true;
+            openPasswordModal();
+          } else {
+            showAlert({
+              type: "error",
+              title: "Download Error",
+              message: `Failed to download ${item.original_name}: ${msg}`,
+            });
+          }
         }
         clearSelection();
         return;
@@ -984,11 +1016,18 @@ export default {
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        showAlert({
-          type: "error",
-          title: "Download Failed",
-          message: "Failed to create ZIP: " + err.message,
-        });
+        const msg = String(err?.message || "");
+        if (msg.toLowerCase().includes("vaultspace key not found")) {
+          showEncryptionOverlay.value = true;
+          isMasterKeyRequired.value = true;
+          openPasswordModal();
+        } else {
+          showAlert({
+            type: "error",
+            title: "Download Failed",
+            message: "Failed to create ZIP: " + msg,
+          });
+        }
       }
       clearSelection();
     };

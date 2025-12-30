@@ -35,7 +35,7 @@ We will keep you informed of our progress and coordinate disclosure once a fix o
 
 ## Automated Security Scanning
 
-We use automated secret scanning in our CI/CD pipeline to detect accidentally committed credentials, API keys, and other sensitive information. The CI workflow runs [TruffleHog](https://github.com/trufflesecurity/trufflehog) on every push and pull request to scan the repository for potential secrets.
+We use automated secret scanning in our automated workflow to detect accidentally committed credentials, API keys, and other sensitive information. The CI workflow runs [TruffleHog](https://github.com/trufflesecurity/trufflehog) on every push and pull request to scan the repository for potential secrets.
 
 Contributors should never commit secrets, tokens, or credentials to the repository. Use the `.env` file for local development (which is excluded from version control via `.gitignore`) and environment variables or secure secret management systems for deployments.
 
@@ -59,9 +59,9 @@ The orchestrator dashboard password should be rotated periodically (recommended:
 
 **Impact:** Brief service interruption during restart. Existing sessions may be invalidated.
 
-#### SECRET_KEY (Flask Session Encryption Key)
+#### SECRET_KEY (Internal Session Encryption Key)
 
-The Flask secret key is used for session encryption and CSRF token generation. Rotate this key quarterly (recommended: every 90 days).
+The Internal secret key is used for session encryption and CSRF token generation. Rotate this key quarterly (recommended: every 90 days).
 
 **Rotation procedure:**
 

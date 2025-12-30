@@ -2023,11 +2023,12 @@ def create_app(
                 if csp_nonce
                 else "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com"
             ),
-            "style-src 'self' https://fonts.googleapis.com",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "img-src 'self' data: blob: https://github.com https://img.shields.io https://shields.io",
             "media-src 'self' blob:",
             "font-src 'self' https://fonts.gstatic.com",
             "connect-src 'self' https://static.cloudflareinsights.com",
+            "frame-src 'self' blob:",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",

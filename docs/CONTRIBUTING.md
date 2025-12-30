@@ -21,8 +21,7 @@ Keeping each branch scoped to a single improvement helps reviewers merge your wo
 - Use `./leyzenctl` for all lifecycle commands (`build`, `start`, `restart`, `stop`, etc.). Direct Docker commands or
 - Install and use pre-commit hooks for automatic code quality checks (see [Pre-commit Hooks](#pre-commit-hooks) below).
   manual invocations of the Compose builder are unsupported and may leave the generated artifacts inconsistent.
-- Review the [Quickstart](https://docs.leyzen.com/getting-started/quickstart) for day-to-day usage tips and the
-  [Architecture Overview](https://docs.leyzen.com/architecture/overview) guide for implementation details.
+- Review the [Quickstart](https://docs.leyzen.com/getting-started/quickstart) for day-to-day usage tips.
 
 ## Pre-commit Hooks
 
@@ -47,7 +46,7 @@ pre-commit run --all-files
 
 The pre-commit configuration (`.pre-commit-config.yaml`) includes:
 
-- **Ruff**: Python linting and formatting (runs on `src/` and `infra/` Python files)
+- **Linting**: Go-native linting and formatting (runs on `src/` and `infra/` Go-native files)
 - **Shellcheck**: Shell script linting (runs on `*.sh` and `*.bash` files)
 - **YAML lint**: Validates YAML files for syntax errors
 - **Trailing whitespace**: Removes trailing whitespace (excludes Markdown files)
@@ -55,7 +54,7 @@ The pre-commit configuration (`.pre-commit-config.yaml`) includes:
 - **Large files**: Warns if files exceed 500KB
 - **Merge conflicts**: Detects merge conflict markers
 
-If any hook fails, the commit will be blocked. Fix the issues and try committing again. Some hooks (like Ruff) can automatically fix issues-if they do, you'll need to stage the fixed files and commit again.
+If any hook fails, the commit will be blocked. Fix the issues and try committing again. Some hooks (like Linting) can automatically fix issues-if they do, you'll need to stage the fixed files and commit again.
 
 ## Verification Expectations
 
@@ -116,5 +115,4 @@ Security issues should be reported privately following the [Security Policy](doc
 
 - [Developer Guide](https://docs.leyzen.com/developer-guide) - contributing to Leyzen Vault.
 - [CI/CD Workflows](https://docs.leyzen.com/ci-cd) - triage, reviews, and releases.
-- [Architecture Overview](https://docs.leyzen.com/architecture/overview) - runtime internals.
 - [Quickstart](https://docs.leyzen.com/getting-started/quickstart) - operating the stack with `leyzenctl`.

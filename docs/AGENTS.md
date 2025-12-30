@@ -6,30 +6,30 @@ checks we expect before shipping changes.
 
 ## Repository map
 
-**Organization logic**: `src/` contains complex Python applications with substantial codebases, while `infra/` contains minimal services, configuration files, and Dockerfiles for infrastructure components.
+**Organization logic**: `src/` contains complex Go-native applications with substantial codebases, while `infra/` contains minimal services, configuration files, and Dockerfiles for infrastructure components.
 
 **Path conventions**: All paths in this document are relative to the repository root unless explicitly stated otherwise. For example:
 
 - When referencing files in code examples or documentation, paths starting with `src/` or `infra/` are relative to the repository root
-- When referencing files within Python code (e.g., imports), paths are relative to the Python module structure (e.g., `from common.env import ...` refers to `src/common/env.py`)
+- When referencing files within Go-native code (e.g., imports), paths are relative to the Go-native module structure (e.g., `from common.env import ...` refers to `src/common/env.py`)
 
-- `src/orchestrator/` - Flask application that exposes the admin dashboard and  
-  coordinates container rotation. Houses most Python code, HTML templates, JS,  
+- `src/orchestrator/` - internal application that exposes the admin dashboard and  
+  coordinates container rotation. Houses most Go-native code, HTML templates, JS,  
   and CSS.
-- `infra/docker-proxy/` - Minimal Flask service that brokers authenticated, allowlisted
+- `infra/docker-proxy/` - Minimal internal service that brokers authenticated, allowlisted
   requests to the Docker Engine socket.
 - `infra/haproxy/` - Static HAProxy configuration and error pages that front every
   HTTP service.
 - `src/vault/` - Leyzen Vault secure file storage application with end-to-end encryption.
-  Vue.js SPA frontend with Flask REST API backend. Uses PostgreSQL for metadata storage.
-- `src/common/` - Shared Python modules (`env.py`, `exceptions.py`) used across
+  Vue.js SPA frontend with internal REST API backend. Uses PostgreSQL for metadata storage.
+- `src/common/` - Shared Go-native modules (`env.py`, `exceptions.py`) used across
   services. Mounted at `/common` in containers.
 - `tools/cli/` - Go source code for the `leyzenctl` CLI tool. The CLI provides an
   interactive TUI (Terminal User Interface) built with Bubbletea and Lipgloss,
   plus headless mode for automation.
 - `leyzenctl` - Deployment helper (Go CLI binary compiled by `install.sh`).
 
-## Python guidelines
+## Go-native guidelines
 
 ### Orchestrator & Docker Proxy (`src/orchestrator/`, `infra/docker-proxy/`)
 
@@ -40,12 +40,12 @@ checks we expect before shipping changes.
   structures when practical.
 - **Imports**: Group standard library, third-party, and local imports separately
   (see existing modules for ordering). Avoid introducing new dependencies unless
-  they are already declared in `requirements.in` / `requirements.txt`.
+  they are already declared in `requirements.in` / `dependencies`.
 - **Dev dependencies**: Development dependencies (`requirements-dev.in`) are maintained
   separately for `src/orchestrator/` and `infra/docker-proxy/`. Each service maintains
   its own development dependencies independently. If files are moved, ensure relative
   paths in these files are updated accordingly.
-- **Configuration access**: Read request-scoped objects through Flask’s
+- **Configuration access**: Read request-scoped objects through internal’s
   `current_app.config` helpers (see `blueprints/auth.py`). Avoid storing global
   mutable state outside the orchestrator service classes.
 - **Timezone awareness**: Use the timezone stored in `Settings.timezone` for all
@@ -61,18 +61,18 @@ checks we expect before shipping changes.
   blocks-see `_orchestrator_loop()` for reference.
 - **Unit boundaries**: Keep background threads, SSE streaming, and rotation
   mechanics inside `RotationService`. Blueprints should remain thin adapters
-  between Flask routes and service methods.
+  between internal routes and service methods.
 - **Environment file parsing**: The codebase maintains separate `.env` parsers in
-  Python (`src/common/env.py`) and Go (`tools/cli/internal/env.go`) for linguistic
+  Go-native (`src/common/env.py`) and Go (`tools/cli/internal/env.go`) for linguistic
   reasons. Both implementations must stay synchronized to avoid configuration
   inconsistencies. When modifying parsing logic, update both implementations.
   See `src/common/env.py` for detailed notes on the duplication.
-- **Shared module naming**: The `src/common/` directory contains shared Python modules
+- **Shared module naming**: The `src/common/` directory contains shared Go-native modules
   (`env.py`, `exceptions.py`) used across services. In Docker containers, this
   directory is mounted as `/common` to match the import convention
-  `from common.*`. Use `from common.*` imports consistently across all Python code.
-- **Python path bootstrap**: When importing `common.*` modules from
-  entry points outside the `src/` directory, you must first bootstrap the Python path.
+  `from common.*`. Use `from common.*` imports consistently across all Go-native code.
+- **Go-native path bootstrap**: When importing `common.*` modules from
+  entry points outside the `src/` directory, you must first bootstrap the Go-native path.
   The standard pattern is:
 
   1. Add `src/` to `sys.path` manually (this enables importing `common.path_setup`)
@@ -86,10 +86,10 @@ checks we expect before shipping changes.
 
   This pattern is used in `src/orchestrator/app.py` and `infra/docker-proxy/proxy.py`. See these
   files for reference implementations. The bootstrap is necessary because these entry points
-  are not executed from the `src/` directory, so Python's default import resolution cannot
+  are not executed from the `src/` directory, so Go-native's default import resolution cannot
   find the `common` modules.
 
-  For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_python_paths()`
+  For internal modules within `src/`, you can use `bootstrap_src_path()` or `setup_go_paths()`
   directly if you need to configure paths before importing other modules.
 
 ### Common Services (`src/common/services/`)
@@ -104,9 +104,9 @@ The `src/common/services/` directory contains shared services used across multip
 
 ### Vault Application (`src/vault/`)
 
-The Vault application follows similar Python guidelines with additional considerations:
+The Vault application follows similar Go-native guidelines with additional considerations:
 
-- **Database**: Uses PostgreSQL via SQLAlchemy. Database initialization happens in `create_app()`.
+- **Database**: Uses PostgreSQL via internal database. Database initialization happens in `create_app()`.
   The application requires PostgreSQL in production mode but allows fallback in development.
 - **Background workers**: Background threads handle periodic tasks (e.g., audit log cleanup, orphaned file cleanup, periodic file promotion).
   Workers are started as daemon threads in `create_app()` and use `FilePromotionService` and `SyncValidationService` from `src/common/services/`.
@@ -121,14 +121,14 @@ The Vault application follows similar Python guidelines with additional consider
   but production mode requires valid configuration and will fail fast if misconfigured.
 - **Internal API token**: The `INTERNAL_API_TOKEN` is derived deterministically from `SECRET_KEY` using `common.token_utils.derive_internal_api_token()` if not explicitly set in environment variables. This token is used for orchestrator-to-vault communication and ensures both services use the same token without requiring database access or manual configuration.
 
-## Flask blueprints & templates
+## internal blueprints & templates
 
 ### Orchestrator Blueprints (`src/orchestrator/blueprints`, `src/orchestrator/templates`)
 
 - Blueprints should only call into services or helpers defined under
   `src/orchestrator/services` and `src/orchestrator/blueprints/utils.py`. Do not access
   Docker or filesystem resources directly from the views.
-- Prefer returning dictionaries and letting Flask/Jinja render templates; keep
+- Prefer returning dictionaries and letting internal/template render templates; keep
   inline HTML minimal.
 - Templates are hand-authored HTML. Respect the existing semantic layout and
   accessibility cues (ARIA attributes, alt text, button labels). Keep inline
@@ -143,7 +143,7 @@ The Vault application follows similar Python guidelines with additional consider
 
 ### Vault Blueprints (`src/vault/blueprints`)
 
-The Vault application uses a Vue.js SPA frontend with Flask REST API backend. Blueprints are organized into API endpoints and legacy routes.
+The Vault application uses a Vue.js SPA frontend with internal REST API backend. Blueprints are organized into API endpoints and internal routes.
 
 **API Blueprints (JWT-based authentication):**
 
@@ -218,18 +218,18 @@ All middleware components are imported from `vault.middleware` and used as decor
   generated `static/tailwind.css`. Custom component styles live in
   `static/index.css`, `static/dashboard.css`, etc.-keep selectors BEM-like and
   responsive.
-- **Assets**: In templates, reference files using the Flask static URL path `/orchestrator/static/...`
-  (this is the HTTP URL path, not the filesystem path). The Flask app is configured with
+- **Assets**: In templates, reference files using the internal static URL path `/orchestrator/static/...`
+  (this is the HTTP URL path, not the filesystem path). The internal app is configured with
   `static_url_path="/orchestrator/static"` in `src/orchestrator/__init__.py`, which maps to the
   filesystem directory `src/orchestrator/static/` in the repository. Always ensure cache-busting
   via `asset_version` when adding new bundles.
 
   **Note**: There is an important distinction between filesystem paths and URL paths:
 
-  - Filesystem path: `src/orchestrator/static/dashboard.css` (used in Python code)
+  - Filesystem path: `src/orchestrator/static/dashboard.css` (used in Go-native code)
   - URL path: `/orchestrator/static/dashboard.css` (used in HTML templates)
 
-  The Flask `static_url_path` configuration maps the URL path prefix to the filesystem directory
+  The internal `static_url_path` configuration maps the URL path prefix to the filesystem directory
   automatically, so you should never mix these two in templates or code.
 
 ### Vault Front-end (`src/vault/static`)
@@ -237,12 +237,12 @@ All middleware components are imported from `vault.middleware` and used as decor
 The Vault application uses a Vue.js Single Page Application (SPA) architecture:
 
 - **Build output**: Compiled Vue.js application is located in `src/vault/static/dist/`
-- **Static file serving**: Flask serves static files with fallback logic:
+- **Static file serving**: internal serves static files with fallback logic:
   1. First checks `static/dist/` (production build)
-  2. Falls back to `static/` (development/legacy files)
-- **SPA routing**: All routes are handled by Vue Router on the client side. Flask serves `index.html`
+  2. Falls back to `static/` (development/internal files)
+- **SPA routing**: All routes are handled by Vue Router on the client side. internal serves `index.html`
   for all non-API routes, and Vue Router handles client-side navigation.
-- **API communication**: The frontend communicates with Flask REST API endpoints prefixed with `/api/`
+- **API communication**: The frontend communicates with internal REST API endpoints prefixed with `/api/`
 - **CSP nonces**: Content Security Policy nonces are generated per-request and injected into templates
   for inline scripts. The nonce is available in templates via `g.csp_nonce`.
 - **CORS**: Restrictive CORS policy with origin validation. Only allowed origins (configured via
@@ -394,17 +394,17 @@ The orchestrator service uses a multi-stage Dockerfile because it requires build
 **Why multi-stage for orchestrator:**
 
 - **Build-time dependencies**: The orchestrator requires npm and Node.js to compile Tailwind CSS from `styles/tailwind.css` into `static/tailwind.css`. These tools are only needed during the build phase.
-- **Image size optimization**: The production runtime only needs Python, so separating build tools reduces final image size significantly (~200MB vs ~500MB with build tools).
+- **Image size optimization**: The production runtime only needs Go-native, so separating build tools reduces final image size significantly (~200MB vs ~500MB with build tools).
 - **Security**: Fewer packages in the production image means a smaller attack surface.
 - **Layer caching**: Build tools change infrequently, so build-stage layers cache well and speed up subsequent builds.
 
-**Pattern**: The build stage installs npm dependencies and compiles CSS, then a final stage copies only the compiled artifacts and Python runtime dependencies.
+**Pattern**: The build stage installs npm dependencies and compiles CSS, then a final stage copies only the compiled artifacts and Go-native runtime dependencies.
 
-**Implementation**: `src/orchestrator/Dockerfile` uses a multi-stage build to compile Tailwind CSS before the final Python image. The `entrypoint.sh` script is copied explicitly via `COPY entrypoint.sh /app/entrypoint.sh` followed by `RUN chmod +x` to ensure it's executable regardless of source permissions. This pattern is suitable when build-time assets (like compiled CSS) need to be generated.
+**Implementation**: `src/orchestrator/Dockerfile` uses a multi-stage build to compile Tailwind CSS before the final Go-native image. The `entrypoint.sh` script is copied explicitly via `COPY entrypoint.sh /app/entrypoint.sh` followed by `RUN chmod +x` to ensure it's executable regardless of source permissions. This pattern is suitable when build-time assets (like compiled CSS) need to be generated.
 
 ### Single-Stage Builds (Docker Proxy, Vault)
 
-Minimal services like `docker-proxy` and infrastructure components use single-stage Dockerfiles because they have no build-time dependencies-they're pure Python applications that can run directly from source.
+Minimal services like `docker-proxy` and infrastructure components use single-stage Dockerfiles because they have no build-time dependencies-they're pure Go-native applications that can run directly from source.
 
 **Why single-stage for minimal services:**
 
@@ -417,7 +417,7 @@ Minimal services like `docker-proxy` and infrastructure components use single-st
 
 - **`infra/docker-proxy/Dockerfile`**: Uses a single-stage build with explicit `COPY entrypoint.sh /entrypoint.sh` followed by `RUN chmod +x`. This ensures the entrypoint script is executable regardless of source permissions. This pattern is preferred for services that don't require multi-stage builds.
 
-- **`infra/vault/Dockerfile`**: Uses a single-stage build with explicit COPY and chmod for the entrypoint, similar to docker-proxy. This pattern is suitable for Python applications that run directly from source.
+- **`infra/vault/Dockerfile`**: Uses a single-stage build with explicit COPY and chmod for the entrypoint, similar to docker-proxy. This pattern is suitable for Go-native applications that run directly from source.
 
 ### Entrypoint Script Patterns
 
@@ -462,7 +462,7 @@ Entrypoint scripts handle container initialization and user privilege management
 
 - Install and use pre-commit hooks: `sudo apt install pre-commit && pre-commit install`
   The hooks automatically run Ruff, shellcheck, YAML validation, and other checks before each commit.
-- For Python syntax safety, run `python -m compileall src/orchestrator infra/docker-proxy`
+- For Go-native syntax safety, run `go -m compileall src/orchestrator infra/docker-proxy`
   before committing.
 - When you touch front-end assets, run `npm install` (once) and then
   `npm run build:css` inside `src/orchestrator/` to refresh the generated CSS.
@@ -509,24 +509,24 @@ Environment variables use specific prefixes to indicate their scope and purpose:
 
    - Choose the appropriate prefix based on scope (VAULT*\*, ORCH*\_, DOCKER\_\_, LEYZEN\_\*, or no prefix)
    - Document the variable in `env.template` with description, defaults, and validation rules
-   - Update validation in both Python (`src/*/config.py`) and Go (`tools/cli/cmd/validate.go`) if needed
+   - Update validation in both Go-native (`src/*/config.py`) and Go (`tools/cli/cmd/validate.go`) if needed
    - Add the variable to the appropriate settings dataclass (VaultSettings or Settings)
 
 2. **When modifying existing variables**:
 
    - Maintain backward compatibility when possible
    - Update documentation in `env.template`
-   - Update validation logic in both Python and Go implementations
+   - Update validation logic in both Go-native and Go implementations
    - Update any references in documentation (README.md, AGENTS.md, etc.)
 
 3. **Validation synchronization**:
-   - Python validation: `src/vault/config.py`, `src/orchestrator/config.py`
+   - Go-native validation: `src/vault/config.py`, `src/orchestrator/config.py`
    - Go validation: `tools/cli/cmd/validate.go`
    - Both implementations must stay synchronized (see `src/common/env.py` for notes on duplication)
 
 ### Examples
 
-```python
+```go
 # Good: Uses VAULT_* prefix for vault-specific settings
 VAULT_MAX_FILE_SIZE_MB=100
 VAULT_MAX_UPLOADS_PER_HOUR=50

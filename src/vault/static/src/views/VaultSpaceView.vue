@@ -1,6 +1,6 @@
 <template>
   <div class="vaultspace-view-container">
-    <template v-if="!showEncryptionOverlay || !isMasterKeyRequired">
+    <template v-if="!showEncryptionOverlay && !isMasterKeyRequired">
       <div class="vaultspace-view">
         <header class="view-header">
           <div class="header-top-row">
@@ -488,7 +488,14 @@ export default {
     } = useFileViewComposable({
       viewType: "vaultspace",
       enableEncryptionCheck: true,
-      onEncryptionUnlocked: null,
+      onEncryptionUnlocked: async () => {
+        try {
+          await loadVaultSpaceKey();
+          return !!vaultspaceKey.value;
+        } catch (e) {
+          return false;
+        }
+      },
     });
 
     return {
@@ -597,10 +604,17 @@ export default {
   async mounted() {
     await this.checkEncryptionAccess();
 
-    if (this.showEncryptionOverlay) {
-      // Still load VaultSpace metadata (non-encrypted info)
+    // If no cached key, require unlock immediately and block actions
+    const cachedKeyEarly = getCachedVaultSpaceKey(this.$route.params.id);
+    if (!cachedKeyEarly) {
+      this.showEncryptionOverlay = true;
+      this.isMasterKeyRequired = true;
+      this.openPasswordModal();
+      // Load non-encrypted metadata only
       await this.loadVaultSpace();
       return;
+    } else {
+      this.vaultspaceKey = cachedKeyEarly;
     }
 
     const userMasterKey = await getUserMasterKey();
@@ -646,6 +660,12 @@ export default {
 
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
+    if (!this.vaultspaceKey) {
+      this.showEncryptionOverlay = true;
+      this.isMasterKeyRequired = true;
+      this.openPasswordModal();
+      return;
+    }
 
     this.initializeFileSync();
 
@@ -883,72 +903,16 @@ export default {
             // Cache the decrypted key
             cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
           } catch (decryptErr) {
-            // Decryption failed - VaultSpace key was encrypted with a different master key
-            logger.error("Failed to decrypt VaultSpace key:", decryptErr);
-            if (decryptErr.name === "OperationError") {
-              logger.warn(
-                "OperationError: The VaultSpace key was encrypted with a different master key.",
-              );
-              logger.warn("Creating a new VaultSpace key...");
-
-              // Create a new VaultSpace key with the current master key
-              // Files encrypted with the previous VaultSpace key will become inaccessible
-              try {
-                const currentUser = await this.authStore.fetchCurrentUser();
-
-                // Create new VaultSpace key and store it
-                // The backend will update the existing key if it already exists
-                const { encryptedKey } =
-                  await createVaultSpaceKey(userMasterKey);
-
-                // Store/update the encrypted key on the server (share with self)
-                // This will update the key if it already exists (for existing users)
-                await vaultspaces.share(
-                  this.$route.params.id,
-                  currentUser.id,
-                  encryptedKey,
-                );
-
-                // Decrypt and cache the new key
-                this.vaultspaceKey = await decryptVaultSpaceKeyForUser(
-                  userMasterKey,
-                  encryptedKey,
-                );
-                cacheVaultSpaceKey(this.$route.params.id, this.vaultspaceKey);
-              } catch (recreateErr) {
-                const cachedKey = getCachedVaultSpaceKey(this.$route.params.id);
-                if (cachedKey || this.vaultspaceKey) {
-                  logger.warn(
-                    "VaultSpace key loading failed in this attempt, but key is already available. Suppressing error.",
-                  );
-                  if (cachedKey && !this.vaultspaceKey) {
-                    this.vaultspaceKey = cachedKey;
-                  }
-                  return;
-                }
-
-                this.error =
-                  "Unable to decrypt VaultSpace key and failed to create a new key. " +
-                  "Please contact support.";
-                this.showAlert({
-                  type: "error",
-                  title: "Error",
-                  message:
-                    "Error: Unable to decrypt existing VaultSpace key and failed to create a new key. " +
-                    "Please contact technical support.",
-                });
-                throw recreateErr;
-              }
-            } else {
-              throw decryptErr;
-            }
+            this.showEncryptionOverlay = true;
+            this.isMasterKeyRequired = true;
+            this.openPasswordModal();
+            throw decryptErr;
           }
         }
       } catch (err) {
-        // Don't show error modal here, just log
-        // The error will be shown when user tries to perform an action that needs the key
-        logger.error("Failed to load VaultSpace key:", err);
-        this.error = err.message;
+        this.showEncryptionOverlay = true;
+        this.isMasterKeyRequired = true;
+        this.openPasswordModal();
       }
     },
 
@@ -2731,11 +2695,9 @@ export default {
     async downloadFile(file) {
       try {
         if (!this.vaultspaceKey) {
-          this.showAlert({
-            type: "error",
-            title: "Error",
-            message: "VaultSpace key not loaded",
-          });
+          this.showEncryptionOverlay = true;
+          this.isMasterKeyRequired = true;
+          this.openPasswordModal();
           return;
         }
 
@@ -2799,11 +2761,22 @@ export default {
           this.downloadFileName = "";
         }, 1000);
       } catch (err) {
-        this.showAlert({
-          type: "error",
-          title: "Download Failed",
-          message: "Download failed: " + err.message,
-        });
+        const msg = String(err?.message || "");
+        const isKeyIssue =
+          !this.vaultspaceKey ||
+          msg.toLowerCase().includes("vaultspace key") ||
+          msg.toLowerCase().includes("operationerror");
+        if (isKeyIssue) {
+          this.showEncryptionOverlay = true;
+          this.isMasterKeyRequired = true;
+          this.openPasswordModal();
+        } else {
+          this.showAlert({
+            type: "error",
+            title: "Download Failed",
+            message: "Download failed: " + msg,
+          });
+        }
         this.downloadProgress = null;
         this.downloadSpeed = 0;
         this.downloadTimeRemaining = null;

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://leyzen.com/images/vault-text-logo.png" alt="Leyzen Vault logo" height="30" />
+  <img src="https://leyzen.com/images/vault-text-logo.png" alt="Leyzen Vault logo" height="30" /> 
 </p>
 <p align="center">
   <i>A secure alternative to traditional cloud storage, for people who hate configuring cloud storage.</i>

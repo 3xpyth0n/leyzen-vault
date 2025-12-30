@@ -155,6 +155,7 @@ export async function apiRequest(endpoint, options = {}) {
   const {
     skipAutoRefresh = false,
     allowOffline = false,
+    skipAuthHeader = false,
     ...fetchOptions
   } = options;
 
@@ -187,7 +188,7 @@ export async function apiRequest(endpoint, options = {}) {
     ...fetchOptions.headers,
   };
 
-  if (token) {
+  if (token && !skipAuthHeader) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 

@@ -175,6 +175,15 @@ export function useFileViewComposable(options = {}) {
     passwordModalError.value = "";
 
     try {
+      // Rate limit unlock attempts
+      try {
+        await authStore.encryptionUnlockAttempt();
+      } catch (limitErr) {
+        passwordModalError.value =
+          limitErr.message || "Too many attempts. Please try again later.";
+        return;
+      }
+
       // Get master key salt from server
       const saltBase64 = await authStore.getMasterKeySalt();
 
@@ -196,21 +205,29 @@ export function useFileViewComposable(options = {}) {
         throw new Error("Failed to derive master key");
       }
 
-      showPasswordModal.value = false;
-      passwordModalPassword.value = "";
-      passwordModalError.value = "";
-
-      showEncryptionOverlay.value = false;
-      isMasterKeyRequired.value = false;
-
-      // Call callback if provided
+      // Keep modal open until actual content unlock is confirmed
+      // Call callback if provided to verify unlock (e.g., key decryption)
+      let unlocked = true;
       if (onEncryptionUnlocked) {
-        await onEncryptionUnlocked();
+        try {
+          const result = await onEncryptionUnlocked();
+          unlocked = result === true;
+        } catch (e) {
+          unlocked = false;
+        }
+      }
+      if (unlocked) {
+        showPasswordModal.value = false;
+        passwordModalPassword.value = "";
+        passwordModalError.value = "";
+        showEncryptionOverlay.value = false;
+        isMasterKeyRequired.value = false;
+      } else {
+        passwordModalError.value = "Invalid password";
       }
     } catch (err) {
       logger.error("Failed to initialize master key:", err);
-      passwordModalError.value =
-        err.message || "Failed to initialize encryption. Please try again.";
+      passwordModalError.value = "Invalid password";
     } finally {
       passwordModalLoading.value = false;
     }

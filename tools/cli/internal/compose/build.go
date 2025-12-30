@@ -219,7 +219,7 @@ func buildBaseServices(
 		HealthCheck: &HealthCheckDefinition{
 			Test:        []string{"CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"},
 			Interval:    "5s",
-			Timeout:     "3s",
+			Timeout:     "60s",
 			Retries:     3,
 			StartPeriod: "5s",
 		},

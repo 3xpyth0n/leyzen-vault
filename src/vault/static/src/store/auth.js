@@ -46,6 +46,8 @@ export const useAuthStore = defineStore("auth", {
       const response = await apiRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify(body),
+        skipAutoRefresh: true,
+        skipAuthHeader: true,
       });
 
       if (!response.ok) {
@@ -272,6 +274,19 @@ export const useAuthStore = defineStore("auth", {
       if (!response.ok) {
         const errorData = await parseErrorResponse(response);
         throw new Error(errorData.error || "Failed to get 2FA status");
+      }
+      return await response.json();
+    },
+
+    async encryptionUnlockAttempt() {
+      const response = await apiRequest("/auth/encryption/unlock-attempt", {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const errorData = await parseErrorResponse(response);
+        throw new Error(
+          errorData.error || "Too many attempts. Please try again later.",
+        );
       }
       return await response.json();
     },

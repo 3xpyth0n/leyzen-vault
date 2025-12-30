@@ -1080,10 +1080,31 @@ def update_email():
 
     auth_service = _get_auth_service()
 
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    client_ip = get_client_ip() or "unknown"
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="account_email_update",
+            user_id=user.id,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+
     # Verify current password
     result = auth_service.authenticate(user.email, password)
     if not result:
-        return jsonify({"error": "Invalid password"}), 401
+        return (
+            jsonify({"error_code": "invalid_password", "error": "Invalid password"}),
+            403,
+        )
 
     try:
         # Update email
@@ -1162,6 +1183,32 @@ def get_account_keys():
     return jsonify({"keys": keys}), 200
 
 
+@auth_api_bp.route("/encryption/unlock-attempt", methods=["POST"])
+@jwt_required
+def encryption_unlock_attempt():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    client_ip = get_client_ip() or "unknown"
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="encryption_unlock",
+            user_id=user.id,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+    return jsonify({"success": True}), 200
+
+
 @auth_api_bp.route("/account/password", methods=["POST"])
 @csrf.exempt  # JWT-authenticated endpoint, CSRF not needed
 @jwt_required
@@ -1200,10 +1247,31 @@ def change_password():
 
     auth_service = _get_auth_service()
 
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    client_ip = get_client_ip() or "unknown"
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="account_password_change",
+            user_id=user.id,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+
     # Verify current password
     result = auth_service.authenticate(user.email, current_password)
     if not result:
-        return jsonify({"error": "Invalid current password"}), 401
+        return (
+            jsonify({"error_code": "invalid_password", "error": "Invalid password"}),
+            403,
+        )
 
     try:
         # Update password
@@ -1263,7 +1331,10 @@ def delete_account():
     # Verify password
     result = auth_service.authenticate(user.email, password)
     if not result:
-        return jsonify({"error": "Invalid password"}), 401
+        return (
+            jsonify({"error_code": "invalid_password", "error": "Invalid password"}),
+            403,
+        )
 
     try:
         # Delete account (soft delete)
@@ -1826,11 +1897,32 @@ def disable_2fa():
     if not password:
         return jsonify({"error": "Password required to disable 2FA"}), 400
 
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    client_ip = get_client_ip() or "unknown"
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="2fa_disable",
+            user_id=user.id,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+
     # Verify password
     auth_service = _get_auth_service()
     result = auth_service.authenticate(user.email, password)
     if not result:
-        return jsonify({"error": "Invalid password"}), 401
+        return (
+            jsonify({"error_code": "invalid_password", "error": "Invalid password"}),
+            403,
+        )
 
     # Disable 2FA
     auth_service.disable_totp(user.id)
@@ -1868,11 +1960,32 @@ def regenerate_backup_codes():
     if not password:
         return jsonify({"error": "Password required to regenerate backup codes"}), 400
 
+    rate_limiter = current_app.config.get("VAULT_RATE_LIMITER")
+    client_ip = get_client_ip() or "unknown"
+    if rate_limiter:
+        is_allowed, error_msg = rate_limiter.check_rate_limit_custom(
+            client_ip,
+            max_attempts=5,
+            window_seconds=60,
+            action_name="2fa_regenerate_backup",
+            user_id=user.id,
+        )
+        if not is_allowed:
+            return (
+                jsonify(
+                    {"error": error_msg or "Too many attempts. Please try again later."}
+                ),
+                429,
+            )
+
     # Verify password
     auth_service = _get_auth_service()
     result = auth_service.authenticate(user.email, password)
     if not result:
-        return jsonify({"error": "Invalid password"}), 401
+        return (
+            jsonify({"error_code": "invalid_password", "error": "Invalid password"}),
+            403,
+        )
 
     # Regenerate backup codes
     new_codes = auth_service.regenerate_backup_codes(user.id)
