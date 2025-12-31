@@ -15,6 +15,8 @@ jobs:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GIT_AUTHOR_NAME: ${{ secrets.GIT_AUTHOR_NAME }}
+      GIT_AUTHOR_EMAIL: ${{ secrets.GIT_AUTHOR_EMAIL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,40 +82,21 @@ jobs:
           git config --global commit.gpgsign true
           git config --global tag.gpgSign true
 
-      - name: Setup GPG fallback for act
-        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_PRIVATE_KEY == '' && env.ACT == 'true' }}
-        run: |
-          set -e
-          cat >key.conf <<'EOF'
-          %no-protection
-          Key-Type: RSA
-          Key-Length: 2048
-          Name-Real: Act Fallback
-          Name-Email: act@example.local
-          Expire-Date: 0
-          EOF
-          gpg --batch --gen-key key.conf
-          FPR="$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
-          echo "GPG_FINGERPRINT=${FPR}" >> "$GITHUB_ENV"
-          git config --global user.signingkey "${FPR}"
-          git config --global commit.gpgsign true
-          git config --global tag.gpgSign true
-
       - name: Update 'nightly' tag
         if: ${{ env.NIGHTLY_ALLOWED == 'true' }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "${GIT_AUTHOR_NAME}" ]; then git config user.name "${GIT_AUTHOR_NAME}"; fi
+          if [ -n "${GIT_AUTHOR_EMAIL}" ]; then git config user.email "${GIT_AUTHOR_EMAIL}"; fi
           BASE_TAG="$(git tag --list 'v*' | awk '/^[vV][0-9]+\.[0-9]+\.[0-9]+$/ {print}' | sort -V | tail -n1 || echo 'v0.0.0')"
           NIGHTLY_TAG="${BASE_TAG}-nightly"
           if git rev-parse -q --verify "refs/tags/${NIGHTLY_TAG}" >/dev/null; then
-            if [ -n "${GPG_FINGERPRINT}" ]; then
+            if [ -n "${GPG_FINGERPRINT}" ] && [ "${ACT}" != "true" ]; then
               git tag -fs "${NIGHTLY_TAG}" -m "Nightly"
             else
               git tag -fa "${NIGHTLY_TAG}" -m "Nightly"
             fi
           else
-            if [ -n "${GPG_FINGERPRINT}" ]; then
+            if [ -n "${GPG_FINGERPRINT}" ] && [ "${ACT}" != "true" ]; then
               git tag -s "${NIGHTLY_TAG}" -m "Nightly"
             else
               git tag -a "${NIGHTLY_TAG}" -m "Nightly"
@@ -122,7 +105,7 @@ jobs:
           git push origin -f "${NIGHTLY_TAG}"
 
       - name: Run GoReleaser (nightly, signed)
-        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_FINGERPRINT != '' }}
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_FINGERPRINT != '' && env.ACT != 'true' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -134,7 +117,7 @@ jobs:
           GPG_FINGERPRINT: ${{ env.GPG_FINGERPRINT }}
 
       - name: Run GoReleaser (nightly, unsigned)
-        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_FINGERPRINT == '' }}
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && (env.GPG_FINGERPRINT == '' || env.ACT == 'true') }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
