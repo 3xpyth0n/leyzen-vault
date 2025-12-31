@@ -79,14 +79,31 @@ esac
 
 REPO="3xpyth0n/leyzen-vault"
 
+resolve_latest_stable() {
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*\"tag_name\": \"\([^\"]*\)\".*/\1/p' | head -n1
+}
+
 TAG="${VERSION_TAG}"
 if [ -z "$TAG" ]; then
-    TAG="nightly"
+    STABLE="$(resolve_latest_stable || true)"
+    if [ -n "$STABLE" ]; then
+        TAG="${STABLE}-nightly"
+    else
+        TAG="nightly"
+    fi
+elif [ "$TAG" = "nightly" ]; then
+    STABLE="$(resolve_latest_stable || true)"
+    if [ -n "$STABLE" ]; then
+        TAG="${STABLE}-nightly"
+    fi
 fi
 
-ASSET_NAME="leyzenctl-${OS}-${ARCH}"
-BIN_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_NAME}"
-CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
+ASSET_BASE="leyzenctl-${OS}-${ARCH}"
+ASSET_VER="${ASSET_BASE}_${TAG}_${OS}_${ARCH}"
+BIN_URL_VER="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_VER}"
+CHECKSUM_URL_VER="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
+BIN_URL_LEGACY="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_BASE}"
+CHECKSUM_URL_LEGACY="$CHECKSUM_URL_VER"
 
 TMP_BIN="${OUTPUT_BIN}.tmp"
 TMP_SUM="${PROJECT_ROOT}/checksums.tmp"
@@ -108,17 +125,59 @@ download_and_verify() {
     return 0
 }
 
-if ! download_and_verify "$BIN_URL" "$CHECKSUM_URL" "$ASSET_NAME"; then
-    echo -e "${YELLOW}[WARN] Failed to download nightly or checksum mismatch. Falling back to latest stable...${NC}"
-    LATEST_TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1)"
-    if [ -z "$LATEST_TAG" ]; then
-        echo -e "${RED}[ERROR] Unable to resolve latest stable release.${NC}"
-        exit 1
+resolve_asset_urls() {
+    local tag="$1"
+    local json
+    json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/tags/${tag}")" || return 1
+    local bin_url sum_url
+    bin_url="$(echo "$json" | sed -n 's/.*\"browser_download_url\": \"\([^"]*\)\".*/\1/p' | grep "/releases/download/${tag}/" | grep "leyzenctl-${OS}-${ARCH}" | head -n1)"
+    sum_url="$(echo "$json" | sed -n 's/.*\"browser_download_url\": \"\([^"]*\)\".*/\1/p' | grep "/releases/download/${tag}/checksums.txt" | head -n1)"
+    if [ -n "$bin_url" ] && [ -n "$sum_url" ]; then
+        echo "${bin_url}|${sum_url}"
+        return 0
     fi
-    BIN_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
-    CHECKSUM_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/checksums.txt"
-    if ! download_and_verify "$BIN_URL" "$CHECKSUM_URL" "$ASSET_NAME"; then
-        echo -e "${RED}[ERROR] Download failed or checksum mismatch for ${ASSET_NAME}.${NC}"
+    return 1
+}
+
+ASSET_CHOSEN_URLS="$(resolve_asset_urls "$TAG" || true)"
+if [ -z "$ASSET_CHOSEN_URLS" ]; then
+    if ! download_and_verify "$BIN_URL_VER" "$CHECKSUM_URL_VER" "$ASSET_VER"; then
+        if ! download_and_verify "$BIN_URL_LEGACY" "$CHECKSUM_URL_LEGACY" "$ASSET_BASE"; then
+            echo -e "${YELLOW}[WARN] Failed to download nightly or checksum mismatch. Falling back to latest stable...${NC}"
+            STABLE="$(resolve_latest_stable || true)"
+            if [ -z "$STABLE" ]; then
+                echo -e "${RED}[ERROR] Unable to resolve latest stable release.${NC}"
+                exit 1
+            fi
+            ASSET_CHOSEN_URLS="$(resolve_asset_urls "$STABLE" || true)"
+            if [ -n "$ASSET_CHOSEN_URLS" ]; then
+                CHOSEN_BIN_URL="${ASSET_CHOSEN_URLS%|*}"
+                CHOSEN_SUM_URL="${ASSET_CHOSEN_URLS#*|*}"
+                CHOSEN_NAME="$(basename "$CHOSEN_BIN_URL")"
+                if ! download_and_verify "$CHOSEN_BIN_URL" "$CHOSEN_SUM_URL" "$CHOSEN_NAME"; then
+                    echo -e "${RED}[ERROR] Download failed or checksum mismatch for ${CHOSEN_NAME}.${NC}"
+                    exit 1
+                fi
+            else
+                STABLE_ASSET_VER="${ASSET_BASE}_${STABLE}_${OS}_${ARCH}"
+                STABLE_BIN_URL_VER="https://github.com/${REPO}/releases/download/${STABLE}/${STABLE_ASSET_VER}"
+                STABLE_CHECKSUM_URL="https://github.com/${REPO}/releases/download/${STABLE}/checksums.txt"
+                STABLE_BIN_URL_LEGACY="https://github.com/${REPO}/releases/download/${STABLE}/${ASSET_BASE}"
+                if ! download_and_verify "$STABLE_BIN_URL_VER" "$STABLE_CHECKSUM_URL" "$STABLE_ASSET_VER"; then
+                    if ! download_and_verify "$STABLE_BIN_URL_LEGACY" "$STABLE_CHECKSUM_URL" "$ASSET_BASE"; then
+                        echo -e "${RED}[ERROR] Download failed or checksum mismatch for ${ASSET_BASE}.${NC}"
+                        exit 1
+                    fi
+                fi
+            fi
+        fi
+    fi
+else
+    CHOSEN_BIN_URL="${ASSET_CHOSEN_URLS%|*}"
+    CHOSEN_SUM_URL="${ASSET_CHOSEN_URLS#*|*}"
+    CHOSEN_NAME="$(basename "$CHOSEN_BIN_URL")"
+    if ! download_and_verify "$CHOSEN_BIN_URL" "$CHOSEN_SUM_URL" "$CHOSEN_NAME"; then
+        echo -e "${RED}[ERROR] Download failed or checksum mismatch for ${CHOSEN_NAME}.${NC}"
         exit 1
     fi
 fi

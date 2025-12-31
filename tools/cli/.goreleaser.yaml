@@ -40,6 +40,17 @@ signs:
       - "${signature}"
       - "--detach-sign"
       - "${artifact}"
+  - id: binary-sign
+    artifacts: binary
+    cmd: gpg
+    args:
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
   - id: archive-sign
     artifacts: archive
     cmd: gpg

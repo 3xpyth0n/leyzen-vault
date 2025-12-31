@@ -35,8 +35,34 @@ jobs:
           gpg_private_key: ${{ env.GPG_PRIVATE_KEY }}
           passphrase: ${{ env.GPG_PASSPHRASE }}
 
+      - name: Configure git signing from imported key
+        if: ${{ steps.import_gpg.outputs.fingerprint != '' }}
+        run: |
+          echo "GPG_FINGERPRINT=${{ steps.import_gpg.outputs.fingerprint }}" >> "$GITHUB_ENV"
+          git config --global user.signingkey "${{ steps.import_gpg.outputs.fingerprint }}"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgSign true
+
+      - name: Setup GPG fallback for act
+        if: ${{ env.GPG_PRIVATE_KEY == '' && env.ACT == 'true' }}
+        run: |
+          set -e
+          cat >key.conf <<'EOF'
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 2048
+          Name-Real: Act Fallback
+          Name-Email: act@example.local
+          Expire-Date: 0
+          EOF
+          gpg --batch --gen-key key.conf
+          FPR="$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          echo "GPG_FINGERPRINT=${FPR}" >> "$GITHUB_ENV"
+          git config --global user.signingkey "${FPR}"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgSign true
       - name: Run GoReleaser (stable, signed)
-        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        if: ${{ env.GPG_FINGERPRINT != '' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -45,10 +71,10 @@ jobs:
           workdir: tools/cli
         env:
           GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
-          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GPG_FINGERPRINT: ${{ env.GPG_FINGERPRINT }}
 
       - name: Run GoReleaser (stable, unsigned)
-        if: ${{ env.GPG_PRIVATE_KEY == '' }}
+        if: ${{ env.GPG_FINGERPRINT == '' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser

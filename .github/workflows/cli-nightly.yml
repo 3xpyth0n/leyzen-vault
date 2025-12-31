@@ -27,29 +27,102 @@ jobs:
         with:
           go-version: "1.24.9"
 
+      - name: Check divergence from latest stable
+        run: |
+          set -e
+          git fetch --tags --force
+          STABLE_TAG="$(git tag --list 'v*' | awk '/^[vV][0-9]+\.[0-9]+\.[0-9]+$/ {print}' | sort -V | tail -n1 || echo '')"
+          if [ -z "$STABLE_TAG" ]; then
+            echo "NIGHTLY_ALLOWED=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          STABLE_SHA="$(git rev-list -n1 "$STABLE_TAG")"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$STABLE_SHA" = "$HEAD_SHA" ]; then
+            echo "NIGHTLY_ALLOWED=false" >> "$GITHUB_ENV"
+          else
+            echo "NIGHTLY_ALLOWED=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Delete nightly tags when not allowed
+        if: ${{ env.NIGHTLY_ALLOWED != 'true' }}
+        run: |
+          set -e
+          git fetch --tags --force
+          for t in $(git ls-remote --tags origin | awk '{print $2}' | sed 's#refs/tags/##' | grep -E '-nightly$' || true); do
+            git tag -d "$t" || true
+            git push origin ":refs/tags/$t" || true
+          done
+
+      - name: Delete previous nightly tags
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' }}
+        run: |
+          set -e
+          git fetch --tags --force
+          for t in $(git tag --list '*-nightly'); do
+            git tag -d "$t" || true
+            git push origin ":refs/tags/$t" || true
+          done
+
       - name: Import GPG key
-        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_PRIVATE_KEY != '' }}
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ env.GPG_PRIVATE_KEY }}
           passphrase: ${{ env.GPG_PASSPHRASE }}
 
+      - name: Configure git signing from imported key
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && steps.import_gpg.outputs.fingerprint != '' }}
+        run: |
+          echo "GPG_FINGERPRINT=${{ steps.import_gpg.outputs.fingerprint }}" >> "$GITHUB_ENV"
+          git config --global user.signingkey "${{ steps.import_gpg.outputs.fingerprint }}"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgSign true
+
+      - name: Setup GPG fallback for act
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_PRIVATE_KEY == '' && env.ACT == 'true' }}
+        run: |
+          set -e
+          cat >key.conf <<'EOF'
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 2048
+          Name-Real: Act Fallback
+          Name-Email: act@example.local
+          Expire-Date: 0
+          EOF
+          gpg --batch --gen-key key.conf
+          FPR="$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          echo "GPG_FINGERPRINT=${FPR}" >> "$GITHUB_ENV"
+          git config --global user.signingkey "${FPR}"
+          git config --global commit.gpgsign true
+          git config --global tag.gpgSign true
+
       - name: Update 'nightly' tag
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          BASE_TAG="$(git describe --abbrev=0 --tags --match 'v*' || echo 'v0.0.0')"
+          BASE_TAG="$(git tag --list 'v*' | awk '/^[vV][0-9]+\.[0-9]+\.[0-9]+$/ {print}' | sort -V | tail -n1 || echo 'v0.0.0')"
           NIGHTLY_TAG="${BASE_TAG}-nightly"
           if git rev-parse -q --verify "refs/tags/${NIGHTLY_TAG}" >/dev/null; then
-            git tag -fa "${NIGHTLY_TAG}" -m "Nightly"
+            if [ -n "${GPG_FINGERPRINT}" ]; then
+              git tag -fs "${NIGHTLY_TAG}" -m "Nightly"
+            else
+              git tag -fa "${NIGHTLY_TAG}" -m "Nightly"
+            fi
           else
-            git tag -a "${NIGHTLY_TAG}" -m "Nightly"
+            if [ -n "${GPG_FINGERPRINT}" ]; then
+              git tag -s "${NIGHTLY_TAG}" -m "Nightly"
+            else
+              git tag -a "${NIGHTLY_TAG}" -m "Nightly"
+            fi
           fi
           git push origin -f "${NIGHTLY_TAG}"
 
       - name: Run GoReleaser (nightly, signed)
-        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_FINGERPRINT != '' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -58,10 +131,10 @@ jobs:
           workdir: tools/cli
         env:
           GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
-          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GPG_FINGERPRINT: ${{ env.GPG_FINGERPRINT }}
 
       - name: Run GoReleaser (nightly, unsigned)
-        if: ${{ env.GPG_PRIVATE_KEY == '' }}
+        if: ${{ env.NIGHTLY_ALLOWED == 'true' && env.GPG_FINGERPRINT == '' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
