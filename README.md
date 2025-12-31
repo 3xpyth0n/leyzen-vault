@@ -28,6 +28,10 @@
 
 Leyzen Vault is a self-hosted, end-to-end encrypted file storage solution. We built it because we wanted security, but we also really, really hate spending our weekends configuring servers.
 
+## Requirements
+
+**Only Docker**. If you can run containers, you can run Leyzen Vault.
+
 ## 1. Deployment for the Laziest Among Us
 
 Let's be honest: you don't want to edit `.env` files. You don't want to generate secrets manually. You just want it to work.

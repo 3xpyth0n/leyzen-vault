@@ -16,7 +16,6 @@ NC='\033[0m' # No Color
 # Configuration
 # -----------------------------------------------------------------------------
 PROJECT_ROOT="$(dirname "$(realpath "$0")")"
-CLI_DIR="$PROJECT_ROOT/tools/cli"
 OUTPUT_BIN="$PROJECT_ROOT/leyzenctl"
 
 clear
@@ -30,13 +29,6 @@ echo
 # Step 1: Check Prerequisites
 # -----------------------------------------------------------------------------
 echo -e "${BOLD}[1/4] Checking prerequisites...${NC}"
-
-if ! command -v go >/dev/null 2>&1; then
-    echo -e "${RED}[ERROR] Go is not installed. Please install Go >=1.22 first.${NC}"
-    echo -e "Example: ${CYAN}sudo apt install golang${NC}"
-    exit 1
-fi
-echo -e "${GREEN}[OK] Go is installed.${NC}"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo -e "${RED}[ERROR] Docker is not installed. Please install Docker first.${NC}"
@@ -55,26 +47,87 @@ echo -e "${GREEN}[OK] Docker Compose is installed.${NC}"
 echo
 
 # -----------------------------------------------------------------------------
-# Step 2: Build CLI
+# Step 2: Download CLI
 # -----------------------------------------------------------------------------
-echo -e "${BOLD}[2/4] Building leyzenctl binary...${NC}"
+echo -e "${BOLD}[2/4] Downloading leyzenctl binary...${NC}"
 
-# Remove old binary if exists
-if [ -f "$OUTPUT_BIN" ]; then
-    rm -f "$OUTPUT_BIN"
+# Parse optional --version flag
+VERSION_TAG=""
+for arg in "$@"; do
+    if [[ "$arg" == --version=* ]]; then
+        VERSION_TAG="${arg#--version=}"
+    fi
+done
+
+# Detect OS and ARCH
+UNAME_S="$(uname -s || echo "")"
+UNAME_M="$(uname -m || echo "")"
+OS="linux"
+ARCH="amd64"
+case "$UNAME_S" in
+    Linux) OS="linux" ;;
+    Darwin) OS="darwin" ;;
+    *) OS="linux" ;;
+esac
+case "$UNAME_M" in
+    x86_64) ARCH="amd64" ;;
+    amd64) ARCH="amd64" ;;
+    arm64) ARCH="arm64" ;;
+    aarch64) ARCH="arm64" ;;
+    *) ARCH="amd64" ;;
+esac
+
+REPO="3xpyth0n/leyzen-vault"
+
+TAG="${VERSION_TAG}"
+if [ -z "$TAG" ]; then
+    TAG="nightly"
 fi
 
-cd "$CLI_DIR"
-go mod tidy >/dev/null
-go build -o "$OUTPUT_BIN"
-cd "$PROJECT_ROOT"
+ASSET_NAME="leyzenctl-${OS}-${ARCH}"
+BIN_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET_NAME}"
+CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
 
-if [ ! -f "$OUTPUT_BIN" ]; then
-    echo -e "${RED}[ERROR] Compilation failed: binary not found at $OUTPUT_BIN${NC}"
-    exit 1
+TMP_BIN="${OUTPUT_BIN}.tmp"
+TMP_SUM="${PROJECT_ROOT}/checksums.tmp"
+
+download_and_verify() {
+    local url_bin="$1" url_sum="$2" name="$3"
+    rm -f "$TMP_BIN" "$TMP_SUM"
+    curl -fsSL -o "$TMP_BIN" "$url_bin" || return 1
+    curl -fsSL -o "$TMP_SUM" "$url_sum" || return 1
+    local expected actual
+    expected="$(grep " ${name}$" "$TMP_SUM" | awk '{print $1}')"
+    if [ -z "$expected" ]; then
+        return 1
+    fi
+    actual="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
+    if [ "$expected" != "$actual" ]; then
+        return 1
+    fi
+    return 0
+}
+
+if ! download_and_verify "$BIN_URL" "$CHECKSUM_URL" "$ASSET_NAME"; then
+    echo -e "${YELLOW}[WARN] Failed to download nightly or checksum mismatch. Falling back to latest stable...${NC}"
+    LATEST_TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p' | head -n1)"
+    if [ -z "$LATEST_TAG" ]; then
+        echo -e "${RED}[ERROR] Unable to resolve latest stable release.${NC}"
+        exit 1
+    fi
+    BIN_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ASSET_NAME}"
+    CHECKSUM_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/checksums.txt"
+    if ! download_and_verify "$BIN_URL" "$CHECKSUM_URL" "$ASSET_NAME"; then
+        echo -e "${RED}[ERROR] Download failed or checksum mismatch for ${ASSET_NAME}.${NC}"
+        exit 1
+    fi
 fi
 
-echo -e "${GREEN}[OK] Binary built successfully at:${NC} ${CYAN}$OUTPUT_BIN${NC}"
+mv -f "$TMP_BIN" "$OUTPUT_BIN"
+chmod +x "$OUTPUT_BIN"
+rm -f "$TMP_SUM"
+
+echo -e "${GREEN}[OK] Binary downloaded and verified at:${NC} ${CYAN}$OUTPUT_BIN${NC}"
 echo
 
 # -----------------------------------------------------------------------------
@@ -104,7 +157,7 @@ if [ ! -f "$PROJECT_ROOT/.env" ]; then
     cp "$PROJECT_ROOT/env.template" "$PROJECT_ROOT/.env"
 
     # ---------------------------------------------------------
-    # Marketing / Architecture Choice
+    # Architecture Choice
     # ---------------------------------------------------------
     echo
     echo -e "${BOLD}${CYAN}FEATURE: Moving Target Defense (MTD)${NC}"

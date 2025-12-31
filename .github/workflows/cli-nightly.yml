@@ -1,0 +1,72 @@
+name: cli-nightly
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.9"
+
+      - name: Import GPG key
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ env.GPG_PRIVATE_KEY }}
+          passphrase: ${{ env.GPG_PASSPHRASE }}
+
+      - name: Update 'nightly' tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BASE_TAG="$(git describe --abbrev=0 --tags --match 'v*' || echo 'v0.0.0')"
+          NIGHTLY_TAG="${BASE_TAG}-nightly"
+          if git rev-parse -q --verify "refs/tags/${NIGHTLY_TAG}" >/dev/null; then
+            git tag -fa "${NIGHTLY_TAG}" -m "Nightly"
+          else
+            git tag -a "${NIGHTLY_TAG}" -m "Nightly"
+          fi
+          git push origin -f "${NIGHTLY_TAG}"
+
+      - name: Run GoReleaser (nightly, signed)
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+          workdir: tools/cli
+        env:
+          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+
+      - name: Run GoReleaser (nightly, unsigned)
+        if: ${{ env.GPG_PRIVATE_KEY == '' }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --skip=sign --clean
+          workdir: tools/cli
+        env:
+          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}

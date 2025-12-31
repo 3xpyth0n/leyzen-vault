@@ -1,0 +1,58 @@
+version: 2
+project_name: leyzenctl
+
+builds:
+  - id: leyzenctl
+    dir: .
+    main: ./main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    binary: leyzenctl-{{ .Os }}-{{ .Arch }}
+    ldflags:
+      - -s -w -X leyzenctl/internal/version.Version={{ .Version }} -X leyzenctl/internal/version.Commit={{ .Commit }} -X leyzenctl/internal/version.Date={{ .Date }}
+
+archives:
+  - id: binaries
+    ids:
+      - leyzenctl
+    formats:
+      - binary
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+signs:
+  - id: checksum-sign
+    artifacts: checksum
+    cmd: gpg
+    args:
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+  - id: archive-sign
+    artifacts: archive
+    cmd: gpg
+    args:
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+release:
+  make_latest: '{{ if contains .Tag "-nightly" }}false{{ else }}true{{ end }}'
+  replace_existing_artifacts: true
+  mode: append

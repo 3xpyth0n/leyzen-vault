@@ -36,6 +36,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Migrated S3 credentials and bucket details to environment variables to allow data restoration from S3-compatible storage during initial setup, resolving accessibility issues when starting from an empty database.
 
+- Installation now requires only Docker. The leyzenctl binary is distributed via releases and no local compilation is needed.
+
 ### Fixed
 
 - **CAPTCHA Multi-Worker Synchronization**: Fixed critical issue where CAPTCHA entries were only accessible by the worker that generated them, causing 404 errors and login failures in multi-worker deployments. CAPTCHA storage has been migrated from in-memory store to database-backed storage, ensuring all workers can access the same CAPTCHA entries. Each user session now has its own isolated CAPTCHA, preventing cross-session interference while maintaining proper synchronization across all application workers.
