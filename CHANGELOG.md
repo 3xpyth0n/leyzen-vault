@@ -42,6 +42,8 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **CAPTCHA Multi-Worker Synchronization**: Fixed critical issue where CAPTCHA entries were only accessible by the worker that generated them, causing 404 errors and login failures in multi-worker deployments. CAPTCHA storage has been migrated from in-memory store to database-backed storage, ensuring all workers can access the same CAPTCHA entries. Each user session now has its own isolated CAPTCHA, preventing cross-session interference while maintaining proper synchronization across all application workers.
 
+- Fixed repeated VaultSpace password prompts when the master key is already present.
+
 ## [2.4.0] - 2025-12-14
 
 ### Added

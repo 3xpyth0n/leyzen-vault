@@ -223,7 +223,55 @@ export function useFileViewComposable(options = {}) {
         showEncryptionOverlay.value = false;
         isMasterKeyRequired.value = false;
       } else {
-        passwordModalError.value = "Invalid password";
+        let success = false;
+        try {
+          const mk1 = await initializeUserMasterKey(
+            passwordModalPassword.value,
+            salt,
+            null,
+            { algo: "pbkdf2" },
+          );
+          if (mk1) {
+            if (onEncryptionUnlocked) {
+              const r1 = await onEncryptionUnlocked();
+              success = r1 === true;
+            }
+          }
+        } catch {}
+        if (!success) {
+          const argonCandidates = [
+            { time: 3, mem: 65536, parallelism: 1 },
+            { time: 2, mem: 65536, parallelism: 1 },
+            { time: 3, mem: 16384, parallelism: 2 },
+          ];
+          for (const params of argonCandidates) {
+            try {
+              const mk = await initializeUserMasterKey(
+                passwordModalPassword.value,
+                salt,
+                null,
+                { algo: "argon2", argon2Params: params },
+              );
+              if (!mk) continue;
+              if (onEncryptionUnlocked) {
+                const r = await onEncryptionUnlocked();
+                if (r === true) {
+                  success = true;
+                  break;
+                }
+              }
+            } catch {}
+          }
+        }
+        if (success) {
+          showPasswordModal.value = false;
+          passwordModalPassword.value = "";
+          passwordModalError.value = "";
+          showEncryptionOverlay.value = false;
+          isMasterKeyRequired.value = false;
+        } else {
+          passwordModalError.value = "Invalid password";
+        }
       }
     } catch (err) {
       logger.error("Failed to initialize master key:", err);

@@ -1810,6 +1810,7 @@ body.sidebar-collapsed .main-content:not(.mobile-mode) {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
 }
 
 /* Mobile Mode Styles */

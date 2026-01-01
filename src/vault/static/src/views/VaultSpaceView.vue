@@ -396,7 +396,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, watch } from "vue";
+import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import { useFileViewComposable } from "../composables/useFileViewComposable.js";
 import { normalizeMimeType } from "../utils/mimeType";
 import { files, vaultspaces, config } from "../services/api";
@@ -466,6 +466,7 @@ export default {
     BackgroundContextMenu,
   },
   setup(props, { emit }) {
+    const { proxy } = getCurrentInstance();
     const authStore = useAuthStore();
     const {
       selectedItems,
@@ -490,8 +491,8 @@ export default {
       enableEncryptionCheck: true,
       onEncryptionUnlocked: async () => {
         try {
-          await loadVaultSpaceKey();
-          return !!vaultspaceKey.value;
+          await proxy.loadVaultSpaceKey();
+          return !!proxy.vaultspaceKey;
         } catch (e) {
           return false;
         }
@@ -604,16 +605,8 @@ export default {
   async mounted() {
     await this.checkEncryptionAccess();
 
-    // If no cached key, require unlock immediately and block actions
     const cachedKeyEarly = getCachedVaultSpaceKey(this.$route.params.id);
-    if (!cachedKeyEarly) {
-      this.showEncryptionOverlay = true;
-      this.isMasterKeyRequired = true;
-      this.openPasswordModal();
-      // Load non-encrypted metadata only
-      await this.loadVaultSpace();
-      return;
-    } else {
+    if (cachedKeyEarly) {
       this.vaultspaceKey = cachedKeyEarly;
     }
 
@@ -661,9 +654,6 @@ export default {
     await this.loadVaultSpace();
     await this.loadVaultSpaceKey();
     if (!this.vaultspaceKey) {
-      this.showEncryptionOverlay = true;
-      this.isMasterKeyRequired = true;
-      this.openPasswordModal();
       return;
     }
 

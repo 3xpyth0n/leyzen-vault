@@ -217,6 +217,7 @@ export default {
     CustomSelect,
   },
   setup() {
+    const authStore = useAuthStore();
     const apiKeys = ref([]);
     const users = ref([]);
     const loading = ref(false);
@@ -849,10 +850,9 @@ export default {
   height: auto !important;
   padding: 0.75rem 1rem !important;
   padding-right: 2.5rem !important;
-  background: rgba(30, 41, 59, 0.4) !important;
-  border: 1px solid #004225 !important;
-
-  color: #a9b7aa !important;
+  background: var(--bg-modal) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--ash-grey) !important;
   font-size: 0.95rem !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif !important;
@@ -865,7 +865,7 @@ export default {
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
-  color: #a9b7aa !important;
+  color: var(--ash-grey) !important;
   flex: 1 !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
@@ -877,7 +877,7 @@ export default {
 .modal-form
   .form-group
   :deep(.custom-select.is-placeholder .custom-select-value) {
-  color: #a9b7aa !important;
+  color: var(--ash-grey) !important;
 }
 
 .modal-form .form-group :deep(.custom-select-arrow) {
@@ -890,7 +890,7 @@ export default {
   transform: translateY(-50%) !important;
   width: 1rem !important;
   height: 1rem !important;
-  color: #a9b7aa !important;
+  color: var(--ash-grey) !important;
   transition: transform 0.2s ease !important;
   pointer-events: none !important;
   flex-shrink: 0 !important;
@@ -900,7 +900,20 @@ export default {
   display: block !important;
   width: 16px !important;
   height: 16px !important;
-  color: #a9b7aa !important;
+  color: var(--ash-grey) !important;
+}
+
+.modal-form .form-group :deep(.custom-select-dropdown) {
+  background: var(--bg-modal) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.modal-form .form-group :deep(.custom-select-option) {
+  color: var(--ash-grey) !important;
+}
+
+.modal-form .form-group :deep(.custom-select-option:hover) {
+  background: rgba(0, 66, 37, 0.1) !important;
 }
 
 .form-input:focus,
@@ -918,13 +931,12 @@ export default {
 
 .api-key-value {
   flex: 1;
-  background: rgba(30, 41, 59, 0.6);
+  background: var(--bg-modal);
   padding: 0.75rem 1rem;
-
   font-family: "Courier New", monospace;
   font-size: 0.9rem;
-  color: #004225;
-  border: 1px solid rgba(0, 66, 37, 0.2);
+  color: var(--ash-grey);
+  border: 1px solid var(--border-color);
   word-break: break-all;
 }
 

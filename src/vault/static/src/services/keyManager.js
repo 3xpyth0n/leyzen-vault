@@ -9,6 +9,7 @@
 
 import {
   deriveUserKey,
+  deriveUserKeyWithParams,
   generateSalt,
   generateVaultSpaceKey,
   encryptVaultSpaceKey,
@@ -38,6 +39,7 @@ export async function initializeUserMasterKey(
   password,
   salt = null,
   jwtToken = null,
+  options = {},
 ) {
   // Generate salt if not provided
   if (!salt) {
@@ -50,7 +52,46 @@ export async function initializeUserMasterKey(
 
   // Derive master key from password (extractable=true temporarily to store encrypted version)
 
-  const masterKey = await deriveUserKey(password, salt, true);
+  let masterKey;
+  const algo = options && options.algo ? options.algo : "auto";
+  if (algo === "pbkdf2") {
+    const cryptoAPI = (typeof window !== "undefined" && window.crypto) || null;
+    if (!cryptoAPI || !cryptoAPI.subtle) {
+      throw new Error("Web Crypto API is not available");
+    }
+    const encoder = new TextEncoder();
+    const keyMaterial = await cryptoAPI.subtle.importKey(
+      "raw",
+      encoder.encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits", "deriveKey"],
+    );
+    masterKey = await cryptoAPI.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 600000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      {
+        name: "AES-GCM",
+        length: 256,
+      },
+      true,
+      ["encrypt", "decrypt"],
+    );
+  } else if (algo === "argon2" && options.argon2Params) {
+    masterKey = await deriveUserKeyWithParams(
+      password,
+      salt,
+      true,
+      options.argon2Params,
+    );
+  } else {
+    masterKey = await deriveUserKey(password, salt, true);
+  }
 
   // Get JWT token if not provided
   if (!jwtToken) {

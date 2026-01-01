@@ -106,7 +106,19 @@
         </header>
 
         <main class="view-main">
-          <div v-if="loading" class="loading">Loading recent files...</div>
+          <div v-if="loading" class="skeleton-view">
+            <div class="skeleton-title skeleton"></div>
+            <div class="skeleton-list">
+              <div v-for="n in 6" :key="n" class="skeleton-line skeleton"></div>
+            </div>
+            <div class="skeleton-grid" style="margin-top: 1rem">
+              <div
+                v-for="n in 8"
+                :key="'g-' + n"
+                class="skeleton-card skeleton"
+              ></div>
+            </div>
+          </div>
           <div v-else-if="error" class="error">{{ error }}</div>
           <div v-else-if="recentFiles.length === 0" class="empty-state">
             <p>No recent files</p>
@@ -407,15 +419,8 @@ export default {
         recentFiles.value.forEach((f) => {
           if (f.vaultspace_id) ids.add(f.vaultspace_id);
         });
-        let needsUnlock = false;
-        for (const id of ids) {
-          const cached = getCachedVaultSpaceKey(id);
-          if (!cached) {
-            needsUnlock = true;
-            break;
-          }
-        }
-        if (needsUnlock) {
+        const mk = await getUserMasterKey();
+        if (!mk) {
           showEncryptionOverlay.value = true;
           isMasterKeyRequired.value = true;
           openPasswordModal();
@@ -1190,6 +1195,10 @@ export default {
   align-items: center;
   margin-bottom: 2rem;
   padding: 1.5rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-primary);
 }
 
 .view-header h1 {

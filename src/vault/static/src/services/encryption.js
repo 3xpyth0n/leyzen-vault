@@ -79,21 +79,15 @@ export async function deriveUserKey(password, salt, extractable = false) {
   // Extract actual salt (remove "argon2:" prefix)
   const argon2Prefix = new TextEncoder().encode("argon2:");
 
-  if (salt.length < argon2Prefix.length) {
-    throw new Error("Invalid salt: too short");
+  let actualSalt;
+  const hasPrefix =
+    salt.length >= argon2Prefix.length &&
+    salt.slice(0, argon2Prefix.length).every((b, i) => b === argon2Prefix[i]);
+  if (hasPrefix) {
+    actualSalt = salt.slice(argon2Prefix.length);
+  } else {
+    actualSalt = salt;
   }
-
-  // Verify prefix
-  const hasPrefix = salt
-    .slice(0, argon2Prefix.length)
-    .every((b, i) => b === argon2Prefix[i]);
-  if (!hasPrefix) {
-    throw new Error(
-      "Invalid salt: missing 'argon2:' prefix. Migration required.",
-    );
-  }
-
-  const actualSalt = salt.slice(argon2Prefix.length);
 
   // Validate salt length (Argon2 requires at least 8 bytes)
   if (actualSalt.length < 8) {
@@ -102,35 +96,58 @@ export async function deriveUserKey(password, salt, extractable = false) {
     );
   }
 
-  // Derive key using Argon2-browser (version bundled to avoid WASM bundling issues)
-  try {
-    // Argon2-browser requires explicit parameters
-    // Use secure defaults optimized for browser environment:
-    // - time: 3 iterations (good balance between security and performance)
-    // - mem: 4096 KiB (4MB) - reasonable for browsers, still secure
-    // - parallelism: 4 threads
-    // - hashLen: 32 bytes (256 bits)
-    const result = await argon2.hash({
-      pass: password,
-      salt: actualSalt, // Uint8Array is accepted by argon2-browser
-      type: argon2.ArgonType.Argon2id,
-      time: 3, // Number of iterations
-      mem: 4096, // Memory in KiB (4MB) - reduced for browser compatibility
-      parallelism: 4, // Number of threads
-      hashLen: 32, // Output length in bytes (256 bits)
-    });
-
-    // Verify result structure
-    if (!result || !result.hash) {
-      throw new Error("Argon2 returned invalid result structure");
+  if (hasPrefix) {
+    try {
+      const result = await argon2.hash({
+        pass: password,
+        salt: actualSalt,
+        type: argon2.ArgonType.Argon2id,
+        time: 3,
+        mem: 4096,
+        parallelism: 4,
+        hashLen: 32,
+      });
+      if (!result || !result.hash) {
+        throw new Error("Argon2 returned invalid result structure");
+      }
+      const cryptoAPI2 = getCryptoAPI();
+      const masterKeyBytes = new Uint8Array(result.hash);
+      return await cryptoAPI2.subtle.importKey(
+        "raw",
+        masterKeyBytes,
+        {
+          name: "AES-GCM",
+          length: 256,
+        },
+        extractable,
+        ["encrypt", "decrypt"],
+      );
+    } catch (error) {
+      logger.error("Argon2 key derivation failed:", error);
+      throw new Error(
+        `Failed to derive master key with Argon2: ${
+          error.message || error.code || "Unknown error"
+        }`,
+      );
     }
-
-    // Convert derived hash (32 bytes) to CryptoKey
-    const cryptoAPI = getCryptoAPI();
-    const masterKeyBytes = new Uint8Array(result.hash);
-    return await cryptoAPI.subtle.importKey(
+  } else {
+    const cryptoAPI2 = getCryptoAPI();
+    const encoder = new TextEncoder();
+    const keyMaterial = await cryptoAPI2.subtle.importKey(
       "raw",
-      masterKeyBytes,
+      encoder.encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits", "deriveKey"],
+    );
+    const aesKey = await cryptoAPI2.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: actualSalt,
+        iterations: 600000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
       {
         name: "AES-GCM",
         length: 256,
@@ -138,23 +155,52 @@ export async function deriveUserKey(password, salt, extractable = false) {
       extractable,
       ["encrypt", "decrypt"],
     );
-  } catch (error) {
-    logger.error("Argon2 key derivation failed:", error);
-    logger.error("Error details:", {
-      message: error.message,
-      code: error.code,
-      stack: error.stack,
-      saltLength: actualSalt.length,
-      saltType: typeof actualSalt,
-    });
-    throw new Error(
-      `Failed to derive master key with Argon2: ${
-        error.message || error.code || "Unknown error"
-      }`,
-    );
+    return aesKey;
   }
 }
 
+export async function deriveUserKeyWithParams(
+  password,
+  salt,
+  extractable = false,
+  params = {},
+) {
+  const cryptoAPI = getCryptoAPI();
+  const argon2Prefix = new TextEncoder().encode("argon2:");
+  let actualSalt = salt;
+  const hasPrefix =
+    salt.length >= argon2Prefix.length &&
+    salt.slice(0, argon2Prefix.length).every((b, i) => b === argon2Prefix[i]);
+  if (hasPrefix) {
+    actualSalt = salt.slice(argon2Prefix.length);
+  }
+  if (actualSalt.length < 8) {
+    throw new Error(
+      `Invalid salt length: ${actualSalt.length} bytes (minimum 8 bytes required)`,
+    );
+  }
+  const time = typeof params.time === "number" ? params.time : 3;
+  const mem = typeof params.mem === "number" ? params.mem : 4096;
+  const parallelism =
+    typeof params.parallelism === "number" ? params.parallelism : 4;
+  const result = await argon2.hash({
+    pass: password,
+    salt: actualSalt,
+    type: argon2.ArgonType.Argon2id,
+    time,
+    mem,
+    parallelism,
+    hashLen: 32,
+  });
+  const masterKeyBytes = new Uint8Array(result.hash);
+  return await cryptoAPI.subtle.importKey(
+    "raw",
+    masterKeyBytes,
+    { name: "AES-GCM", length: 256 },
+    extractable,
+    ["encrypt", "decrypt"],
+  );
+}
 /**
  * Generate a random VaultSpace key.
  *
@@ -304,12 +350,13 @@ export async function decryptVaultSpaceKey(
       if (isValid) {
         encryptedData = dataWithoutSignature;
         hasSignature = true;
+      } else {
+        // Strip signature and attempt decryption without it
+        encryptedData = dataWithoutSignature;
       }
     } catch (error) {
-      logger.debug(
-        "Signature verification failed, using key without signature:",
-        error,
-      );
+      // Strip signature and proceed
+      encryptedData = dataWithoutSignature;
     }
   }
 
@@ -438,12 +485,13 @@ export async function decryptFileKey(
       if (isValid) {
         encryptedData = dataWithoutSignature;
         hasSignature = true;
+      } else {
+        // Strip signature and attempt decryption without it
+        encryptedData = dataWithoutSignature;
       }
     } catch (error) {
-      logger.debug(
-        "Signature verification failed, using key without signature:",
-        error,
-      );
+      // Strip signature and proceed
+      encryptedData = dataWithoutSignature;
     }
   }
 

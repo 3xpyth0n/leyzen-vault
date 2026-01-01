@@ -1535,6 +1535,10 @@ export default {
 .view-header {
   margin-bottom: 2rem;
   padding: 1.5rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-primary);
 }
 
 .header-title-row {
