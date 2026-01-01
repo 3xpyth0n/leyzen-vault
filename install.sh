@@ -80,7 +80,7 @@ esac
 REPO="3xpyth0n/leyzen-vault"
 
 resolve_latest_stable() {
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*\"tag_name\": \"\([^\"]*\)\".*/\1/p' | head -n1
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | sed -n 's/.*\"tag_name\": \"\([^\"]*\)\".*/\1/p' | head -n1
 }
 
 TAG="${VERSION_TAG}"
@@ -111,8 +111,8 @@ TMP_SUM="${PROJECT_ROOT}/checksums.tmp"
 download_and_verify() {
     local url_bin="$1" url_sum="$2" name="$3"
     rm -f "$TMP_BIN" "$TMP_SUM"
-    curl -fsSL -o "$TMP_BIN" "$url_bin" || return 1
-    curl -fsSL -o "$TMP_SUM" "$url_sum" || return 1
+    curl -fsSL -o "$TMP_BIN" "$url_bin" 2>/dev/null || return 1
+    curl -fsSL -o "$TMP_SUM" "$url_sum" 2>/dev/null || return 1
     local expected actual
     expected="$(grep " ${name}$" "$TMP_SUM" | awk '{print $1}')"
     if [ -z "$expected" ]; then
@@ -128,7 +128,7 @@ download_and_verify() {
 resolve_asset_urls() {
     local tag="$1"
     local json
-    json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/tags/${tag}")" || return 1
+    json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/tags/${tag}" 2>/dev/null)" || return 1
     local bin_url sum_url
     bin_url="$(echo "$json" | sed -n 's/.*\"browser_download_url\": \"\([^"]*\)\".*/\1/p' | grep "/releases/download/${tag}/" | grep "leyzenctl-${OS}-${ARCH}" | head -n1)"
     sum_url="$(echo "$json" | sed -n 's/.*\"browser_download_url\": \"\([^"]*\)\".*/\1/p' | grep "/releases/download/${tag}/checksums.txt" | head -n1)"
@@ -143,7 +143,6 @@ ASSET_CHOSEN_URLS="$(resolve_asset_urls "$TAG" || true)"
 if [ -z "$ASSET_CHOSEN_URLS" ]; then
     if ! download_and_verify "$BIN_URL_VER" "$CHECKSUM_URL_VER" "$ASSET_VER"; then
         if ! download_and_verify "$BIN_URL_LEGACY" "$CHECKSUM_URL_LEGACY" "$ASSET_BASE"; then
-            echo -e "${YELLOW}[WARN] Failed to download nightly or checksum mismatch. Falling back to latest stable...${NC}"
             STABLE="$(resolve_latest_stable || true)"
             if [ -z "$STABLE" ]; then
                 echo -e "${RED}[ERROR] Unable to resolve latest stable release.${NC}"

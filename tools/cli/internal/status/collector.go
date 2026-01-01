@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"leyzenctl/internal"
+	"leyzenctl/internal/version"
 	"syscall"
 )
 
@@ -246,11 +247,7 @@ func Collect(envFile string, timeout time.Duration) (Result, error) {
 		return res, err
 	}
 
-	version := os.Getenv("LEYZENCTL_VERSION")
-	if version == "" {
-		version = "dev"
-	}
-	res.Summary.Version = version
+	res.Summary.Version = version.Version
 	res.Summary.Timestamp = time.Now()
 
 	httpPort := parseInt(env["HTTP_PORT"], 8080)
