@@ -2,87 +2,68 @@ package cmd
 
 import (
 	"fmt"
-	"regexp"
+	"os"
 	"strings"
+	"time"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"leyzenctl/internal"
+	"leyzenctl/internal/status"
 )
-
-const (
-	nameWidth   = 28
-	statusWidth = 36
-	ageHeader   = "AGE"
-)
-
-// regex to remove ANSI escape sequences
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func visibleLen(s string) int {
-	return len(ansiRegex.ReplaceAllString(s, ""))
-}
-
-func padRightColored(s string, width int) string {
-	visible := visibleLen(s)
-	if visible >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-visible)
-}
 
 func init() {
 	statusCmd := &cobra.Command{
 		Use:          "status",
-		Short:        "Show the status of Leyzen Vault containers",
+		Aliases:      []string{"status=json"},
+		Short:        "Show the status of Leyzen Vault",
+		Long:         "Show Leyzen Vault status. Use --json, 'json' positional, or alias 'status=json' for JSON output.",
+		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Ensure docker-generated.yml exists before checking status
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if !jsonOut {
+				for _, a := range args {
+					if strings.EqualFold(strings.TrimSpace(a), "json") {
+						jsonOut = true
+						break
+					}
+				}
+			}
 			if err := internal.EnsureDockerGeneratedFileWithWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), EnvFilePath()); err != nil {
 				return fmt.Errorf("failed to initialize configuration: %w", err)
 			}
 
-			projectStatuses, err := internal.GetProjectStatuses(EnvFilePath())
-			if err != nil {
-				return err
-			}
-
-			if len(projectStatuses) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), color.HiYellowString("No services defined in configuration."))
+			if jsonOut {
+				res, err := status.Collect(EnvFilePath(), 800*time.Millisecond)
+				if err != nil {
+					return err
+				}
+				b, err := status.MarshalJSON(res)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				if res.Summary.OverallStatus == "critical" {
+					os.Exit(1)
+				}
 				return nil
 			}
 
-			// Define table column widths
-			const (
-				nameWidth   = 28
-				statusWidth = 36
-			)
-
-			// Print header
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
-				internal.PadRightVisible(color.HiCyanString("NAME"), nameWidth),
-				internal.PadRightVisible(color.HiCyanString("STATUS"), statusWidth),
-				color.HiCyanString("AGE"),
-			)
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
-				strings.Repeat("─", nameWidth),
-				strings.Repeat("─", statusWidth),
-				strings.Repeat("─", 10),
-			)
-
-			for _, st := range projectStatuses {
-				status := internal.FormatStatusColor(st.Status)
-				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n",
-					internal.PadRightVisible(st.Name, nameWidth),
-					internal.PadRightVisible(status, statusWidth),
-					st.Age,
-				)
+			res, err := status.Collect(EnvFilePath(), 800*time.Millisecond)
+			if err != nil {
+				return err
 			}
-
+			status.RenderHuman(cmd.OutOrStdout(), res)
+			if res.Summary.OverallStatus == "critical" {
+				os.Exit(1)
+			}
 			return nil
 		},
 	}
+
+	statusCmd.PersistentFlags().Bool("json", false, "Output status as JSON")
+	statusCmd.FParseErrWhitelist.UnknownFlags = true
 
 	rootCmd.AddCommand(statusCmd)
 }

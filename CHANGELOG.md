@@ -17,6 +17,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Contextual Actions**: New actions on empty space to upload files, create folders, paste elements, and view current folder properties.
 - **Breadcrumb Navigation**: New navigation element to quickly reach files and folders from Favorites and Recents.
 - Secure HTML file preview with CSP sandboxing, inline styles, no external requests.
+- CLI status command (`leyzenctl status`) now shows proxy availability (HTTP/HTTPS with latency), network ports, and server performance; adds JSON output via --json.
 
 ### Changed
 
